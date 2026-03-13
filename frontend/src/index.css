@@ -1,0 +1,116 @@
+/* Global color palette – used across admin, patient app, and landing */
+:root {
+  /* BACKGROUNDS */
+  --bg-main: #f8fafb;
+  --bg-card: #ffffff;
+  --bg-sidebar: #f1f4f6;
+
+  /* ACCENTS – soft blue (brand) */
+  --primary: #9cb4c4;
+  --primary-hover: #8aa3b5;
+  --primary-active: #7a92a3;
+  --primary-light: #ebf1f4;
+
+  /* UI ELEMENTS */
+  --input-border: #dde4e9;
+  --input-focus: #bccdd8;
+  --divider: #eef2f4;
+
+  /* TEXT */
+  --text-main: #3e4954;
+  --text-muted: #86929d;
+  --text-on-primary: #ffffff;
+
+  /* CONTRAST ACCENTS (not competing with primary) */
+  --accent-gold: #d4af37;   /* Soft gold – premium / critical notices */
+  --success: #92b191;       /* Muted green – success states */
+
+  /* Focus ring for inputs (primary with opacity) */
+  --focus-ring: rgba(156, 180, 196, 0.2);
+}
+
+/* —— Primary CTA buttons (filled, brand) —— */
+[data-variant="filled"][data-color="brand"],
+.mantine-Button-root[data-variant="filled"]:not([data-color]) {
+  background: var(--primary) !important;
+  color: var(--text-on-primary) !important;
+  transition: background 0.3s ease, transform 0.15s ease;
+}
+[data-variant="filled"][data-color="brand"]:hover,
+.mantine-Button-root[data-variant="filled"]:not([data-color]):hover {
+  background: var(--primary-hover) !important;
+}
+[data-variant="filled"][data-color="brand"]:active,
+.mantine-Button-root[data-variant="filled"]:not([data-color]):active {
+  background: var(--primary-active) !important;
+  transform: translateY(1px);
+}
+
+/* —— Inputs: airy look + soft focus glow —— */
+.mantine-TextInput-input,
+.mantine-NumberInput-input,
+.mantine-Select-input,
+.mantine-DateInput-input {
+  background: #ffffff !important;
+  border: 1px solid var(--input-border) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.mantine-TextInput-input:focus,
+.mantine-NumberInput-input:focus,
+.mantine-Select-input:focus,
+.mantine-DateInput-input:focus,
+.mantine-TextInput-input:focus-within,
+.mantine-NumberInput-input:focus-within {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--focus-ring) !important;
+  outline: none !important;
+}
+
+/* —— Schedule grid: card contrast + busy slots —— */
+.schedule-grid-card {
+  background: var(--bg-card);
+  border: 1px solid var(--divider);
+  border-radius: var(--mantine-radius-md, 8px);
+  overflow: hidden;
+}
+.schedule-grid-card .mantine-Table-table {
+  border-collapse: collapse;
+}
+.schedule-grid-card .mantine-Table-th,
+.schedule-grid-card .mantine-Table-td {
+  border-color: var(--divider);
+}
+.schedule-row-busy {
+  background: var(--primary-light) !important;
+  border-left: 3px solid var(--primary);
+}
+
+/* —— Modal: glass effect (business-class) —— */
+.mantine-Modal-overlay {
+  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, 0.08);
+}
+.mantine-Modal-content {
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 32px rgba(62, 73, 84, 0.12);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  background: var(--bg-main);
+  color: var(--text-main);
+}

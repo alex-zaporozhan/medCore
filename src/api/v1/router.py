@@ -1,0 +1,98 @@
+"""API v1 router."""
+
+from fastapi import APIRouter
+
+from src.api.v1.routers import (
+    auth,
+    bookings,
+    clinics,
+    config,
+    doctors,
+    patients,
+    payments,
+    schedule,
+    services,
+    stickers,
+    csv_sync,
+    reports,
+    admin_services,
+    admin_schedule,
+    admin_doctor_schedule,
+    admin_prepayment,
+    admin_waitlist,
+    admin_recall,
+    admin_marketing,
+    admin_reports,
+    admin_chat,
+    admin_channel_configs,
+    admin_admins,
+    admin_agreement,
+    admin_auth,
+    admin_client_reference,
+    admin_discounts,
+    admin_integrations,
+    admin_notification_policy,
+    admin_attention_feed,
+    admin_ai_reports,
+    admin_patient_ai,
+    admin_ai_settings,
+    admin_ai_status,
+    public_services,
+    patient_notification_settings,
+    public_marketing,
+    patient_chat,
+    admin_omni_chat,
+    integrations_gateway,
+    owner_omni_channels,
+    owner_omni_ai_settings,
+    owner_omni_audit,
+    admin_payment_gateway,
+)
+
+# Create main API router
+api_router = APIRouter()
+
+api_router.include_router(auth.router)
+api_router.include_router(config.router)
+api_router.include_router(stickers.router)
+api_router.include_router(clinics.router)
+api_router.include_router(doctors.router)
+api_router.include_router(services.router)
+api_router.include_router(admin_services.router)
+api_router.include_router(admin_schedule.router)
+api_router.include_router(admin_doctor_schedule.router)
+api_router.include_router(admin_prepayment.router)
+api_router.include_router(admin_waitlist.router)
+api_router.include_router(admin_recall.router)
+api_router.include_router(admin_marketing.router)
+api_router.include_router(admin_reports.router)
+api_router.include_router(admin_chat.router)
+api_router.include_router(admin_channel_configs.router)
+api_router.include_router(admin_admins.router)
+api_router.include_router(admin_agreement.router)
+api_router.include_router(admin_auth.router)
+api_router.include_router(admin_client_reference.router)
+api_router.include_router(admin_discounts.router)
+api_router.include_router(admin_integrations.router)
+api_router.include_router(admin_notification_policy.router)
+api_router.include_router(admin_attention_feed.router)
+api_router.include_router(admin_patient_ai.router)
+api_router.include_router(admin_ai_settings.router)
+api_router.include_router(admin_ai_reports.router)
+api_router.include_router(admin_ai_status.router)
+api_router.include_router(admin_payment_gateway.router)
+api_router.include_router(patient_chat.router)
+api_router.include_router(patient_notification_settings.router)
+api_router.include_router(public_services.router)
+api_router.include_router(public_marketing.router)
+api_router.include_router(patients.router)
+api_router.include_router(schedule.router)
+api_router.include_router(bookings.router)
+api_router.include_router(payments.router)
+api_router.include_router(csv_sync.router)
+api_router.include_router(reports.router)
+api_router.include_router(admin_omni_chat.router)
+api_router.include_router(integrations_gateway.router)
+api_router.include_router(owner_omni_channels.router)
+api_router.include_router(owner_omni_ai_settings.router)
+api_router.include_router(owner_omni_audit.router)

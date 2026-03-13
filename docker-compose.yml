@@ -1,0 +1,119 @@
+# Переменные окружения: Docker Compose автоматически загружает .env из директории
+# с compose-файлом и подставляет ${VAR} при разборе. Секреты (пароли БД и т.д.)
+# задаются только в .env; .env не коммитить (см. .gitignore).
+# Контейнеры приложения получают .env через env_file: - .env
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: dental_booking_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-dental_booking}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: dental_booking_redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    image: moircreator/dental-booking-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dental_booking_backend
+    command: sh -c "python -m alembic -c alembic.ini upgrade heads && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8004:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dental_booking}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery:
+    image: moircreator/dental-booking-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dental_booking_celery
+    command: celery -A src.infrastructure.messaging.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dental_booking}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery-beat:
+    image: moircreator/dental-booking-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dental_booking_celery_beat
+    command: celery -A src.infrastructure.messaging.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dental_booking}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    image: moircreator/dental-booking-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dental_booking_frontend
+    ports:
+      - "3004:80"
+      - "3001:80"
+    env_file:
+      - ./frontend/.env
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redis_data:
