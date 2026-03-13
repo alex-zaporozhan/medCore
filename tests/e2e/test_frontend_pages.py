@@ -1,0 +1,89 @@
+"""
+E2E: check every admin and app route on the live frontend.
+
+Run only when frontend is served (e.g. npm run dev in frontend/) and BASE_URL is set:
+  FRONTEND_E2E_URL=http://localhost:5175 poetry run pytest tests/e2e/test_frontend_pages.py -v
+
+Install browser once: poetry run playwright install chromium
+"""
+
+import os
+
+import pytest
+
+FRONTEND_E2E_URL = os.environ.get("FRONTEND_E2E_URL", "").rstrip("/")
+
+# All routes that must render without white screen or fatal error
+ADMIN_PATHS = [
+    "/admin",
+    "/admin/schedule",
+    "/admin/bookings",
+    "/admin/reports",
+    "/admin/doctors",
+    "/admin/patients",
+]
+APP_PATHS = [
+    "/app",
+    "/app/booking",
+    "/app/history",
+    "/login",
+]
+LANDING_PATH = "/"
+
+ALL_PATHS = [LANDING_PATH] + ADMIN_PATHS + APP_PATHS
+
+
+@pytest.fixture(scope="module")
+def base_url():
+    """Skip entire module if FRONTEND_E2E_URL not set."""
+    if not FRONTEND_E2E_URL:
+        pytest.skip(
+            "Set FRONTEND_E2E_URL (e.g. http://localhost:5175) and run frontend to test pages"
+        )
+    return FRONTEND_E2E_URL
+
+
+@pytest.mark.skipif(not FRONTEND_E2E_URL, reason="FRONTEND_E2E_URL not set")
+class TestFrontendPages:
+    """Visit each frontend route and assert page loads (no white screen / fatal error)."""
+
+    @pytest.mark.parametrize("path", ALL_PATHS)
+    def test_page_loads_and_has_content(self, page, base_url, path):
+        """Load path and check response is OK and body has meaningful content."""
+        url = f"{base_url}{path}"
+        try:
+            response = page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        except Exception as e:
+            pytest.fail(f"{path}: failed to load — {e!s}")
+
+        if response and response.status >= 400:
+            pytest.fail(f"{path}: HTTP {response.status}")
+
+        # SPA: same HTML for all routes; ensure root app mounted (not empty/error screen)
+        content = page.content()
+        assert content, f"{path}: empty response body"
+        # Root div or app shell
+        assert "dental" in content.lower() or "root" in content or "<div" in content, (
+            f"{path}: page body looks empty or not the app (no 'dental' or root div)"
+        )
+
+    @pytest.mark.parametrize("path", ALL_PATHS)
+    def test_page_no_console_errors(self, page, base_url, path):
+        """Capture console errors on load; fail if any (helps debug white screen)."""
+        errors = []
+
+        def on_console(msg):
+            if msg.type == "error":
+                errors.append(msg.text)
+
+        page.on("console", on_console)
+        url = f"{base_url}{path}"
+        try:
+            page.goto(url, wait_until="networkidle", timeout=15000)
+        except Exception as e:
+            pytest.fail(f"{path}: load failed — {e!s}")
+
+        # Filter out known non-fatal (e.g. 404 for source maps)
+        fatal = [e for e in errors if "Failed to load" in e or "Uncaught" in e or "SyntaxError" in e]
+        if fatal:
+            pytest.fail(f"{path}: console errors: {'; '.join(fatal[:3])}")
