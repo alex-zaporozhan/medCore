@@ -6,10 +6,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.dependencies import get_session, get_request_context
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.dto.chat_ai_dto import PatientAiInsight
 from src.application.services.chat_ai_service import ChatAiService, ChatAiServiceError
+from src.core.context import RequestContext
 from src.core.config import settings
 from src.domain.entities.admin_user import AdminUser
 from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
@@ -27,6 +28,7 @@ async def get_patient_ai_insight(
     patient_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    ctx: RequestContext = Depends(get_request_context),
     rate_limiter=Depends(get_rate_limiter),
 ) -> PatientAiInsight:
     clinic_id = current_admin.clinic_id
@@ -41,7 +43,7 @@ async def get_patient_ai_insight(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Слишком много запросов к AI. Попробуйте позже.",
         )
-    service = ChatAiService(session)
+    service = ChatAiService(session, ctx)
     try:
         return await service.analyze_patient(clinic_id, patient_id)
     except ChatAiServiceError as exc:

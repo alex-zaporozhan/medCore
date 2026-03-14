@@ -1,15 +1,22 @@
-"""Public API: feed and stories for PWA/patient app."""
+"""Public API: feed, stories and landing leads for PWA/patient app."""
 
 from uuid import UUID
-from src.core.datetime_utils import to_iso8601_utc, utc_now_naive
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import get_session
+from src.application.dto.marketing_attribution_dto import (
+    LandingLeadRequest,
+    LandingLeadResponse,
+)
+from src.application.services.lead_service import LeadService
+from src.core.datetime_utils import to_iso8601_utc, utc_now_naive
+from src.domain.entities.lead_card import LeadCard
 from src.domain.entities.promo_post import PromoPost
 from src.domain.entities.story import Story
+from src.domain.entities.visit_attribution import VisitAttribution
 
 router = APIRouter(prefix="/public/clinics", tags=["public"])
 
@@ -74,3 +81,77 @@ async def get_public_stories(
         }
         for s in stories
     ]
+
+
+@router.post(
+    "/{clinic_id}/leads",
+    response_model=LandingLeadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_landing_lead(
+    clinic_id: UUID,
+    body: LandingLeadRequest,
+    session: AsyncSession = Depends(get_session),
+) -> LandingLeadResponse:
+    """Public landing endpoint: create VisitAttribution + LeadCard from marketing form.
+    Idempotent: if session_id is provided and a VisitAttribution with that session_id
+    already has a lead, returns existing lead_id and visit_attribution_id.
+    """
+    if body.session_id:
+        existing = await session.execute(
+            select(VisitAttribution).where(
+                VisitAttribution.clinic_id == clinic_id,
+                VisitAttribution.session_id == body.session_id,
+                VisitAttribution.lead_id.isnot(None),
+            ).limit(1)
+        )
+        va = existing.scalar_one_or_none()
+        if va is not None:
+            return LandingLeadResponse(lead_id=va.lead_id, visit_attribution_id=va.id)
+
+    service = LeadService(session)
+
+    visit = VisitAttribution(
+        clinic_id=clinic_id,
+        patient_id=None,
+        lead_id=None,
+        traffic_source_id=None,
+        campaign_id=None,
+        session_id=body.session_id,
+        landing_page=body.landing_page,
+        anchor=body.anchor,
+        utm_source=body.utm_source,
+        utm_medium=body.utm_medium,
+        utm_campaign=body.utm_campaign,
+        utm_content=body.utm_content,
+        utm_term=body.utm_term,
+    )
+    session.add(visit)
+    await session.flush()
+
+    title = body.full_name or body.phone
+    source = body.utm_source or "landing"
+
+    lead = await service.create_lead_from_contact(
+        clinic_id=clinic_id,
+        omnichannel_contact_id=None,
+        patient_id=None,
+        title=title,
+        source=source,
+        estimated_value=None,
+    )
+
+    visit.lead_id = lead.id
+    lead.visit_attribution_id = visit.id
+    lead.utm_source = visit.utm_source
+    lead.utm_medium = visit.utm_medium
+    lead.utm_campaign = visit.utm_campaign
+    lead.utm_content = visit.utm_content
+    lead.utm_term = visit.utm_term
+
+    session.add(visit)
+    session.add(lead)
+    await session.flush()
+    await session.commit()
+
+    return LandingLeadResponse(lead_id=lead.id, visit_attribution_id=visit.id)

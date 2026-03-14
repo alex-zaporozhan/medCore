@@ -133,6 +133,7 @@ async def update_recall_segment(
 @router.delete(
     "/{clinic_id}/recall/segments/{segment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def delete_recall_segment(
     clinic_id: UUID,
@@ -231,6 +232,7 @@ async def update_recall_template(
 @router.delete(
     "/{clinic_id}/recall/templates/{template_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def delete_recall_template(
     clinic_id: UUID,
@@ -329,6 +331,7 @@ async def update_recall_campaign(
 @router.delete(
     "/{clinic_id}/recall/campaigns/{campaign_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def delete_recall_campaign(
     clinic_id: UUID,
@@ -440,6 +443,7 @@ async def update_recall_automation(
 @router.delete(
     "/{clinic_id}/recall/automations/{automation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def delete_recall_automation(
     clinic_id: UUID,

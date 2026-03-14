@@ -14,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     TIMESTAMP,
     func,
+    Boolean,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,7 +50,16 @@ class Booking(Base):
     payment_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("payments.id"), nullable=True
     )
+    paid_by_subscription: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    erp_processed: Mapped[bool] = mapped_column(
+        default=False, nullable=False
+    )
+    erp_error_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )

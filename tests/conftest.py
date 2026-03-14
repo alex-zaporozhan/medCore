@@ -81,6 +81,15 @@ try:
     from src.domain.entities.omnichannel_message import Message  # noqa: F401
     from src.domain.entities.omnichannel_ai_settings import AISettings  # noqa: F401
     from src.domain.entities.omnichannel_audit_log import AuditLog  # noqa: F401
+    from src.domain.entities.lead_pipeline import LeadPipeline  # noqa: F401
+    from src.domain.entities.lead_stage import LeadStage  # noqa: F401
+    from src.domain.entities.lead_card import LeadCard  # noqa: F401
+    from src.domain.entities.lead_note import LeadNote  # noqa: F401
+    from src.domain.entities.visit_attribution import VisitAttribution  # noqa: F401
+    from src.domain.entities.lead_pipeline import LeadPipeline  # noqa: F401
+    from src.domain.entities.lead_stage import LeadStage  # noqa: F401
+    from src.domain.entities.lead_card import LeadCard  # noqa: F401
+    from src.domain.entities.lead_note import LeadNote  # noqa: F401
 except Exception as e:
     _skip_reason = (
         "App/asyncpg not available (try Python 3.11 or 3.12). "

@@ -44,6 +44,7 @@ def _is_safe_redirect_path(value: str | None) -> bool:
 @router.post(
     "/send-code",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def send_code(
     data: SendCodeRequest,
@@ -106,6 +107,14 @@ async def verify_code(
             consent_mailing=data.consent_mailing,
             full_name=data.full_name,
             birth_date=data.birth_date,
+            session_id=data.session_id,
+            utm_source=data.utm_source,
+            utm_medium=data.utm_medium,
+            utm_campaign=data.utm_campaign,
+            utm_content=data.utm_content,
+            utm_term=data.utm_term,
+            landing_page=data.landing_page,
+            anchor=data.anchor,
         )
     except ValueError as exc:
         raise HTTPException(

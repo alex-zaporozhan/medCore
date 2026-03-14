@@ -47,6 +47,16 @@ from src.api.v1.routers import (
     owner_omni_ai_settings,
     owner_omni_audit,
     admin_payment_gateway,
+    admin_finance,
+    admin_payroll,
+    admin_inventory,
+    admin_crm,
+    admin_tasks,
+    admin_loyalty,
+    patient_loyalty,
+    admin_forms,
+    patient_forms,
+    admin_marketing_attribution,
 )
 
 # Create main API router
@@ -66,6 +76,7 @@ api_router.include_router(admin_waitlist.router)
 api_router.include_router(admin_recall.router)
 api_router.include_router(admin_marketing.router)
 api_router.include_router(admin_reports.router)
+api_router.include_router(admin_marketing_attribution.router)
 api_router.include_router(admin_chat.router)
 api_router.include_router(admin_channel_configs.router)
 api_router.include_router(admin_admins.router)
@@ -81,6 +92,11 @@ api_router.include_router(admin_ai_settings.router)
 api_router.include_router(admin_ai_reports.router)
 api_router.include_router(admin_ai_status.router)
 api_router.include_router(admin_payment_gateway.router)
+api_router.include_router(admin_finance.router)
+api_router.include_router(admin_payroll.router)
+api_router.include_router(admin_inventory.router)
+api_router.include_router(admin_crm.router)
+api_router.include_router(admin_tasks.router)
 api_router.include_router(patient_chat.router)
 api_router.include_router(patient_notification_settings.router)
 api_router.include_router(public_services.router)
@@ -96,3 +112,7 @@ api_router.include_router(integrations_gateway.router)
 api_router.include_router(owner_omni_channels.router)
 api_router.include_router(owner_omni_ai_settings.router)
 api_router.include_router(owner_omni_audit.router)
+api_router.include_router(admin_loyalty.router)
+api_router.include_router(patient_loyalty.router)
+api_router.include_router(admin_forms.router)
+api_router.include_router(patient_forms.router)

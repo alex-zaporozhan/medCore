@@ -107,7 +107,7 @@ async def update_working_hours(
     return WorkingHoursRead.model_validate(row)
 
 
-@router.delete("/{doctor_id}/working-hours/{wh_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{doctor_id}/working-hours/{wh_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_working_hours(
     doctor_id: UUID,
     wh_id: UUID,
@@ -178,7 +178,7 @@ async def create_absence(
     return AbsenceRead.model_validate(entity)
 
 
-@router.delete("/{doctor_id}/absence/{absence_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{doctor_id}/absence/{absence_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_absence(
     doctor_id: UUID,
     absence_id: UUID,

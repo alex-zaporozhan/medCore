@@ -1,0 +1,42 @@
+__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+
+# Python virtualenvs
+.venv
+venv
+
+# Local config and secrets
+.env
+.env.*
+
+# IDE / tooling
+.vscode
+.idea
+.cursor
+
+# VCS
+.git
+.gitignore
+
+# Caches / test artifacts
+.mypy_cache
+.pytest_cache
+.cache
+htmlcov
+.coverage*
+
+# Build artifacts
+dist
+build
+
+# Docker bind mounts (DB data in project root)
+pgdata
+
+# Node-related folders (frontend is a subfolder)
+node_modules
+frontend/node_modules
+
+# Misc
+*.log

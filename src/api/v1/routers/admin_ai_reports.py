@@ -8,9 +8,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.dependencies import get_session, get_request_context
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.services.conversation_analysis_service import ConversationAnalysisService
+from src.core.context import RequestContext
 from src.core.config import settings
 from src.domain.entities.conversation_ai_analysis import ConversationAiAnalysis
 from src.infrastructure.external_apis.ai_client import AiClient
@@ -56,6 +57,7 @@ async def get_conflict_report(
     date_to: date = Query(...),
     session: AsyncSession = Depends(get_session),
     current_admin=Depends(get_current_admin),
+    ctx: RequestContext = Depends(get_request_context),
     rate_limiter=Depends(get_rate_limiter),
 ) -> ConflictReportResponse:
     clinic_id: UUID = current_admin.clinic_id
@@ -126,6 +128,7 @@ async def reanalyze_conflicts(
     body: ReanalyzeRequest,
     session: AsyncSession = Depends(get_session),
     current_admin=Depends(get_current_admin),
+    ctx: RequestContext = Depends(get_request_context),
     rate_limiter=Depends(get_rate_limiter),
 ) -> dict:
     clinic_id: UUID = current_admin.clinic_id
@@ -140,7 +143,7 @@ async def reanalyze_conflicts(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Слишком много запросов к AI-отчётам. Попробуйте позже.",
         )
-    svc = ConversationAnalysisService(session)
+    svc = ConversationAnalysisService(session, ctx)
     await svc.analyze_range(clinic_id, body.date_from, body.date_to)
     return {"status": "ok"}
 

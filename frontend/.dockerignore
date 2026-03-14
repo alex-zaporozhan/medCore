@@ -1,0 +1,19 @@
+node_modules
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE / tooling
+.vscode
+.idea
+
+# Build output
+dist
+build
+
+# Caches
+.cache
+.turbo
+
+# Logs
+*.log

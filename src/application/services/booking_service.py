@@ -19,6 +19,13 @@ from src.domain.entities.booking import Booking
 from src.domain.entities.service_doctor import ServiceDoctor
 from src.domain.interfaces.repositories.booking_repository import BookingRepository
 from src.infrastructure.database.booking_repo_impl import BookingRepositoryImpl
+from src.application.events.event_bus import get_event_bus
+from src.application.events.standard_events import (
+    make_booking_completed_event,
+    make_booking_created_event,
+)
+from src.application.services.loyalty_service import LoyaltyService
+from src.application.services.loyalty_service import UseSubscriptionForBookingInput
 from src.core.patient_messages import (
     BOOKING_CANNOT_CANCEL_PAST,
     BOOKING_CANNOT_CANCEL_STATUS,
@@ -122,6 +129,15 @@ class BookingService:
         except Exception as e:
             logger.warning("Failed to enqueue send_booking_created task", extra={"error": str(e)})
 
+        event_bus = get_event_bus()
+        try:
+            await event_bus.publish(make_booking_created_event(booking))
+        except Exception as e:
+            logger.warning(
+                "Failed to publish BookingCreated event (patient flow)",
+                extra={"error": str(e), "booking_id": str(booking.id)},
+            )
+
         logger.info(
             "Booking created via patient flow",
             extra={"booking_id": str(booking.id), "patient_id": str(patient_id)},
@@ -164,6 +180,15 @@ class BookingService:
             send_booking_created_task.delay(str(booking.id))
         except Exception as e:
             logger.warning("Failed to enqueue send_booking_created task", extra={"error": str(e)})
+
+        event_bus = get_event_bus()
+        try:
+            await event_bus.publish(make_booking_created_event(booking))
+        except Exception as e:
+            logger.warning(
+                "Failed to publish BookingCreated event (admin flow)",
+                extra={"error": str(e), "booking_id": str(booking.id)},
+            )
 
         logger.info(
             "Booking created via admin flow",
@@ -265,7 +290,14 @@ class BookingService:
         return BookingRead.model_validate(booking)
 
     async def complete_booking(self, clinic_id: UUID, booking_id: UUID) -> BookingRead:
-        """Mark booking as completed within a specific clinic (ACL by clinic)."""
+        """Mark booking as completed within a specific clinic (ACL by clinic).
+
+        Phase 1:
+        - if there is an active subscription for the patient in this clinic that matches
+          priority rules, attempt to use it automatically for this booking;
+        - on successful usage mark booking.paid_by_subscription = True;
+        - business errors from loyalty layer do not block completion.
+        """
         booking = await self.repository.get_by_id(booking_id)
         if not booking or booking.clinic_id != clinic_id:
             raise LookupError(BOOKING_NOT_FOUND)
@@ -273,8 +305,45 @@ class BookingService:
         if booking.status not in {"confirmed", "pending"}:
             raise ValueError(BOOKING_ONLY_PENDING_CONFIRMED_COMPLETED)
 
+        # Try to auto-apply best subscription, ignoring business errors.
+        try:
+            loyalty_service = LoyaltyService(self.session)
+            now = datetime.now()
+            candidate = await loyalty_service.select_subscription_for_booking(
+                clinic_id=booking.clinic_id,
+                patient_id=booking.patient_id,
+                booking_id=booking.id,
+                on_date=now,
+            )
+            if candidate is not None:
+                await loyalty_service.use_subscription_for_booking(
+                    UseSubscriptionForBookingInput(
+                        clinic_id=booking.clinic_id,
+                        booking_id=booking.id,
+                        subscription_id=candidate.id,
+                        used_visits=1,
+                        used_amount=None,
+                        used_at=now,
+                    )
+                )
+                booking.paid_by_subscription = True
+        except Exception as e:  # pragma: no cover - защитный слой
+            logger.warning(
+                "Failed to apply subscription on booking completion",
+                extra={"booking_id": str(booking_id), "error": str(e)},
+            )
+
         booking.status = "completed"
         booking = await self.repository.update(booking)
+
+        event_bus = get_event_bus()
+        try:
+            await event_bus.publish(make_booking_completed_event(booking))
+        except Exception as e:
+            logger.warning(
+                "Failed to publish BookingCompleted event",
+                extra={"error": str(e), "booking_id": str(booking.id)},
+            )
 
         logger.info(
             "Booking completed",

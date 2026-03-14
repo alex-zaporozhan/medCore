@@ -31,6 +31,14 @@ export function useVerifyCode() {
       consent_mailing: boolean;
       full_name?: string | null;
       birth_date?: string | null;
+      session_id?: string | null;
+      utm_source?: string | null;
+      utm_medium?: string | null;
+      utm_campaign?: string | null;
+      utm_content?: string | null;
+      utm_term?: string | null;
+      landing_page?: string | null;
+      anchor?: string | null;
     }) => api.post<AuthTokenResponse>("/v1/auth/verify-code", body),
   });
 }

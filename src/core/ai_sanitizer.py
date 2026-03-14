@@ -15,9 +15,16 @@ class SanitizedText:
 
 
 class AiSanitizer:
-    """Simple sanitizer that masks phone numbers and emails."""
+    """Simple sanitizer that can optionally mask personal data."""
+
+    def __init__(self, allow_personal_data: bool = False) -> None:
+        self.allow_personal_data = allow_personal_data
 
     def sanitize(self, text: str) -> SanitizedText:
+        if self.allow_personal_data:
+            # Pass-through mode: keep text as is (assuming proper consents and compliant provider).
+            return SanitizedText(original=text, sanitized=text)
+
         masked = PHONE_RE.sub("[PHONE]", text)
         masked = EMAIL_RE.sub("[EMAIL]", masked)
         return SanitizedText(original=text, sanitized=masked)

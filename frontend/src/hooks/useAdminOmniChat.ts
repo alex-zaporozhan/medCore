@@ -29,6 +29,11 @@ export interface OmniChatDetail {
   last_message_at: string | null;
   last_actor_type: string | null;
   created_at: string | null;
+  lead_id: string | null;
+  lead_stage_id: string | null;
+  lead_stage_name: string | null;
+  lead_estimated_value: string | null;
+  lead_actual_value: string | null;
 }
 
 export interface OmniMessageDto {

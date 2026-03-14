@@ -21,6 +21,7 @@ ADMIN_PATHS = [
     "/admin/reports",
     "/admin/doctors",
     "/admin/patients",
+    "/admin/sales",
 ]
 APP_PATHS = [
     "/app",

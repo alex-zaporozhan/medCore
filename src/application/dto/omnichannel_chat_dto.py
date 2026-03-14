@@ -75,6 +75,12 @@ class OmniChatDetailDto(BaseModel):
     last_message_at: datetime | None
     last_actor_type: str | None
     created_at: datetime | None
+    # CRM lead snapshot for this chat/contact (if any)
+    lead_id: UUID | None = None
+    lead_stage_id: UUID | None = None
+    lead_stage_name: str | None = None
+    lead_estimated_value: str | None = None
+    lead_actual_value: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

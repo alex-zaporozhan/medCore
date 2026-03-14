@@ -55,6 +55,7 @@ async def _ensure_clinic_belongs_to_admin(
 @router.post(
     "/{clinic_id}/payment-gateway/credentials",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def set_clinic_payment_gateway_credentials(
     clinic_id: UUID,

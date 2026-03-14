@@ -3,6 +3,7 @@
   /* BACKGROUNDS */
   --bg-main: #f8fafb;
   --bg-card: #ffffff;
+  --bg-card-soft: #f4f6f8;
   --bg-sidebar: #f1f4f6;
 
   /* ACCENTS – soft blue (brand) */
@@ -27,6 +28,25 @@
 
   /* Focus ring for inputs (primary with opacity) */
   --focus-ring: rgba(156, 180, 196, 0.2);
+
+  /* RADII & SHADOWS (used by AppCard, layouts, etc.) */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --shadow-soft-sm: 0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow-soft-md: 0 10px 30px rgba(15, 23, 42, 0.08);
+
+  /* SPACING TOKENS */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+
+  /* Layout constraints */
+  --layout-max-width: 1200px;
 }
 
 /* —— Primary CTA buttons (filled, brand) —— */
@@ -70,7 +90,7 @@
 .schedule-grid-card {
   background: var(--bg-card);
   border: 1px solid var(--divider);
-  border-radius: var(--mantine-radius-md, 8px);
+  border-radius: var(--mantine-radius-md, var(--radius-md));
   overflow: hidden;
 }
 .schedule-grid-card .mantine-Table-table {
@@ -113,4 +133,12 @@ body {
   font-family: Inter, system-ui, -apple-system, sans-serif;
   background: var(--bg-main);
   color: var(--text-main);
+}
+
+/* Generic app container card for landing and dashboards */
+.app-shell-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--divider);
+  box-shadow: var(--shadow-soft-md);
 }

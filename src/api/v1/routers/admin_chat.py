@@ -120,6 +120,7 @@ async def assign_conversation(
 @router.delete(
     "/conversations/{conversation_id}/messages/{message_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def delete_admin_message(
     conversation_id: UUID,
@@ -134,7 +135,7 @@ async def delete_admin_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message or conversation not found")
 
 
-@router.post("/conversations/{conversation_id}/mark-read", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/conversations/{conversation_id}/mark-read", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def mark_read_admin(
     conversation_id: UUID,
     body: MarkReadRequest | None = None,

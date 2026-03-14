@@ -123,6 +123,7 @@ async def update_waitlist_entry(
 @router.delete(
     "/{clinic_id}/waitlist/{entry_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def delete_waitlist_entry(
     clinic_id: UUID,

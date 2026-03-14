@@ -20,6 +20,7 @@ from src.application.dto.omnichannel_chat_dto import (
     SendOmniMessageRequest,
 )
 from src.application.services.omnichannel_chat_service import OmnichannelChatService
+from src.application.services.lead_service import LeadService
 from src.application.services.omnichannel_outbound_dispatcher import (
     OmnichannelOutboundDispatcher,
 )
@@ -125,6 +126,36 @@ async def get_omni_chat(
         )
         channel = result.scalar_one_or_none()
 
+    # Optional CRM lead snapshot for this contact
+    lead_id = None
+    lead_stage_id = None
+    lead_stage_name = None
+    lead_estimated_value = None
+    lead_actual_value = None
+    try:
+        lead_service = LeadService(session)
+        lead = await lead_service.repository.find_open_lead_for_contact_or_patient(
+            clinic_id=business_account_id,
+            omnichannel_contact_id=chat.contact_id,
+            patient_id=None,
+        )
+        if lead:
+            lead_id = lead.id
+            lead_stage_id = lead.stage_id
+            # We need stage name; fetch minimal info
+            stage = await lead_service.repository.get_stage_by_id(
+                clinic_id=business_account_id,
+                stage_id=lead.stage_id,
+            )
+            lead_stage_name = stage.name if stage else None
+            lead_estimated_value = str(lead.estimated_value)
+            lead_actual_value = str(lead.actual_value)
+    except Exception as e:
+        logger.warning(
+            "[CRM] Failed to enrich OmniChat detail with lead info",
+            extra={"error": str(e), "chat_id": str(chat.id)},
+        )
+
     return OmniChatDetailDto(
         chat_id=chat.id,
         contact_id=chat.contact_id,
@@ -137,6 +168,11 @@ async def get_omni_chat(
         last_message_at=chat.last_message_at,
         last_actor_type=chat.last_actor_type,
         created_at=chat.created_at,
+        lead_id=lead_id,
+        lead_stage_id=lead_stage_id,
+        lead_stage_name=lead_stage_name,
+        lead_estimated_value=lead_estimated_value,
+        lead_actual_value=lead_actual_value,
     )
 
 
@@ -241,7 +277,7 @@ async def send_admin_omni_message(
     )
 
 
-@router.post("/{chat_id}/ai-mode", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/{chat_id}/ai-mode", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def update_omni_chat_ai_mode(
     chat_id: UUID,
     body: UpdateOmniChatAiModeRequest,
@@ -284,7 +320,7 @@ async def update_omni_chat_ai_mode(
     await session.flush()
 
 
-@router.post("/{chat_id}/messages/{message_id}/hide", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/{chat_id}/messages/{message_id}/hide", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def hide_omni_message(
     chat_id: UUID,
     message_id: UUID,

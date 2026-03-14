@@ -178,6 +178,109 @@ export interface Booking {
   notes: string | null;
 }
 
+// ERP finance
+
+export interface Cashbox {
+  id: string;
+  clinic_id: string;
+  name: string;
+  type: string;
+  currency: string;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FinancialTransaction {
+  id: string;
+  clinic_id: string;
+  cashbox_id: string;
+  type: string;
+  amount: string;
+  currency: string;
+  happened_at: string;
+  description: string | null;
+  booking_id: string | null;
+  payment_id: string | null;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ERP payroll
+
+export interface PayrollPolicy {
+  id: string;
+  clinic_id: string;
+  doctor_id: string | null;
+  role: string | null;
+  fixed_per_shift: string;
+  percent_from_services: string;
+  percent_from_products: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalaryTransaction {
+  id: string;
+  clinic_id: string;
+  doctor_id: string;
+  booking_id: string | null;
+  amount: string;
+  type: string;
+  period_start: string | null;
+  period_end: string | null;
+  description: string | null;
+  created_at: string;
+}
+
+// ERP inventory
+
+export interface InventoryProduct {
+  id: string;
+  clinic_id: string;
+  sku: string | null;
+  name: string;
+  unit: string;
+  is_active: boolean;
+}
+
+export interface Warehouse {
+  id: string;
+  clinic_id: string;
+  name: string;
+  is_default: boolean;
+}
+
+export interface ServiceConsumable {
+  id: string;
+  clinic_id: string;
+  service_id: string;
+  product_id: string;
+  quantity_per_service: string;
+  unit: string;
+}
+
+export interface InventoryTransaction {
+  id: string;
+  clinic_id: string;
+  warehouse_id: string;
+  product_id: string;
+  type: string;
+  quantity: string;
+  happened_at: string;
+  description: string | null;
+  booking_id: string | null;
+}
+
+export interface InventoryStockItem {
+  product_id: string;
+  warehouse_id: string;
+  quantity: string;
+  unit: string;
+}
+
 export interface DashboardReport {
   date: string;
   bookings_pending: number;
@@ -320,4 +423,145 @@ export interface PatientAiInsight {
   summary: string;
   risk_flags: string[];
   next_best_action?: string | null;
+}
+
+// Loyalty & subscriptions
+
+export interface SubscriptionPackage {
+  id: string;
+  clinic_id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  kind: string;
+  services_included: string[];
+  total_visits?: number | null;
+  total_amount?: string | null;
+  price: string;
+  validity_days?: number | null;
+  is_active: boolean;
+}
+
+export interface CustomerSubscription {
+  id: string;
+  clinic_id: string;
+  patient_id: string;
+  subscription_package_id: string;
+  status: string;
+  purchased_at: string;
+  activated_at?: string | null;
+  expires_at?: string | null;
+  remaining_visits?: number | null;
+  remaining_amount?: string | null;
+  payment_id?: string | null;
+  notes?: string | null;
+}
+
+export interface Wallet {
+  id: string;
+  clinic_id: string;
+  patient_id: string;
+  balance: string;
+  currency: string;
+  updated_at: string;
+}
+
+export interface WalletTransaction {
+  id: string;
+  clinic_id: string;
+  wallet_id: string;
+  type: string;
+  amount: string;
+  happened_at: string;
+  booking_id?: string | null;
+  subscription_id?: string | null;
+  description?: string | null;
+}
+
+export interface PatientLoyaltyMeResponse {
+  subscriptions: CustomerSubscription[];
+  wallet: Wallet | null;
+  wallet_transactions: WalletTransaction[];
+}
+
+export interface PatientLoyaltyHistoryItem {
+  kind: string;
+  happened_at: string;
+  details: Record<string, unknown>;
+}
+
+export interface PatientLoyaltyHistoryResponse {
+  items: PatientLoyaltyHistoryItem[];
+}
+
+export interface AdminLoyaltySummaryByContactResponse {
+  patient_id: string | null;
+  patient_full_name: string | null;
+  patient_phone: string | null;
+  subscriptions: CustomerSubscription[];
+  wallet: Wallet | null;
+  wallet_transactions: WalletTransaction[];
+}
+
+// Paperless Office: digital forms
+
+export interface DigitalFormFieldSchema {
+  id: string;
+  label: string;
+  type: string;
+  required: boolean;
+  options?: string[];
+  sensitive: boolean;
+}
+
+export interface DigitalFormTemplateSchema {
+  fields: DigitalFormFieldSchema[];
+}
+
+export interface DigitalFormTemplate {
+  id: string;
+  clinic_id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  version: number;
+  schema: DigitalFormTemplateSchema;
+  requires_signature: boolean;
+  active: boolean;
+}
+
+export interface DigitalFormSubmission {
+  id: string;
+  clinic_id: string;
+  template_id: string;
+  patient_id: string | null;
+  booking_id: string | null;
+  submitted_at: string;
+  submitted_by: string;
+  data: Record<string, unknown>;
+  signature_id: string | null;
+}
+
+export interface DigitalFormSubmissionListItem extends DigitalFormSubmission {
+  template_code: string;
+  template_name: string;
+}
+
+export interface ESignatureRead {
+  id: string;
+  clinic_id: string;
+  patient_id: string | null;
+  digital_form_submission_id: string;
+  signed_at: string;
+  signer_name: string | null;
+  signer_role: string;
+  signature_type: string;
+  signature_payload: Record<string, unknown>;
+  meta: Record<string, unknown> | null;
+}
+
+export interface DigitalFormSubmissionWithTemplateAndSignature {
+  submission: DigitalFormSubmission;
+  template: DigitalFormTemplate;
+  signature: ESignatureRead | null;
 }

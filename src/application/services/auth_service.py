@@ -159,6 +159,14 @@ class AuthService:
         consent_mailing: bool = False,
         full_name: str | None = None,
         birth_date: str | None = None,
+        session_id: str | None = None,
+        utm_source: str | None = None,
+        utm_medium: str | None = None,
+        utm_campaign: str | None = None,
+        utm_content: str | None = None,
+        utm_term: str | None = None,
+        landing_page: str | None = None,
+        anchor: str | None = None,
     ) -> tuple[str, UUID]:
         """Verify SMS code and issue access token. Store consent and optional FIO/DOB."""
         clinic = await self._get_default_clinic()
@@ -207,7 +215,8 @@ class AuthService:
                 birth_date_parsed = date.fromisoformat(birth_date.strip())
             except ValueError:
                 pass
-        if patient is None:
+        is_new_patient = patient is None
+        if is_new_patient:
             patient = Patient(
                 clinic_id=clinic.id,
                 phone=normalized_phone,
@@ -228,6 +237,27 @@ class AuthService:
                 patient.consent_pd_at = now_utc
             patient.consent_mailing = consent_mailing
             await self.session.flush()
+
+        # Try to link existing VisitAttribution (from landing/PWA) to this patient on first successful auth.
+        if is_new_patient and session_id:
+            from src.domain.entities.visit_attribution import VisitAttribution
+
+            stmt = (
+                select(VisitAttribution)
+                .where(
+                    VisitAttribution.clinic_id == clinic.id,
+                    VisitAttribution.patient_id.is_(None),
+                    VisitAttribution.session_id == session_id,
+                )
+                .order_by(VisitAttribution.created_at.asc())
+                .limit(1)
+            )
+            result = await self.session.execute(stmt)
+            visit = result.scalar_one_or_none()
+            if visit is not None:
+                visit.patient_id = patient.id
+                self.session.add(visit)
+                await self.session.flush()
 
         # Issue JWT access token for patient.
         # Token revocation (versioning/blacklist) is intentionally not implemented here and

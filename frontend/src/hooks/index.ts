@@ -53,3 +53,37 @@ export {
   useDeleteAdminMessage,
 } from "./useAdminChat";
 export { useSetClinicPaymentGatewayCredentials } from "./useAdminPaymentGateway";
+export {
+  useCrmPipelines,
+  useCrmStages,
+  useCrmLeads,
+  useCrmLeadDetails,
+  useUpdateLeadStage,
+  useCreateLeadNote,
+} from "./useCrmLeads";
+export { useCashboxes, useFinanceTransactions } from "./useErpFinance";
+export { usePayrollPolicies, useSalaryTransactions } from "./useErpPayroll";
+export {
+  useInventoryProducts,
+  useWarehouses,
+  useServiceConsumables,
+  useInventoryTransactions,
+  useInventoryStock,
+} from "./useErpInventory";
+export {
+  useLoyaltyPackages,
+  useCustomerSubscriptions,
+  useWallets,
+  useWalletTransactions,
+  usePatientLoyaltyMe,
+  usePatientLoyaltyHistory,
+  useAdminLoyaltySummaryByContact,
+} from "./useLoyalty";
+export {
+  useAdminFormTemplates,
+  useAdminFormSubmissions,
+  useAdminFormSubmissionDetail,
+  useUpsertAdminFormTemplate,
+  usePatientPendingForms,
+  useSubmitPatientForm,
+} from "./useForms";

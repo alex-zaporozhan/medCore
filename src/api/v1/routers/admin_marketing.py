@@ -146,6 +146,7 @@ async def update_promo_post(
 @router.delete(
     "/{clinic_id}/marketing/posts/{post_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def delete_promo_post(
     clinic_id: UUID,
@@ -277,6 +278,7 @@ async def update_story(
 @router.delete(
     "/{clinic_id}/marketing/stories/{story_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def delete_story(
     clinic_id: UUID,
