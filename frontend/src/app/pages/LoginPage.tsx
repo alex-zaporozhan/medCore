@@ -16,6 +16,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { getCurrentUtm } from "@/shared/utmTracking";
 
 const EMPTY_DB_MESSAGE = "В базе данных нет ни одной клиники";
 
@@ -63,6 +64,7 @@ export default function LoginPage() {
 
   const handleVerify = () => {
     const full = normalizePhone();
+    const utm = getCurrentUtm();
     verifyCode.mutate(
       {
         phone: full,
@@ -71,6 +73,14 @@ export default function LoginPage() {
         consent_mailing: mode === "register" ? consentMailing : false,
         full_name: mode === "register" ? fullName.trim() || undefined : undefined,
         birth_date: mode === "register" ? birthDate.trim() || undefined : undefined,
+        session_id: utm?.session_id,
+        utm_source: utm?.utm_source ?? undefined,
+        utm_medium: utm?.utm_medium ?? undefined,
+        utm_campaign: utm?.utm_campaign ?? undefined,
+        utm_content: utm?.utm_content ?? undefined,
+        utm_term: utm?.utm_term ?? undefined,
+        landing_page: utm?.landing_page ?? undefined,
+        anchor: utm?.anchor ?? undefined,
       },
       {
         onSuccess: (data) => {

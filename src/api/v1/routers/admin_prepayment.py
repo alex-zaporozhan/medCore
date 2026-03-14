@@ -121,6 +121,7 @@ async def update_policy(
 @router.delete(
     "/{clinic_id}/prepayment/policies/{policy_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def delete_policy(
     clinic_id: UUID,

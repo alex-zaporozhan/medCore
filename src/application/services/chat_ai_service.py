@@ -17,6 +17,7 @@ from src.application.dto.chat_ai_dto import (
     SuggestReplyResponse,
 )
 from src.application.services.chat_service import ChatService
+from src.core.context import RequestContext
 from src.core.config import settings
 from src.core.datetime_utils import utc_now
 from src.core.metrics import omni_ai_provider_errors_total
@@ -25,6 +26,8 @@ from src.domain.entities.conversation import Conversation
 from src.domain.entities.patient import Patient
 from src.infrastructure.external_apis.ai_client import AiClient, AiClientError
 from src.infrastructure.external_apis.safe_ai_client import SafeAiClient
+from src.application.services.ai_config_service import AiConfigService
+from src.core.ai_sanitizer import AiSanitizer
 
 
 logger = logging.getLogger(__name__)
@@ -37,10 +40,16 @@ class ChatAiServiceError(Exception):
 
 
 class ChatAiService:
-    def __init__(self, session: AsyncSession, ai_client: AiClient | None = None) -> None:
+    def __init__(self, session: AsyncSession, ctx: RequestContext, ai_client: AiClient | None = None) -> None:
         self.session = session
-        base_client = ai_client or AiClient()
-        self.ai_client = SafeAiClient(base_client)
+        self.ctx = ctx
+        if ai_client is None:
+            config = AiConfigService().get_clinic_ai_config(self.ctx.clinic_id or self.ctx.user_id)  # type: ignore[arg-type]
+            base_client = AiClient(config=config)
+        else:
+            base_client = ai_client
+        sanitizer = AiSanitizer(allow_personal_data=config.allow_personal_data)  # type: ignore[name-defined]
+        self.ai_client = SafeAiClient(base_client, sanitizer=sanitizer)
         self.chat_service = ChatService(session)
 
     def _base_ai_mode(self) -> str:

@@ -2,12 +2,16 @@ import { Anchor, Button, Card, Group, Paper, Stack, Text, Title } from "@mantine
 import { Link } from "react-router-dom";
 import { useClinics } from "@/hooks";
 import { useState, useEffect } from "react";
+import { useUtmTracking } from "@/shared/utmTracking";
 
 const SELECTED_CLINIC_KEY = "app.selectedClinicId";
 
 export default function HomePage() {
   const { data: clinics, isLoading, isError, error } = useClinics();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Capture UTM parameters and session identifier when user lands on the home page.
+  useUtmTracking();
 
   useEffect(() => {
     const saved = localStorage.getItem(SELECTED_CLINIC_KEY);

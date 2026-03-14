@@ -11,6 +11,15 @@ from src.core.user_messages import EMPTY_DB_NO_CLINIC
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.patient import Patient
 from src.infrastructure.database.base import get_db
+from src.core.context import RequestContext
+from src.application.services.rbac_service import RbacServiceImpl
+from src.infrastructure.database.rbac_repo_impl import RbacRepositoryImpl
+
+
+class AdminContext(RequestContext):
+    """Typed alias for admin request context."""
+
+    pass
 
 
 async def get_session() -> AsyncSession:
@@ -67,4 +76,118 @@ async def get_current_patient(
     if not patient:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Patient not found")
     return patient
+
+
+async def get_request_context(
+    authorization: str | None = Header(None),
+    session: AsyncSession = Depends(get_session),
+) -> RequestContext:
+    """
+    Build RequestContext from current request.
+
+    For now supports:
+    - admin JWT (via get_current_admin)
+    - patient JWT (via get_current_patient)
+    - unauthenticated/system calls (no token).
+    """
+    # Try admin first
+    from src.domain.entities.admin_user import AdminUser
+
+    admin: AdminUser | None = None
+    patient: Patient | None = None
+
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:].strip()
+        try:
+            # Reuse existing token parser to inspect type
+            from src.core.security import parse_access_token
+
+            payload = parse_access_token(token)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Недействительный или истёкший токен",
+            )
+
+        token_type = payload.get("type") or payload.get("role")
+
+        if token_type == "admin":
+            # Use existing dependency logic to resolve AdminUser (lazy import to avoid circular deps)
+            from src.api.v1.routers.admin_auth import get_current_admin
+
+            admin = await get_current_admin(authorization=authorization, session=session)  # type: ignore[arg-type]
+        elif token_type == "patient":
+            patient = await get_current_patient(authorization=authorization, session=session)  # type: ignore[arg-type]
+        else:
+            # Unknown type – treat as unauthorized
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Недопустимый тип токена",
+            )
+
+    if admin:
+        rbac_repo = RbacRepositoryImpl(session)
+        rbac_service = RbacServiceImpl(rbac_repo)
+        rbac_info = await rbac_service.get_rbac_info_for_user(
+            user_id=admin.id,
+            clinic_id=admin.clinic_id,
+        )
+        return RequestContext(
+            clinic_id=admin.clinic_id,
+            user_id=admin.id,
+            user_type="admin",
+            roles=set(rbac_info.roles),
+            permissions=set(rbac_info.permissions),
+        )
+
+    if patient:
+        return RequestContext(
+            clinic_id=None,
+            user_id=patient.id,
+            user_type="patient",
+            roles=set(),
+            permissions=set(),
+        )
+
+    # Fallback: system/unauthenticated
+    return RequestContext(
+        clinic_id=None,
+        user_id=None,
+        user_type="system",
+        roles=set(),
+        permissions=set(),
+    )
+
+
+def require_permissions(*permission_codes: str):
+    """
+    FastAPI dependency factory for RBAC permission checks.
+
+    Usage:
+        @router.get("/... ", dependencies=[Depends(require_permissions("view_reports"))])
+    """
+
+    async def dependency(context: RequestContext = Depends(get_request_context)) -> AdminContext:
+        if context.user_type != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden",
+            )
+        if permission_codes:
+            if not any(code in context.permissions for code in permission_codes):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Forbidden",
+                )
+        # Cast to AdminContext for downstream type hints
+        admin_context = AdminContext(
+            clinic_id=context.clinic_id,
+            user_id=context.user_id,
+            user_type=context.user_type,
+            roles=context.roles,
+            permissions=context.permissions,
+        )
+        return admin_context
+
+    return dependency
 

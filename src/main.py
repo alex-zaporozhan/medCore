@@ -12,6 +12,14 @@ from src.api.v1.router import api_router
 from src.core.config import settings
 from src.core.logging import setup_logging
 from src.core.metrics import render_prometheus_metrics
+from src.application.events.event_bus import get_event_bus
+from src.application.events.lead_event_handlers import register_lead_event_handlers
+from src.application.events.erp_event_handlers import register_erp_event_handlers
+from src.application.events.loyalty_event_handlers import register_loyalty_event_handlers
+from src.application.events.tasks_event_handlers import register_tasks_event_handlers
+from src.application.events.marketing_attribution_event_handlers import (
+    register_marketing_event_handlers,
+)
 
 # Setup logging
 setup_logging()
@@ -25,6 +33,14 @@ async def lifespan(app: FastAPI):
         "[dental-booking] Application started",
         extra={"component": "main", "env": settings.app_env},
     )
+
+    # Register event handlers for cross-cutting modules (CRM, ERP, Loyalty, Tasks, Marketing Attribution)
+    event_bus = get_event_bus()
+    register_lead_event_handlers(event_bus)
+    register_erp_event_handlers(event_bus)
+    register_loyalty_event_handlers(event_bus)
+    register_tasks_event_handlers(event_bus)
+    register_marketing_event_handlers(event_bus)
     yield
     from src.infrastructure.database.redis_client import close_redis
     await close_redis()
@@ -70,7 +86,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     return JSONResponse(
         status_code=500,
         content={
-            "detail": "Внутренняя ошибка сервера. Проверьте логи бэкенда и применение миграций БД (alembic upgrade heads).",
+            "detail": "Внутренняя ошибка сервера. Проверьте логи бэкенда и применение миграций БД (alembic upgrade head).",
         },
     )
 

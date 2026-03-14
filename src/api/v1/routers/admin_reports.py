@@ -10,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.v1.dependencies import get_session
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.dto.reports_dto import (
+    CrmFunnelReport,
     DashboardReport,
     NoShowReport,
     OwnerDashboardReport,
+    PatientLtvReport,
     RevenueReport,
 )
 from src.application.services.report_service import ReportsService
@@ -127,6 +129,73 @@ async def get_owner_dashboard(
             day=date_param,
             date_from=date_from,
             date_to=date_to,
+        )
+    except RuntimeError as exc:
+        if "not found" in str(exc).lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found") from exc
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+@router.get("/{clinic_id}/reports/crm-funnel", response_model=CrmFunnelReport)
+async def get_crm_funnel_report(
+    clinic_id: UUID,
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+):
+    """Сумма по этапам CRM‑воронки (estimated/actual) для владельца клиники."""
+    if clinic_id != current_admin.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_from must be <= date_to",
+        )
+    service = ReportsService(session)
+    try:
+        return await service.get_crm_funnel_report(
+            clinic_id=clinic_id,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    except RuntimeError as exc:
+        if "not found" in str(exc).lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found") from exc
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+@router.get("/{clinic_id}/reports/patient-ltv", response_model=PatientLtvReport)
+async def get_patient_ltv_report(
+    clinic_id: UUID,
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    min_ltv: float | None = Query(
+        None,
+        description="Фильтр: минимальный LTV пациента (по сумме успешных лидов)",
+    ),
+    limit: int = Query(200, ge=1, le=1000),
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+):
+    """LTV пациентов по успешным лидам CRM (для отчётов владельца)."""
+    if clinic_id != current_admin.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_from must be <= date_to",
+        )
+    from decimal import Decimal
+
+    service = ReportsService(session)
+    try:
+        return await service.get_patient_ltv_report(
+            clinic_id=clinic_id,
+            date_from=date_from,
+            date_to=date_to,
+            min_ltv=Decimal(str(min_ltv)) if min_ltv is not None else None,
+            limit=limit,
         )
     except RuntimeError as exc:
         if "not found" in str(exc).lower():

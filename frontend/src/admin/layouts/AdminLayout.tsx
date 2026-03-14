@@ -26,18 +26,24 @@ type NavItem =
 
 const navGroups: { title: string; items: NavItem[] }[] = [
   {
-    title: "Ежедневная работа",
+    title: "Business OS",
     items: [
-      { to: "/admin", label: "Дашборд" },
-      { to: "/admin/schedule", label: "Расписание" },
-      { to: "/admin/bookings", label: "Записи" },
-      { to: "/admin/omni-chat", label: "Единый чат", badgeKey: "omni-waiting" },
-      { to: "/admin/waitlist", label: "Очередь" },
+      { to: "/admin", label: "Dashboard" },
+      { to: "/admin/schedule", label: "Schedule & Bookings" },
+      { to: "/admin/omni-chat", label: "Chat & AI", badgeKey: "omni-waiting" },
+      { to: "/admin/sales", label: "CRM & Sales" },
+      { to: "/admin/finance", label: "Finance & ERP" },
+      { to: "/admin/loyalty", label: "Loyalty" },
+      { to: "/admin/tasks", label: "Tasks" },
+      { to: "/admin/reports", label: "Analytics" },
     ],
   },
   {
-    title: "Справочники",
+    title: "Operations & Patients",
     items: [
+      { to: "/admin/bookings", label: "Записи" },
+      { to: "/admin/waitlist", label: "Очередь" },
+      { to: "/admin/recall", label: "Recall" },
       { to: "/admin/clinics", label: "Клиники" },
       { to: "/admin/doctors", label: "Врачи" },
       { to: "/admin/doctor-schedule", label: "График врачей" },
@@ -46,21 +52,31 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     ],
   },
   {
-    title: "Маркетинг и отчёты",
+    title: "AI, Marketing & Paperless",
     items: [
       { to: "/admin/marketing", label: "Маркетинг" },
+      { to: "/admin/forms", label: "Paperless / Формы" },
+      { to: "/admin/agreements", label: "Согласия и договоры" },
       { to: "/admin/prepayment", label: "Предоплата" },
       { to: "/admin/discounts", label: "Скидки и акции" },
-      { to: "/admin/recall", label: "Recall" },
       { to: "/admin/attention", label: "Лента внимания" },
-      { to: "/admin/reports", label: "Отчёты" },
       { label: "placeholder", toggleAttentionBar: true },
     ],
   },
   {
-    title: "",
+    title: "Settings",
     items: [
-      { to: "/admin/settings", label: "Настройки" },
+      { to: "/admin/omni-channels", label: "Omni‑каналы" },
+      { to: "/admin/omni-ai-settings", label: "AI‑настройки" },
+      { to: "/admin/channels", label: "Каналы" },
+      { to: "/admin/integrations", label: "Интеграции" },
+      { to: "/admin/payment-gateway", label: "Платёжный шлюз" },
+      { to: "/admin/notification-policy", label: "Уведомления" },
+      { to: "/admin/styling", label: "Стили" },
+      { to: "/admin/stickers", label: "Стикеры" },
+      { to: "/admin/administrators", label: "Администраторы" },
+      { to: "/admin/client-reference", label: "Справочник клиентов" },
+      { to: "/admin/settings", label: "Общие настройки" },
     ],
   },
 ];

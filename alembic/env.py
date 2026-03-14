@@ -3,7 +3,7 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import pool, String
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -23,15 +23,13 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Import all models to ensure they are registered with Base
-from src.domain.entities.admin_user import AdminUser
-from src.domain.entities.clinic import Clinic
-from src.domain.entities.clinic_integration_settings import ClinicIntegrationSettings
-from src.domain.entities.client_reference import ClientReference
-from src.domain.entities.discount import Discount
-from src.domain.entities.doctor import Doctor
-from src.domain.entities.service import Service
-from src.domain.entities.patient import Patient
+# Import all domain entities so Base.metadata contains every table (for autogenerate / squash)
+# See docs/ARCH_ALEMBIC_MIGRATIONS.md and DEV_PROMPTS_ALEMBIC_SQUASH.md
+import pkgutil
+import src.domain.entities as _entities_pkg
+for _importer, _modname, _ispkg in pkgutil.iter_modules(_entities_pkg.__path__):
+    if _modname != "__init__":
+        __import__(f"src.domain.entities.{_modname}")
 
 # target_metadata for 'autogenerate'
 target_metadata = Base.metadata
@@ -45,6 +43,9 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table="alembic_version",
+        version_table_column="version_num",
+        version_table_column_type=String(128),
     )
 
     with context.begin_transaction():
@@ -53,7 +54,13 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     """Run migrations with connection."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        version_table="alembic_version",
+        version_table_column="version_num",
+        version_table_column_type=String(128),
+    )
 
     with context.begin_transaction():
         context.run_migrations()

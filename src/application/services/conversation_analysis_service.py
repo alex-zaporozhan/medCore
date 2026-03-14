@@ -14,20 +14,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.datetime_utils import utc_now
 from src.core.ai_sanitizer import AiSanitizer
+from src.core.context import RequestContext
 from src.domain.entities.conversation import Conversation
 from src.domain.entities.chat_message import ChatMessage
 from src.domain.entities.conversation_ai_analysis import ConversationAiAnalysis
 from src.infrastructure.external_apis.safe_ai_client import SafeAiClient
 from src.infrastructure.external_apis.ai_client import AiClient, AiClientError
+from src.application.services.ai_config_service import AiConfigService
 
 logger = logging.getLogger(__name__)
 
 
 class ConversationAnalysisService:
-    def __init__(self, session: AsyncSession, ai_client: SafeAiClient | None = None) -> None:
+    def __init__(self, session: AsyncSession, ctx: RequestContext, ai_client: SafeAiClient | None = None) -> None:
         self.session = session
-        base_client = AiClient()
-        self.ai_client = ai_client or SafeAiClient(base_client, AiSanitizer())
+        self.ctx = ctx
+        if ai_client is None:
+            config = AiConfigService().get_clinic_ai_config(self.ctx.clinic_id or self.ctx.user_id)  # type: ignore[arg-type]
+            base_client = AiClient(config=config)
+            sanitizer = AiSanitizer(allow_personal_data=config.allow_personal_data)
+            self.ai_client = SafeAiClient(base_client, sanitizer)
+        else:
+            self.ai_client = ai_client
 
     async def analyze_range(self, clinic_id: UUID, date_from: date, date_to: date) -> None:
         """Analyze conversations in date range and store AI insights."""

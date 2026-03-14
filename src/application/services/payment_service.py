@@ -27,6 +27,8 @@ from src.infrastructure.external_apis.yookassa_client import (
     YooKassaClient,
     YooKassaClientError,
 )
+from src.application.events.event_bus import get_event_bus
+from src.application.events.standard_events import make_payment_success_event
 
 logger = logging.getLogger(__name__)
 
@@ -272,16 +274,28 @@ class PaymentService:
         payment_record.status = our_status
         if data:
             payment_record.provider_metadata = data
-        await self.payment_repository.update(payment_record)
+        payment_record = await self.payment_repository.update(payment_record)
 
         booking = await self.booking_repository.get_by_id(payment_record.booking_id)
         if not booking:
             return
 
+        event_bus = get_event_bus()
+
         if our_status == "succeeded":
             if booking.status in ("pending", "awaiting_payment"):
                 booking.status = "confirmed"
                 await self.booking_repository.update(booking)
+                try:
+                    await event_bus.publish(make_payment_success_event(payment_record))
+                except Exception:
+                    logger.exception(
+                        "Failed to publish PaymentSuccess event",
+                        extra={
+                            "booking_id": str(booking.id),
+                            "payment_id": str(payment_record.id),
+                        },
+                    )
                 logger.info(
                     "Booking confirmed after payment",
                     extra={

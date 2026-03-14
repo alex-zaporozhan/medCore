@@ -85,7 +85,7 @@ async def update_discount(
     return DiscountRead.model_validate(discount)
 
 
-@router.delete("/{clinic_id}/discounts/{discount_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{clinic_id}/discounts/{discount_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_discount(
     clinic_id: UUID,
     discount_id: UUID,

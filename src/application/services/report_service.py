@@ -10,19 +10,28 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.dto.reports_dto import (
+    CrmFunnelReport,
+    CrmFunnelStageSummary,
     DashboardReport,
     NoShowReport,
     OwnerDashboardReport,
+    PatientLtvItem,
+    PatientLtvReport,
     RevenuePoint,
     RevenueReport,
 )
 from src.domain.entities.booking import Booking
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.patient import Patient
+from src.domain.entities.lead_card import LeadCard
+from src.domain.entities.lead_stage import LeadStage
 from src.domain.entities.payment import Payment
 from src.domain.entities.prepayment_transaction import PrepaymentTransaction
 from src.domain.entities.recall_campaign import RecallCampaign
 from src.domain.entities.waitlist_entry import WaitlistEntry
+from src.domain.entities.customer_subscription import CustomerSubscription
+from src.domain.entities.subscription_usage import SubscriptionUsage
+from src.domain.entities.wallet_transaction import WalletTransaction
 
 DashboardPeriod = str  # "day" | "week" | "month"
 
@@ -365,7 +374,8 @@ class ReportsService:
                 PrepaymentTransaction.created_at < datetime.combine(date_to, dtime.min) + timedelta(days=1),
             )
         )
-        prepay_count = int(prepay_count_result.scalar() or 0)        waitlist_result = await self.session.execute(
+        prepay_count = int(prepay_count_result.scalar() or 0)
+        waitlist_result = await self.session.execute(
             select(func.count()).select_from(WaitlistEntry).where(
                 WaitlistEntry.clinic_id == clinic_id,
             )
@@ -387,3 +397,308 @@ class ReportsService:
             waitlist_entries_count=waitlist_count,
             recall_campaigns_count=recall_count,
         )
+
+    async def get_crm_funnel_report(
+        self,
+        clinic_id: UUID,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> CrmFunnelReport:
+        """Aggregate CRM funnel by stage: leads count and money on each stage."""
+        await self._get_clinic(clinic_id)
+
+        stmt = (
+            select(
+                LeadCard.stage_id,
+                func.coalesce(func.count(LeadCard.id), 0),
+                func.coalesce(func.sum(LeadCard.estimated_value), 0),
+                func.coalesce(func.sum(LeadCard.actual_value), 0),
+            )
+            .where(LeadCard.clinic_id == clinic_id)
+        )
+        if date_from is not None:
+            stmt = stmt.where(LeadCard.created_at >= datetime.combine(date_from, dtime.min))
+        if date_to is not None:
+            stmt = stmt.where(
+                LeadCard.created_at < datetime.combine(date_to, dtime.min) + timedelta(days=1)
+            )
+        stmt = stmt.group_by(LeadCard.stage_id)
+
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        stage_ids = [row[0] for row in rows if row[0] is not None]
+
+        stage_names: dict[UUID, str] = {}
+        if stage_ids:
+            stage_result = await self.session.execute(
+                select(LeadStage.id, LeadStage.name).where(
+                    LeadStage.id.in_(stage_ids),
+                    LeadStage.clinic_id == clinic_id,
+                )
+            )
+            stage_names = {sid: name for sid, name in stage_result.all()}
+
+        stages: list[CrmFunnelStageSummary] = []
+        total_estimated = Decimal("0")
+        total_actual = Decimal("0")
+        for stage_id, count, est_sum, act_sum in rows:
+            est = Decimal(est_sum or 0)
+            act = Decimal(act_sum or 0)
+            total_estimated += est
+            total_actual += act
+            stages.append(
+                CrmFunnelStageSummary(
+                    stage_id=str(stage_id),
+                    stage_name=stage_names.get(stage_id),
+                    leads_count=int(count or 0),
+                    estimated_sum=est,
+                    actual_sum=act,
+                )
+            )
+
+        return CrmFunnelReport(
+            clinic_id=str(clinic_id),
+            date_from=date_from,
+            date_to=date_to,
+            stages=stages,
+            total_estimated=total_estimated,
+            total_actual=total_actual,
+        )
+
+    async def get_patient_ltv_report(
+        self,
+        clinic_id: UUID,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        min_ltv: Decimal | None = None,
+        limit: int = 200,
+    ) -> PatientLtvReport:
+        """Compute per-patient LTV based on successful CRM leads.
+
+        LTV here is defined as the sum of LeadCard.actual_value for all successful
+        leads per patient. ERP/Finance is responsible for ensuring that actual_value
+        already accounts for both one-off payments and subscription/loyalty flows
+        without double-counting visits paid from packages or points.
+        """
+        await self._get_clinic(clinic_id)
+        limit = max(1, min(limit, 1000))
+
+        stmt = (
+            select(
+                Patient.id,
+                Patient.full_name,
+                Patient.phone,
+                func.coalesce(func.sum(LeadCard.actual_value), 0),
+                func.count(LeadCard.id),
+            )
+            .join(LeadCard, LeadCard.patient_id == Patient.id)
+            .where(
+                Patient.clinic_id == clinic_id,
+                Patient.deleted_at.is_(None),
+                LeadCard.clinic_id == clinic_id,
+                LeadCard.status == "success",
+            )
+        )
+        if date_from is not None:
+            stmt = stmt.where(
+                LeadCard.closed_at >= datetime.combine(date_from, dtime.min)
+            )
+        if date_to is not None:
+            stmt = stmt.where(
+                LeadCard.closed_at
+                < datetime.combine(date_to, dtime.min) + timedelta(days=1)
+            )
+
+        stmt = stmt.group_by(Patient.id, Patient.full_name, Patient.phone)
+
+        if min_ltv is not None:
+            stmt = stmt.having(func.coalesce(func.sum(LeadCard.actual_value), 0) >= min_ltv)
+
+        stmt = stmt.order_by(func.coalesce(func.sum(LeadCard.actual_value), 0).desc()).limit(limit)
+
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        items: list[PatientLtvItem] = []
+        total_ltv = Decimal("0")
+        for patient_id, full_name, phone, ltv_sum, leads_count in rows:
+            ltv = Decimal(ltv_sum or 0)
+            total_ltv += ltv
+            items.append(
+                PatientLtvItem(
+                    patient_id=str(patient_id),
+                    full_name=full_name,
+                    phone=phone,
+                    ltv_total=ltv,
+                    successful_leads_count=int(leads_count or 0),
+                )
+            )
+
+        total_patients = len(items)
+        average_ltv = total_ltv / total_patients if total_patients > 0 else Decimal("0")
+
+        return PatientLtvReport(
+            clinic_id=str(clinic_id),
+            date_from=date_from,
+            date_to=date_to,
+            items=items,
+            total_patients=total_patients,
+            average_ltv=average_ltv,
+        )
+
+    async def get_loyalty_summary(
+        self,
+        clinic_id: UUID,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> dict:
+        """Aggregate basic loyalty KPIs for owner/analytics dashboards.
+
+        Metrics (do NOT change ERP revenue, only describe loyalty footprint):
+        - total_subscriptions: count of CustomerSubscription in clinic;
+        - active_subscriptions: count of active CustomerSubscription;
+        - expired_subscriptions: count of subscriptions with non-active status;
+        - active_with_balance: subscriptions with remaining_visits/amount > 0;
+        - wallet_holders: patients with WalletTransaction history;
+        - wallet_positive_balance: wallets with positive balance (approximated via tx sum);
+        - subscription_usages_count: count of SubscriptionUsage records in period;
+        - subscription_covered_amount: total used_amount from SubscriptionUsage in period;
+        - wallet_earn_count / wallet_spend_count: counts of wallet earn/spend tx in period;
+        - wallet_spend_amount: total amount of wallet spend tx in period.
+        """
+        await self._get_clinic(clinic_id)
+
+        subs_stmt = select(
+            func.count().label("total"),
+            func.sum(
+                func.case(
+                    (CustomerSubscription.status == "active", 1),
+                    else_=0,
+                )
+            ).label("active"),
+            func.sum(
+                func.case(
+                    (CustomerSubscription.status != "active", 1),
+                    else_=0,
+                )
+            ).label("expired"),
+            func.sum(
+                func.case(
+                    (
+                        (
+                            (CustomerSubscription.remaining_visits.is_not(None))
+                            & (CustomerSubscription.remaining_visits > 0)
+                        )
+                        | (
+                            (CustomerSubscription.remaining_amount.is_not(None))
+                            & (CustomerSubscription.remaining_amount > 0)
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("active_with_balance"),
+        ).where(CustomerSubscription.clinic_id == clinic_id)
+        subs_result = await self.session.execute(subs_stmt)
+        subs_row = subs_result.one()
+
+        # Wallet holders and positive balances approximated by tx history
+        base_wallet_tx_stmt = select(
+            WalletTransaction.wallet_id,
+            WalletTransaction.type,
+            WalletTransaction.amount,
+        ).where(WalletTransaction.clinic_id == clinic_id)
+        if date_from is not None:
+            base_wallet_tx_stmt = base_wallet_tx_stmt.where(
+                WalletTransaction.happened_at >= datetime.combine(date_from, dtime.min)
+            )
+        if date_to is not None:
+            base_wallet_tx_stmt = base_wallet_tx_stmt.where(
+                WalletTransaction.happened_at
+                < datetime.combine(date_to, dtime.min) + timedelta(days=1)
+            )
+        wallet_tx_result = await self.session.execute(base_wallet_tx_stmt)
+        wallet_rows = wallet_tx_result.all()
+        wallet_ids = {row[0] for row in wallet_rows}
+
+        positive_balance_wallets: set[UUID] = set()
+        balances: dict[UUID, Decimal] = {}
+        for wid, tx_type, amount in wallet_rows:
+            if wid is None:
+                continue
+            current = balances.get(wid, Decimal("0"))
+            if tx_type == "earn":
+                current += Decimal(amount or 0)
+            else:
+                current -= Decimal(amount or 0)
+            balances[wid] = current
+        for wid, bal in balances.items():
+            if bal > 0:
+                positive_balance_wallets.add(wid)
+
+        # Subscription usage and wallet tx counts in period
+        usage_stmt = select(
+            func.count().label("cnt"),
+            func.coalesce(func.sum(SubscriptionUsage.used_amount), 0).label("amount"),
+        ).where(SubscriptionUsage.clinic_id == clinic_id)
+        if date_from is not None:
+            usage_stmt = usage_stmt.where(
+                SubscriptionUsage.used_at >= datetime.combine(date_from, dtime.min)
+            )
+        if date_to is not None:
+            usage_stmt = usage_stmt.where(
+                SubscriptionUsage.used_at
+                < datetime.combine(date_to, dtime.min) + timedelta(days=1)
+            )
+        usage_result = await self.session.execute(usage_stmt)
+        usage_row = usage_result.one()
+        subscription_usages_count = int(usage_row.cnt or 0)
+        subscription_covered_amount = Decimal(usage_row.amount or 0)
+
+        earn_stmt = select(func.count()).select_from(WalletTransaction).where(
+            WalletTransaction.clinic_id == clinic_id,
+            WalletTransaction.type == "earn",
+        )
+        spend_stmt = select(
+            func.count().label("cnt"),
+            func.coalesce(func.sum(WalletTransaction.amount), 0).label("amount"),
+        ).where(
+            WalletTransaction.clinic_id == clinic_id,
+            WalletTransaction.type == "spend",
+        )
+        if date_from is not None:
+            earn_stmt = earn_stmt.where(
+                WalletTransaction.happened_at >= datetime.combine(date_from, dtime.min)
+            )
+            spend_stmt = spend_stmt.where(
+                WalletTransaction.happened_at >= datetime.combine(date_from, dtime.min)
+            )
+        if date_to is not None:
+            earn_stmt = earn_stmt.where(
+                WalletTransaction.happened_at
+                < datetime.combine(date_to, dtime.min) + timedelta(days=1)
+            )
+            spend_stmt = spend_stmt.where(
+                WalletTransaction.happened_at
+                < datetime.combine(date_to, dtime.min) + timedelta(days=1)
+            )
+        earn_result = await self.session.execute(earn_stmt)
+        spend_result = await self.session.execute(spend_stmt)
+        wallet_earn_count = int(earn_result.scalar() or 0)
+        spend_row = spend_result.one()
+        wallet_spend_count = int(spend_row.cnt or 0)
+        wallet_spend_amount = Decimal(spend_row.amount or 0)
+
+        return {
+            "total_subscriptions": int(subs_row.total or 0),
+            "active_subscriptions": int(subs_row.active or 0),
+            "expired_subscriptions": int(subs_row.expired or 0),
+            "active_with_balance": int(subs_row.active_with_balance or 0),
+            "wallet_holders": len(wallet_ids),
+            "wallet_positive_balance": len(positive_balance_wallets),
+            "subscription_usages_count": subscription_usages_count,
+            "subscription_covered_amount": subscription_covered_amount,
+            "wallet_earn_count": wallet_earn_count,
+            "wallet_spend_count": wallet_spend_count,
+            "wallet_spend_amount": wallet_spend_amount,
+        }

@@ -18,6 +18,7 @@ class ClinicAiSettings(Base):
         UUID(as_uuid=True), ForeignKey("clinics.id"), nullable=False, unique=True
     )
     ai_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    ai_tasks_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     ai_mode: Mapped[str] = mapped_column(String(32), nullable=False, server_default="draft_only")
     ai_business_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_allowed_intents: Mapped[list[str]] = mapped_column(

@@ -12,15 +12,22 @@ import {
   type StoryRead,
   type StoryCreate,
 } from "@/hooks/useAdminMarketing";
+import {
+  useMarketingAttributionSummary,
+  useMarketingAttributionDrillDown,
+  type MarketingChannelSummaryItem,
+} from "@/hooks/useMarketingAttribution";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Alert,
   Badge,
   Button,
+  Drawer,
   Group,
   Loader,
   Modal,
+  Paper,
   Stack,
   Switch,
   Table,
@@ -344,6 +351,169 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
   );
 }
 
+function formatDateForInput(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function AttributionTab({ clinicId }: { clinicId: string }) {
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+  const [dateFrom, setDateFrom] = useState(formatDateForInput(firstDay));
+  const [dateTo, setDateTo] = useState(formatDateForInput(today));
+  const [selectedRow, setSelectedRow] = useState<MarketingChannelSummaryItem | null>(null);
+  const [drillType, setDrillType] = useState<"leads" | "bookings" | "transactions">("leads");
+
+  const { data: summary, isLoading, isError, error } = useMarketingAttributionSummary(
+    clinicId,
+    dateFrom,
+    dateTo,
+    null,
+    null
+  );
+
+  const { data: drillDown, isLoading: drillLoading } = useMarketingAttributionDrillDown({
+    dateFrom: selectedRow ? dateFrom : null,
+    dateTo: selectedRow ? dateTo : null,
+    drillType,
+    trafficSourceId: selectedRow?.traffic_source_id ?? null,
+    campaignId: selectedRow?.campaign_id ?? null,
+    enabled: !!selectedRow,
+  });
+
+  const items = summary?.items ?? [];
+
+  return (
+    <Stack>
+      <Group align="flex-end" gap="sm">
+        <TextInput
+          type="date"
+          label="С"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.currentTarget.value || dateFrom)}
+          size="xs"
+        />
+        <TextInput
+          type="date"
+          label="По"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.currentTarget.value || dateTo)}
+          size="xs"
+        />
+      </Group>
+      <Text size="sm" c="dimmed">
+        ROI по каналам и кампаниям. Клик по строке — детализация (лиды, записи, транзакции).
+      </Text>
+      <Paper withBorder radius="md" p="sm">
+        {isLoading && <Loader size="sm" />}
+        {isError && (
+          <Text size="sm" c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>
+        )}
+        {!isLoading && !isError && (
+          <Table striped highlightOnHover withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Источник</Table.Th>
+                <Table.Th>Кампания</Table.Th>
+                <Table.Th>Лиды</Table.Th>
+                <Table.Th>Записи</Table.Th>
+                <Table.Th>Дошли</Table.Th>
+                <Table.Th>Выручка</Table.Th>
+                <Table.Th>Затраты</Table.Th>
+                <Table.Th>CAC</Table.Th>
+                <Table.Th>ROI</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {items.length === 0 ? (
+                <Table.Tr>
+                  <Table.Td colSpan={9}>
+                    <Text size="sm" c="dimmed">Нет данных за период.</Text>
+                  </Table.Td>
+                </Table.Tr>
+              ) : (
+                items.map((row, idx) => (
+                  <Table.Tr
+                    key={`${row.traffic_source_id ?? "ts"}-${row.campaign_id ?? "cmp"}-${idx}`}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setSelectedRow(row)}
+                  >
+                    <Table.Td>{row.traffic_source_name ?? row.traffic_source_code ?? "—"}</Table.Td>
+                    <Table.Td>{row.campaign_name ?? row.campaign_code ?? "—"}</Table.Td>
+                    <Table.Td>{row.leads_count}</Table.Td>
+                    <Table.Td>{row.bookings_count}</Table.Td>
+                    <Table.Td>{row.completed_bookings_count}</Table.Td>
+                    <Table.Td>{row.revenue_sum} ₽</Table.Td>
+                    <Table.Td>{row.ad_spend != null ? `${row.ad_spend} ₽` : "—"}</Table.Td>
+                    <Table.Td>{row.cac != null ? row.cac.toFixed(0) : "—"}</Table.Td>
+                    <Table.Td>{row.roi != null ? `${(row.roi * 100).toFixed(0)}%` : "—"}</Table.Td>
+                  </Table.Tr>
+                ))
+              )}
+            </Table.Tbody>
+          </Table>
+        )}
+      </Paper>
+
+      <Drawer
+        opened={selectedRow !== null}
+        onClose={() => setSelectedRow(null)}
+        position="right"
+        size="md"
+        title={
+          selectedRow
+            ? `Детали: ${selectedRow.traffic_source_name ?? selectedRow.traffic_source_code ?? "Канал"} · ${selectedRow.campaign_name ?? selectedRow.campaign_code ?? "—"}`
+            : ""
+        }
+      >
+        {selectedRow && (
+          <Stack gap="md">
+            <Tabs value={drillType} onChange={(v) => setDrillType((v as "leads" | "bookings" | "transactions") || "leads")}>
+              <Tabs.List>
+                <Tabs.Tab value="leads">Лиды</Tabs.Tab>
+                <Tabs.Tab value="bookings">Записи</Tabs.Tab>
+                <Tabs.Tab value="transactions">Транзакции</Tabs.Tab>
+              </Tabs.List>
+              <Tabs.Panel value="leads" pt="sm">
+                {drillLoading && <Loader size="xs" />}
+                {drillDown && (
+                  <Stack gap={4}>
+                    <Text size="xs" c="dimmed">Всего: {drillDown.total}</Text>
+                    {drillDown.items.map((it) => (
+                      <Text key={it.id} size="sm">• {it.display_label ?? it.id}</Text>
+                    ))}
+                  </Stack>
+                )}
+              </Tabs.Panel>
+              <Tabs.Panel value="bookings" pt="sm">
+                {drillLoading && <Loader size="xs" />}
+                {drillDown && (
+                  <Stack gap={4}>
+                    <Text size="xs" c="dimmed">Всего: {drillDown.total}</Text>
+                    {drillDown.items.map((it) => (
+                      <Text key={it.id} size="sm">• {it.display_label ?? it.id}</Text>
+                    ))}
+                  </Stack>
+                )}
+              </Tabs.Panel>
+              <Tabs.Panel value="transactions" pt="sm">
+                {drillLoading && <Loader size="xs" />}
+                {drillDown && (
+                  <Stack gap={4}>
+                    <Text size="xs" c="dimmed">Всего: {drillDown.total}</Text>
+                    {drillDown.items.map((it) => (
+                      <Text key={it.id} size="sm">• {it.display_label ?? it.id}</Text>
+                    ))}
+                  </Stack>
+                )}
+              </Tabs.Panel>
+            </Tabs>
+          </Stack>
+        )}
+      </Drawer>
+    </Stack>
+  );
+}
+
 export default function AdminMarketingPage() {
   const { currentClinicId } = useAdminClinic();
   const clinicId = currentClinicId ?? null;
@@ -364,12 +534,16 @@ export default function AdminMarketingPage() {
         <Tabs.List>
           <Tabs.Tab value="posts">Посты (лента)</Tabs.Tab>
           <Tabs.Tab value="stories">Сторис</Tabs.Tab>
+          <Tabs.Tab value="attribution">Атрибуция</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="posts" pt="md">
           <PostsTab clinicId={clinicId} />
         </Tabs.Panel>
         <Tabs.Panel value="stories" pt="md">
           <StoriesTab clinicId={clinicId} />
+        </Tabs.Panel>
+        <Tabs.Panel value="attribution" pt="md">
+          <AttributionTab clinicId={clinicId} />
         </Tabs.Panel>
       </Tabs>
     </Stack>

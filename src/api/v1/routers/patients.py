@@ -79,7 +79,7 @@ async def update_patient(
     return patient
 
 
-@router.delete("/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{patient_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_patient(
     patient_id: UUID,
     session: AsyncSession = Depends(get_session),

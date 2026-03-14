@@ -12,9 +12,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-dental_booking}
     ports:
-      - "5433:5432"
+      - "5442:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
@@ -42,9 +42,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: dental_booking_backend
-    command: sh -c "python -m alembic -c alembic.ini upgrade heads && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "python -m alembic -c alembic.ini upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"
     ports:
-      - "8004:8000"
+      - "8010:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dental_booking}
       REDIS_URL: redis://redis:6379/0
@@ -61,9 +61,6 @@ services:
 
   celery:
     image: moircreator/dental-booking-backend:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: dental_booking_celery
     command: celery -A src.infrastructure.messaging.celery_app worker --loglevel=info
     environment:
@@ -82,9 +79,6 @@ services:
 
   celery-beat:
     image: moircreator/dental-booking-backend:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
     container_name: dental_booking_celery_beat
     command: celery -A src.infrastructure.messaging.celery_app beat --loglevel=info
     environment:
@@ -108,12 +102,10 @@ services:
       dockerfile: Dockerfile
     container_name: dental_booking_frontend
     ports:
-      - "3004:80"
-      - "3001:80"
+      - "3010:80"
     env_file:
       - ./frontend/.env
     restart: unless-stopped
 
 volumes:
-  pgdata:
   redis_data:

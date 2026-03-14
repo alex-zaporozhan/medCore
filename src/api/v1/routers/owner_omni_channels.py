@@ -193,6 +193,7 @@ async def update_owner_channel(
 @router.post(
     "/{channel_id}/credentials",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def set_channel_credentials(
     channel_id: UUID,

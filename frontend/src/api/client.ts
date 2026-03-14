@@ -54,8 +54,24 @@ export interface ApiError {
 function normalizeErrorMessage(raw: string, status: number, statusText: string) {
   const message = raw.trim() || statusText || "Request failed";
 
-  // Для 4xx оставляем текст как есть (важны бизнес-сообщения вроде EMPTY_DB_NO_CLINIC)
+  // Для 4xx обычно важно сохранить бизнес-сообщение (например, EMPTY_DB_NO_CLINIC),
+  // но если нам вернули HTML (например, от nginx), то показываем аккуратное описание,
+  // а не «полотно» разметки.
+  const looksLikeHtml =
+    message.startsWith("<!DOCTYPE html") ||
+    message.startsWith("<html") ||
+    message.includes("<html") ||
+    message.includes("<head") ||
+    message.includes("<body");
+
   if (status >= 400 && status < 500) {
+    // 405 Method Not Allowed — часто от прокси, когда бэкенд недоступен или метод не разрешён
+    if (status === 405) {
+      return "Сервер не принимает этот тип запроса. Если вы входите в админку — попробуйте обновить страницу и войти снова. При повторении обратитесь к администратору.";
+    }
+    if (looksLikeHtml) {
+      return "Сервис временно недоступен или ответ сервера некорректен. Обновите страницу и повторите попытку или обратитесь к администратору.";
+    }
     return message;
   }
 
@@ -65,9 +81,13 @@ function normalizeErrorMessage(raw: string, status: number, statusText: string) 
     message.includes("File \"") ||
     message.length > 400;
 
-  if (status >= 500 && looksLikeTraceback) {
-    // Короткое, но полезное сообщение для UI
-    return "Внутренняя ошибка сервера (500). Проверьте логи бэкенда и применены ли миграции базы данных.";
+  if (status >= 500) {
+    if (status === 502 || status === 503) {
+      return "Сервис временно недоступен. Подождите минуту и обновите страницу. При повторении обратитесь к администратору.";
+    }
+    if (looksLikeTraceback) {
+      return "Внутренняя ошибка сервера. Обратитесь к администратору.";
+    }
   }
 
   return message;
@@ -149,6 +169,22 @@ export const api = {
     ),
   delete: <T>(path: string, token?: string | null) =>
     request<T>(path, { method: "DELETE" }, token),
+  patch: <T>(path: string, body?: object, token?: string | null) =>
+    request<T>(
+      path,
+      { method: "PATCH", body: body ? JSON.stringify(body) : undefined },
+      token
+    ),
 };
+
+export function authApi(token: string | null) {
+  return {
+    get: <T>(path: string) => api.get<T>(path, token),
+    post: <T>(path: string, body?: object) => api.post<T>(path, body, token),
+    put: <T>(path: string, body?: object) => api.put<T>(path, body, token),
+    delete: <T>(path: string) => api.delete<T>(path, token),
+    patch: <T>(path: string, body?: object) => api.patch<T>(path, body, token),
+  };
+}
 
 export default api;

@@ -8,7 +8,10 @@ celery_app = Celery(
     "dental_booking",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["src.infrastructure.messaging.tasks.notifications"],
+    include=[
+        "src.infrastructure.messaging.tasks.notifications",
+        "src.infrastructure.messaging.tasks.ai_tasks",
+    ],
 )
 
 celery_app.conf.update(
@@ -22,6 +25,10 @@ celery_app.conf.update(
         "run-reminders-every-15min": {
             "task": "notifications.run_reminders",
             "schedule": 900.0,  # 15 minutes in seconds
+        },
+        "run-ai-task-generator-daily": {
+            "task": "ai_tasks.run_ai_task_generator",
+            "schedule": 86400.0,  # once per day
         },
     },
 )

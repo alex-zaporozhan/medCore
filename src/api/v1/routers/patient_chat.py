@@ -116,7 +116,7 @@ async def send_message(
     return msg
 
 
-@router.delete("/conversation/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/conversation/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_message(
     message_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -134,7 +134,7 @@ async def delete_message(
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found or cannot delete")
 
-@router.post("/conversation/mark-read", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/conversation/mark-read", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def mark_read(
     body: MarkReadRequest | None = None,
     session: AsyncSession = Depends(get_session),
