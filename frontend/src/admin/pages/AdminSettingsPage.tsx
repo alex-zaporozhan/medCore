@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { Anchor, Stack, Text, Title } from "@mantine/core";
+import { Anchor, Stack, Text } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 
 const links = [
   { to: "/admin/payment-gateway", label: "Касса" },
@@ -20,7 +21,7 @@ const links = [
 export default function AdminSettingsPage() {
   return (
     <Stack gap="md">
-      <Title order={3}>Настройки</Title>
+      <ContextBar title="Настройки" />
       <Text size="sm" c="dimmed">
         Выберите раздел для настройки клиники.
       </Text>

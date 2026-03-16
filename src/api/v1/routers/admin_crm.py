@@ -50,7 +50,7 @@ async def list_stages(
     session: AsyncSession = Depends(get_session),
     context: AdminContext = Depends(get_request_context),
 ) -> list[LeadStageDto]:
-    """Return stages for given pipeline in current clinic."""
+    """Return stages for given pipeline in current clinic with aggregates (leads_count, sum_estimated_value)."""
     if context.clinic_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
     service = LeadService(session)
@@ -58,7 +58,31 @@ async def list_stages(
         clinic_id=context.clinic_id,
         pipeline_id=pipeline_id,
     )
-    return [LeadStageDto.model_validate(s) for s in stages]
+    if not stages:
+        return []
+    stage_ids = [s.id for s in stages]
+    # Single query: aggregates per stage for Kanban header (B4.1)
+    agg_result = await session.execute(
+        select(
+            LeadCard.stage_id,
+            func.count(LeadCard.id).label("leads_count"),
+            func.coalesce(func.sum(LeadCard.estimated_value), 0).label("sum_estimated_value"),
+        )
+        .where(
+            LeadCard.clinic_id == context.clinic_id,
+            LeadCard.stage_id.in_(stage_ids),
+        )
+        .group_by(LeadCard.stage_id)
+    )
+    agg_map = {row.stage_id: (int(row.leads_count), row.sum_estimated_value) for row in agg_result.all()}
+    out: list[LeadStageDto] = []
+    for s in stages:
+        cnt, sval = agg_map.get(s.id, (0, 0))
+        d = LeadStageDto.model_validate(s).model_dump()
+        d["leads_count"] = cnt
+        d["sum_estimated_value"] = sval
+        out.append(LeadStageDto(**d))
+    return out
 
 
 @router.get("/leads", response_model=LeadListResponse)

@@ -25,8 +25,7 @@ import {
   Badge,
   Button,
   Group,
-  Loader,
-  Modal,
+  Drawer,
   Select,
   Stack,
   Switch,
@@ -35,8 +34,9 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
 
@@ -78,7 +78,7 @@ function SegmentsTab({ clinicId }: { clinicId: string }) {
     }
   };
 
-  if (isLoading) return <Loader size="sm" />;
+  if (isLoading) return <PageSkeleton variant="table" rows={5} />;
   if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
 
   const list = segments ?? [];
@@ -92,7 +92,7 @@ function SegmentsTab({ clinicId }: { clinicId: string }) {
       {list.length === 0 ? (
         <EmptyStateHint title="Нет сегментов. Создайте сегмент для рассылок." />
       ) : (
-        <Table withTableBorder withColumnBorders>
+        <Table withTableBorder withColumnBorders verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Название</Table.Th>
@@ -144,7 +144,7 @@ function SegmentsTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Modal opened={opened} onClose={() => { close(); reset(); }} title={editing ? "Изменить сегмент" : "Новый сегмент"}>
+      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title={editing ? "Изменить сегмент" : "Новый сегмент"}>
         <Stack>
           <TextInput label="Название" value={name} onChange={(e) => setName(e.target.value)} />
           <TextInput
@@ -157,7 +157,7 @@ function SegmentsTab({ clinicId }: { clinicId: string }) {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Modal>
+      </Drawer>
     </Stack>
   );
 }
@@ -199,7 +199,7 @@ function TemplatesTab({ clinicId }: { clinicId: string }) {
     }
   };
 
-  if (isLoading) return <Loader size="sm" />;
+  if (isLoading) return <PageSkeleton variant="table" rows={5} />;
   if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
 
   const list = templates ?? [];
@@ -213,7 +213,7 @@ function TemplatesTab({ clinicId }: { clinicId: string }) {
       {list.length === 0 ? (
         <EmptyStateHint title="Нет шаблонов. Создайте шаблон для кампаний." />
       ) : (
-        <Table withTableBorder withColumnBorders>
+        <Table withTableBorder withColumnBorders verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Название</Table.Th>
@@ -252,7 +252,7 @@ function TemplatesTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Modal opened={opened} onClose={() => { close(); reset(); }} title={editing ? "Изменить шаблон" : "Новый шаблон"} size="md">
+      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title={editing ? "Изменить шаблон" : "Новый шаблон"}>
         <Stack>
           <TextInput label="Название" value={name} onChange={(e) => setName(e.target.value)} />
           <TextInput
@@ -272,7 +272,7 @@ function TemplatesTab({ clinicId }: { clinicId: string }) {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Modal>
+      </Drawer>
     </Stack>
   );
 }
@@ -303,7 +303,7 @@ function CampaignsTab({ clinicId }: { clinicId: string }) {
     );
   };
 
-  if (isLoading) return <Loader size="sm" />;
+  if (isLoading) return <PageSkeleton variant="table" rows={5} />;
   if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
 
   const list = campaigns ?? [];
@@ -319,7 +319,7 @@ function CampaignsTab({ clinicId }: { clinicId: string }) {
       {list.length === 0 ? (
         <EmptyStateHint title="Нет кампаний. Создайте кампанию и запустите рассылку." />
       ) : (
-        <Table withTableBorder withColumnBorders>
+        <Table withTableBorder withColumnBorders verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Название</Table.Th>
@@ -360,7 +360,7 @@ function CampaignsTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Modal opened={opened} onClose={() => { close(); reset(); }} title="Новая кампания">
+      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title="Новая кампания">
         <Stack>
           <TextInput label="Название" value={name} onChange={(e) => setName(e.target.value)} placeholder="Кампания" />
           <Select
@@ -381,7 +381,7 @@ function CampaignsTab({ clinicId }: { clinicId: string }) {
             Создать
           </Button>
         </Stack>
-      </Modal>
+      </Drawer>
     </Stack>
   );
 }
@@ -425,7 +425,7 @@ function AutomationsTab({ clinicId }: { clinicId: string }) {
     });
   };
 
-  if (isLoading) return <Loader size="sm" />;
+  if (isLoading) return <PageSkeleton variant="table" rows={5} />;
   if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
 
   const list = automations ?? [];
@@ -440,7 +440,7 @@ function AutomationsTab({ clinicId }: { clinicId: string }) {
       {list.length === 0 ? (
         <EmptyStateHint title="Нет автоматизаций. Создайте триггерную рассылку." />
       ) : (
-        <Table withTableBorder withColumnBorders>
+        <Table withTableBorder withColumnBorders verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Название</Table.Th>
@@ -469,7 +469,7 @@ function AutomationsTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Modal opened={opened} onClose={() => { close(); reset(); }} title="Новая автоматизация">
+      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title="Новая автоматизация">
         <Stack>
           <TextInput label="Название" value={name} onChange={(e) => setName(e.target.value)} placeholder="Автоматизация" />
           <Select
@@ -490,7 +490,7 @@ function AutomationsTab({ clinicId }: { clinicId: string }) {
             Создать
           </Button>
         </Stack>
-      </Modal>
+      </Drawer>
     </Stack>
   );
 }
@@ -502,7 +502,7 @@ export default function AdminRecallPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Recall / Автоматизации</Title>
+        <ContextBar title="Recall / Автоматизации" />
         <Text size="sm" c="dimmed">Выберите клинику.</Text>
       </Stack>
     );
@@ -510,7 +510,7 @@ export default function AdminRecallPage() {
 
   return (
     <Stack>
-      <Title order={3}>Recall / Автоматизации</Title>
+      <ContextBar title="Recall / Автоматизации" />
       <Tabs defaultValue="segments">
         <Tabs.List>
           <Tabs.Tab value="segments">Сегменты</Tabs.Tab>

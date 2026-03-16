@@ -8,11 +8,13 @@ import {
 } from "@/hooks";
 import type { DigitalFormSubmissionListItem, DigitalFormTemplate } from "@/api/types";
 import {
+  ActionIcon,
   Box,
   Button,
   Drawer,
   Group,
   JsonInput,
+  Menu,
   Paper,
   SegmentedControl,
   Stack,
@@ -20,8 +22,11 @@ import {
   Table,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { IconDotsVertical } from "@tabler/icons-react";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { EmptyState } from "@/shared/ui/EmptyState";
+import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 
 type Mode = "templates" | "submissions";
 
@@ -92,6 +97,16 @@ export default function AdminFormsPage() {
     setEditorOpen(true);
   };
 
+  const openDuplicate = (t: DigitalFormTemplate) => {
+    setEditingTemplate(null);
+    setCode(t.code + "_copy");
+    setName(t.name + " (копия)");
+    setRequiresSignature(t.requires_signature);
+    setActive(false);
+    setSchemaJson(JSON.stringify(t.schema, null, 2));
+    setEditorOpen(true);
+  };
+
   const handleSave = () => {
     let parsedSchema: unknown;
     try {
@@ -128,17 +143,19 @@ export default function AdminFormsPage() {
 
   return (
     <Stack>
-      <Group justify="space-between" align="center">
-        <Title order={3}>Формы и документы</Title>
-        <SegmentedControl
-          value={mode}
-          onChange={(v) => setMode(v as Mode)}
-          data={[
-            { value: "templates", label: "Шаблоны форм" },
-            { value: "submissions", label: "Отправленные формы" },
-          ]}
-        />
-      </Group>
+      <ContextBar
+        title="Формы и документы"
+        actions={
+          <SegmentedControl
+            value={mode}
+            onChange={(v) => setMode(v as Mode)}
+            data={[
+              { value: "templates", label: "Шаблоны форм" },
+              { value: "submissions", label: "Отправленные формы" },
+            ]}
+          />
+        }
+      />
 
       {mode === "templates" && (
         <Stack>
@@ -150,15 +167,22 @@ export default function AdminFormsPage() {
               Новый шаблон
             </Button>
           </Group>
-          <Paper withBorder radius="md" p="sm">
-            {templatesLoading && <Text size="sm">Загрузка шаблонов...</Text>}
-            {templatesError && (
-              <Text size="sm" c="red">
-                Ошибка загрузки шаблонов.
-              </Text>
-            )}
-            {!templatesLoading && !templatesError && (
-              <Table striped highlightOnHover>
+          {templatesLoading && <PageSkeleton variant="table" rows={5} />}
+          {templatesError && (
+            <Text size="sm" c="red">
+              Ошибка загрузки шаблонов.
+            </Text>
+          )}
+          {!templatesLoading && !templatesError && !(templates?.length) && (
+            <EmptyState
+              title="Нет шаблонов форм"
+              description="Создайте первый шаблон анкеты или согласия для отправки пациентам."
+              action={{ label: "Создать шаблон", onClick: openCreate }}
+            />
+          )}
+          {!templatesLoading && !templatesError && (templates?.length ?? 0) > 0 && (
+            <Paper withBorder radius="md" p="sm">
+              <Table striped highlightOnHover verticalSpacing="sm">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Код</Table.Th>
@@ -166,7 +190,7 @@ export default function AdminFormsPage() {
                     <Table.Th>Версия</Table.Th>
                     <Table.Th>Подпись</Table.Th>
                     <Table.Th>Активен</Table.Th>
-                    <Table.Th />
+                    <Table.Th style={{ width: 52 }} />
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -178,25 +202,31 @@ export default function AdminFormsPage() {
                       <Table.Td>{t.requires_signature ? "Да" : "Нет"}</Table.Td>
                       <Table.Td>{t.active ? "Да" : "Нет"}</Table.Td>
                       <Table.Td>
-                        <Button size="xs" variant="light" onClick={() => openEdit(t)}>
-                          Редактировать
-                        </Button>
+                        <Menu position="bottom-end" withArrow>
+                          <Menu.Target>
+                            <ActionIcon variant="subtle" size="sm">
+                              <IconDotsVertical size={16} />
+                            </ActionIcon>
+                          </Menu.Target>
+                          <Menu.Dropdown>
+                            <Menu.Item onClick={() => openEdit(t)}>
+                              Редактировать
+                            </Menu.Item>
+                            <Menu.Item onClick={() => openDuplicate(t)}>
+                              Дублировать
+                            </Menu.Item>
+                            <Menu.Item color="red" disabled title="Удаление шаблона (API пока не реализован)">
+                              Удалить
+                            </Menu.Item>
+                          </Menu.Dropdown>
+                        </Menu>
                       </Table.Td>
                     </Table.Tr>
                   ))}
-                  {!templates?.length && (
-                    <Table.Tr>
-                      <Table.Td colSpan={6}>
-                        <Text size="sm" c="dimmed">
-                          Шаблоны пока не созданы.
-                        </Text>
-                      </Table.Td>
-                    </Table.Tr>
-                  )}
                 </Table.Tbody>
               </Table>
-            )}
-          </Paper>
+            </Paper>
+          )}
         </Stack>
       )}
 
@@ -236,7 +266,7 @@ export default function AdminFormsPage() {
               </Text>
             )}
             {!submissionsLoading && !submissionsError && (
-              <Table striped highlightOnHover>
+              <Table striped highlightOnHover verticalSpacing="sm">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Дата</Table.Th>

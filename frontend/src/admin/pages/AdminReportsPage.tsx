@@ -8,20 +8,27 @@ import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Card,
+  Drawer,
   Grid,
-  Loader,
+  Group,
+  Progress,
   Select,
+  SimpleGrid,
   Stack,
   Table,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import dayjs from "dayjs";
 import { useMemo, useState } from "react";
 import {
   useMarketingAttributionSummary,
   useMarketingCampaigns,
+  useMarketingInsights,
+  useMarketingAttributionDrillDown,
+  type MarketingChannelSummaryItem,
 } from "@/hooks/useMarketingAttribution";
 
 const EMPTY_DB_HINT =
@@ -35,8 +42,18 @@ export default function AdminReportsPage() {
   const [dateTo, setDateTo] = useState(dayjs().format("YYYY-MM-DD"));
   const [selectedTrafficSourceId, setSelectedTrafficSourceId] = useState<string | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [drillDownRow, setDrillDownRow] = useState<MarketingChannelSummaryItem | null>(null);
 
   const { data: campaigns } = useMarketingCampaigns();
+  const { data: insightsData } = useMarketingInsights(clinicId);
+  const { data: drillDownData } = useMarketingAttributionDrillDown({
+    dateFrom,
+    dateTo,
+    drillType: "leads",
+    trafficSourceId: drillDownRow?.traffic_source_id ?? null,
+    campaignId: drillDownRow?.campaign_id ?? null,
+    enabled: !!drillDownRow,
+  });
 
   const { data: ownerDashboard, isLoading: ownerLoading } = useOwnerDashboard(
     clinicId,
@@ -102,7 +119,7 @@ export default function AdminReportsPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Отчёты</Title>
+        <ContextBar title="Отчёты" />
         <Text size="sm" c="dimmed">
           Выберите клинику.
         </Text>
@@ -112,7 +129,7 @@ export default function AdminReportsPage() {
 
   return (
     <Stack>
-      <Title order={3}>Отчёты и дашборд</Title>
+      <ContextBar title="Отчёты и дашборд" />
 
       <TextInput
         label="Дата с"
@@ -162,7 +179,125 @@ export default function AdminReportsPage() {
         </>
       )}
 
-      {loading && <Loader size="sm" />}
+      {loading && <PageSkeleton variant="cards" cardsCount={4} />}
+
+      {attribution?.items && attribution.items.length > 0 && (
+        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md" mb="md">
+          <Card shadow="sm" padding="md" withBorder>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+              Бюджет (реклама)
+            </Text>
+            <Text size="lg" fw={700}>
+              {attribution.items.some((i) => i.ad_spend != null)
+                ? attribution.items
+                    .reduce((s, i) => s + (i.ad_spend ? parseFloat(i.ad_spend) : 0), 0)
+                    .toFixed(0)
+                : "—"}{" "}
+              ₽
+            </Text>
+          </Card>
+          <Card shadow="sm" padding="md" withBorder>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+              Выручка
+            </Text>
+            <Text size="lg" fw={700}>
+              {ownerDashboard?.total_revenue ?? attribution.items.reduce((s, i) => s + parseFloat(i.revenue_sum || "0"), 0).toFixed(0)}{" "}
+              ₽
+            </Text>
+          </Card>
+          <Card shadow="sm" padding="md" withBorder>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+              CAC
+            </Text>
+            <Text size="lg" fw={700}>
+              {attribution.items.find((i) => i.cac != null)?.cac != null
+                ? `${attribution.items.find((i) => i.cac != null)!.cac!.toFixed(0)} ₽`
+                : "—"}
+            </Text>
+          </Card>
+          <Card shadow="sm" padding="md" withBorder>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+              ROMI
+            </Text>
+            <Text size="lg" fw={700}>
+              {attribution.items.find((i) => i.roi != null)?.roi != null
+                ? `${((attribution.items.find((i) => i.roi != null)!.roi!) * 100).toFixed(1)}%`
+                : "—"}
+            </Text>
+          </Card>
+        </SimpleGrid>
+      )}
+
+      {attribution?.items && attribution.items.length > 0 && (
+        <Card shadow="sm" padding="md" withBorder mb="md">
+          <Text size="sm" fw={500} c="dimmed" mb="xs">
+            Воронка конверсий
+          </Text>
+          <Stack gap="xs">
+            <Group gap="md">
+              <Text size="xs">
+                Лиды {attribution.items.reduce((a, i) => a + i.leads_count, 0)}
+              </Text>
+              <Progress value={100} size="lg" style={{ flex: 1 }} />
+            </Group>
+            <Group gap="md">
+              <Text size="xs">
+                Записи {attribution.items.reduce((a, i) => a + i.bookings_count, 0)}
+              </Text>
+              <Progress
+                value={
+                  attribution.items.reduce((a, i) => a + i.leads_count, 0) > 0
+                    ? (attribution.items.reduce((a, i) => a + i.bookings_count, 0) /
+                        attribution.items.reduce((a, i) => a + i.leads_count, 0)) *
+                      100
+                    : 0
+                }
+                size="lg"
+                color="blue"
+                style={{ flex: 1 }}
+              />
+            </Group>
+            <Group gap="md">
+              <Text size="xs">
+                Оплата {attribution.items.reduce((a, i) => a + i.completed_bookings_count, 0)}
+              </Text>
+              <Progress
+                value={
+                  attribution.items.reduce((a, i) => a + i.bookings_count, 0) > 0
+                    ? (attribution.items.reduce((a, i) => a + i.completed_bookings_count, 0) /
+                        attribution.items.reduce((a, i) => a + i.bookings_count, 0)) *
+                      100
+                    : 0
+                }
+                size="lg"
+                color="green"
+                style={{ flex: 1 }}
+              />
+            </Group>
+          </Stack>
+        </Card>
+      )}
+
+      {insightsData && (insightsData.insights?.length > 0 || true) && (
+        <Card shadow="sm" padding="md" withBorder mb="md">
+          <Text size="sm" fw={500} c="dimmed" mb="xs">
+            AI Marketing Advisor
+          </Text>
+          {insightsData.insights?.length > 0 ? (
+            <Stack gap="xs">
+              {insightsData.insights.map((line, i) => (
+                <Text key={i} size="sm">
+                  {line}
+                </Text>
+              ))}
+            </Stack>
+          ) : (
+            <Text size="sm" c="dimmed">
+              Пока нет персональных рекомендаций. Анализ каналов и кампаний появится после накопления данных.
+            </Text>
+          )}
+        </Card>
+      )}
 
       {ownerDashboard && (
         <Card shadow="sm" padding="md" withBorder>
@@ -231,9 +366,9 @@ export default function AdminReportsPage() {
       {attribution && attribution.items.length > 0 && (
         <Card shadow="sm" padding="md" withBorder>
           <Text size="sm" fw={500} c="dimmed" mb="xs">
-            Маркетинг и атрибуция
+            Маркетинг и атрибуция (клик по строке — drill-down)
           </Text>
-          <Table withTableBorder withColumnBorders>
+          <Table withTableBorder withColumnBorders verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Канал / кампания</Table.Th>
@@ -248,7 +383,11 @@ export default function AdminReportsPage() {
             </Table.Thead>
             <Table.Tbody>
               {attribution.items.map((row, idx) => (
-                <Table.Tr key={`${row.traffic_source_code}-${row.campaign_code}-${idx}`}>
+                <Table.Tr
+                  key={`${row.traffic_source_code}-${row.campaign_code}-${idx}`}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setDrillDownRow(row)}
+                >
                   <Table.Td>
                     <Text size="xs">
                       {row.campaign_name || row.traffic_source_name || "Без кампании"}
@@ -272,6 +411,40 @@ export default function AdminReportsPage() {
           </Table>
         </Card>
       )}
+
+      <Drawer
+        position="right"
+        size="md"
+        opened={!!drillDownRow}
+        onClose={() => setDrillDownRow(null)}
+        title={drillDownRow ? `По источнику: ${drillDownRow.campaign_name || drillDownRow.traffic_source_name || "—"}` : ""}
+      >
+        {drillDownRow && (
+          <Stack gap="sm">
+            <Text size="sm" c="dimmed">
+              Лиды и записи по выбранному каналу за период.
+            </Text>
+            {drillDownData?.items && drillDownData.items.length > 0 ? (
+              <Stack gap="xs">
+                {drillDownData.items.slice(0, 50).map((item) => (
+                  <Text key={item.id} size="sm">
+                    {item.display_label ?? item.id} — {item.type}
+                  </Text>
+                ))}
+                {drillDownData.total > 50 && (
+                  <Text size="xs" c="dimmed">
+                    Показано 50 из {drillDownData.total}
+                  </Text>
+                )}
+              </Stack>
+            ) : (
+              <Text size="sm" c="dimmed">
+                Нет данных для выбранного источника.
+              </Text>
+            )}
+          </Stack>
+        )}
+      </Drawer>
 
       {!dashboard && !noShow && !revenue && !ownerDashboard && !anyError && !loading && (
         <EmptyStateHint title="Нет данных за выбранный период" />

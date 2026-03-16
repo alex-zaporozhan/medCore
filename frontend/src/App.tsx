@@ -14,12 +14,14 @@ import AdminPrepaymentPage from "@/admin/pages/AdminPrepaymentPage";
 import AdminWaitlistPage from "@/admin/pages/AdminWaitlistPage";
 import AdminRecallPage from "@/admin/pages/AdminRecallPage";
 import AdminMarketingPage from "@/admin/pages/AdminMarketingPage";
+import AdminRetentionPage from "@/admin/pages/AdminRetentionPage";
 import AdminDoctorSchedulePage from "@/admin/pages/AdminDoctorSchedulePage";
 import AdminOmniChatPage from "@/admin/pages/AdminOmniChatPage";
 import AdminOmniAiSettingsPage from "@/admin/pages/AdminOmniAiSettingsPage";
 import AdminChannelsPage from "@/admin/pages/AdminChannelsPage";
 import AdminOmniChannelsPage from "@/admin/pages/AdminOmniChannelsPage";
 import AdminIntegrationsPage from "@/admin/pages/AdminIntegrationsPage";
+import AdminOmniVaultPage from "@/admin/pages/AdminOmniVaultPage";
 import AdminStylingPage from "@/admin/pages/AdminStylingPage";
 import AdminStickersPage from "@/admin/pages/AdminStickersPage";
 import AdminClientReferencePage from "@/admin/pages/AdminClientReferencePage";
@@ -34,6 +36,7 @@ import AdminPaymentGatewayPage from "@/admin/pages/AdminPaymentGatewayPage";
 import AdminLoginPage from "@/admin/pages/AdminLoginPage";
 import AdminAdministratorsPage from "@/admin/pages/AdminAdministratorsPage";
 import AdminSalesPipelinePage from "@/admin/pages/AdminSalesPipelinePage";
+import AdminTasksPage from "@/admin/pages/AdminTasksPage";
 import AdminAuthGuard from "@/admin/AdminAuthGuard";
 import { AdminClinicProvider } from "@/contexts/AdminClinicContext";
 import SchedulePage from "@/admin/pages/SchedulePage";
@@ -44,6 +47,7 @@ import LoyaltyPage from "@/app/pages/LoyaltyPage";
 import ChatPage from "@/app/pages/ChatPage";
 import FeedPage from "@/app/pages/FeedPage";
 import HomePage from "@/app/pages/HomePage";
+import ProfilePage from "@/app/pages/ProfilePage";
 import LoginPage from "@/app/pages/LoginPage";
 import OAuthResultPage from "@/app/pages/OAuthResultPage";
 import FormsPage from "@/app/pages/FormsPage";
@@ -227,11 +231,13 @@ const router = createBrowserRouter(
         <Route path="clinics" element={<AdminClinicsPage />} />
         <Route path="services" element={<AdminServicesPage />} />
         <Route path="schedule" element={<SchedulePage />} />
+        <Route path="tasks" element={<AdminTasksPage />} />
         <Route path="bookings" element={<AdminBookingsPage />} />
         <Route path="prepayment" element={<AdminPrepaymentPage />} />
         <Route path="waitlist" element={<AdminWaitlistPage />} />
         <Route path="recall" element={<AdminRecallPage />} />
         <Route path="marketing" element={<AdminMarketingPage />} />
+        <Route path="retention" element={<AdminRetentionPage />} />
         <Route path="sales" element={<AdminSalesPipelinePage />} />
         <Route path="attention" element={<AdminAttentionFeedPage />} />
         <Route path="reports" element={<AdminReportsPage />} />
@@ -246,6 +252,7 @@ const router = createBrowserRouter(
         <Route path="omni-ai-settings" element={<AdminOmniAiSettingsPage />} />
         <Route path="channels" element={<AdminChannelsPage />} />
         <Route path="integrations" element={<AdminIntegrationsPage />} />
+        <Route path="omni-vault" element={<AdminOmniVaultPage />} />
         <Route path="styling" element={<AdminStylingPage />} />
         <Route path="stickers" element={<AdminStickersPage />} />
         <Route path="settings" element={<AdminSettingsPage />} />
@@ -288,6 +295,7 @@ const router = createBrowserRouter(
         <Route path="loyalty" element={<LoyaltyPage />} />
         <Route path="forms" element={<FormsPage />} />
         <Route path="chat" element={<ChatPage />} />
+        <Route path="profile" element={<ProfilePage />} />
       </Route>
       <Route path="/booking/success" element={<BookingSuccessPage />} />
     </>

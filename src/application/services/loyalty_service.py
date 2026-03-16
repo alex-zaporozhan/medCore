@@ -8,9 +8,10 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from src.domain.entities.customer_subscription import CustomerSubscription
+from src.domain.entities.package_family_link import PackageFamilyLink
 from src.domain.entities.subscription_package import SubscriptionPackage
 from src.domain.entities.subscription_usage import SubscriptionUsage
 from src.domain.interfaces.repositories.loyalty_repository import (
@@ -91,7 +92,7 @@ class LoyaltyService:
         """Select best active subscription for patient by deterministic priority.
 
         Priority strategy (Phase 1, kept simple and documented here):
-        - only subscriptions in given clinic, for patient, status=active;
+        - only subscriptions in given clinic, for patient (owner or family member, B6.1), status=active;
         - only subscriptions that are not expired on on_date;
         - sort by:
           1) earlier expires_at (sooner to burn) first, treating NULL as far future;
@@ -99,10 +100,16 @@ class LoyaltyService:
           3) higher remaining_visits then higher remaining_amount;
           4) older purchased_at first for stability.
         """
+        subq = select(PackageFamilyLink.customer_subscription_id).where(
+            PackageFamilyLink.patient_id == patient_id,
+        )
         stmt = select(CustomerSubscription).where(
             CustomerSubscription.clinic_id == clinic_id,
-            CustomerSubscription.patient_id == patient_id,
             CustomerSubscription.status == "active",
+            or_(
+                CustomerSubscription.patient_id == patient_id,
+                CustomerSubscription.id.in_(subq),
+            ),
         )
         result = await self.session.execute(stmt)
         subs: list[CustomerSubscription] = list(result.scalars().all())
@@ -142,7 +149,61 @@ class LoyaltyService:
         active.sort(key=_priority_key)
         return active[0]
 
-    # Packages CRUD
+    async def get_eligible_subscriptions_for_booking(
+        self,
+        clinic_id: UUID,
+        patient_id: UUID,
+        service_id: UUID,
+        on_date: datetime,
+    ) -> list[tuple[CustomerSubscription, SubscriptionPackage]]:
+        """Return all active, non-expired subscriptions for patient (owner or family member) that cover the given service and have remaining balance (for Checkout Hub). B6.1: family_links included."""
+        subq = select(PackageFamilyLink.customer_subscription_id).where(
+            PackageFamilyLink.patient_id == patient_id,
+        )
+        stmt = select(CustomerSubscription).where(
+            CustomerSubscription.clinic_id == clinic_id,
+            CustomerSubscription.status == "active",
+            or_(
+                CustomerSubscription.patient_id == patient_id,
+                CustomerSubscription.id.in_(subq),
+            ),
+        )
+        result = await self.session.execute(stmt)
+        subs: list[CustomerSubscription] = list(result.scalars().all())
+        active: list[CustomerSubscription] = []
+        for s in subs:
+            if s.expires_at is not None and s.expires_at < on_date:
+                continue
+            if (s.remaining_visits or 0) <= 0 and (s.remaining_amount or Decimal("0")) <= 0:
+                continue
+            active.append(s)
+        if not active:
+            return []
+        package_ids = {s.subscription_package_id for s in active}
+        pkg_stmt = select(SubscriptionPackage).where(
+            SubscriptionPackage.id.in_(list(package_ids))
+        )
+        pkg_result = await self.session.execute(pkg_stmt)
+        packages = {p.id: p for p in pkg_result.scalars().all()}
+        out: list[tuple[CustomerSubscription, SubscriptionPackage]] = []
+        for s in active:
+            pkg = packages.get(s.subscription_package_id)
+            if not pkg:
+                continue
+            if pkg.services_included and service_id not in pkg.services_included:
+                continue
+            out.append((s, pkg))
+        return out
+
+    # Packages CRUD (B6.4: COUNT_BASED/BALANCE_BASED validation)
+    def _normalize_kind(self, kind: str) -> str:
+        """Map COUNT_BASED -> visits, BALANCE_BASED -> balance for DB."""
+        if kind in ("COUNT_BASED", "visits"):
+            return "visits"
+        if kind in ("BALANCE_BASED", "balance"):
+            return "balance"
+        return kind  # mixed or other
+
     async def create_package(
         self,
         clinic_id: UUID,
@@ -157,12 +218,20 @@ class LoyaltyService:
         description: str | None = None,
         is_active: bool = True,
     ) -> SubscriptionPackage:
+        # B6.4: COUNT_BASED requires total_visits; BALANCE_BASED requires total_amount
+        if kind in ("COUNT_BASED", "visits"):
+            if total_visits is None or total_visits < 1:
+                raise ValueError("total_visits is required for COUNT_BASED packages")
+        elif kind in ("BALANCE_BASED", "balance"):
+            if total_amount is None or total_amount <= 0:
+                raise ValueError("total_amount is required for BALANCE_BASED packages")
+        kind_db = self._normalize_kind(kind)
         package = SubscriptionPackage(
             clinic_id=clinic_id,
             code=code,
             name=name,
             description=description,
-            kind=kind,
+            kind=kind_db,
             services_included=services_included,
             total_visits=total_visits,
             total_amount=total_amount,
@@ -305,3 +374,86 @@ class LoyaltyService:
         )
         return await self.usage_repo.create(usage)
 
+    # B6.1 FamilyLink
+    async def add_family_member(
+        self,
+        clinic_id: UUID,
+        subscription_id: UUID,
+        patient_id: UUID,
+    ) -> None:
+        """Add a family member who can use this subscription. Owner already has access."""
+        sub = await self.customer_repo.get_by_id(subscription_id)
+        if not sub or sub.clinic_id != clinic_id:
+            raise ValueError("Subscription not found for clinic")
+        if sub.patient_id == patient_id:
+            raise ValueError("Owner is already allowed; do not add as family member")
+        existing = await self.session.execute(
+            select(PackageFamilyLink).where(
+                PackageFamilyLink.customer_subscription_id == subscription_id,
+                PackageFamilyLink.patient_id == patient_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            return  # idempotent
+        link = PackageFamilyLink(
+            customer_subscription_id=subscription_id,
+            patient_id=patient_id,
+        )
+        self.session.add(link)
+        await self.session.flush()
+
+    async def remove_family_member(
+        self,
+        clinic_id: UUID,
+        subscription_id: UUID,
+        patient_id: UUID,
+    ) -> None:
+        """Remove family member from subscription."""
+        sub = await self.customer_repo.get_by_id(subscription_id)
+        if not sub or sub.clinic_id != clinic_id:
+            raise ValueError("Subscription not found for clinic")
+        result = await self.session.execute(
+            select(PackageFamilyLink).where(
+                PackageFamilyLink.customer_subscription_id == subscription_id,
+                PackageFamilyLink.patient_id == patient_id,
+            )
+        )
+        link = result.scalar_one_or_none()
+        if link:
+            await self.session.delete(link)
+            await self.session.flush()
+
+    async def get_family_member_ids(self, subscription_id: UUID) -> list[UUID]:
+        """Return list of patient_ids (family members) for this subscription."""
+        result = await self.session.execute(
+            select(PackageFamilyLink.patient_id).where(
+                PackageFamilyLink.customer_subscription_id == subscription_id,
+            )
+        )
+        return list(result.scalars().all())
+
+    # B6.2 Liability (Unearned Revenue)
+    async def get_liability(self, clinic_id: UUID) -> tuple[Decimal, int]:
+        """Return (unearned_revenue, active_subscriptions_count). COUNT_BASED: remaining_visits * (price/total_visits); BALANCE_BASED: remaining_amount."""
+        result = await self.session.execute(
+            select(CustomerSubscription, SubscriptionPackage).join(
+                SubscriptionPackage,
+                SubscriptionPackage.id == CustomerSubscription.subscription_package_id,
+            ).where(
+                CustomerSubscription.clinic_id == clinic_id,
+                CustomerSubscription.status == "active",
+            )
+        )
+        rows = result.all()
+        total = Decimal("0")
+        for sub, pkg in rows:
+            if pkg.kind in ("visits", "COUNT_BASED") and (sub.remaining_visits or 0) > 0 and (pkg.total_visits or 0) > 0 and pkg.price:
+                total += (Decimal(sub.remaining_visits) * pkg.price / Decimal(pkg.total_visits))
+            elif pkg.kind in ("balance", "BALANCE_BASED") and (sub.remaining_amount or Decimal("0")) > 0:
+                total += (sub.remaining_amount or Decimal("0"))
+            elif pkg.kind == "mixed":
+                if (sub.remaining_visits or 0) > 0 and (pkg.total_visits or 0) > 0 and pkg.price:
+                    total += (Decimal(sub.remaining_visits) * pkg.price / Decimal(pkg.total_visits))
+                if (sub.remaining_amount or Decimal("0")) > 0:
+                    total += (sub.remaining_amount or Decimal("0"))
+        return total, len(rows)

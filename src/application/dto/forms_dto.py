@@ -104,3 +104,24 @@ class DigitalFormSubmissionWithTemplateAndSignature(BaseModel):
     template: DigitalFormTemplateRead
     signature: ESignatureRead | None = None
 
+
+class SendLinkRequest(BaseModel):
+    """Request body for POST /admin/forms/send-link."""
+
+    patient_id: UUID | None = None
+    booking_id: UUID | None = None
+    template_id: UUID
+    send_via: str = Field(
+        ...,
+        description="whatsapp | sms | copy_only",
+        pattern="^(whatsapp|sms|copy_only)$",
+    )
+
+
+class SendLinkResponse(BaseModel):
+    """Response for POST /admin/forms/send-link."""
+
+    url: str
+    sent: bool
+    channel: str | None = None  # "whatsapp" | "sms" | null when copy_only or not sent
+

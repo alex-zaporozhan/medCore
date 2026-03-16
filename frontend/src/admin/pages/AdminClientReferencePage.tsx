@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
-import { Button, Paper, ScrollArea, Stack, Text, Textarea, Title } from "@mantine/core";
+import { Button, Paper, ScrollArea, Stack, Text, Textarea } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useState, useEffect } from "react";
 
 interface ClientReferenceResponse {
@@ -31,7 +32,7 @@ export default function AdminClientReferencePage() {
   if (isLoading) {
     return (
       <Stack>
-        <Title order={3}>Справка для клиента</Title>
+        <ContextBar title="Справка для клиента" />
         <DataSkeleton lines={8} />
       </Stack>
     );
@@ -39,7 +40,7 @@ export default function AdminClientReferencePage() {
   if (isError) {
     return (
       <Stack>
-        <Title order={3}>Справка для клиента</Title>
+        <ContextBar title="Справка для клиента" />
         <Text c="red">{error instanceof Error ? error.message : "Ошибка загрузки"}</Text>
       </Stack>
     );
@@ -47,7 +48,7 @@ export default function AdminClientReferencePage() {
 
   return (
     <Stack gap="md">
-      <Title order={3}>Справка для клиента: возможные проблемы и сценарии</Title>
+      <ContextBar title="Справка для клиента" />
       <Text size="sm" c="dimmed">
         Документ для передачи заказчику. Можно редактировать и сохранять в систему. Поддерживается Markdown.
       </Text>

@@ -17,6 +17,7 @@ from src.application.dto.booking_dto import (
 from src.application.services.schedule_service import ScheduleService
 from src.domain.entities.booking import Booking
 from src.domain.entities.service_doctor import ServiceDoctor
+from src.domain.entities.waitlist_entry import WaitlistEntry
 from src.domain.interfaces.repositories.booking_repository import BookingRepository
 from src.infrastructure.database.booking_repo_impl import BookingRepositoryImpl
 from src.application.events.event_bus import get_event_bus
@@ -145,30 +146,54 @@ class BookingService:
         return BookingRead.model_validate(booking)
 
     async def create_admin_booking(self, clinic_id: UUID, data: BookingCreateAdmin) -> BookingRead:
-        """Create booking from admin flow for a specific clinic."""
+        """Create booking from admin flow for a specific clinic. Optionally from waitlist (waitlist_entry_id)."""
+        patient_id = data.patient_id
+        doctor_id = data.doctor_id
+        appointment_date = data.appointment_date
+        appointment_time = data.appointment_time
+
+        waitlist_entry: WaitlistEntry | None = None
+        if data.waitlist_entry_id:
+            waitlist_entry = await self.session.get(WaitlistEntry, data.waitlist_entry_id)
+            if not waitlist_entry or waitlist_entry.clinic_id != clinic_id:
+                raise LookupError("Waitlist entry not found")
+            if waitlist_entry.status not in ("waiting", "notified"):
+                raise ValueError("Waitlist entry is no longer available for conversion")
+            patient_id = waitlist_entry.patient_id
+            if waitlist_entry.doctor_id is not None:
+                doctor_id = waitlist_entry.doctor_id
+            if waitlist_entry.preferred_date is not None:
+                appointment_date = waitlist_entry.preferred_date
+            if waitlist_entry.preferred_time is not None:
+                appointment_time = waitlist_entry.preferred_time
+
         if data.status not in ALLOWED_STATUSES:
             raise ValueError(BOOKING_INVALID_STATUS)
-        await self._ensure_service_doctor(data.service_id, data.doctor_id)
+        await self._ensure_service_doctor(data.service_id, doctor_id)
         await self._ensure_slot_available(
-            doctor_id=data.doctor_id,
-            appointment_date=data.appointment_date,
-            appointment_time=data.appointment_time,
+            doctor_id=doctor_id,
+            appointment_date=appointment_date,
+            appointment_time=appointment_time,
         )
 
         prepayment = data.prepayment_amount or Decimal("0.00")
 
         booking = Booking(
             clinic_id=clinic_id,
-            patient_id=data.patient_id,
-            doctor_id=data.doctor_id,
+            patient_id=patient_id,
+            doctor_id=doctor_id,
             service_id=data.service_id,
-            appointment_date=data.appointment_date,
-            appointment_time=data.appointment_time,
+            appointment_date=appointment_date,
+            appointment_time=appointment_time,
             status=data.status,
             prepayment_amount=prepayment,
             notes=data.notes,
         )
         booking = await self.repository.create(booking)
+
+        if waitlist_entry is not None:
+            waitlist_entry.status = "converted"
+            await self.session.flush()
 
         await self.schedule_service.invalidate_daily_schedule_cache(
             doctor_id=data.doctor_id,
@@ -289,14 +314,18 @@ class BookingService:
         )
         return BookingRead.model_validate(booking)
 
-    async def complete_booking(self, clinic_id: UUID, booking_id: UUID) -> BookingRead:
+    async def complete_booking(
+        self,
+        clinic_id: UUID,
+        booking_id: UUID,
+        use_subscription_id: UUID | None = None,
+    ) -> BookingRead:
         """Mark booking as completed within a specific clinic (ACL by clinic).
 
-        Phase 1:
-        - if there is an active subscription for the patient in this clinic that matches
-          priority rules, attempt to use it automatically for this booking;
-        - on successful usage mark booking.paid_by_subscription = True;
-        - business errors from loyalty layer do not block completion.
+        If use_subscription_id is provided, use that subscription for this booking (Checkout Hub).
+        Otherwise try to auto-apply best subscription by priority.
+        On successful usage mark booking.paid_by_subscription = True.
+        Business errors from loyalty layer do not block completion.
         """
         booking = await self.repository.get_by_id(booking_id)
         if not booking or booking.clinic_id != clinic_id:
@@ -305,33 +334,49 @@ class BookingService:
         if booking.status not in {"confirmed", "pending"}:
             raise ValueError(BOOKING_ONLY_PENDING_CONFIRMED_COMPLETED)
 
-        # Try to auto-apply best subscription, ignoring business errors.
-        try:
-            loyalty_service = LoyaltyService(self.session)
-            now = datetime.now()
+        loyalty_service = LoyaltyService(self.session)
+        now = datetime.now()
+        candidate = None
+        if use_subscription_id is not None:
+            sub = await loyalty_service.customer_repo.get_by_id(use_subscription_id)
+            if (
+                sub is not None
+                and sub.clinic_id == clinic_id
+                and sub.patient_id == booking.patient_id
+                and sub.status == "active"
+            ):
+                candidate = sub
+        if candidate is None and use_subscription_id is None:
             candidate = await loyalty_service.select_subscription_for_booking(
                 clinic_id=booking.clinic_id,
                 patient_id=booking.patient_id,
                 booking_id=booking.id,
                 on_date=now,
             )
-            if candidate is not None:
-                await loyalty_service.use_subscription_for_booking(
-                    UseSubscriptionForBookingInput(
-                        clinic_id=booking.clinic_id,
-                        booking_id=booking.id,
-                        subscription_id=candidate.id,
-                        used_visits=1,
-                        used_amount=None,
-                        used_at=now,
+
+        if candidate is not None:
+            try:
+                used_visits = 1 if (candidate.remaining_visits or 0) > 0 else None
+                used_amount = None if used_visits else (candidate.remaining_amount or None)
+                if used_visits is None and used_amount is None:
+                    pass  # skip usage
+                else:
+                    await loyalty_service.use_subscription_for_booking(
+                        UseSubscriptionForBookingInput(
+                            clinic_id=booking.clinic_id,
+                            booking_id=booking.id,
+                            subscription_id=candidate.id,
+                            used_visits=used_visits,
+                            used_amount=used_amount,
+                            used_at=now,
+                        )
                     )
+                    booking.paid_by_subscription = True
+            except Exception as e:  # pragma: no cover
+                logger.warning(
+                    "Failed to apply subscription on booking completion",
+                    extra={"booking_id": str(booking_id), "error": str(e)},
                 )
-                booking.paid_by_subscription = True
-        except Exception as e:  # pragma: no cover - защитный слой
-            logger.warning(
-                "Failed to apply subscription on booking completion",
-                extra={"booking_id": str(booking_id), "error": str(e)},
-            )
 
         booking.status = "completed"
         booking = await self.repository.update(booking)

@@ -120,16 +120,122 @@ class ReportsService:
 
         revenue = payments_sum + prepay_sum
 
+        cancellations = int(counts.get("cancelled", 0))
+        new_leads = await self._count_new_leads(day, day, clinic_ids=[clinic.id])
         return DashboardReport(
             date=day,
             bookings_pending=int(counts.get("pending", 0)),
             bookings_confirmed=int(counts.get("confirmed", 0)),
             bookings_completed=int(counts.get("completed", 0)),
-            bookings_cancelled=int(counts.get("cancelled", 0)),
+            bookings_cancelled=cancellations,
             bookings_no_show=int(counts.get("no_show", 0)),
             new_patients=new_patients,
             revenue=revenue,
+            new_leads_count=new_leads,
+            cancellations_count=cancellations,
+            nps_avg=None,
         )
+
+    async def get_dashboard_report_all_clinics(self, day: date) -> DashboardReport:
+        """Dashboard metrics for a specific day, aggregated over all clinics."""
+        return await self.get_dashboard_report_by_clinic_ids(day, clinic_ids=None)
+
+    async def get_dashboard_report_by_clinic_ids(
+        self, day: date, clinic_ids: list[UUID] | None = None
+    ) -> DashboardReport:
+        """Dashboard metrics for a day, optionally filtered by clinic IDs. None/empty = all clinics."""
+        booking_filter = (
+            (Booking.appointment_date == day, Booking.deleted_at.is_(None))
+            if not clinic_ids
+            else (
+                Booking.clinic_id.in_(clinic_ids),
+                Booking.appointment_date == day,
+                Booking.deleted_at.is_(None),
+            )
+        )
+        result = await self.session.execute(
+            select(Booking.status, func.count()).where(*booking_filter).group_by(Booking.status)
+        )
+        counts = {status: count for status, count in result.all()}
+
+        start_dt = datetime.combine(day, dtime.min)
+        end_dt = start_dt + timedelta(days=1)
+        patient_filter = (
+            (Patient.created_at >= start_dt, Patient.created_at < end_dt, Patient.deleted_at.is_(None))
+            if not clinic_ids
+            else (
+                Patient.clinic_id.in_(clinic_ids),
+                Patient.created_at >= start_dt,
+                Patient.created_at < end_dt,
+                Patient.deleted_at.is_(None),
+            )
+        )
+        result = await self.session.execute(
+            select(func.count()).select_from(Patient).where(*patient_filter)
+        )
+        new_patients = int(result.scalar() or 0)
+
+        pay_join = (
+            Payment.status == "succeeded",
+            Booking.appointment_date == day,
+            Booking.deleted_at.is_(None),
+        )
+        if clinic_ids:
+            pay_join = (Payment.clinic_id.in_(clinic_ids),) + pay_join
+        payment_result = await self.session.execute(
+            select(func.coalesce(func.sum(Payment.amount), 0))
+            .join(Booking, Booking.id == Payment.booking_id)
+            .where(*pay_join)
+        )
+        payments_sum = Decimal(payment_result.scalar() or 0)
+
+        prepay_filter = (
+            Booking.appointment_date == day,
+            Booking.status == "completed",
+            Booking.payment_id.is_(None),
+            Booking.deleted_at.is_(None),
+        )
+        if clinic_ids:
+            prepay_filter = (Booking.clinic_id.in_(clinic_ids),) + prepay_filter
+        prepay_result = await self.session.execute(
+            select(func.coalesce(func.sum(Booking.prepayment_amount), 0)).where(*prepay_filter)
+        )
+        prepay_sum = Decimal(prepay_result.scalar() or 0)
+        revenue = payments_sum + prepay_sum
+
+        cancellations = int(counts.get("cancelled", 0))
+        new_leads = await self._count_new_leads(day, day, clinic_ids=clinic_ids)
+        return DashboardReport(
+            date=day,
+            bookings_pending=int(counts.get("pending", 0)),
+            bookings_confirmed=int(counts.get("confirmed", 0)),
+            bookings_completed=int(counts.get("completed", 0)),
+            bookings_cancelled=cancellations,
+            bookings_no_show=int(counts.get("no_show", 0)),
+            new_patients=new_patients,
+            revenue=revenue,
+            new_leads_count=new_leads,
+            cancellations_count=cancellations,
+            nps_avg=None,
+        )
+
+    async def _count_new_leads(
+        self,
+        date_from: date,
+        date_to: date,
+        clinic_ids: list[UUID] | None,
+    ) -> int:
+        """Count LeadCard created in [date_from, date_to] for given clinics (or all)."""
+        start_dt = datetime.combine(date_from, dtime.min)
+        end_dt = datetime.combine(date_to, dtime.min) + timedelta(days=1)
+        stmt = select(func.count()).select_from(LeadCard).where(
+            LeadCard.created_at >= start_dt,
+            LeadCard.created_at < end_dt,
+        )
+        if clinic_ids:
+            stmt = stmt.where(LeadCard.clinic_id.in_(clinic_ids))
+        result = await self.session.execute(stmt)
+        return int(result.scalar() or 0)
 
     def _period_bounds(self, day: date, period: DashboardPeriod) -> tuple[date, date]:
         """Return (date_from, date_to) for the given period anchored on day."""
@@ -209,15 +315,180 @@ class ReportsService:
         prepay_sum = Decimal(prepay_result.scalar() or 0)
         revenue = payments_sum + prepay_sum
 
+        cancellations = int(counts.get("cancelled", 0))
+        new_leads = await self._count_new_leads(date_from, date_to, clinic_ids=[clinic.id])
         return DashboardReport(
             date=date_from,
             bookings_pending=int(counts.get("pending", 0)),
             bookings_confirmed=int(counts.get("confirmed", 0)),
             bookings_completed=int(counts.get("completed", 0)),
-            bookings_cancelled=int(counts.get("cancelled", 0)),
+            bookings_cancelled=cancellations,
             bookings_no_show=int(counts.get("no_show", 0)),
             new_patients=new_patients,
             revenue=revenue,
+            new_leads_count=new_leads,
+            cancellations_count=cancellations,
+            nps_avg=None,
+        )
+
+    async def get_dashboard_report_period_all_clinics(
+        self, day: date, period: DashboardPeriod = "day"
+    ) -> DashboardReport:
+        """Dashboard metrics for a period, aggregated over all clinics."""
+        date_from, date_to = self._period_bounds(day, period)
+
+        result = await self.session.execute(
+            select(Booking.status, func.count())
+            .where(
+                Booking.appointment_date >= date_from,
+                Booking.appointment_date <= date_to,
+                Booking.deleted_at.is_(None),
+            )
+            .group_by(Booking.status)
+        )
+        counts = {status: count for status, count in result.all()}
+
+        start_dt = datetime.combine(date_from, dtime.min)
+        end_dt = datetime.combine(date_to, dtime.min) + timedelta(days=1)
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(Patient)
+            .where(
+                Patient.created_at >= start_dt,
+                Patient.created_at < end_dt,
+                Patient.deleted_at.is_(None),
+            )
+        )
+        new_patients = int(result.scalar() or 0)
+
+        payment_result = await self.session.execute(
+            select(func.coalesce(func.sum(Payment.amount), 0))
+            .join(Booking, Booking.id == Payment.booking_id)
+            .where(
+                Payment.status == "succeeded",
+                Booking.appointment_date >= date_from,
+                Booking.appointment_date <= date_to,
+                Booking.deleted_at.is_(None),
+            )
+        )
+        payments_sum = Decimal(payment_result.scalar() or 0)
+        prepay_result = await self.session.execute(
+            select(func.coalesce(func.sum(Booking.prepayment_amount), 0)).where(
+                Booking.appointment_date >= date_from,
+                Booking.appointment_date <= date_to,
+                Booking.status == "completed",
+                Booking.payment_id.is_(None),
+                Booking.deleted_at.is_(None),
+            )
+        )
+        prepay_sum = Decimal(prepay_result.scalar() or 0)
+        revenue = payments_sum + prepay_sum
+
+        cancellations = int(counts.get("cancelled", 0))
+        new_leads = await self._count_new_leads(date_from, date_to, clinic_ids=None)
+        return DashboardReport(
+            date=date_from,
+            bookings_pending=int(counts.get("pending", 0)),
+            bookings_confirmed=int(counts.get("confirmed", 0)),
+            bookings_completed=int(counts.get("completed", 0)),
+            bookings_cancelled=cancellations,
+            bookings_no_show=int(counts.get("no_show", 0)),
+            new_patients=new_patients,
+            revenue=revenue,
+            new_leads_count=new_leads,
+            cancellations_count=cancellations,
+            nps_avg=None,
+        )
+
+    async def get_dashboard_report_period_by_clinic_ids(
+        self, day: date, period: DashboardPeriod = "day", clinic_ids: list[UUID] | None = None
+    ) -> DashboardReport:
+        """Dashboard metrics for a period, optionally filtered by clinic IDs. None/empty = all."""
+        date_from, date_to = self._period_bounds(day, period)
+
+        booking_filter = (
+            (
+                Booking.appointment_date >= date_from,
+                Booking.appointment_date <= date_to,
+                Booking.deleted_at.is_(None),
+            )
+            if not clinic_ids
+            else (
+                Booking.clinic_id.in_(clinic_ids),
+                Booking.appointment_date >= date_from,
+                Booking.appointment_date <= date_to,
+                Booking.deleted_at.is_(None),
+            )
+        )
+        result = await self.session.execute(
+            select(Booking.status, func.count()).where(*booking_filter).group_by(Booking.status)
+        )
+        counts = {status: count for status, count in result.all()}
+
+        start_dt = datetime.combine(date_from, dtime.min)
+        end_dt = datetime.combine(date_to, dtime.min) + timedelta(days=1)
+        patient_filter = (
+            (
+                Patient.created_at >= start_dt,
+                Patient.created_at < end_dt,
+                Patient.deleted_at.is_(None),
+            )
+            if not clinic_ids
+            else (
+                Patient.clinic_id.in_(clinic_ids),
+                Patient.created_at >= start_dt,
+                Patient.created_at < end_dt,
+                Patient.deleted_at.is_(None),
+            )
+        )
+        result = await self.session.execute(
+            select(func.count()).select_from(Patient).where(*patient_filter)
+        )
+        new_patients = int(result.scalar() or 0)
+
+        pay_join = (
+            Payment.status == "succeeded",
+            Booking.appointment_date >= date_from,
+            Booking.appointment_date <= date_to,
+            Booking.deleted_at.is_(None),
+        )
+        if clinic_ids:
+            pay_join = (Payment.clinic_id.in_(clinic_ids),) + pay_join
+        payment_result = await self.session.execute(
+            select(func.coalesce(func.sum(Payment.amount), 0))
+            .join(Booking, Booking.id == Payment.booking_id)
+            .where(*pay_join)
+        )
+        payments_sum = Decimal(payment_result.scalar() or 0)
+        prepay_filter = (
+            Booking.appointment_date >= date_from,
+            Booking.appointment_date <= date_to,
+            Booking.status == "completed",
+            Booking.payment_id.is_(None),
+            Booking.deleted_at.is_(None),
+        )
+        if clinic_ids:
+            prepay_filter = (Booking.clinic_id.in_(clinic_ids),) + prepay_filter
+        prepay_result = await self.session.execute(
+            select(func.coalesce(func.sum(Booking.prepayment_amount), 0)).where(*prepay_filter)
+        )
+        prepay_sum = Decimal(prepay_result.scalar() or 0)
+        revenue = payments_sum + prepay_sum
+
+        cancellations = int(counts.get("cancelled", 0))
+        new_leads = await self._count_new_leads(date_from, date_to, clinic_ids=clinic_ids)
+        return DashboardReport(
+            date=date_from,
+            bookings_pending=int(counts.get("pending", 0)),
+            bookings_confirmed=int(counts.get("confirmed", 0)),
+            bookings_completed=int(counts.get("completed", 0)),
+            bookings_cancelled=cancellations,
+            bookings_no_show=int(counts.get("no_show", 0)),
+            new_patients=new_patients,
+            revenue=revenue,
+            new_leads_count=new_leads,
+            cancellations_count=cancellations,
+            nps_avg=None,
         )
 
     async def get_no_show_report(

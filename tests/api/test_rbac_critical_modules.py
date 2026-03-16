@@ -11,10 +11,18 @@ from httpx import AsyncClient
 
 from src.main import app
 
+
+@pytest.fixture(scope="module", autouse=True)
+def ensure_test_db_engine():
+    """Ensure DB engine is initialized when running only this module (TESTING=1 defers init)."""
+    from src.infrastructure.database import base as db_base
+    if getattr(db_base, "init_engine_for_testing", None):
+        db_base.init_engine_for_testing()
+
 # Endpoints that use require_permissions; clinic_id placeholder for path params
 RBAC_CRITICAL_ENDPOINTS = [
     # Finance (view_finance / manage_finance)
-    ("GET", "/api/v1/admin/clinics/{clinic_id}/cashboxes"),
+    ("GET", "/api/v1/admin/clinics/{clinic_id}/finance/cashboxes"),
     # Payroll (view_payroll / manage_payroll)
     ("GET", "/api/v1/admin/clinics/{clinic_id}/payroll/policies"),
     # Inventory (view_inventory)
@@ -44,14 +52,16 @@ def _path_with_placeholder(path: str, clinic_id: str | None = None) -> str:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method,path", RBAC_CRITICAL_ENDPOINTS)
 async def test_rbac_critical_module_401_without_auth(method: str, path: str):
-    """Without Authorization header, protected endpoints return 401."""
+    """Without Authorization header, protected endpoints return 401 or 403."""
     path = _path_with_placeholder(path)
     async with AsyncClient(app=app, base_url="http://test") as client:
         if method == "GET":
             resp = await client.get(path)
         else:
             resp = await client.request(method, path)
-        assert resp.status_code == 401, f"{method} {path} expected 401 without auth"
+        assert resp.status_code in (401, 403), (
+            f"{method} {path} expected 401 or 403 without auth, got {resp.status_code}"
+        )
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
-import { Alert, Button, Paper, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { ActionIcon, Alert, Button, Menu, Paper, Stack, Table, Text, TextInput } from "@mantine/core";
+import { IconDotsVertical } from "@tabler/icons-react";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { useState } from "react";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -56,7 +59,7 @@ export default function AdminAdministratorsPage() {
 
   return (
     <Stack gap="md">
-      <Title order={3}>Администраторы</Title>
+      <ContextBar title="Администраторы" />
       <Text size="sm" c="dimmed">
         Список администраторов клиники. В чате сохраняется, какой администратор отправил сообщение. Добавьте учётные записи с ФИО и датой рождения для логирования.
       </Text>
@@ -107,18 +110,19 @@ export default function AdminAdministratorsPage() {
 
       <Paper p="md" withBorder>
         <Text fw={600} size="sm" mb="xs">Список</Text>
-        {isLoading && <Text size="sm" c="dimmed">Загрузка...</Text>}
+        {isLoading && <PageSkeleton variant="table" rows={4} />}
         {isError && <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>}
         {!isLoading && !isError && list.length === 0 && (
           <Text size="sm" c="dimmed">Нет администраторов. Добавьте первого выше.</Text>
         )}
         {list.length > 0 && (
-          <Table withTableBorder withColumnBorders>
+          <Table withTableBorder withColumnBorders verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Email</Table.Th>
                 <Table.Th>ФИО</Table.Th>
                 <Table.Th>Дата рождения</Table.Th>
+                <Table.Th style={{ width: 52 }} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -127,6 +131,23 @@ export default function AdminAdministratorsPage() {
                   <Table.Td>{a.email}</Table.Td>
                   <Table.Td>{a.full_name ?? "—"}</Table.Td>
                   <Table.Td>{a.birth_date ?? "—"}</Table.Td>
+                  <Table.Td>
+                    <Menu position="bottom-end" withArrow>
+                      <Menu.Target>
+                        <ActionIcon variant="subtle" size="sm" aria-label="Действия">
+                          <IconDotsVertical size={16} />
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item disabled title="Редактирование (API при необходимости)">
+                          Редактировать
+                        </Menu.Item>
+                        <Menu.Item disabled color="red" title="Удаление (API при необходимости)">
+                          Удалить
+                        </Menu.Item>
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

@@ -67,6 +67,7 @@ async def list_tasks(
     role_assignee: str | None = Query(None),
     due_from: datetime | None = Query(None),
     due_to: datetime | None = Query(None),
+    source: str | None = Query(None, description="Filter by source; use 'ai' for AI-suggested/auto tasks"),
     session: AsyncSession = Depends(get_session),
     context: AdminContext = Depends(get_request_context),
 ) -> list[TaskResponse]:
@@ -93,11 +94,40 @@ async def list_tasks(
         stmt = stmt.where(Task.due_at >= due_from)
     if due_to:
         stmt = stmt.where(Task.due_at <= due_to)
+    if source == "ai":
+        stmt = stmt.where(Task.source.in_(["ai_suggested", "ai_auto"]))
+    elif source:
+        stmt = stmt.where(Task.source == source)
     stmt = stmt.order_by(Task.due_at.asc().nullslast(), Task.created_at.desc())
 
     result = await session.execute(stmt)
     tasks = result.scalars().unique().all()
     return [task_entity_to_response(t) for t in tasks]
+
+
+@router.post(
+    "/{task_id}/claim",
+    response_model=TaskResponse,
+    dependencies=[Depends(require_permissions("manage_tasks", "assign_tasks"))],
+)
+async def claim_task(
+    task_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> TaskResponse:
+    """Assign task to current user (claim). Returns updated task or 404."""
+    if context.clinic_id is None or context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic and user context required")
+    service = _get_task_service(session)
+    task = await service.get_task_details(task_id)
+    if not _task_visible_to_context(task, context):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    task = await service.reassign_task(
+        task_id=task_id,
+        assignee_id=context.user_id,
+        role_assignee=None,
+    )
+    return task_entity_to_response(task)
 
 
 @router.get(

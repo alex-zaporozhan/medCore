@@ -2,15 +2,15 @@ import { useClinics } from "@/hooks";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
 import {
   Button,
+  Drawer,
   Group,
-  Modal,
   Select,
   Stack,
   Table,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
 import type { Clinic } from "@/api/types";
@@ -111,7 +111,7 @@ export default function AdminClinicsPage() {
   if (isLoading) {
     return (
       <Stack>
-        <Title order={3}>Клиники</Title>
+        <ContextBar title="Клиники" />
         <DataSkeleton card />
       </Stack>
     );
@@ -121,7 +121,7 @@ export default function AdminClinicsPage() {
     const message = error instanceof Error ? error.message : "Ошибка загрузки";
     return (
       <Stack>
-        <Title order={3}>Клиники</Title>
+        <ContextBar title="Клиники" />
         <Text c="red">{message}</Text>
       </Stack>
     );
@@ -129,17 +129,14 @@ export default function AdminClinicsPage() {
 
   return (
     <Stack gap="md">
-      <Group justify="space-between">
-        <Title order={3}>Клиники</Title>
-        <Button onClick={handleCreate}>Добавить клинику</Button>
-      </Group>
+      <ContextBar title="Клиники" actions={<Button onClick={handleCreate}>Добавить клинику</Button>} />
 
       {clinics.length === 0 ? (
         <Text size="sm" c="dimmed">
           Ещё нет ни одной клиники. Добавьте первую, чтобы начать работу с системой.
         </Text>
       ) : (
-        <Table striped highlightOnHover withColumnBorders>
+        <Table striped highlightOnHover withColumnBorders verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Название</Table.Th>
@@ -177,11 +174,12 @@ export default function AdminClinicsPage() {
         </Table>
       )}
 
-      <Modal
+      <Drawer
+        position="right"
+        size="lg"
         opened={opened}
         onClose={close}
         title={form.id ? "Редактирование клиники" : "Новая клиника"}
-        centered
       >
         <Stack>
           <TextInput
@@ -264,7 +262,7 @@ export default function AdminClinicsPage() {
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </Drawer>
     </Stack>
   );
 }

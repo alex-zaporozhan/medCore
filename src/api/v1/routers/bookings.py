@@ -4,7 +4,8 @@ import logging
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import get_current_patient, get_session
@@ -13,6 +14,15 @@ from src.application.dto.booking_dto import (
     BookingCreatePatient,
     BookingRead,
     BookingRescheduleRequest,
+    CheckoutInfoResponse,
+    CompleteBookingRequest,
+    EligibleSubscriptionItem,
+)
+from src.application.dto.card_dto import (
+    BookingCardConsumableItem,
+    BookingCardResponse,
+    BookingCardServiceItem,
+    BookingCardTaskItem,
 )
 from src.application.services.booking_service import BookingService
 from src.api.v1.routers.admin_auth import get_current_admin
@@ -89,6 +99,134 @@ async def cancel_own_booking(
 
 
 @router.get(
+    "/admin/bookings/{booking_id}/checkout-info",
+    response_model=CheckoutInfoResponse,
+)
+async def get_booking_checkout_info(
+    booking_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> CheckoutInfoResponse:
+    """Eligible subscriptions for this booking (Checkout Hub)."""
+    from src.domain.entities.booking import Booking
+    from src.application.services.loyalty_service import LoyaltyService
+    from datetime import datetime
+
+    result = await session.execute(
+        select(Booking).where(
+            Booking.id == booking_id,
+            Booking.clinic_id == current_admin.clinic_id,
+            Booking.deleted_at.is_(None),
+        )
+    )
+    booking = result.scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    loyalty = LoyaltyService(session)
+    eligible = await loyalty.get_eligible_subscriptions_for_booking(
+        clinic_id=booking.clinic_id,
+        patient_id=booking.patient_id,
+        service_id=booking.service_id,
+        on_date=datetime.now(),
+    )
+    items = [
+        EligibleSubscriptionItem(
+            customer_subscription_id=sub.id,
+            package_name=pkg.name,
+            remaining_visits=sub.remaining_visits,
+            remaining_amount=sub.remaining_amount,
+        )
+        for sub, pkg in eligible
+    ]
+    return CheckoutInfoResponse(eligible_subscriptions=items)
+
+
+@router.get(
+    "/admin/bookings/{booking_id}/card",
+    response_model=BookingCardResponse,
+)
+async def get_booking_card(
+    booking_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> BookingCardResponse:
+    """Rich booking card for drawer: booking, services, consumables, tasks."""
+    from src.domain.entities.booking import Booking
+    from src.domain.entities.service import Service
+    from src.domain.entities.service_consumable import ServiceConsumable
+    from src.domain.entities.task import Task
+    from src.domain.entities.product import Product
+
+    result = await session.execute(
+        select(Booking).where(
+            Booking.id == booking_id,
+            Booking.clinic_id == current_admin.clinic_id,
+            Booking.deleted_at.is_(None),
+        )
+    )
+    booking = result.scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+
+    booking_dict = BookingRead.model_validate(booking).model_dump()
+
+    # Single service for this booking
+    svc_result = await session.execute(select(Service).where(Service.id == booking.service_id))
+    service = svc_result.scalar_one_or_none()
+    services = [
+        BookingCardServiceItem(
+            service_id=booking.service_id,
+            service_name=service.name if service else "",
+            amount=booking.prepayment_amount,
+        )
+    ]
+
+    # Consumables for this service (technocard)
+    cons_result = await session.execute(
+        select(ServiceConsumable, Product.name).join(
+            Product, Product.id == ServiceConsumable.product_id
+        ).where(
+            ServiceConsumable.service_id == booking.service_id,
+            ServiceConsumable.clinic_id == current_admin.clinic_id,
+        )
+    )
+    consumables = [
+        BookingCardConsumableItem(
+            product_id=sc.product_id,
+            product_name=pname,
+            quantity_per_service=sc.quantity_per_service,
+            unit=sc.unit,
+        )
+        for sc, pname in cons_result.all()
+    ]
+
+    # Tasks linked to this booking
+    task_result = await session.execute(
+        select(Task).where(
+            Task.booking_id == booking_id,
+            Task.clinic_id == current_admin.clinic_id,
+        )
+    )
+    tasks = [
+        BookingCardTaskItem(
+            id=t.id,
+            title=t.title,
+            status=t.status,
+            priority=t.priority,
+            due_at=t.due_at,
+        )
+        for t in task_result.scalars().all()
+    ]
+
+    return BookingCardResponse(
+        booking=booking_dict,
+        services=services,
+        consumables=consumables,
+        tasks=tasks,
+    )
+
+
+@router.get(
     "/admin/bookings",
     response_model=list[BookingRead],
 )
@@ -129,10 +267,12 @@ async def create_admin_booking(
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
-    """Create booking from admin side."""
+    """Create booking from admin side. Optionally pass waitlist_entry_id to convert a waitlist entry."""
     service = BookingService(session)
     try:
         booking = await service.create_admin_booking(current_admin.clinic_id, data)
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Waitlist entry not found")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return booking
@@ -164,13 +304,17 @@ async def cancel_booking_admin(
 )
 async def complete_booking_admin(
     booking_id: UUID,
+    body: CompleteBookingRequest | None = Body(None),
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
-    """Admin mark booking as completed."""
+    """Admin mark booking as completed. Optional use_subscription_id to apply specific package."""
     service = BookingService(session)
+    use_subscription_id = body.use_subscription_id if body else None
     try:
-        booking = await service.complete_booking(current_admin.clinic_id, booking_id)
+        booking = await service.complete_booking(
+            current_admin.clinic_id, booking_id, use_subscription_id=use_subscription_id
+        )
     except LookupError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     except ValueError as exc:

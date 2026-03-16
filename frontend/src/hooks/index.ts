@@ -24,7 +24,7 @@ export {
   useUpdateDoctor,
   useDeleteDoctor,
 } from "./useDoctorsMutations";
-export { useCreatePatient, useUpdatePatient } from "./usePatientsMutations";
+export { useCreatePatient, useUpdatePatient, useDeletePatient } from "./usePatientsMutations";
 export {
   useCreateService,
   useUpdateService,
@@ -61,7 +61,12 @@ export {
   useUpdateLeadStage,
   useCreateLeadNote,
 } from "./useCrmLeads";
-export { useCashboxes, useFinanceTransactions } from "./useErpFinance";
+export {
+  useCashboxes,
+  useFinanceTransactions,
+  useFinanceLiability,
+  useCreateFinanceTransaction,
+} from "./useErpFinance";
 export { usePayrollPolicies, useSalaryTransactions } from "./useErpPayroll";
 export {
   useInventoryProducts,
@@ -83,7 +88,11 @@ export {
   useAdminFormTemplates,
   useAdminFormSubmissions,
   useAdminFormSubmissionDetail,
+  useSendFormLink,
   useUpsertAdminFormTemplate,
   usePatientPendingForms,
   useSubmitPatientForm,
 } from "./useForms";
+export { useAdminSearch } from "./useAdminSearch";
+export { useAiAgent } from "./useAiAgent";
+export { useRevenueHunterSaved } from "./useRevenueHunter";

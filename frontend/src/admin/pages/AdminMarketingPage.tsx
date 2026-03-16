@@ -26,7 +26,6 @@ import {
   Drawer,
   Group,
   Loader,
-  Modal,
   Paper,
   Stack,
   Switch,
@@ -35,8 +34,9 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useState } from "react";
 
@@ -137,7 +137,7 @@ function PostsTab({ clinicId }: { clinicId: string }) {
     setSaveError(null);
   };
 
-  if (isLoading) return <Loader size="sm" />;
+  if (isLoading) return <><ContextBar title="Маркетинг" /><PageSkeleton variant="table" rows={5} /></>;
   if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
 
   const list = posts ?? [];
@@ -151,7 +151,7 @@ function PostsTab({ clinicId }: { clinicId: string }) {
       {list.length === 0 ? (
         <EmptyStateHint title="Нет постов. Создайте акцию или новость." />
       ) : (
-        <Table withTableBorder withColumnBorders>
+        <Table withTableBorder withColumnBorders verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Заголовок</Table.Th>
@@ -194,7 +194,7 @@ function PostsTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Modal opened={opened} onClose={handleClose} title={editing ? "Изменить пост" : "Новый пост"} size="md">
+      <Drawer position="right" size="md" opened={opened} onClose={handleClose} title={editing ? "Изменить пост" : "Новый пост"}>
         <Stack>
           {saveError && (
             <Alert color="red" title="Ошибка" onClose={() => setSaveError(null)} withCloseButton>
@@ -210,7 +210,7 @@ function PostsTab({ clinicId }: { clinicId: string }) {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Modal>
+      </Drawer>
     </Stack>
   );
 }
@@ -275,7 +275,7 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
     setSaveError(null);
   };
 
-  if (isLoading) return <Loader size="sm" />;
+  if (isLoading) return <PageSkeleton variant="table" rows={4} />;
   if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
 
   const list = stories ?? [];
@@ -289,7 +289,7 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
       {list.length === 0 ? (
         <EmptyStateHint title="Нет сторис. Добавьте карточки для полосы в PWA." />
       ) : (
-        <Table withTableBorder withColumnBorders>
+        <Table withTableBorder withColumnBorders verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Порядок</Table.Th>
@@ -327,7 +327,7 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Modal opened={opened} onClose={handleCloseStories} title={editing ? "Изменить сторис" : "Новый сторис"}>
+      <Drawer position="right" size="md" opened={opened} onClose={handleCloseStories} title={editing ? "Изменить сторис" : "Новый сторис"}>
         <Stack>
           {saveError && (
             <Alert color="red" title="Ошибка" onClose={() => setSaveError(null)} withCloseButton>
@@ -346,7 +346,7 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Modal>
+      </Drawer>
     </Stack>
   );
 }
@@ -404,12 +404,12 @@ function AttributionTab({ clinicId }: { clinicId: string }) {
         ROI по каналам и кампаниям. Клик по строке — детализация (лиды, записи, транзакции).
       </Text>
       <Paper withBorder radius="md" p="sm">
-        {isLoading && <Loader size="sm" />}
+        {isLoading && <PageSkeleton variant="table" rows={4} />}
         {isError && (
           <Text size="sm" c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>
         )}
         {!isLoading && !isError && (
-          <Table striped highlightOnHover withTableBorder withColumnBorders>
+          <Table striped highlightOnHover withTableBorder withColumnBorders verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Источник</Table.Th>
@@ -521,7 +521,7 @@ export default function AdminMarketingPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Маркетинг</Title>
+        <ContextBar title="Маркетинг" />
         <Text size="sm" c="dimmed">Выберите клинику.</Text>
       </Stack>
     );
@@ -529,7 +529,7 @@ export default function AdminMarketingPage() {
 
   return (
     <Stack>
-      <Title order={3}>Маркетинг</Title>
+      <ContextBar title="Маркетинг" />
       <Tabs defaultValue="posts">
         <Tabs.List>
           <Tabs.Tab value="posts">Посты (лента)</Tabs.Tab>

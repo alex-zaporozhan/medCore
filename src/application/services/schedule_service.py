@@ -14,6 +14,8 @@ from src.application.dto.schedule_dto import (
     DailySchedule,
     DoctorSlot,
     ScheduleSlot,
+    SuggestSlotItem,
+    SuggestSlotsResponse,
 )
 from src.domain.entities.booking import Booking
 from src.domain.entities.clinic import Clinic
@@ -50,39 +52,45 @@ class ScheduleService:
         day: date,
     ) -> DailySchedule:
         """Get doctor's schedule for a specific day, using cache-aside in Redis."""
-        redis = await self._get_redis()
-        cache_key = self._cache_key(doctor_id, day)
+        try:
+            redis = await self._get_redis()
+            cache_key = self._cache_key(doctor_id, day)
+            cached = await redis.get(cache_key)
+            if cached:
+                try:
+                    payload = json.loads(cached)
+                    logger.debug(
+                        "Schedule cache hit",
+                        extra={"doctor_id": str(doctor_id), "date": day.isoformat()},
+                    )
+                    return DailySchedule.model_validate(payload)
+                except Exception:
+                    logger.warning(
+                        "Failed to deserialize cached schedule, rebuilding",
+                        extra={"doctor_id": str(doctor_id), "date": day.isoformat()},
+                    )
 
-        cached = await redis.get(cache_key)
-        if cached:
+            schedule = await self._build_daily_schedule(doctor_id, day)
+
             try:
-                payload = json.loads(cached)
-                logger.debug(
-                    "Schedule cache hit",
-                    extra={"doctor_id": str(doctor_id), "date": day.isoformat()},
+                await redis.setex(
+                    cache_key,
+                    300,  # 5 minutes TTL
+                    schedule.model_dump_json(),
                 )
-                return DailySchedule.model_validate(payload)
             except Exception:
                 logger.warning(
-                    "Failed to deserialize cached schedule, rebuilding",
+                    "Failed to store schedule in Redis",
                     extra={"doctor_id": str(doctor_id), "date": day.isoformat()},
                 )
 
-        schedule = await self._build_daily_schedule(doctor_id, day)
-
-        try:
-            await redis.setex(
-                cache_key,
-                300,  # 5 minutes TTL
-                schedule.model_dump_json(),
+            return schedule
+        except Exception as redis_exc:
+            logger.warning(
+                "Redis unavailable for schedule cache, building without cache",
+                extra={"doctor_id": str(doctor_id), "date": day.isoformat(), "error": str(redis_exc)},
             )
-        except Exception:
-            logger.exception(
-                "Failed to store schedule in Redis",
-                extra={"doctor_id": str(doctor_id), "date": day.isoformat()},
-            )
-
-        return schedule
+            return await self._build_daily_schedule(doctor_id, day)
 
     async def invalidate_daily_schedule_cache(
         self,
@@ -90,13 +98,19 @@ class ScheduleService:
         day: date,
     ) -> None:
         """Invalidate cached schedule for a specific day."""
-        redis = await self._get_redis()
-        cache_key = self._cache_key(doctor_id, day)
-        await redis.delete(cache_key)
-        logger.info(
-            "Schedule cache invalidated",
-            extra={"doctor_id": str(doctor_id), "date": day.isoformat()},
-        )
+        try:
+            redis = await self._get_redis()
+            cache_key = self._cache_key(doctor_id, day)
+            await redis.delete(cache_key)
+            logger.info(
+                "Schedule cache invalidated",
+                extra={"doctor_id": str(doctor_id), "date": day.isoformat()},
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to invalidate schedule cache (Redis unavailable?)",
+                extra={"doctor_id": str(doctor_id), "date": day.isoformat(), "error": str(exc)},
+            )
 
     async def _build_daily_schedule(
         self,
@@ -255,3 +269,21 @@ class ScheduleService:
             times=times,
             by_doctor=by_doctor,
         )
+
+    async def get_suggest_slots(
+        self,
+        doctor_id: UUID,
+        day: date,
+        service_id: UUID | None = None,
+    ) -> SuggestSlotsResponse:
+        """Return free slots for a doctor on a date (for booking suggestion). service_id optional for future filtering by service duration."""
+        daily = await self.get_daily_schedule(doctor_id=doctor_id, day=day)
+        slots = [
+            SuggestSlotItem(
+                start=s.start_time.strftime("%H:%M"),
+                end=s.end_time.strftime("%H:%M"),
+            )
+            for s in daily.slots
+            if s.is_available
+        ]
+        return SuggestSlotsResponse(slots=slots)

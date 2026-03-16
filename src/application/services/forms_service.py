@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.domain.entities.digital_form_template import DigitalFormTemplate
 from src.domain.entities.digital_form_submission import DigitalFormSubmission
 from src.domain.entities.e_signature import ESignature
+from src.domain.entities.form_link_token import FormLinkToken
 
 
 class FormValidationError(Exception):
@@ -280,3 +283,33 @@ class FormsService:
         await self.session.flush()
         return submission
 
+    async def create_form_link(
+        self,
+        clinic_id: UUID,
+        template_id: UUID,
+        patient_id: UUID | None = None,
+        booking_id: UUID | None = None,
+        ttl_hours: int = 24,
+    ) -> str:
+        """Create a one-time form fill token and return the token string for URL building.
+
+        Caller must ensure template exists and belongs to clinic; at least one of
+        patient_id or booking_id should be provided for context (validation in API layer).
+        """
+        template = await self.session.get(DigitalFormTemplate, template_id)
+        if not template or template.clinic_id != clinic_id or not template.active:
+            raise LookupError("Form template not found or not active")
+
+        token_str = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+        link = FormLinkToken(
+            token=token_str,
+            clinic_id=clinic_id,
+            template_id=template_id,
+            patient_id=patient_id,
+            booking_id=booking_id,
+            expires_at=expires_at,
+        )
+        self.session.add(link)
+        await self.session.flush()
+        return token_str

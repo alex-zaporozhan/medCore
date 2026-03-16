@@ -1,4 +1,5 @@
 import "@mantine/core/styles.css";
+import "@mantine/spotlight/styles.css";
 import "./index.css";
 
 import { ColorSchemeScript, MantineProvider } from "@mantine/core";

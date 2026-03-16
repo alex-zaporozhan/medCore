@@ -9,6 +9,7 @@ const BASE = "/api";
 const PATIENT_TOKEN_KEY = "dental_booking_patient_token";
 const PATIENT_ID_KEY = "dental_booking_patient_id";
 const ADMIN_TOKEN_KEY = "dental_booking_admin_token";
+const ADMIN_ID_KEY = "dental_booking_admin_id";
 
 export function getAdminToken(): string | null {
   try {
@@ -26,9 +27,26 @@ export function setAdminToken(token: string): void {
   }
 }
 
+export function getAdminId(): string | null {
+  try {
+    return localStorage.getItem(ADMIN_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAdminId(adminId: string): void {
+  try {
+    localStorage.setItem(ADMIN_ID_KEY, adminId);
+  } catch {
+    // ignore
+  }
+}
+
 export function clearAdminToken(): void {
   try {
     localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(ADMIN_ID_KEY);
   } catch {
     // ignore
   }

@@ -23,14 +23,17 @@ from src.api.v1.routers import (
     admin_recall,
     admin_marketing,
     admin_reports,
+    admin_reports_aggregate,
     admin_chat,
     admin_channel_configs,
     admin_admins,
     admin_agreement,
     admin_auth,
     admin_client_reference,
+    admin_clinics_summary,
     admin_discounts,
     admin_integrations,
+    admin_owner_settings,
     admin_notification_policy,
     admin_attention_feed,
     admin_ai_reports,
@@ -57,6 +60,10 @@ from src.api.v1.routers import (
     admin_forms,
     patient_forms,
     admin_marketing_attribution,
+    admin_search,
+    ai_agent,
+    admin_retention,
+    admin_vault,
 )
 
 # Create main API router
@@ -76,6 +83,7 @@ api_router.include_router(admin_waitlist.router)
 api_router.include_router(admin_recall.router)
 api_router.include_router(admin_marketing.router)
 api_router.include_router(admin_reports.router)
+api_router.include_router(admin_reports_aggregate.router)
 api_router.include_router(admin_marketing_attribution.router)
 api_router.include_router(admin_chat.router)
 api_router.include_router(admin_channel_configs.router)
@@ -83,8 +91,10 @@ api_router.include_router(admin_admins.router)
 api_router.include_router(admin_agreement.router)
 api_router.include_router(admin_auth.router)
 api_router.include_router(admin_client_reference.router)
+api_router.include_router(admin_clinics_summary.router)
 api_router.include_router(admin_discounts.router)
 api_router.include_router(admin_integrations.router)
+api_router.include_router(admin_owner_settings.router)
 api_router.include_router(admin_notification_policy.router)
 api_router.include_router(admin_attention_feed.router)
 api_router.include_router(admin_patient_ai.router)
@@ -116,3 +126,7 @@ api_router.include_router(admin_loyalty.router)
 api_router.include_router(patient_loyalty.router)
 api_router.include_router(admin_forms.router)
 api_router.include_router(patient_forms.router)
+api_router.include_router(admin_search.router)
+api_router.include_router(ai_agent.router)
+api_router.include_router(admin_retention.router)
+api_router.include_router(admin_vault.router)

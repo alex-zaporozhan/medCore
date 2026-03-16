@@ -10,13 +10,15 @@ from src.application.dto.loyalty_dto import (
     CustomerSubscriptionRead,
     PatientLoyaltyHistoryItem,
     PatientLoyaltyHistoryResponse,
-    PatientLoyaltyMeResponse,
+    PatientLoyaltyMeResponseDigitalPass,
+    PatientSubscriptionCard,
     WalletRead,
     WalletTransactionRead,
 )
 from src.application.services.loyalty_service import LoyaltyService
 from src.application.services.wallet_service import WalletService
 from src.domain.entities.patient import Patient
+from src.domain.entities.subscription_package import SubscriptionPackage
 from src.domain.interfaces.repositories.loyalty_repository import (
     SubscriptionUsageRepository,
     WalletRepository,
@@ -37,15 +39,16 @@ router = APIRouter(
 
 @router.get(
     "/me",
-    response_model=PatientLoyaltyMeResponse,
+    response_model=PatientLoyaltyMeResponseDigitalPass,
 )
 async def get_my_loyalty(
     session: AsyncSession = Depends(get_session),
     current_patient: Patient = Depends(get_current_patient),
-) -> PatientLoyaltyMeResponse:
-    """Return active/expired subscriptions and wallet state for current patient."""
+) -> PatientLoyaltyMeResponseDigitalPass:
+    """Return active/expired subscriptions (with package details for Digital Pass) and wallet for current patient. B6.5."""
+    from sqlalchemy import select
+
     loyalty_service = LoyaltyService(session)
-    wallet_service = WalletService(session)
     wallet_repo: WalletRepository = WalletRepositoryImpl(session)
     tx_repo: WalletTransactionRepository = WalletTransactionRepositoryImpl(session)
 
@@ -54,6 +57,32 @@ async def get_my_loyalty(
         patient_id=current_patient.id,
         only_active=False,
     )
+    package_ids = [s.subscription_package_id for s in subs]
+    packages: dict = {}
+    if package_ids:
+        pkg_result = await session.execute(
+            select(SubscriptionPackage).where(SubscriptionPackage.id.in_(package_ids))
+        )
+        packages = {p.id: p for p in pkg_result.scalars().all()}
+    cards: list[PatientSubscriptionCard] = []
+    for s in subs:
+        pkg = packages.get(s.subscription_package_id)
+        cards.append(
+            PatientSubscriptionCard(
+                id=s.id,
+                patient_id=s.patient_id,
+                subscription_package_id=s.subscription_package_id,
+                status=s.status,
+                name=pkg.name if pkg else "",
+                remaining_visits=s.remaining_visits,
+                total_visits=pkg.total_visits if pkg else None,
+                remaining_amount=s.remaining_amount,
+                total_amount=pkg.total_amount if pkg else None,
+                expires_at=s.expires_at,
+                services_included=list(pkg.services_included) if pkg else [],
+                purchased_at=s.purchased_at,
+            )
+        )
     wallet = await wallet_repo.get_for_patient(
         clinic_id=current_patient.clinic_id,
         patient_id=current_patient.id,
@@ -63,8 +92,8 @@ async def get_my_loyalty(
         txs = await tx_repo.list_for_wallet(wallet.id)
         wallet_txs = [WalletTransactionRead.model_validate(t) for t in txs]
 
-    return PatientLoyaltyMeResponse(
-        subscriptions=[CustomerSubscriptionRead.model_validate(s) for s in subs],
+    return PatientLoyaltyMeResponseDigitalPass(
+        subscriptions=cards,
         wallet=WalletRead.model_validate(wallet) if wallet else None,
         wallet_transactions=wallet_txs,
     )

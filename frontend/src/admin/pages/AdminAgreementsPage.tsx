@@ -8,8 +8,8 @@ import {
   Switch,
   Text,
   Textarea,
-  Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useState, useEffect } from "react";
 
 interface AgreementSettings {
@@ -54,7 +54,7 @@ export default function AdminAgreementsPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Соглашения</Title>
+        <ContextBar title="Соглашения" />
         <EmptyStateHint title="Выберите клинику" />
       </Stack>
     );
@@ -63,7 +63,7 @@ export default function AdminAgreementsPage() {
   if (isLoading) {
     return (
       <Stack>
-        <Title order={3}>Соглашения</Title>
+        <ContextBar title="Соглашения" />
         <Text c="dimmed">Загрузка...</Text>
       </Stack>
     );
@@ -72,7 +72,7 @@ export default function AdminAgreementsPage() {
   if (isError) {
     return (
       <Stack>
-        <Title order={3}>Соглашения</Title>
+        <ContextBar title="Соглашения" />
         <Text c="red">Ошибка загрузки настроек.</Text>
       </Stack>
     );
@@ -80,7 +80,7 @@ export default function AdminAgreementsPage() {
 
   return (
     <Stack>
-      <Title order={3}>Соглашения</Title>
+      <ContextBar title="Соглашения" />
       <Text size="sm" c="dimmed">
         Текст соглашения на обработку ПД показывается при регистрации. Разрешение регистрации без согласия на рассылку определяет, обязательна ли вторая галочка.
       </Text>

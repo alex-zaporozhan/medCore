@@ -10,7 +10,6 @@ import {
   Button,
   Card,
   Group,
-  Loader,
   NumberInput,
   Stack,
   Switch,
@@ -18,6 +17,8 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { useEffect, useState } from "react";
 
 type ChannelType = "telegram" | "sms" | "email";
@@ -186,7 +187,7 @@ export default function AdminChannelsPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Каналы уведомлений</Title>
+        <ContextBar title="Каналы уведомлений" />
         <EmptyStateHint title="Выберите клинику" />
       </Stack>
     );
@@ -195,7 +196,7 @@ export default function AdminChannelsPage() {
   if (isError) {
     return (
       <Stack>
-        <Title order={3}>Каналы уведомлений</Title>
+        <ContextBar title="Каналы уведомлений" />
         <Alert color="red" title="Ошибка">
           {error?.message ?? "Не удалось загрузить настройки каналов."}
         </Alert>
@@ -206,8 +207,8 @@ export default function AdminChannelsPage() {
   if (isLoading) {
     return (
       <Stack>
-        <Title order={3}>Каналы уведомлений</Title>
-        <Loader />
+        <ContextBar title="Каналы уведомлений" />
+        <PageSkeleton variant="table" rows={5} />
       </Stack>
     );
   }
@@ -223,7 +224,7 @@ export default function AdminChannelsPage() {
 
   return (
     <Stack>
-      <Title order={3}>Каналы уведомлений</Title>
+      <ContextBar title="Каналы уведомлений" />
       <Text size="sm" c="dimmed">
         Настройка Telegram, SMS и Email для напоминаний и уведомлений. Данные хранятся для выбранной клиники.
       </Text>

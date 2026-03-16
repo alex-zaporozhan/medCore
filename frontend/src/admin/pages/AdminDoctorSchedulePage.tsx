@@ -19,11 +19,11 @@ import {
   Table,
   Text,
   TextInput,
-  Title,
   Group,
   ActionIcon,
   Paper,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
 import { GlassModal } from "@/shared/ui/GlassModal";
@@ -108,7 +108,7 @@ export default function AdminDoctorSchedulePage() {
 
   return (
     <Stack>
-      <Title order={3}>График врачей</Title>
+      <ContextBar title="График врачей" />
       <Text size="sm" c="dimmed">
         Настройте рабочие дни и часы, а также отпуска для каждого врача.
       </Text>

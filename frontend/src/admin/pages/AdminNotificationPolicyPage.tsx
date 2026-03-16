@@ -2,7 +2,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { api } from "@/api/client";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
-import { Paper, Stack, Switch, Text, Title } from "@mantine/core";
+import { Paper, Stack, Switch, Text } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 
 interface PolicyRead {
   allow_patient_disable_discount_notifications: boolean;
@@ -38,7 +39,7 @@ export default function AdminNotificationPolicyPage() {
   if (!currentClinicId) {
     return (
       <Stack>
-        <Title order={3}>Политика уведомлений</Title>
+        <ContextBar title="Политика уведомлений" />
         <Text c="dimmed">Выберите клинику.</Text>
       </Stack>
     );
@@ -46,7 +47,7 @@ export default function AdminNotificationPolicyPage() {
   if (isLoading) {
     return (
       <Stack>
-        <Title order={3}>Политика уведомлений</Title>
+        <ContextBar title="Политика уведомлений" />
         <DataSkeleton lines={4} />
       </Stack>
     );
@@ -54,7 +55,7 @@ export default function AdminNotificationPolicyPage() {
   if (isError) {
     return (
       <Stack>
-        <Title order={3}>Политика уведомлений</Title>
+        <ContextBar title="Политика уведомлений" />
         <Text c="red">{error instanceof Error ? error.message : "Ошибка загрузки"}</Text>
       </Stack>
     );
@@ -68,7 +69,7 @@ export default function AdminNotificationPolicyPage() {
 
   return (
     <Stack gap="md">
-      <Title order={3}>Политика уведомлений</Title>
+      <ContextBar title="Политика уведомлений" />
       <Text size="sm" c="dimmed">
         Если переключатель выключен, пациент не сможет отключить этот тип уведомлений в приложении; изменение возможно только через обращение в клинику.
       </Text>

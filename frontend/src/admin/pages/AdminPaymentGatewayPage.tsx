@@ -3,7 +3,8 @@ import { useClinics, useSetClinicPaymentGatewayCredentials } from "@/hooks";
 import { api } from "@/api/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { Button, Paper, Select, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Button, Paper, Select, Stack, Text, TextInput } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useState, useEffect } from "react";
 
 const GATEWAY_OPTIONS = [
@@ -128,7 +129,7 @@ export default function AdminPaymentGatewayPage() {
   if (!currentClinicId) {
     return (
       <Stack>
-        <Title order={3}>Касса</Title>
+        <ContextBar title="Касса" />
         <EmptyStateHint title="Выберите клинику" />
       </Stack>
     );
@@ -136,7 +137,7 @@ export default function AdminPaymentGatewayPage() {
 
   return (
     <Stack>
-      <Title order={3}>Касса</Title>
+      <ContextBar title="Платёжный шлюз" />
       <Text size="sm" c="dimmed">
         Выберите одну платёжную систему. Укажите данные из личного кабинета выбранного провайдера. Активна одна касса на клинику.
       </Text>

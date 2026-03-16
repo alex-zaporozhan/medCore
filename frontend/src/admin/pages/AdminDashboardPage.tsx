@@ -1,29 +1,119 @@
-import { useReportsDashboard } from "@/hooks/useReports";
-import { DataSkeleton } from "@/shared/ui/DataSkeleton";
-import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { Card, Grid, Stack, Text, Title } from "@mantine/core";
+import { useAdminReportsDashboardByClinics } from "@/hooks/useAdminReports";
+import { useAttentionFeed } from "@/hooks/useAttentionFeed";
+import { useAdminBookings } from "@/hooks/useAdminBookings";
+import { useRevenueHunterSaved, isRevenueHunterEnabled } from "@/hooks/useRevenueHunter";
+import { PageSkeleton } from "@/shared/ui/PageSkeleton";
+import { EmptyState } from "@/shared/ui/EmptyState";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import {
+  Card,
+  Grid,
+  Group,
+  MultiSelect,
+  Stack,
+  Text,
+  Badge,
+  Button,
+  ScrollArea,
+  Drawer,
+} from "@mantine/core";
+import { Link } from "react-router-dom";
+import { useState, useMemo } from "react";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
+import type { AttentionItem } from "@/api/types";
+import type { Booking } from "@/api/types";
+import { IconCalendar, IconCash, IconUsers, IconX, IconRobot } from "@tabler/icons-react";
 
-const EMPTY_DB_HINT =
-  "Если ошибка из-за отсутствия данных в базе — добавьте клинику, врачей или пациентов в соответствующих разделах.";
 const BACKEND_HINT =
   "Если данные не загружаются, проверьте, что бэкенд запущен на порту 8000 (см. docs/RUN_SERVICES.md).";
 
+function flattenAttentionFeed(
+  data: { follow_up: AttentionItem[]; retention_gap: AttentionItem[]; conflicts: AttentionItem[] } | undefined
+): AttentionItem[] {
+  if (!data) return [];
+  const all = [
+    ...data.follow_up.map((i) => ({ ...i, kind: "follow_up" as const })),
+    ...data.retention_gap.map((i) => ({ ...i, kind: "retention_gap" as const })),
+    ...data.conflicts.map((i) => ({ ...i, kind: "conflict" as const })),
+  ];
+  return all.sort((a, b) => a.priority - b.priority);
+}
+
+const KIND_LABEL: Record<string, string> = {
+  follow_up: "Перезвонить",
+  retention_gap: "Давно не был",
+  conflict: "Конфликт",
+};
+const KIND_COLOR: Record<string, string> = {
+  follow_up: "blue",
+  retention_gap: "yellow",
+  conflict: "red",
+};
+
 export default function AdminDashboardPage() {
-  useAdminClinic();
-  const date = dayjs().format("YYYY-MM-DD");
-  const { data, isLoading, isError, error } = useReportsDashboard(date, "day");
+  const { clinics, currentClinicId } = useAdminClinic();
+  const [selectedClinicIds, setSelectedClinicIds] = useState<string[]>([]);
+  const [timelineBooking, setTimelineBooking] = useState<Booking | null>(null);
+  const today = dayjs().format("YYYY-MM-DD");
+
+  const clinicOptions = clinics.map((c) => ({ value: c.id, label: c.name }));
+
+  const { data: reportData, isLoading: reportLoading, isError: reportError, error: reportErr } =
+    useAdminReportsDashboardByClinics(
+      today,
+      "day",
+      selectedClinicIds.length > 0 ? selectedClinicIds : null
+    );
+
+  const { data: attentionData, isLoading: attentionLoading } = useAttentionFeed(currentClinicId ?? null);
+  const { data: todayBookings, isLoading: bookingsLoading } = useAdminBookings({ date: today });
+  const { data: revenueHunter } = useRevenueHunterSaved(currentClinicId ?? null);
+
+  const attentionItems = useMemo(() => flattenAttentionFeed(attentionData), [attentionData]);
+  const isLoading = reportLoading;
+  const isError = reportError;
+  const error = reportErr;
 
   if (isLoading) {
     return (
-      <Stack>
-        <Title order={3}>Дашборд</Title>
-        <Text size="sm" c="dimmed">{BACKEND_HINT}</Text>
-        <DataSkeleton lines={4} />
+      <Stack gap="lg">
+        <ContextBar title="Дашборд" />
+        {clinics.length > 0 && (
+          <MultiSelect
+            label="Клиники"
+            placeholder="Выберите одну или несколько клиник (пусто = все)"
+            data={clinicOptions}
+            value={selectedClinicIds}
+            onChange={setSelectedClinicIds}
+            searchable
+            clearable
+          />
+        )}
+        <Text size="sm" c="dimmed">
+          {BACKEND_HINT}
+        </Text>
         <Grid>
-          <Grid.Col span={{ base: 12, md: 6 }}><DataSkeleton card /></Grid.Col>
-          <Grid.Col span={{ base: 12, md: 6 }}><DataSkeleton card /></Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+            <PageSkeleton variant="cards" cardsCount={1} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+            <PageSkeleton variant="cards" cardsCount={1} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+            <PageSkeleton variant="cards" cardsCount={1} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+            <PageSkeleton variant="cards" cardsCount={1} />
+          </Grid.Col>
+        </Grid>
+        <Grid>
+          <Grid.Col span={{ base: 12, md: 7 }}>
+            <PageSkeleton variant="table" rows={4} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 5 }}>
+            <PageSkeleton variant="table" rows={6} />
+          </Grid.Col>
         </Grid>
       </Stack>
     );
@@ -31,145 +121,320 @@ export default function AdminDashboardPage() {
 
   if (isError) {
     const message = error instanceof Error ? error.message : "Ошибка загрузки";
-    const isEmptyDb =
-      message.includes("клиник") || message.includes("клиники");
-    const isNetwork = message.includes("Failed") || message.includes("сеть") || message.includes("network");
     return (
-      <Stack>
-        <Title order={3}>Дашборд</Title>
+      <Stack gap="lg">
+        <ContextBar title="Дашборд" />
+        {clinics.length > 0 && (
+          <MultiSelect
+            label="Клиники"
+            placeholder="Выберите одну или несколько клиник (пусто = все)"
+            data={clinicOptions}
+            value={selectedClinicIds}
+            onChange={setSelectedClinicIds}
+            searchable
+            clearable
+          />
+        )}
         <Text c="red">{message}</Text>
-        {isEmptyDb && (
-          <Text size="sm" c="dimmed">
-            {EMPTY_DB_HINT}
-          </Text>
-        )}
-        {isNetwork && (
-          <Text size="sm" c="dimmed">
-            {BACKEND_HINT}
-          </Text>
-        )}
+        <Text size="sm" c="dimmed">
+          {BACKEND_HINT}
+        </Text>
       </Stack>
     );
   }
 
-  if (!data) {
-    return (
-      <Stack>
-        <Title order={3}>Дашборд</Title>
-        <EmptyStateHint title="Нет данных за выбранную дату" />
-      </Stack>
-    );
-  }
+  const data = reportData;
+  const totalBookings =
+    data != null
+      ? data.bookings_pending + data.bookings_confirmed + data.bookings_completed
+      : 0;
 
   return (
     <Stack gap="lg">
-      <Title order={3}>Дашборд</Title>
-      <Text c="dimmed">Сводка за {dayjs(data.date).format("DD.MM.YYYY")}</Text>
+      <ContextBar title="Дашборд" />
+      {clinics.length > 0 && (
+        <MultiSelect
+          label="Клиники"
+          placeholder="Выберите одну или несколько клиник (пусто = все)"
+          data={clinicOptions}
+          value={selectedClinicIds}
+          onChange={setSelectedClinicIds}
+          searchable
+          clearable
+        />
+      )}
+      {data && (
+        <Text size="sm" c="dimmed">
+          {selectedClinicIds.length === 0
+            ? `Сводка по всем клиникам за ${dayjs(data.date).format("DD.MM.YYYY")}`
+            : `Сводка по выбранным клиникам (${selectedClinicIds.length}) за ${dayjs(data.date).format("DD.MM.YYYY")}`}
+        </Text>
+      )}
 
-      {/* Крупные метрики сверху */}
+      {/* 4 метрики сверху */}
       <Grid>
-        <Grid.Col span={{ base: 12, md: 6 }}>
-          <Card
-            padding="lg"
-            radius="md"
-            shadow="sm"
-            style={{
-              background: `linear-gradient(135deg, var(--primary), var(--primary-active))`,
-              color: "var(--text-on-primary)",
-            }}
-          >
-            <Text size="sm" style={{ color: "var(--text-on-primary)", opacity: 0.9 }}>
-              Записей сегодня
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+          <Card padding="md" radius="md" shadow="sm" withBorder>
+            <Group gap="xs" mb={4}>
+              <IconCalendar size={18} style={{ opacity: 0.8 }} />
+              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+                Записи сегодня
+              </Text>
+            </Group>
+            <Text fw={700} fz="xl">
+              {totalBookings}
             </Text>
-            <Text fw={700} style={{ fontSize: 32, lineHeight: 1.1 }}>
-              {data.bookings_pending +
-                data.bookings_confirmed +
-                data.bookings_completed}
-            </Text>
-            <Text size="sm" style={{ color: "var(--text-on-primary)", opacity: 0.9 }} mt="sm">
-              Ожидают: {data.bookings_pending}, подтверждено:{" "}
-              {data.bookings_confirmed}, оказано: {data.bookings_completed}
+            {data && (
+              <Text size="xs" c="dimmed" mt="xs">
+                ожид. {data.bookings_pending} · подтв. {data.bookings_confirmed} · оказано {data.bookings_completed}
+              </Text>
+            )}
+            <Text size="xs" c="dimmed" mt={2}>
+              к вчера: —
             </Text>
           </Card>
         </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6 }}>
-          <Card padding="lg" radius="md" shadow="sm">
-            <Text size="sm" c="dimmed">
-              Выручка за день
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+          <Card padding="md" radius="md" shadow="sm" withBorder>
+            <Group gap="xs" mb={4}>
+              <IconCash size={18} style={{ opacity: 0.8 }} />
+              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+                Выручка
+              </Text>
+            </Group>
+            <Text fw={700} fz="xl">
+              {data?.revenue ?? "0"} ₽
             </Text>
-            <Text fw={700} style={{ fontSize: 32, lineHeight: 1.1 }}>
-              {data.revenue} ₽
+            <Text size="xs" c="dimmed" mt="xs">
+              за день
             </Text>
-            <Text size="sm" c="dimmed" mt="sm">
-              Включает подтверждённые онлайн‑платежи и предоплаты по записям.
+            <Text size="xs" c="dimmed" mt={2}>
+              к вчера: —
+            </Text>
+          </Card>
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+          <Card padding="md" radius="md" shadow="sm" withBorder>
+            <Group gap="xs" mb={4}>
+              <IconUsers size={18} style={{ opacity: 0.8 }} />
+              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+                Новые пациенты
+              </Text>
+            </Group>
+            <Text fw={700} fz="xl">
+              {data?.new_patients ?? 0}
+            </Text>
+            <Text size="xs" c="dimmed" mt="xs">
+              за день
+            </Text>
+            <Text size="xs" c="dimmed" mt={2}>
+              к вчера: —
+            </Text>
+          </Card>
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+          <Card padding="md" radius="md" shadow="sm" withBorder>
+            <Group gap="xs" mb={4}>
+              <IconX size={18} style={{ opacity: 0.8 }} />
+              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+                Отмены / неявки
+              </Text>
+            </Group>
+            <Text fw={700} fz="xl">
+              {(data?.bookings_cancelled ?? 0) + (data?.bookings_no_show ?? 0)}
+            </Text>
+            <Text size="xs" c="dimmed" mt="xs">
+              отменено {data?.bookings_cancelled ?? 0} · неявки {data?.bookings_no_show ?? 0}
+            </Text>
+            <Text size="xs" c="dimmed" mt={2}>
+              к вчера: —
             </Text>
           </Card>
         </Grid.Col>
       </Grid>
 
-      {/* Детализация по статусам и пациентам */}
+      {/* Виджет «Выручка, спасённая ИИ за ночь» — только при включённом Revenue Hunter (Фаза 5) */}
+      {revenueHunter && isRevenueHunterEnabled(revenueHunter) && (
+        <Card padding="md" radius="md" shadow="sm" withBorder style={{ borderColor: "var(--mantine-color-teal-2)" }}>
+          <Group gap="xs" mb={4}>
+            <IconRobot size={18} style={{ opacity: 0.8 }} />
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+              Выручка, спасённая ИИ{" "}
+              {revenueHunter.period === "night"
+                ? "за ночь"
+                : revenueHunter.period === "day"
+                  ? "за день"
+                  : revenueHunter.period === "week"
+                    ? "за неделю"
+                    : "за ночь"}
+            </Text>
+          </Group>
+          <Text fw={700} fz="xl" c="teal.7">
+            {revenueHunter.amount} ₽
+          </Text>
+        </Card>
+      )}
+
+      {/* Левая колонка ~60%: Attention Feed; правая ~40%: таймлайн на сегодня */}
       <Grid>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card shadow="sm" padding="md" radius="md" withBorder>
-            <Text size="sm" c="dimmed">
-              Ожидают
-            </Text>
-            <Text fw={700} fz="xl">
-              {data.bookings_pending}
-            </Text>
-          </Card>
+        <Grid.Col span={{ base: 12, md: 7 }}>
+          <Text size="sm" fw={600} mb="xs">
+            Лента внимания
+          </Text>
+          {attentionLoading ? (
+            <PageSkeleton variant="table" rows={3} />
+          ) : attentionItems.length === 0 ? (
+            <EmptyState
+              title="Пока всё спокойно"
+              description="Нет срочных событий для реакции. Новые элементы появятся из чатов, конфликтов и напоминаний."
+              action={{
+                label: "Открыть чат",
+                onClick: () => window.location.assign("/admin/omni-chat"),
+              }}
+            />
+          ) : (
+            <ScrollArea h={400} type="scroll">
+              <Stack gap="xs">
+                {attentionItems.map((item) => (
+                  <Card key={`${item.kind}-${item.id}`} withBorder radius="md" padding="sm">
+                    <Group justify="space-between" align="flex-start">
+                      <Stack gap={4}>
+                        <Text fw={600} size="sm" truncate>
+                          {item.patient_full_name || item.patient_phone || item.title}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {item.description}
+                        </Text>
+                        <Group gap="xs">
+                          <Badge size="xs" color={KIND_COLOR[item.kind] ?? "gray"}>
+                            {KIND_LABEL[item.kind] ?? item.kind}
+                          </Badge>
+                          {item.due_at && (
+                            <Text size="xs" c="dimmed">
+                              Срок: {new Date(item.due_at).toLocaleString()}
+                            </Text>
+                          )}
+                        </Group>
+                      </Stack>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        component={Link}
+                        to={
+                          item.conversation_id
+                            ? `/admin/omni-chat?conversation=${item.conversation_id}`
+                            : "/admin/attention"
+                        }
+                      >
+                        Взять в работу
+                      </Button>
+                    </Group>
+                  </Card>
+                ))}
+              </Stack>
+            </ScrollArea>
+          )}
         </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card shadow="sm" padding="md" radius="md" withBorder>
-            <Text size="sm" c="dimmed">
-              Подтверждено
-            </Text>
-            <Text fw={700} fz="xl">
-              {data.bookings_confirmed}
-            </Text>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card shadow="sm" padding="md" radius="md" withBorder>
-            <Text size="sm" c="dimmed">
-              Оказано
-            </Text>
-            <Text fw={700} fz="xl">
-              {data.bookings_completed}
-            </Text>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card shadow="sm" padding="md" radius="md" withBorder>
-            <Text size="sm" c="dimmed">
-              Отменено
-            </Text>
-            <Text fw={700} fz="xl">
-              {data.bookings_cancelled}
-            </Text>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card shadow="sm" padding="md" radius="md" withBorder>
-            <Text size="sm" c="dimmed">
-              Неявки
-            </Text>
-            <Text fw={700} fz="xl">
-              {data.bookings_no_show}
-            </Text>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card shadow="sm" padding="md" radius="md" withBorder>
-            <Text size="sm" c="dimmed">
-              Новые пациенты
-            </Text>
-            <Text fw={700} fz="xl">
-              {data.new_patients}
-            </Text>
-          </Card>
+        <Grid.Col span={{ base: 12, md: 5 }}>
+          <Text size="sm" fw={600} mb="xs">
+            Записи на сегодня
+          </Text>
+          {bookingsLoading ? (
+            <PageSkeleton variant="table" rows={5} />
+          ) : !todayBookings?.length ? (
+            <EmptyState
+              title="Нет записей на эту дату"
+              description="Записи на сегодня появятся в календаре."
+              action={{
+                label: "Расписание",
+                onClick: () => window.location.assign("/admin/schedule"),
+              }}
+            />
+          ) : (
+            <ScrollArea h={400} type="scroll">
+              <Stack gap="xs">
+                {todayBookings
+                  .filter((b) => b.status !== "cancelled")
+                  .sort((a, b) => {
+                    const tA = String(a.appointment_time).slice(0, 5);
+                    const tB = String(b.appointment_time).slice(0, 5);
+                    return tA.localeCompare(tB);
+                  })
+                  .slice(0, 20)
+                  .map((b) => (
+                    <Card
+                      key={b.id}
+                      withBorder
+                      radius="md"
+                      padding="sm"
+                      style={{ cursor: "pointer", textDecoration: "none", color: "inherit" }}
+                      onClick={() => setTimelineBooking(b)}
+                    >
+                      <Group justify="space-between">
+                        <Text size="sm" fw={500}>
+                          {String(b.appointment_time).slice(0, 5)}
+                        </Text>
+                        <Badge size="xs" variant="light">
+                          {b.status}
+                        </Badge>
+                      </Group>
+                      <Text size="xs" c="dimmed">
+                        Пациент: {b.patient_id}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        Врач: {b.doctor_id} · Услуга: {b.service_id}
+                      </Text>
+                    </Card>
+                  ))}
+              </Stack>
+            </ScrollArea>
+          )}
         </Grid.Col>
       </Grid>
+
+      <Drawer
+        opened={timelineBooking !== null}
+        onClose={() => setTimelineBooking(null)}
+        position="right"
+        size="md"
+        title="Запись на сегодня"
+      >
+        {timelineBooking && (
+          <Stack gap="sm">
+            <Text size="sm" c="dimmed">
+              Время
+            </Text>
+            <Text size="md">
+              {String(timelineBooking.appointment_time).slice(0, 5)}
+            </Text>
+            <Text size="sm" c="dimmed" mt="xs">
+              Пациент
+            </Text>
+            <Text size="md">{timelineBooking.patient_id}</Text>
+            <Text size="sm" c="dimmed" mt="xs">
+              Врач · Услуга
+            </Text>
+            <Text size="md">
+              {timelineBooking.doctor_id} · {timelineBooking.service_id}
+            </Text>
+            <Text size="sm" c="dimmed" mt="xs">
+              Статус
+            </Text>
+            <Badge size="sm" variant="light">
+              {timelineBooking.status}
+            </Badge>
+            <Button
+              component={Link}
+              to="/admin/schedule"
+              variant="light"
+              mt="md"
+              onClick={() => setTimelineBooking(null)}
+            >
+              Открыть в расписании
+            </Button>
+          </Stack>
+        )}
+      </Drawer>
     </Stack>
   );
 }

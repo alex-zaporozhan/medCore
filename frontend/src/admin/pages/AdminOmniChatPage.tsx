@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   useAdminOmniChats,
@@ -9,9 +9,10 @@ import {
   useHideAdminOmniMessage,
   OMNI_CHAT_AI_MODES,
 } from "@/hooks/useAdminOmniChat";
-import { useAdminLoyaltySummaryByContact, useAdminFormSubmissions } from "@/hooks";
+import { useAdminLoyaltySummaryByContact, useAdminFormSubmissions, useAdminFormTemplates, useSendFormLink } from "@/hooks";
 import { Link } from "react-router-dom";
-import { DataSkeleton, AppCard, SectionHeader } from "@/shared/ui";
+import { DataSkeleton, AppCard } from "@/shared/ui";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Box,
@@ -24,7 +25,10 @@ import {
   Select,
   Checkbox,
   Tabs,
+  Drawer,
+  Group,
 } from "@mantine/core";
+import { useHotkeys } from "@mantine/hooks";
 import { GlassModal } from "@/shared/ui/GlassModal";
 import { Textarea } from "@mantine/core";
 import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
@@ -49,6 +53,9 @@ export default function AdminOmniChatPage() {
   const [hideModalOpen, setHideModalOpen] = useState(false);
   const [hideMessageId, setHideMessageId] = useState<string | null>(null);
   const [hideReason, setHideReason] = useState("");
+  const [formDrawerOpen, setFormDrawerOpen] = useState(false);
+  const [formTemplateId, setFormTemplateId] = useState<string | null>(null);
+  const [formSendVia, setFormSendVia] = useState<"whatsapp" | "sms" | "copy_only">("copy_only");
 
   const { data: chatsData, isLoading: chatsLoading, isError: chatsError, error: chatsErr } = useAdminOmniChats({
     status: showOnlyWaiting ? "WAITING_FOR_OPERATOR" : statusFilter,
@@ -92,6 +99,35 @@ export default function AdminOmniChatPage() {
   });
   const openTasksCount = openTasks?.length ?? 0;
 
+  const { data: formTemplates } = useAdminFormTemplates();
+  const sendFormLink = useSendFormLink();
+
+  const handleSendFormLink = useCallback(() => {
+    if (!patientId || !formTemplateId) return;
+    sendFormLink.mutate(
+      { patient_id: patientId, template_id: formTemplateId, send_via: formSendVia },
+      {
+        onSuccess: (res) => {
+          if (res.sent) setFormDrawerOpen(false);
+          if (res.sent && formSendVia === "copy_only" && res.url) {
+            try {
+              navigator.clipboard.writeText(res.url);
+            } catch {
+              // ignore
+            }
+          }
+        },
+      }
+    );
+  }, [patientId, formTemplateId, formSendVia, sendFormLink]);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  useHotkeys([
+    ["mod+J", () => { searchInputRef.current?.focus(); }],
+    ["mod+Enter", () => { if (selectedChatId && messageText.trim()) handleSend(); }],
+    ["Escape", () => { setFormDrawerOpen(false); }],
+  ]);
+
   const visibleChats = useMemo(() => {
     let items = chatsData?.items ?? [];
     if (aiFilter === "AI_ONLY") {
@@ -128,20 +164,39 @@ export default function AdminOmniChatPage() {
 
   return (
     <Stack gap="md">
-      <SectionHeader
-        overline="Chat & AI"
-        title="Единый чат с пациентами"
-        description="Все диалоги из Telegram, WhatsApp, сайта и AI‑агента в одном окне."
-      />
+      <ContextBar title="Chat & AI — единый чат с пациентами" />
       <AppCard>
         <Stack gap="md" style={{ height: 520 }}>
-          <Flex gap="sm" wrap="wrap">
+          <Flex gap="sm" wrap="wrap" align="center">
             <TextInput
-              placeholder="Поиск по контакту"
+              ref={searchInputRef}
+              placeholder="Поиск по контакту (⌘J)"
               value={search}
               onChange={(e) => setSearch(e.currentTarget.value)}
               style={{ flex: 1, minWidth: 200 }}
             />
+            <Group gap="xs" wrap="wrap">
+              <Button
+                variant={!showOnlyWaiting && !statusFilter ? "filled" : "light"}
+                size="xs"
+                onClick={() => { setShowOnlyWaiting(false); setStatusFilter(undefined); }}
+              >
+                Все
+              </Button>
+              <Button
+                variant={showOnlyWaiting ? "filled" : "light"}
+                size="xs"
+                onClick={() => { setShowOnlyWaiting(true); setStatusFilter(undefined); }}
+              >
+                Неотвеченные
+              </Button>
+              <Button variant="light" size="xs" disabled title="Фильтр по VIP (при наличии API)">
+                От VIP
+              </Button>
+              <Button variant="light" size="xs" disabled title="С ошибкой оплаты (при наличии API)">
+                С ошибкой оплаты
+              </Button>
+            </Group>
             <Select
               placeholder="Статус диалога"
               value={statusFilter}
@@ -169,18 +224,6 @@ export default function AdminOmniChatPage() {
               ]}
               style={{ width: 220 }}
             />
-            <Button
-              variant={showOnlyWaiting ? "filled" : "light"}
-              size="xs"
-              onClick={() => {
-                setShowOnlyWaiting((prev) => !prev);
-                if (!showOnlyWaiting) {
-                  setStatusFilter(undefined);
-                }
-              }}
-            >
-              Только «ждёт оператора»
-            </Button>
           </Flex>
 
           {chatsLoading ? (
@@ -404,23 +447,50 @@ export default function AdminOmniChatPage() {
                         </Stack>
                       )}
                     </Box>
-                    <Flex gap="sm" wrap="wrap" align="center">
-                      <TextInput
-                        placeholder="Сообщение..."
-                        value={messageText}
-                        onChange={(e) => setMessageText(e.currentTarget.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                        style={{ flex: 1, minWidth: 180 }}
-                      />
-                      <Button onClick={handleSend} loading={sendMessage.isPending}>
-                        Отправить
-                      </Button>
-                      <Checkbox
-                        label="Показывать скрытые сообщения"
-                        checked={showHiddenMessages}
-                        onChange={(e) => setShowHiddenMessages(e.currentTarget.checked)}
-                      />
-                    </Flex>
+                    <Stack gap="xs">
+                      <Flex gap="sm" wrap="wrap" align="center">
+                        <TextInput
+                          placeholder="Сообщение... (⌘Enter — отправить)"
+                          value={messageText}
+                          onChange={(e) => setMessageText(e.currentTarget.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSend();
+                            }
+                          }}
+                          style={{ flex: 1, minWidth: 180 }}
+                        />
+                        <Button onClick={handleSend} loading={sendMessage.isPending}>
+                          Отправить
+                        </Button>
+                        <Checkbox
+                          label="Показывать скрытые сообщения"
+                          checked={showHiddenMessages}
+                          onChange={(e) => setShowHiddenMessages(e.currentTarget.checked)}
+                        />
+                      </Flex>
+                      <Group gap="xs" wrap="wrap">
+                        <Button
+                          component={Link}
+                          to="/admin/schedule"
+                          size="xs"
+                          variant="light"
+                          title="Создать запись (откроется расписание)"
+                        >
+                          Запись
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          onClick={() => setFormDrawerOpen(true)}
+                          disabled={!patientId}
+                          title={!patientId ? "Выберите чат с привязанным пациентом" : "Отправить анкету/форму"}
+                        >
+                          Анкета
+                        </Button>
+                      </Group>
+                    </Stack>
                   </Stack>
                 )
               }
@@ -461,16 +531,26 @@ export default function AdminOmniChatPage() {
                             }
                           </Text>
                           {loyaltySummary.patient_id && (
-                            <Button
-                              component={Link}
-                              to={`/admin/loyalty?patient_id=${encodeURIComponent(
-                                loyaltySummary.patient_id,
-                              )}`}
-                              size="xs"
-                              variant="light"
-                            >
-                              Открыть лояльность
-                            </Button>
+                            <Group gap="xs">
+                              <Button
+                                component={Link}
+                                to="/admin/schedule"
+                                size="xs"
+                                variant="light"
+                              >
+                                Создать запись
+                              </Button>
+                              <Button
+                                component={Link}
+                                to={`/admin/loyalty?patient_id=${encodeURIComponent(
+                                  loyaltySummary.patient_id,
+                                )}`}
+                                size="xs"
+                                variant="light"
+                              >
+                                Открыть лояльность
+                              </Button>
+                            </Group>
                           )}
                         </>
                       ) : (
@@ -622,6 +702,55 @@ export default function AdminOmniChatPage() {
           </Flex>
         </Stack>
       </GlassModal>
+
+      <Drawer
+        opened={formDrawerOpen}
+        onClose={() => setFormDrawerOpen(false)}
+        position="right"
+        size="sm"
+        title="Отправить форму"
+      >
+        <Stack gap="md">
+          {!patientId ? (
+            <Text size="sm" c="dimmed">
+              Выберите чат с привязанным пациентом, чтобы отправить форму.
+            </Text>
+          ) : (
+            <>
+              <Select
+                label="Шаблон формы"
+                placeholder="Выберите шаблон"
+                data={(formTemplates ?? []).map((t) => ({ value: t.id, label: t.name }))}
+                value={formTemplateId}
+                onChange={(v) => setFormTemplateId(v)}
+                searchable
+              />
+              <Select
+                label="Куда отправить"
+                data={[
+                  { value: "copy_only", label: "Скопировать ссылку" },
+                  { value: "whatsapp", label: "WhatsApp" },
+                  { value: "sms", label: "SMS" },
+                ]}
+                value={formSendVia}
+                onChange={(v) => setFormSendVia((v as "whatsapp" | "sms" | "copy_only") || "copy_only")}
+              />
+              <Group justify="flex-end">
+                <Button variant="default" onClick={() => setFormDrawerOpen(false)}>
+                  Отмена
+                </Button>
+                <Button
+                  onClick={handleSendFormLink}
+                  loading={sendFormLink.isPending}
+                  disabled={!formTemplateId}
+                >
+                  Отправить ссылку
+                </Button>
+              </Group>
+            </>
+          )}
+        </Stack>
+      </Drawer>
     </Stack>
   );
 }

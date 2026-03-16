@@ -3,6 +3,29 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { Booking } from "@/api/types";
 
+/** Response of GET /admin/bookings/{id}/checkout-info (Checkout Hub). */
+export interface EligibleSubscriptionItem {
+  customer_subscription_id: string;
+  package_name: string;
+  remaining_visits: number | null;
+  remaining_amount: string | null;
+}
+
+export interface CheckoutInfoResponse {
+  eligible_subscriptions: EligibleSubscriptionItem[];
+}
+
+export function useCheckoutInfo(bookingId: string | null) {
+  return useQuery({
+    queryKey: ["admin-bookings", "checkout-info", bookingId],
+    queryFn: () =>
+      api.get<CheckoutInfoResponse>(
+        `/v1/admin/bookings/${bookingId}/checkout-info`
+      ),
+    enabled: !!bookingId,
+  });
+}
+
 export interface AdminBookingsFilters {
   doctor_id?: string;
   date?: string;
@@ -157,12 +180,19 @@ export function useCancelBookingAdmin() {
   });
 }
 
+export interface CompleteBookingPayload {
+  bookingId: string;
+  use_subscription_id?: string | null;
+}
+
 export function useCompleteBookingAdmin() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      api.put<Booking>(`/v1/admin/bookings/${id}/complete`),
-    onMutate: async (id) => {
+    mutationFn: ({ bookingId, use_subscription_id }: CompleteBookingPayload) =>
+      api.put<Booking>(`/v1/admin/bookings/${bookingId}/complete`, {
+        use_subscription_id: use_subscription_id ?? undefined,
+      }),
+    onMutate: async ({ bookingId }) => {
       await queryClient.cancelQueries({ queryKey: ["admin-bookings"] });
       const previous = queryClient.getQueriesData<Booking[]>({
         queryKey: ["admin-bookings"],
@@ -171,12 +201,12 @@ export function useCompleteBookingAdmin() {
         { queryKey: ["admin-bookings"] },
         (list) =>
           list?.map((b) =>
-            b.id === id ? { ...b, status: "completed" as const } : b
+            b.id === bookingId ? { ...b, status: "completed" as const } : b
           ) ?? list
       );
       return { previous };
     },
-    onError: (_err, _id, context) => {
+    onError: (_err, _vars, context) => {
       const prev = (context as { previous?: [QueryKey, Booking[]][] })
         ?.previous;
       if (prev) {

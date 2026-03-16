@@ -9,8 +9,8 @@ import {
   Stack,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useState, useEffect } from "react";
 
 export default function AdminStylingPage() {
@@ -37,7 +37,7 @@ export default function AdminStylingPage() {
   if (!currentClinicId) {
     return (
       <Stack>
-        <Title order={3}>Оформление</Title>
+        <ContextBar title="Оформление" />
         <EmptyStateHint title="Выберите клинику" />
       </Stack>
     );
@@ -76,7 +76,7 @@ export default function AdminStylingPage() {
 
   return (
     <Stack>
-      <Title order={3}>Оформление</Title>
+      <ContextBar title="Оформление" />
       <Text size="sm" c="dimmed">
         Настройки применяются к приложению пациента: шапка, кнопки, карточки. Логотип показывается в шапке приложения вместо названия «Dental Booking». Один шрифт задаётся для всего приложения (заголовки и текст).
       </Text>

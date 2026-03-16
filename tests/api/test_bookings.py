@@ -5,16 +5,16 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_create_patient_booking(client: AsyncClient, seed_data: dict):
-    """POST /api/v1/patient/bookings with patient_id, body returns 201 with id, status."""
-    patient_id = seed_data["patient_id"]
+async def test_create_patient_booking(client: AsyncClient, seed_data: dict, patient_auth: dict):
+    """POST /api/v1/patient/bookings with patient token and body returns 201 with id, status."""
     clinic_id = seed_data["clinic_id"]
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     day = seed_data["date"]
+    headers = {"Authorization": f"Bearer {patient_auth['access_token']}"}
     # Use a slot time from working hours (e.g. 10:00)
     response = await client.post(
-        f"/api/v1/patient/bookings?patient_id={patient_id}",
+        "/api/v1/patient/bookings",
         json={
             "clinic_id": str(clinic_id),
             "doctor_id": str(doctor_id),
@@ -22,6 +22,7 @@ async def test_create_patient_booking(client: AsyncClient, seed_data: dict):
             "appointment_date": day.isoformat(),
             "appointment_time": "10:00:00",
         },
+        headers=headers,
     )
     assert response.status_code == 201
     data = response.json()

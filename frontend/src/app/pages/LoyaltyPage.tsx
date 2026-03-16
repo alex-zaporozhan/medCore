@@ -3,7 +3,7 @@ import { usePatientAuth } from "@/contexts/PatientAuthContext";
 import { usePatientLoyaltyMe, usePatientLoyaltyHistory } from "@/hooks";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import type { PatientLoyaltyMeResponse, PatientLoyaltyHistoryResponse } from "@/api/types";
-import { Badge, Button, Card, Group, Loader, Stack, Table, Text, Title } from "@mantine/core";
+import { Badge, Button, Card, Group, Loader, Progress, Stack, Table, Text, Title } from "@mantine/core";
 
 export default function LoyaltyPage() {
   const { accessToken } = usePatientAuth();
@@ -94,7 +94,7 @@ export default function LoyaltyPage() {
 
       <Card shadow="sm" padding="md" withBorder>
         <Text size="sm" fw={500} mb="sm">
-          Активные абонементы
+          Digital Pass — Абонементы
         </Text>
         {activeSubs.length === 0 ? (
           <Text size="sm" c="dimmed">
@@ -102,39 +102,70 @@ export default function LoyaltyPage() {
           </Text>
         ) : (
           <>
-            <Table striped>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Пакет</Table.Th>
-                  <Table.Th>Остаток визитов</Table.Th>
-                  <Table.Th>Остаток суммы</Table.Th>
-                  <Table.Th>Действует до</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {activeSubs.map(
-                  (s: PatientLoyaltyMeResponse["subscriptions"][number]) => (
-                    <Table.Tr key={s.id}>
-                      <Table.Td>{s.subscription_package_id.slice(0, 8)}…</Table.Td>
-                      <Table.Td>{s.remaining_visits ?? "—"}</Table.Td>
-                      <Table.Td>{s.remaining_amount ?? "—"}</Table.Td>
-                      <Table.Td>{s.expires_at ?? "—"}</Table.Td>
-                      <Table.Td>
+            <Stack gap="md">
+              {activeSubs.map(
+                (s: PatientLoyaltyMeResponse["subscriptions"][number]) => {
+                  const totalVisits = s.remaining_visits != null ? Math.max(s.remaining_visits, 10) : 10;
+                  const progressPct = totalVisits > 0 ? ((s.remaining_visits ?? 0) / totalVisits) * 100 : 0;
+                  return (
+                    <Card
+                      key={s.id}
+                      padding="md"
+                      radius="lg"
+                      style={{
+                        background: "linear-gradient(135deg, var(--mantine-color-blue-7) 0%, var(--mantine-color-cyan-7) 100%)",
+                        color: "white",
+                        border: "none",
+                      }}
+                    >
+                      <Stack gap="xs">
+                        <Text size="sm" fw={600} opacity={0.95}>
+                          Пакет {s.subscription_package_id.slice(0, 8)}…
+                        </Text>
+                        {(s.remaining_visits != null || s.remaining_amount != null) && (
+                          <Group gap="lg">
+                            {s.remaining_visits != null && (
+                              <Text size="xs" opacity={0.9}>
+                                {s.remaining_visits} из {totalVisits} визитов
+                              </Text>
+                            )}
+                            {s.remaining_amount != null && (
+                              <Text size="xs" opacity={0.9}>
+                                Остаток: {s.remaining_amount} ₽
+                              </Text>
+                            )}
+                          </Group>
+                        )}
+                        {s.remaining_visits != null && totalVisits > 0 && (
+                          <Progress
+                            value={progressPct}
+                            size="sm"
+                            color="white"
+                            style={{ opacity: 0.8 }}
+                          />
+                        )}
+                        {s.expires_at && (
+                          <Text size="xs" opacity={0.85}>
+                            Действует до: {new Date(s.expires_at).toLocaleDateString("ru-RU")}
+                          </Text>
+                        )}
                         <Button
-                          size="xs"
-                          variant="light"
+                          size="sm"
+                          variant="white"
+                          color="dark"
+                          fullWidth
+                          mt="xs"
                           onClick={() => handleUseSubscription(s.id)}
                         >
-                          Записаться и использовать пакет
+                          Записаться по абонементу
                         </Button>
-                      </Table.Td>
-                    </Table.Tr>
-                  ),
-                )}
-              </Table.Tbody>
-            </Table>
-            <Group justify="flex-end" mt="sm">
+                      </Stack>
+                    </Card>
+                  );
+                },
+              )}
+            </Stack>
+            <Group justify="flex-end" mt="md">
               <Button size="sm" variant="outline" onClick={handleBookVisit}>
                 Записаться без пакета
               </Button>

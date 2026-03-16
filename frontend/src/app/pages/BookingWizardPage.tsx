@@ -7,7 +7,7 @@ import {
   usePublicClinicServices,
   useClinics,
 } from "@/hooks";
-import { Button, Group, Loader, Select, Stack, Stepper, Text, TextInput, Title } from "@mantine/core";
+import { Avatar, Button, Card, Group, Loader, Select, SimpleGrid, Stack, Stepper, Text, TextInput, Title } from "@mantine/core";
 import dayjs from "dayjs";
 import { useState } from "react";
 
@@ -159,8 +159,54 @@ export default function BookingWizardPage() {
           {!doctorsLoading && doctorOptions.length === 0 && selectedService && (
             <Text size="sm" c="dimmed">Нет доступных врачей для этой услуги</Text>
           )}
+          {!doctorsLoading && doctors && doctors.length > 0 && (
+            <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md" mb="md">
+              {doctors
+                .filter(
+                  (d) =>
+                    !selectedService ||
+                    (selectedService.doctor_ids?.length ?? 0) === 0 ||
+                    selectedService.doctor_ids.includes(d.id)
+                )
+                .map((d) => {
+                  const isSelected = doctorId === d.id;
+                  return (
+                    <Card
+                      key={d.id}
+                      withBorder
+                      padding="md"
+                      radius="md"
+                      style={{
+                        cursor: "pointer",
+                        borderWidth: isSelected ? 2 : 1,
+                        borderColor: isSelected ? "var(--mantine-color-primary-6)" : undefined,
+                        backgroundColor: isSelected ? "var(--mantine-color-primary-light)" : undefined,
+                      }}
+                      onClick={() => setDoctorId(d.id)}
+                    >
+                      <Stack align="center" gap="xs">
+                        <Avatar
+                          src={d.photo_url ?? undefined}
+                          size="lg"
+                          radius="xl"
+                          color="primary"
+                        >
+                          {d.full_name.slice(0, 2).toUpperCase()}
+                        </Avatar>
+                        <Text size="sm" fw={600} ta="center" lineClamp={2}>
+                          {d.full_name}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          Рейтинг: {d.rating ?? "—"}
+                        </Text>
+                      </Stack>
+                    </Card>
+                  );
+                })}
+            </SimpleGrid>
+          )}
           <Select
-            label="Врач"
+            label="Врач (или выберите выше)"
             placeholder={doctorOptions.length === 0 ? "Нет доступных врачей" : "Выберите врача"}
             data={doctorOptions}
             value={doctorId}

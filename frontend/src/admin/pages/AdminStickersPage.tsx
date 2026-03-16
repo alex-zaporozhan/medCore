@@ -1,10 +1,11 @@
-import { Stack, Text, Title } from "@mantine/core";
+import { Stack, Text } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 
 /** Stickers management. MVP — built-in set only. */
 export default function AdminStickersPage() {
   return (
     <Stack gap="md">
-      <Title order={3}>Стикеры</Title>
+      <ContextBar title="Стикеры" />
       <Text c="dimmed" size="sm">
         Используется встроенный набор стикеров. В чате (пациент и админ) доступна кнопка «Стикер» для отправки стикера как сообщения.
       </Text>

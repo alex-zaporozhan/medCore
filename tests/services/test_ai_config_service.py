@@ -1,11 +1,13 @@
+import pytest
 from uuid import uuid4
 
 from src.application.services.ai_config_service import AiConfigService, AiProviderConfig
 
 
-def test_ai_config_service_returns_config():
+@pytest.mark.asyncio
+async def test_ai_config_service_returns_config():
     svc = AiConfigService()
-    cfg = svc.get_clinic_ai_config(uuid4())
+    cfg = await svc.get_clinic_ai_config(uuid4())
 
     assert isinstance(cfg, AiProviderConfig)
     # base_url can be empty in tests, but fields must exist

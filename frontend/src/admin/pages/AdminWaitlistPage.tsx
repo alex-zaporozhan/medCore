@@ -10,21 +10,23 @@ import type { WaitlistEntryRead } from "@/hooks/useAdminWaitlist";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useDoctors } from "@/hooks/useDoctors";
 import { usePatients } from "@/hooks/usePatients";
-import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { GlassModal } from "@/shared/ui/GlassModal";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { EmptyState, PageSkeleton } from "@/shared/ui";
 import {
+  ActionIcon,
   Button,
+  Drawer,
   Group,
-  Loader,
-  Modal,
+  Menu,
   NumberInput,
   Select,
   Stack,
   Table,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { IconDotsVertical, IconEdit, IconTrash } from "@tabler/icons-react";
+import { IconListSearch } from "@tabler/icons-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useState } from "react";
 
@@ -162,12 +164,12 @@ export default function AdminWaitlistPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Очередь ожидания</Title>
+        <ContextBar title="Очередь ожидания" />
         <Text size="sm" c="dimmed">Выберите клинику.</Text>
       </Stack>
     );
   }
-  if (isLoading) return <Loader />;
+  if (isLoading) return <PageSkeleton variant="table" rows={8} />;
   if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
 
   const list = entries ?? [];
@@ -176,7 +178,7 @@ export default function AdminWaitlistPage() {
 
   return (
     <Stack>
-      <Title order={3}>Очередь ожидания</Title>
+      <ContextBar title="Очередь ожидания" actions={<Button onClick={open} size="sm">Добавить в очередь</Button>} />
 
       <Stack gap="xs">
         <Text size="sm" fw={500}>Политика очереди</Text>
@@ -197,15 +199,17 @@ export default function AdminWaitlistPage() {
         </Group>
       </Stack>
 
-      <Group justify="space-between">
-        <Text size="sm" c="dimmed">Записи в очереди</Text>
-        <Button onClick={open} size="sm">Добавить в очередь</Button>
-      </Group>
+      <Text size="sm" c="dimmed" mb="xs">Записи в очереди</Text>
       {list.length === 0 && (
-        <EmptyStateHint title="Очередь пуста" subtitle="Добавьте пациента в очередь ожидания." />
+        <EmptyState
+          title="Очередь пуста"
+          description="Добавьте пациента в очередь ожидания."
+          icon={<IconListSearch size={64} stroke={1} color="var(--mantine-color-gray-4)" />}
+          action={{ label: "Добавить в очередь", onClick: open }}
+        />
       )}
       {list.length > 0 && (
-        <Table striped>
+        <Table striped verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Пациент</Table.Th>
@@ -227,10 +231,21 @@ export default function AdminWaitlistPage() {
                 <Table.Td>{e.priority}</Table.Td>
                 <Table.Td>{e.status}</Table.Td>
                 <Table.Td>
-                  <Group gap="xs">
-                    <Button size="xs" variant="light" onClick={() => setEditEntry(e)}>Редактировать</Button>
-                    <Button size="xs" variant="light" color="red" onClick={() => deleteEntryMutation.mutate(e.id)}>Удалить</Button>
-                  </Group>
+                  <Menu position="bottom-end" shadow="sm">
+                    <Menu.Target>
+                      <ActionIcon variant="subtle" size="sm" aria-label="Действия">
+                        <IconDotsVertical size={16} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item leftSection={<IconEdit size={14} />} onClick={() => setEditEntry(e)}>
+                        Редактировать
+                      </Menu.Item>
+                      <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={() => deleteEntryMutation.mutate(e.id)}>
+                        Удалить
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
                 </Table.Td>
               </Table.Tr>
             ))}
@@ -238,7 +253,7 @@ export default function AdminWaitlistPage() {
         </Table>
       )}
 
-      <Modal opened={opened} onClose={close} title="Добавить в очередь">
+      <Drawer position="right" size="md" opened={opened} onClose={close} title="Добавить в очередь">
         <Stack>
           <Select label="Пациент" data={patientOptions} value={patientId} onChange={(v) => setPatientId(v ?? "")} searchable placeholder="Выберите пациента" />
           <TextInput label="Дата" type="date" value={preferredDate} onChange={(e) => setPreferredDate(e.target.value || "")} required />
@@ -247,13 +262,9 @@ export default function AdminWaitlistPage() {
           <NumberInput label="Приоритет" value={priority} onChange={(v) => setPriority(Number(v) || 0)} />
           <Button onClick={handleAddEntry} loading={createEntryMutation.isPending} disabled={!patientId || !preferredDate}>Добавить</Button>
         </Stack>
-      </Modal>
+      </Drawer>
 
-      <GlassModal
-        opened={editEntry !== null}
-        onClose={() => setEditEntry(null)}
-        title="Редактировать запись очереди"
-      >
+      <Drawer position="right" size="md" opened={editEntry !== null} onClose={() => setEditEntry(null)} title="Редактировать запись очереди">
         {editEntry && (
           <EditWaitlistEntryForm
             entry={editEntry}
@@ -275,7 +286,7 @@ export default function AdminWaitlistPage() {
             isLoading={updateEntryMutation.isPending}
           />
         )}
-      </GlassModal>
+      </Drawer>
     </Stack>
   );
 }

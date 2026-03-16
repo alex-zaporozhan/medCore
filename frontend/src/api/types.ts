@@ -190,6 +190,7 @@ export interface Cashbox {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  balance?: string | null;
 }
 
 export interface FinancialTransaction {
