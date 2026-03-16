@@ -44,6 +44,31 @@ export function useAdminFormSubmissionDetail(submissionId: string | null) {
   });
 }
 
+export interface SendFormLinkPayload {
+  patient_id?: string | null;
+  booking_id?: string | null;
+  template_id: string;
+  send_via: "whatsapp" | "sms" | "copy_only";
+}
+
+export interface SendFormLinkResult {
+  url: string;
+  sent: boolean;
+  channel: string | null;
+}
+
+export function useSendFormLink() {
+  return useMutation({
+    mutationFn: (payload: SendFormLinkPayload) =>
+      api.post<SendFormLinkResult>("/v1/admin/forms/send-link", {
+        patient_id: payload.patient_id ?? undefined,
+        booking_id: payload.booking_id ?? undefined,
+        template_id: payload.template_id,
+        send_via: payload.send_via,
+      }),
+  });
+}
+
 export function useUpsertAdminFormTemplate() {
   const qc = useQueryClient();
 

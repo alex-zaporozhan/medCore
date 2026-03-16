@@ -19,6 +19,7 @@ class CashboxRead(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    balance: Decimal | None = None  # current balance (income - expense); filled in list endpoint
 
 
 class CashboxCreate(BaseModel):
@@ -52,4 +53,16 @@ class FinancialTransactionRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
+class FinancialTransactionCreate(BaseModel):
+    """Body for POST finance/transactions. income/expense: cashbox_id; transfer: from_cashbox_id + to_cashbox_id."""
+
+    type: str  # income | expense | transfer
+    amount: Decimal
+    category: str = ""  # stored as description
+    # For income/expense
+    cashbox_id: UUID | None = None
+    # For transfer
+    from_cashbox_id: UUID | None = None
+    to_cashbox_id: UUID | None = None
 

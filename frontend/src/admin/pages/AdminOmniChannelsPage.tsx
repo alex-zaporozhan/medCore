@@ -13,8 +13,8 @@ import {
   Text,
   TextInput,
   Textarea,
-  Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import {
   useCreateOwnerOmniChannel,
   useOwnerOmniChannels,
@@ -291,7 +291,7 @@ export default function AdminOmniChannelsPage() {
   if (isLoading) {
     return (
       <Stack>
-        <Title order={3}>Омниканальные каналы</Title>
+        <ContextBar title="Омниканальные каналы" />
         <DataSkeleton lines={5} />
       </Stack>
     );
@@ -300,7 +300,7 @@ export default function AdminOmniChannelsPage() {
   if (isError) {
     return (
       <Stack>
-        <Title order={3}>Омниканальные каналы</Title>
+        <ContextBar title="Омниканальные каналы" />
         <Text c="red">
           {error instanceof Error ? error.message : "Ошибка загрузки каналов"}
         </Text>
@@ -310,21 +310,16 @@ export default function AdminOmniChannelsPage() {
 
   return (
     <Stack gap="md">
-      <Title order={3}>Омниканальные каналы</Title>
+      <ContextBar title="Омниканальные каналы" actions={<Button onClick={handleOpenCreate} size="sm">Добавить канал</Button>} />
       <Text size="sm" c="dimmed">
         Здесь вы подключаете каналы, через которые клиенты пишут вам (Telegram,
         WhatsApp, VK, Viber, Max, SMS, email, другие). Все сообщения из них
         будут стекаться в раздел «Единый чат».
       </Text>
 
-      <Group justify="space-between" align="center">
-        <Text size="sm" c="dimmed">
-          Всего каналов: {channels.length}
-        </Text>
-        <Button onClick={handleOpenCreate} size="sm">
-          Добавить канал
-        </Button>
-      </Group>
+      <Text size="sm" c="dimmed" mb="sm">
+        Всего каналов: {channels.length}
+      </Text>
 
       {!channels.length ? (
         <EmptyState

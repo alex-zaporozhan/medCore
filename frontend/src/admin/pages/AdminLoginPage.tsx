@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { api } from "@/api/client";
-import { setAdminToken } from "@/api/client";
+import { setAdminToken, setAdminId } from "@/api/client";
 import { Alert, Button, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -27,6 +27,7 @@ export default function AdminLoginPage() {
         { email: email.trim().toLowerCase(), password }
       );
       setAdminToken(res.access_token);
+      if (res.admin_id) setAdminId(res.admin_id);
       navigate("/admin", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка входа");

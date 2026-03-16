@@ -8,6 +8,11 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import get_session
+from src.application.dto.card_dto import (
+    ServiceCardConsumableItem,
+    ServiceCardDoctorItem,
+    ServiceCardResponse,
+)
 from src.application.dto.service_dto import (
     AdminServiceCreate,
     AdminServiceRead,
@@ -17,9 +22,13 @@ from src.application.dto.service_dto import (
 )
 from src.application.services.pricing_service import PricingService
 from src.application.services.service_service import ServiceService
-from src.domain.entities.service_doctor import ServiceDoctor
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.domain.entities.admin_user import AdminUser
+from src.domain.entities.doctor import Doctor
+from src.domain.entities.product import Product
+from src.domain.entities.service import Service
+from src.domain.entities.service_consumable import ServiceConsumable
+from src.domain.entities.service_doctor import ServiceDoctor
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +88,79 @@ async def get_clinic_services(
         )
         for s in services
     ]
+
+
+@router.get(
+    "/{clinic_id}/services/{service_id}/card",
+    response_model=ServiceCardResponse,
+)
+async def get_service_card(
+    clinic_id: UUID,
+    service_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> ServiceCardResponse:
+    """Rich service card for drawer: service, doctors, consumables, online_booking_enabled."""
+    if clinic_id != current_admin.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+    result = await session.execute(
+        select(Service).where(
+            Service.id == service_id,
+            Service.clinic_id == clinic_id,
+            Service.deleted_at.is_(None),
+        )
+    )
+    service = result.scalar_one_or_none()
+    if not service:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+    service_dict = ServiceRead.model_validate(service).model_dump()
+
+    # Doctors (service_doctor)
+    sd_result = await session.execute(
+        select(ServiceDoctor, Doctor.full_name).join(
+            Doctor, Doctor.id == ServiceDoctor.doctor_id
+        ).where(
+            ServiceDoctor.service_id == service_id,
+            Doctor.clinic_id == clinic_id,
+        )
+    )
+    doctors = [
+        ServiceCardDoctorItem(
+            doctor_id=sd.doctor_id,
+            doctor_name=dname or "",
+            custom_price=sd.custom_price,
+            is_active=sd.is_active,
+        )
+        for sd, dname in sd_result.all()
+    ]
+
+    # Consumables (technocard)
+    sc_result = await session.execute(
+        select(ServiceConsumable, Product.name).join(
+            Product, Product.id == ServiceConsumable.product_id
+        ).where(
+            ServiceConsumable.service_id == service_id,
+            ServiceConsumable.clinic_id == clinic_id,
+        )
+    )
+    consumables = [
+        ServiceCardConsumableItem(
+            product_id=sc.product_id,
+            product_name=pname,
+            quantity_per_service=sc.quantity_per_service,
+            unit=sc.unit,
+        )
+        for sc, pname in sc_result.all()
+    ]
+
+    return ServiceCardResponse(
+        service=service_dict,
+        doctors=doctors,
+        consumables=consumables,
+        online_booking_enabled=None,
+    )
 
 
 @router.post(

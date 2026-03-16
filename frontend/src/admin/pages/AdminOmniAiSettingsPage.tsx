@@ -14,8 +14,8 @@ import {
   Stack,
   Table,
   Text,
-  Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 
 const AI_MODE_LABELS: Record<string, string> = {
   DISABLED: "Выключен",
@@ -73,7 +73,7 @@ export default function AdminOmniAiSettingsPage() {
   if (isLoading) {
     return (
       <Stack>
-        <Title order={3}>AI омниканального ассистента</Title>
+        <ContextBar title="AI омниканального ассистента" />
         <DataSkeleton lines={5} />
       </Stack>
     );
@@ -81,7 +81,7 @@ export default function AdminOmniAiSettingsPage() {
   if (isError) {
     return (
       <Stack>
-        <Title order={3}>AI омниканального ассистента</Title>
+        <ContextBar title="AI омниканального ассистента" />
         <Text c="red">{error instanceof Error ? error.message : "Ошибка загрузки"}</Text>
       </Stack>
     );
@@ -89,7 +89,7 @@ export default function AdminOmniAiSettingsPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={3}>AI омниканального ассистента</Title>
+      <ContextBar title="AI омниканального ассистента" />
       <Text size="sm" c="dimmed">
         Глобальные настройки и переопределения по каналам (Telegram, веб-чат и др.).
       </Text>

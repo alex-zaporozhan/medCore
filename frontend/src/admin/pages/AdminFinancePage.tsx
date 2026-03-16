@@ -2,6 +2,8 @@ import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import {
   useCashboxes,
   useFinanceTransactions,
+  useFinanceLiability,
+  useCreateFinanceTransaction,
   useInventoryProducts,
   useWarehouses,
   usePayrollPolicies,
@@ -10,10 +12,14 @@ import {
   useInventoryStock,
 } from "@/hooks";
 import {
+  ActionIcon,
   Anchor,
+  Button,
   Card,
+  Drawer,
   Group,
-  Loader,
+  Menu,
+  NumberInput,
   Select,
   SimpleGrid,
   Stack,
@@ -21,11 +27,16 @@ import {
   Tabs,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { IconDotsVertical, IconPlus, IconMinus, IconTransfer } from "@tabler/icons-react";
+import { EmptyState } from "@/shared/ui/EmptyState";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import dayjs from "dayjs";
 import { useMemo, useState } from "react";
 import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
+
+type TxDrawerMode = "income" | "expense" | "transfer" | null;
 
 export default function AdminFinancePage() {
   const { currentClinicId } = useAdminClinic();
@@ -35,6 +46,14 @@ export default function AdminFinancePage() {
   const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null);
+
+  const [txDrawerOpen, setTxDrawerOpen] = useState(false);
+  const [txDrawerMode, setTxDrawerMode] = useState<TxDrawerMode>(null);
+  const [txDrawerCashboxId, setTxDrawerCashboxId] = useState<string | null>(null);
+  const [txAmount, setTxAmount] = useState<string>("");
+  const [txCategory, setTxCategory] = useState("");
+  const [txFromCashboxId, setTxFromCashboxId] = useState<string | null>(null);
+  const [txToCashboxId, setTxToCashboxId] = useState<string | null>(null);
 
   const today = dayjs().format("YYYY-MM-DD");
   const [txDateFrom] = useState<string | null>(
@@ -48,6 +67,8 @@ export default function AdminFinancePage() {
   const [invDateTo, setInvDateTo] = useState<string | null>(today);
 
   const { data: cashboxes, isLoading: cashboxesLoading } = useCashboxes(clinicId);
+  const { data: liability } = useFinanceLiability(clinicId);
+  const createTx = useCreateFinanceTransaction(clinicId);
   const { data: txs, isLoading: txsLoading } = useFinanceTransactions(clinicId, {
     cashbox_id: selectedCashboxId,
     date_from: txDateFrom,
@@ -137,7 +158,7 @@ export default function AdminFinancePage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Финансы</Title>
+        <ContextBar title="Финансы" />
         <Text size="sm" c="dimmed">
           Выберите клинику в шапке, чтобы работать с финансами и складом.
         </Text>
@@ -147,14 +168,9 @@ export default function AdminFinancePage() {
 
   return (
     <Stack>
-      <Group justify="space-between">
-        <Title order={3}>Финансы и ERP</Title>
-        <Text size="xs" c="dimmed">
-          Управление кассами, выручкой, зарплатами и складом.
-        </Text>
-      </Group>
+      <ContextBar title="Финансы и ERP" />
 
-      {loading && <Loader size="sm" />}
+      {loading && <PageSkeleton variant="table" rows={6} />}
 
       <Tabs defaultValue="cashboxes" keepMounted={false}>
         <Tabs.List>
@@ -170,36 +186,113 @@ export default function AdminFinancePage() {
               Кассы клиники
             </Text>
             {cashboxes && cashboxes.length === 0 && (
-              <Text size="sm" c="dimmed">
-                Кассы ещё не настроены. Создайте хотя бы одну кассу по умолчанию в админке бэкенда
-                или через API.
-              </Text>
+              <EmptyState
+                title="Нет касс"
+                description="Добавьте первую кассу для учёта наличных и безнала."
+                action={{
+                  label: "Добавить кассу",
+                  onClick: () => {},
+                }}
+              />
             )}
             {cashboxes && cashboxes.length > 0 && (
-              <Table highlightOnHover striped withColumnBorders>
+              <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Название</Table.Th>
+                    <Table.Th>Баланс</Table.Th>
                     <Table.Th>Тип</Table.Th>
                     <Table.Th>Валюта</Table.Th>
                     <Table.Th>По умолчанию</Table.Th>
                     <Table.Th>Активна</Table.Th>
+                    <Table.Th w={50}></Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {cashboxes.map((c) => (
                     <Table.Tr key={c.id}>
                       <Table.Td>{c.name}</Table.Td>
+                      <Table.Td>
+                        {c.balance != null
+                          ? `${Number(c.balance).toLocaleString("ru-RU")} ${c.currency}`
+                          : "—"}
+                      </Table.Td>
                       <Table.Td>{c.type}</Table.Td>
                       <Table.Td>{c.currency}</Table.Td>
                       <Table.Td>{c.is_default ? "Да" : "Нет"}</Table.Td>
                       <Table.Td>{c.is_active ? "Да" : "Нет"}</Table.Td>
+                      <Table.Td>
+                        <Menu position="bottom-end">
+                          <Menu.Target>
+                            <ActionIcon variant="subtle" size="sm" aria-label="Действия">
+                              <IconDotsVertical size={16} />
+                            </ActionIcon>
+                          </Menu.Target>
+                          <Menu.Dropdown>
+                            <Menu.Item
+                              leftSection={<IconPlus size={14} />}
+                              onClick={() => {
+                                setTxDrawerMode("income");
+                                setTxDrawerCashboxId(c.id);
+                                setTxFromCashboxId(null);
+                                setTxToCashboxId(null);
+                                setTxAmount("");
+                                setTxCategory("");
+                                setTxDrawerOpen(true);
+                              }}
+                            >
+                              Внести
+                            </Menu.Item>
+                            <Menu.Item
+                              leftSection={<IconMinus size={14} />}
+                              onClick={() => {
+                                setTxDrawerMode("expense");
+                                setTxDrawerCashboxId(c.id);
+                                setTxFromCashboxId(null);
+                                setTxToCashboxId(null);
+                                setTxAmount("");
+                                setTxCategory("");
+                                setTxDrawerOpen(true);
+                              }}
+                            >
+                              Изъять
+                            </Menu.Item>
+                            <Menu.Item
+                              leftSection={<IconTransfer size={14} />}
+                              onClick={() => {
+                                setTxDrawerMode("transfer");
+                                setTxDrawerCashboxId(null);
+                                setTxFromCashboxId(c.id);
+                                setTxToCashboxId(null);
+                                setTxAmount("");
+                                setTxCategory("Перевод");
+                                setTxDrawerOpen(true);
+                              }}
+                            >
+                              Перевод
+                            </Menu.Item>
+                          </Menu.Dropdown>
+                        </Menu>
+                      </Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
               </Table>
             )}
           </Card>
+          {liability && (
+            <Card shadow="sm" padding="md" withBorder mt="md">
+              <Text size="sm" fw={500} c="dimmed" mb="xs">
+                Деньги в воздухе (Unearned Revenue)
+              </Text>
+              <Text size="lg" fw={600}>
+                {liability.unearned_revenue} ₽
+              </Text>
+              <Text size="xs" c="dimmed">
+                Активных абонементов: {liability.active_subscriptions_count}
+              </Text>
+            </Card>
+          )}
         </Tabs.Panel>
 
         <Tabs.Panel value="transactions" pt="md">
@@ -239,7 +332,7 @@ export default function AdminFinancePage() {
                   </Text>
                 )}
                 {txs && txs.length > 0 && (
-                  <Table highlightOnHover striped withColumnBorders>
+                  <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Дата</Table.Th>
@@ -334,7 +427,7 @@ export default function AdminFinancePage() {
                     <Text size="sm" fw={500} mb="sm">
                       Начисления по врачам (агрегат)
                     </Text>
-                    <Table highlightOnHover striped withColumnBorders>
+                    <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                       <Table.Thead>
                         <Table.Tr>
                           <Table.Th>Врач (ID)</Table.Th>
@@ -366,7 +459,7 @@ export default function AdminFinancePage() {
                 </Text>
               )}
               {payrollPolicies && payrollPolicies.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders>
+                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Доктор</Table.Th>
@@ -411,7 +504,7 @@ export default function AdminFinancePage() {
               )}
               {salaryTxs && salaryTxs.length > 0 && (
                 <>
-                  <Table highlightOnHover striped withColumnBorders>
+                  <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Дата</Table.Th>
@@ -467,7 +560,7 @@ export default function AdminFinancePage() {
                 </Text>
               )}
               {products && products.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders>
+                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Название</Table.Th>
@@ -504,7 +597,7 @@ export default function AdminFinancePage() {
                 </Text>
               )}
               {warehouses && warehouses.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders>
+                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Название</Table.Th>
@@ -558,7 +651,7 @@ export default function AdminFinancePage() {
                 </Text>
               )}
               {inventoryTxs && inventoryTxs.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders>
+                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Дата</Table.Th>
@@ -599,6 +692,120 @@ export default function AdminFinancePage() {
           </Stack>
         </Tabs.Panel>
       </Tabs>
+
+      <Drawer
+        position="right"
+        size="md"
+        opened={txDrawerOpen}
+        onClose={() => setTxDrawerOpen(false)}
+        title={
+          txDrawerMode === "income"
+            ? "Внести в кассу"
+            : txDrawerMode === "expense"
+              ? "Изъять из кассы"
+              : "Перевод между кассами"
+        }
+      >
+        <Stack gap="sm">
+          {txDrawerMode === "transfer" && (
+            <>
+              <Select
+                label="Из кассы"
+                placeholder="Выберите кассу"
+                data={cashboxOptions}
+                value={txFromCashboxId}
+                onChange={setTxFromCashboxId}
+                required
+              />
+              <Select
+                label="В кассу"
+                placeholder="Выберите кассу"
+                data={cashboxOptions.filter((o) => o.value !== txFromCashboxId)}
+                value={txToCashboxId}
+                onChange={setTxToCashboxId}
+                required
+              />
+            </>
+          )}
+          {txDrawerMode !== "transfer" && txDrawerCashboxId && (
+            <Text size="sm" c="dimmed">
+              Касса: {cashboxes?.find((c) => c.id === txDrawerCashboxId)?.name ?? txDrawerCashboxId}
+            </Text>
+          )}
+          <NumberInput
+            label="Сумма"
+            value={txAmount}
+            onChange={(v) => setTxAmount(String(v ?? ""))}
+            min={0.01}
+            decimalScale={2}
+            required
+          />
+          <TextInput
+            label="Назначение / категория"
+            placeholder="Например: Оплата услуги, Изъятие наличных"
+            value={txCategory}
+            onChange={(e) => setTxCategory(e.currentTarget.value)}
+            required
+          />
+          <Group justify="flex-end">
+            <Button variant="subtle" onClick={() => setTxDrawerOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              disabled={
+                !Number(txAmount) ||
+                !txCategory?.trim() ||
+                (txDrawerMode === "transfer"
+                  ? !txFromCashboxId || !txToCashboxId || txFromCashboxId === txToCashboxId
+                  : !txDrawerCashboxId)
+              }
+              loading={createTx.isPending}
+              onClick={() => {
+                if (txDrawerMode === "transfer") {
+                  createTx.mutate(
+                    {
+                      type: "transfer",
+                      amount: txAmount,
+                      category: txCategory || "Перевод",
+                      from_cashbox_id: txFromCashboxId!,
+                      to_cashbox_id: txToCashboxId!,
+                    },
+                    {
+                      onSuccess: () => {
+                        setTxDrawerOpen(false);
+                        setTxAmount("");
+                        setTxCategory("");
+                        setTxFromCashboxId(null);
+                        setTxToCashboxId(null);
+                      },
+                    }
+                  );
+                } else {
+                  createTx.mutate(
+                    {
+                      type: txDrawerMode!,
+                      amount: txAmount,
+                      category: txCategory || undefined,
+                      cashbox_id: txDrawerCashboxId!,
+                    },
+                    {
+                      onSuccess: () => {
+                        setTxDrawerOpen(false);
+                        setTxAmount("");
+                        setTxCategory("");
+                        setTxDrawerCashboxId(null);
+                        setTxDrawerMode(null);
+                      },
+                    }
+                  );
+                }
+              }}
+            >
+              Создать
+            </Button>
+          </Group>
+        </Stack>
+      </Drawer>
     </Stack>
   );
 }

@@ -52,6 +52,42 @@ export function useAdminReportsDashboard(
   });
 }
 
+export function useAdminReportsDashboardAggregate(
+  dateStr: string | null,
+  period: "day" | "week" | "month" = "day"
+) {
+  return useQuery({
+    queryKey: ["admin", "reports", "dashboard-aggregate", dateStr, period],
+    queryFn: () =>
+      api.get<DashboardReport>(
+        `/v1/admin/reports/dashboard-aggregate?date=${dateStr}&period=${period}`
+      ),
+    enabled: !!dateStr,
+  });
+}
+
+/**
+ * Dashboard aggregate for selected clinics. Pass null or [] for "all clinics".
+ */
+export function useAdminReportsDashboardByClinics(
+  dateStr: string | null,
+  period: "day" | "week" | "month",
+  clinicIds: string[] | null
+) {
+  const ids = clinicIds?.length ? clinicIds : null;
+  return useQuery({
+    queryKey: ["admin", "reports", "dashboard-aggregate", dateStr, period, ids?.slice().sort().join(",") ?? "all"],
+    queryFn: () => {
+      const params = new URLSearchParams({ date: dateStr!, period });
+      if (ids?.length) params.set("clinic_ids", ids.join(","));
+      return api.get<DashboardReport>(
+        `/v1/admin/reports/dashboard-aggregate?${params.toString()}`
+      );
+    },
+    enabled: !!dateStr,
+  });
+}
+
 export function useAdminReportsNoShow(
   clinicId: string | null,
   dateFrom: string | null,

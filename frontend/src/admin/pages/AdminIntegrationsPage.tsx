@@ -2,7 +2,8 @@ import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { Alert, Button, Card, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Card, Stack, Text, TextInput } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useState, useEffect } from "react";
 
 interface IntegrationSettings {
@@ -49,7 +50,7 @@ export default function AdminIntegrationsPage() {
   if (!currentClinicId) {
     return (
       <Stack>
-        <Title order={3}>Интеграции</Title>
+        <ContextBar title="Интеграции" />
         <EmptyStateHint title="Выберите клинику" />
       </Stack>
     );
@@ -57,7 +58,7 @@ export default function AdminIntegrationsPage() {
 
   return (
     <Stack>
-      <Title order={3}>Интеграции</Title>
+      <ContextBar title="Интеграции" />
       <Alert color="blue" title="CSV-обмен">
         Импорт расписания и экспорт закрытых записей в CSV доступны в разделе «Расписание» и в отчётах. Выгрузка подходит для загрузки в 1C.
       </Alert>

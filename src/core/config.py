@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
+    # Form send-link: base URL for form fill page (token appended as ?token=...)
+    form_link_base_url: str = ""
+
     # JWT
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
@@ -61,6 +64,7 @@ class Settings(BaseSettings):
     # Telegram Bot
     telegram_bot_token: str = ""
     telegram_admin_chat_id: str = ""
+    telegram_owner_chat_id: str = ""  # Owner briefs (G5); fallback to telegram_admin_chat_id if unset
     telegram_webhook_secret: str = ""  # Optional: X-Telegram-Bot-Api-Secret-Token for webhook verification
 
     # SMS (SMSC.ru)

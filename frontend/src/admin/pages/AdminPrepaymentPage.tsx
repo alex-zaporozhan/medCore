@@ -8,12 +8,12 @@ import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useClinics } from "@/hooks";
 import { api } from "@/api/client";
 import { useQueryClient } from "@tanstack/react-query";
-import { EmptyStateHint } from "@/shared/emptyStateHint";
+import { EmptyState, PageSkeleton } from "@/shared/ui";
 import {
+  ActionIcon,
   Button,
-  Group,
-  Loader,
-  Modal,
+  Drawer,
+  Menu,
   NumberInput,
   Paper,
   Select,
@@ -21,8 +21,10 @@ import {
   Switch,
   Table,
   Text,
-  Title,
 } from "@mantine/core";
+import { IconDotsVertical, IconEdit, IconTrash } from "@tabler/icons-react";
+import { IconReceipt } from "@tabler/icons-react";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
 
@@ -123,19 +125,19 @@ export default function AdminPrepaymentPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Предоплата</Title>
+        <ContextBar title="Предоплата" />
         <Text size="sm" c="dimmed">Выберите клинику.</Text>
       </Stack>
     );
   }
-  if (isLoading) return <Loader />;
+  if (isLoading) return <PageSkeleton variant="table" rows={6} />;
   if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
 
   const list = policies ?? [];
 
   return (
     <Stack>
-      <Title order={3}>Предоплата</Title>
+      <ContextBar title="Предоплата" actions={<Button size="sm" onClick={() => { resetForm(); open(); }} disabled={!prepaymentEnabled}>Добавить политику</Button>} />
       <Paper p="md" withBorder>
         <Stack gap="xs">
           <Switch
@@ -147,18 +149,20 @@ export default function AdminPrepaymentPage() {
           />
         </Stack>
       </Paper>
-      <Group justify="space-between">
-        <Text fw={500}>Правила предоплаты</Text>
-        <Button onClick={() => { resetForm(); open(); }} size="sm" disabled={!prepaymentEnabled}>Добавить политику</Button>
-      </Group>
+      <Text fw={500} mb="xs">Правила предоплаты</Text>
       {!prepaymentEnabled && (
         <Text size="sm" c="dimmed">Включите предоплату выше, чтобы настраивать правила (без предоплаты / частичная / полная по услугам и врачам).</Text>
       )}
       {prepaymentEnabled && list.length === 0 && (
-        <EmptyStateHint title="Нет политик" subtitle="Добавьте правило предоплаты для клиники." />
+        <EmptyState
+          title="Нет политик"
+          description="Добавьте правило предоплаты для клиники."
+          icon={<IconReceipt size={64} stroke={1} color="var(--mantine-color-gray-4)" />}
+          action={{ label: "Добавить политику", onClick: () => { resetForm(); open(); } }}
+        />
       )}
       {prepaymentEnabled && list.length > 0 && (
-        <Table striped>
+        <Table striped verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Область</Table.Th>
@@ -180,20 +184,34 @@ export default function AdminPrepaymentPage() {
                 <Table.Td>{p.priority}</Table.Td>
                 <Table.Td>{p.enabled ? "Да" : "Нет"}</Table.Td>
                 <Table.Td>
-                  <Group gap="xs">
-                    <Button size="xs" variant="light" onClick={() => {
-                      setEditingId(p.id);
-                      setScopeType(p.scope_type);
-                      setMode(p.mode);
-                      setAmountType(p.amount_type);
-                      setMinAmount(Number(p.min_amount));
-                      setDeadlineHours(p.deadline_hours_before_visit ?? undefined);
-                      setPriority(p.priority);
-                      setEnabled(p.enabled);
-                      open();
-                    }}>Изменить</Button>
-                    <Button size="xs" variant="light" color="red" onClick={() => deleteMutation.mutate(p.id)}>Удалить</Button>
-                  </Group>
+                  <Menu position="bottom-end" shadow="sm">
+                    <Menu.Target>
+                      <ActionIcon variant="subtle" size="sm" aria-label="Действия">
+                        <IconDotsVertical size={16} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item
+                        leftSection={<IconEdit size={14} />}
+                        onClick={() => {
+                          setEditingId(p.id);
+                          setScopeType(p.scope_type);
+                          setMode(p.mode);
+                          setAmountType(p.amount_type);
+                          setMinAmount(Number(p.min_amount));
+                          setDeadlineHours(p.deadline_hours_before_visit ?? undefined);
+                          setPriority(p.priority);
+                          setEnabled(p.enabled);
+                          open();
+                        }}
+                      >
+                        Редактировать
+                      </Menu.Item>
+                      <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={() => deleteMutation.mutate(p.id)}>
+                        Удалить
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
                 </Table.Td>
               </Table.Tr>
             ))}
@@ -201,7 +219,7 @@ export default function AdminPrepaymentPage() {
         </Table>
       )}
 
-      <Modal opened={opened} onClose={() => { close(); resetForm(); }} title={editingId ? "Редактировать политику" : "Новая политика"}>
+      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); resetForm(); }} title={editingId ? "Редактировать политику" : "Новая политика"}>
         <Stack>
           <Select label="Область" data={SCOPE_TYPES} value={scope_type} onChange={setScopeType} />
           <Select label="Режим" data={MODES} value={mode} onChange={setMode} />
@@ -212,7 +230,7 @@ export default function AdminPrepaymentPage() {
           <Switch label="Включена" checked={enabled} onChange={(e) => setEnabled(e.currentTarget.checked)} />
           <Button onClick={handleSave} loading={createMutation.isPending || updateMutation.isPending}>Сохранить</Button>
         </Stack>
-      </Modal>
+      </Drawer>
     </Stack>
   );
 }

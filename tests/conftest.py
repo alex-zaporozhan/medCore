@@ -12,7 +12,8 @@ Run from project root: poetry run pytest tests/
   Вариант 2: не задавать DATABASE_URL_TEST — тогда подставится DATABASE_URL из .env с заменой БД на dental_booking_test
     (пароль берётся из DATABASE_URL; .env должен быть в корне проекта и загружается при запуске pytest).
 
-  Создайте тестовую БД один раз:
+  Создайте тестовую БД один раз (имя контейнера из docker-compose: dental_booking_postgres;
+  в PowerShell не используйте плейсхолдер в угловых скобках — только реальное имя контейнера):
     docker exec dental_booking_postgres psql -U postgres -c "CREATE DATABASE dental_booking_test;"
 
 - If connection to the test DB fails, tests are SKIPPED with a hint.

@@ -25,6 +25,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { IconRefresh } from "@tabler/icons-react";
 
 export default function ChatPage() {
   const { accessToken, patientId } = usePatientAuth();
@@ -123,20 +124,38 @@ export default function ChatPage() {
     }
   };
 
+  const refreshChat = () => {
+    queryClient.invalidateQueries({ queryKey: ["patient-chat-messages", patientId] });
+    queryClient.invalidateQueries({ queryKey: ["patient-chat-conversation", patientId] });
+  };
+
   return (
     <Stack gap="md">
       <Group justify="space-between" wrap="wrap">
         <Title order={3}>Чат с клиникой</Title>
-        {items.some((m) => m.is_mine) && (
+        <Group gap="xs">
           <Button
             variant="subtle"
             size="xs"
             color="gray"
-            onClick={() => setClearModalOpen(true)}
+            leftSection={<IconRefresh size={14} />}
+            onClick={refreshChat}
+            loading={msgLoading}
+            aria-label="Обновить"
           >
-            Очистить мои сообщения
+            Обновить
           </Button>
-        )}
+          {items.some((m) => m.is_mine) && (
+            <Button
+              variant="subtle"
+              size="xs"
+              color="gray"
+              onClick={() => setClearModalOpen(true)}
+            >
+              Очистить мои сообщения
+            </Button>
+          )}
+        </Group>
       </Group>
       <Text size="xs" c="dimmed">
         Удалённое сообщение исчезнет только у вас; у администратора история сохраняется.

@@ -1,5 +1,6 @@
 export { DataSkeleton } from "./DataSkeleton";
-export { EmptyState } from "./EmptyState";
+export { EmptyState, type EmptyStateProps } from "./EmptyState";
+export { PageSkeleton, type PageSkeletonProps } from "./PageSkeleton";
 export { GlassModal } from "./GlassModal";
 export { AppCard } from "./AppCard";
 export { AppButton } from "./AppButton";

@@ -13,89 +13,27 @@ import { useAdminClinicServices } from "@/hooks/useAdminClinicServices";
 import { usePatients } from "@/hooks/usePatients";
 import { ScheduleCalendarGrid } from "@/admin/components/ScheduleCalendarGrid";
 import { WaitlistPanel } from "@/admin/components/WaitlistPanel";
-import { EmptyStateHint } from "@/shared/emptyStateHint";
+import { BookingEntityDrawer } from "@/admin/components/entity/BookingEntityDrawer";
+import { EmptyState } from "@/shared/ui/EmptyState";
 import { GlassModal } from "@/shared/ui/GlassModal";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import {
   Button,
+  Drawer,
   Group,
   MultiSelect,
   Select,
   Stack,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
 import dayjs from "dayjs";
 import { useState, useEffect, useRef, useMemo } from "react";
-import type {
-  CreateAdminBookingPayload,
-  RescheduleBookingPayload,
-} from "@/hooks/useAdminBookings";
+import type { CreateAdminBookingPayload } from "@/hooks/useAdminBookings";
 import type { ComboboxItem } from "@mantine/core";
+import { IconCalendarEvent } from "@tabler/icons-react";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-
-interface BookingEditFormProps {
-  booking: Booking;
-  doctorOptions: ComboboxItem[];
-  onSave: (payload: RescheduleBookingPayload) => void;
-  onCancel: () => void;
-  isLoading: boolean;
-}
-
-function BookingEditForm({
-  booking,
-  doctorOptions,
-  onSave,
-  onCancel,
-  isLoading,
-}: BookingEditFormProps) {
-  const [date, setDate] = useState(booking.appointment_date);
-  const [time, setTime] = useState(String(booking.appointment_time).slice(0, 5));
-  const [doctorId, setDoctorId] = useState(booking.doctor_id);
-
-  const handleSubmit = () => {
-    const timeForApi = time.length === 5 ? `${time}:00` : time;
-    onSave({
-      id: booking.id,
-      doctor_id: doctorId,
-      date,
-      time: timeForApi,
-    });
-  };
-
-  return (
-    <Stack gap="sm">
-      <TextInput
-        label="Дата"
-        type="date"
-        value={date}
-        onChange={(e) => setDate(e.target.value || date)}
-      />
-      <TextInput
-        label="Время"
-        type="time"
-        value={time}
-        onChange={(e) => setTime(e.target.value || time)}
-      />
-      <Select
-        label="Специалист"
-        data={doctorOptions}
-        value={doctorId}
-        onChange={(v) => v && setDoctorId(v)}
-        searchable
-      />
-      <Group justify="flex-end" mt="sm">
-        <Button variant="subtle" onClick={onCancel}>
-          Отмена
-        </Button>
-        <Button onClick={handleSubmit} loading={isLoading}>
-          Сохранить
-        </Button>
-      </Group>
-    </Stack>
-  );
-}
 
 interface ScheduleCreateBookingFormProps {
   date: string;
@@ -244,12 +182,9 @@ export default function SchedulePage() {
   );
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
-  const [pendingReschedule, setPendingReschedule] = useState<{
-    bookingId: string;
-    toDoctorId: string;
-    date: string;
-    time: string;
-  } | null>(null);
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editDoctorId, setEditDoctorId] = useState("");
   const [pendingCancelBookingId, setPendingCancelBookingId] = useState<string | null>(null);
   const rescheduleMutation = useRescheduleBookingAdmin();
   const queryClient = useQueryClient();
@@ -280,20 +215,22 @@ export default function SchedulePage() {
     return map;
   }, [adminServices]);
 
-  const rescheduleConfirmText = useMemo(() => {
-    if (!pendingReschedule || !bookings || !patientNameMap || !doctors) return null;
-    const booking = bookings.find((b) => b.id === pendingReschedule.bookingId);
-    if (!booking) return null;
-    const clientName = patientNameMap[booking.patient_id] ?? booking.patient_id;
-    const toDoctor = doctors.find((d) => d.id === pendingReschedule.toDoctorId);
-    const toDoctorName = toDoctor?.full_name ?? "";
-    const isDoctorChange = booking.doctor_id !== pendingReschedule.toDoctorId;
-    const timeShort = String(pendingReschedule.time).slice(0, 5);
-    if (isDoctorChange && toDoctorName) {
-      return { clientName, date: pendingReschedule.date, time: timeShort, toDoctorName, isDoctorChange: true };
-    }
-    return { clientName, date: pendingReschedule.date, time: timeShort, toDoctorName: "", isDoctorChange: false };
-  }, [pendingReschedule, bookings, patientNameMap, doctors]);
+  const handleRescheduleDrag = (payload: { bookingId: string; toDoctorId: string; date: string; time: string }) => {
+    const timeForApi = payload.time.length === 5 ? `${payload.time}:00` : payload.time;
+    rescheduleMutation.mutate(
+      {
+        id: payload.bookingId,
+        doctor_id: payload.toDoctorId,
+        date: payload.date,
+        time: timeForApi,
+      },
+      {
+        onError: () => {
+          // Rollback is done in useRescheduleBookingAdmin; optional: show toast when notifications are added
+        },
+      }
+    );
+  };
 
   const doctorOptions =
     doctors?.map((d) => ({ value: d.id, label: d.full_name })) ?? [];
@@ -328,9 +265,17 @@ export default function SchedulePage() {
     }
   }, [doctors]);
 
+  useEffect(() => {
+    if (selectedBooking) {
+      setEditDate(selectedBooking.appointment_date);
+      setEditTime(String(selectedBooking.appointment_time).slice(0, 5));
+      setEditDoctorId(selectedBooking.doctor_id);
+    }
+  }, [selectedBooking?.id]);
+
   return (
     <Stack>
-      <Title order={3}>Расписание</Title>
+      <ContextBar title="Расписание" />
       {clinics.length > 1 && (
         <Text size="sm" c="dimmed">
           В другой клинике — другие врачи и услуги. Выберите клинику в шапке.
@@ -383,12 +328,31 @@ export default function SchedulePage() {
         <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>
       )}
       {doctorIds.length === 0 && (
-        <EmptyStateHint title="Выберите врачей" subtitle="Выберите одного или нескольких врачей для отображения сетки расписания." />
+        <EmptyState
+          title="Выберите врачей"
+          description="Выберите одного или нескольких врачей для отображения сетки расписания."
+        />
       )}
       {aggregatedSchedule &&
         aggregatedSchedule.times.length > 0 &&
         doctorIds.length > 0 && (
           <Stack gap="lg">
+            {bookingsForGrid.length === 0 && (
+              <EmptyState
+                title="Нет записей на эту дату"
+                description="Создайте запись по кнопке ниже или добавьте пациента из листа ожидания."
+                icon={<IconCalendarEvent size={64} stroke={1} color="var(--mantine-color-gray-4)" />}
+                action={{
+                  label: "Новая запись",
+                  onClick: () => {
+                    const firstDoctor = gridDoctors[0];
+                    const firstTime = aggregatedSchedule?.times[0];
+                    if (firstDoctor && firstTime)
+                      setCreateSlot({ doctorId: firstDoctor.id, time: String(firstTime).slice(0, 5) });
+                  },
+                }}
+              />
+            )}
             <ScheduleCalendarGrid
               doctors={gridDoctors}
               date={aggregatedSchedule.date}
@@ -398,9 +362,7 @@ export default function SchedulePage() {
               patientNameMap={patientNameMap}
               serviceNameMap={serviceNameMap}
               onBookingClick={(booking) => setSelectedBooking(booking)}
-              onReschedule={({ bookingId, toDoctorId, date: d, time: t }) => {
-                setPendingReschedule({ bookingId, toDoctorId, date: d, time: t });
-              }}
+              onReschedule={handleRescheduleDrag}
               onEmptySlotClick={({ doctorId, time }) =>
                 setCreateSlot({ doctorId, time })
               }
@@ -417,53 +379,11 @@ export default function SchedulePage() {
       {aggregatedSchedule &&
         aggregatedSchedule.times.length === 0 &&
         doctorIds.length > 0 && (
-          <EmptyStateHint title="Нет слотов на эту дату" />
+          <EmptyState
+            title="Нет слотов на эту дату"
+            description="На выбранную дату нет доступных слотов расписания."
+          />
         )}
-
-      <GlassModal
-        opened={pendingReschedule !== null}
-        onClose={() => setPendingReschedule(null)}
-        title="Подтверждение переноса"
-      >
-        <Stack gap="md">
-          {rescheduleConfirmText ? (
-            <Text size="sm">
-              {rescheduleConfirmText.isDoctorChange && rescheduleConfirmText.toDoctorName
-                ? `Вы действительно хотите перенести запись ${rescheduleConfirmText.clientName} на ${rescheduleConfirmText.date} ${rescheduleConfirmText.time} к ${rescheduleConfirmText.toDoctorName}?`
-                : `Вы действительно хотите перенести запись ${rescheduleConfirmText.clientName} на ${rescheduleConfirmText.date} ${rescheduleConfirmText.time}?`}
-            </Text>
-          ) : (
-            <Text size="sm" c="dimmed">
-              Данные записи загружаются…
-            </Text>
-          )}
-          <Group justify="flex-end" gap="sm">
-            <Button variant="subtle" onClick={() => setPendingReschedule(null)}>
-              Отмена
-            </Button>
-            <Button
-              loading={rescheduleMutation.isPending}
-              disabled={!rescheduleConfirmText}
-              onClick={() => {
-                if (!pendingReschedule || !rescheduleConfirmText) return;
-                rescheduleMutation.mutate(
-                  {
-                    id: pendingReschedule.bookingId,
-                    doctor_id: pendingReschedule.toDoctorId,
-                    date: pendingReschedule.date,
-                    time: pendingReschedule.time,
-                  },
-                  {
-                    onSuccess: () => setPendingReschedule(null),
-                  }
-                );
-              }}
-            >
-              Перенести
-            </Button>
-          </Group>
-        </Stack>
-      </GlassModal>
 
       <GlassModal
         opened={pendingCancelBookingId !== null}
@@ -506,97 +426,67 @@ export default function SchedulePage() {
         </Stack>
       </GlassModal>
 
-      <GlassModal
+      <BookingEntityDrawer
         opened={selectedBooking !== null}
-        onClose={() => { setSelectedBooking(null); setEditingBooking(null); }}
-        title={editingBooking ? "Изменить запись" : "Детали записи"}
-      >
-        {selectedBooking && !editingBooking && (
-          <Stack gap="xs">
-            <Text size="sm" c="dimmed">
-              ФИО пациента
-            </Text>
-            <Text size="md">
-              {patientNameMap?.[selectedBooking.patient_id] ?? selectedBooking.patient_id}
-            </Text>
-            <Text size="sm" c="dimmed" mt="sm">
-              {doctors?.find((d) => d.id === selectedBooking.doctor_id)?.display_role ?? "Специалист"}
-            </Text>
-            <Text size="md">
-              {doctors?.find((d) => d.id === selectedBooking.doctor_id)?.full_name ?? selectedBooking.doctor_id}
-            </Text>
-            <Text size="sm" c="dimmed" mt="sm">
-              Дата посещения и время
-            </Text>
-            <Text size="md">
-              {selectedBooking.appointment_date}{" "}
-              {String(selectedBooking.appointment_time).slice(0, 5)}
-            </Text>
-            <Text size="sm" c="dimmed" mt="sm">
-              Услуга
-            </Text>
-            <Text size="md">
-              {serviceNameMap?.[selectedBooking.service_id] ?? selectedBooking.service_id}
-            </Text>
-            <Text size="sm" c="dimmed" mt="sm">
-              Статус
-            </Text>
-            <Text size="md">{selectedBooking.status}</Text>
-            <Group mt="md" gap="sm">
-              <Button
-                variant="light"
-                onClick={() => setEditingBooking(selectedBooking)}
-              >
-                Изменить дату/время/врача
-              </Button>
-              {(() => {
-                const cancelledOrCompleted =
-                  selectedBooking.status === "cancelled" ||
-                  selectedBooking.status === "completed";
-                const timeStr = String(selectedBooking.appointment_time).slice(0, 5);
-                const slotDt = new Date(
-                  selectedBooking.appointment_date + "T" + timeStr + ":00"
-                );
-                const isPastSlot = slotDt <= new Date();
-                const canCancel = !cancelledOrCompleted && !isPastSlot;
-                return canCancel ? (
-                  <Button
-                    variant="subtle"
-                    color="red"
-                    onClick={() => {
-                      setPendingCancelBookingId(selectedBooking.id);
-                      setSelectedBooking(null);
-                    }}
-                    loading={cancelBookingMutation.isPending}
-                  >
-                    Отменить запись
-                  </Button>
-                ) : null;
-              })()}
-            </Group>
-          </Stack>
-        )}
-        {selectedBooking && editingBooking && (
-          <BookingEditForm
-            booking={editingBooking}
-            doctorOptions={doctorOptions}
-            onSave={(payload) => {
-              rescheduleMutation.mutate(payload, {
-                onSuccess: () => {
-                  setEditingBooking(null);
-                  setSelectedBooking(null);
-                },
-              });
-            }}
-            onCancel={() => setEditingBooking(null)}
-            isLoading={rescheduleMutation.isPending}
-          />
-        )}
-      </GlassModal>
+        onClose={() => {
+          setSelectedBooking(null);
+          setEditingBooking(null);
+        }}
+        booking={selectedBooking}
+        doctorOptions={doctorOptions}
+        doctorName={
+          selectedBooking
+            ? doctors?.find((d) => d.id === selectedBooking.doctor_id)?.full_name
+            : undefined
+        }
+        patientName={
+          selectedBooking ? patientNameMap?.[selectedBooking.patient_id] : undefined
+        }
+        serviceName={
+          selectedBooking ? serviceNameMap?.[selectedBooking.service_id] : undefined
+        }
+        onReschedule={(payload) => {
+          const timeForApi =
+            payload.time.length === 5 ? `${payload.time}:00` : payload.time;
+          rescheduleMutation.mutate(
+            {
+              id: payload.id,
+              doctor_id: payload.doctor_id,
+              date: payload.date,
+              time: timeForApi,
+            },
+            {
+              onSuccess: () => {
+                setEditingBooking(null);
+                setSelectedBooking(null);
+              },
+            }
+          );
+        }}
+        onCancel={(id) => {
+          setPendingCancelBookingId(id);
+          setSelectedBooking(null);
+        }}
+        isReschedulePending={rescheduleMutation.isPending}
+        isCancelPending={cancelBookingMutation.isPending}
+        editing={editingBooking !== null}
+        onStartEdit={() =>
+          selectedBooking && setEditingBooking(selectedBooking)
+        }
+        onCancelEdit={() => setEditingBooking(null)}
+        editDate={editDate || selectedBooking?.appointment_date}
+        editTime={editTime || (selectedBooking ? String(selectedBooking.appointment_time).slice(0, 5) : "")}
+        editDoctorId={editDoctorId || selectedBooking?.doctor_id}
+        onEditDateChange={setEditDate}
+        onEditTimeChange={setEditTime}
+        onEditDoctorIdChange={setEditDoctorId}
+      />
 
-      <GlassModal
+      <Drawer
         opened={createSlot !== null}
         onClose={() => setCreateSlot(null)}
+        position="right"
+        size="lg"
         title="Новая запись"
       >
         {createSlot && (
@@ -620,7 +510,7 @@ export default function SchedulePage() {
             }
           />
         )}
-      </GlassModal>
+      </Drawer>
     </Stack>
   );
 }

@@ -20,10 +20,12 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title,
   Select,
   Button,
+  Tooltip,
 } from "@mantine/core";
+import { IconBrandWhatsapp, IconBrandTelegram, IconMessageCircle } from "@tabler/icons-react";
+import { Link } from "react-router-dom";
 import {
   DndContext,
   PointerSensor,
@@ -37,6 +39,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useSearchParams } from "react-router-dom";
 
 const STAGE_DROPPABLE_PREFIX = "stage-";
@@ -72,6 +75,14 @@ function DraggableLeadCard({
   );
 }
 
+const ROTTING_DAYS = 2;
+
+function isLeadRotting(createdAt: string): boolean {
+  const created = new Date(createdAt).getTime();
+  const now = Date.now();
+  return (now - created) / (24 * 60 * 60 * 1000) > ROTTING_DAYS;
+}
+
 interface KanbanColumnProps {
   stage: LeadStage;
   leads: LeadCard[];
@@ -87,6 +98,9 @@ function KanbanColumn({
 }: KanbanColumnProps) {
   const droppableId = `${STAGE_DROPPABLE_PREFIX}${stage.id}`;
   const { isOver, setNodeRef } = useDroppable({ id: droppableId });
+  const count = stage.leads_count ?? leads.length;
+  const sumVal = stage.sum_estimated_value != null ? Number(stage.sum_estimated_value) : leads.reduce((a, l) => a + Number(l.estimated_value || 0), 0);
+  const sumFormatted = new Intl.NumberFormat("ru-RU").format(sumVal);
 
   return (
     <Stack
@@ -100,12 +114,12 @@ function KanbanColumn({
         border: isOver ? "2px dashed var(--primary, #3b82f6)" : undefined,
       }}
     >
-      <Group gap="xs">
+      <Group gap="xs" wrap="nowrap">
         <Badge color={stage.color || "blue"} variant="filled" radius="sm">
           {stage.name}
         </Badge>
         <Text size="xs" c="dimmed">
-          {leads.length} лидов
+          ({count}) — {sumFormatted} ₽
         </Text>
       </Group>
       <Stack gap="xs">
@@ -122,18 +136,45 @@ function KanbanColumn({
                 border:
                   selectedLeadId === lead.id
                     ? "2px solid var(--primary, #3b82f6)"
-                    : "1px solid var(--divider, rgba(148, 163, 184, 0.4))",
+                    : isLeadRotting(lead.created_at)
+                      ? "1px solid var(--mantine-color-orange-6)"
+                      : "1px solid var(--divider, rgba(148, 163, 184, 0.4))",
                 background:
                   selectedLeadId === lead.id
                     ? "rgba(59, 130, 246, 0.08)"
-                    : "rgba(15, 23, 42, 0.02)",
+                    : isLeadRotting(lead.created_at)
+                      ? "rgba(253, 126, 20, 0.06)"
+                      : "rgba(15, 23, 42, 0.02)",
                 cursor: "grab",
               }}
             >
               <Stack gap={4}>
-                <Text fw={600} size="sm" lineClamp={2}>
-                  {lead.title}
-                </Text>
+                <Group gap={4} justify="space-between" wrap="nowrap">
+                  <Text fw={600} size="sm" lineClamp={2} style={{ flex: 1 }}>
+                    {lead.title}
+                  </Text>
+                  {lead.omnichannel_contact_id && (
+                    <Tooltip label="Открыть чат">
+                      <Button
+                        component={Link}
+                        to={`/admin/omni-chat?contact_id=${lead.omnichannel_contact_id}`}
+                        variant="subtle"
+                        size="compact-xs"
+                        p={4}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label="Чат"
+                      >
+                        {lead.source?.toLowerCase().includes("whatsapp") ? (
+                          <IconBrandWhatsapp size={16} />
+                        ) : lead.source?.toLowerCase().includes("telegram") || lead.source?.toLowerCase().includes("tg") ? (
+                          <IconBrandTelegram size={16} />
+                        ) : (
+                          <IconMessageCircle size={16} />
+                        )}
+                      </Button>
+                    </Tooltip>
+                  )}
+                </Group>
                 <Text size="xs" c="dimmed">
                   Источник: {lead.source || "—"}
                 </Text>
@@ -183,6 +224,7 @@ export default function AdminSalesPipelinePage() {
     initialLeadId
   );
   const [noteText, setNoteText] = useState("");
+  const [prepaymentCopyFeedback, setPrepaymentCopyFeedback] = useState(false);
 
   const { data: pipelines, isLoading: pipelinesLoading } = useCrmPipelines();
   const { data: stages, isLoading: stagesLoading } = useCrmStages(selectedPipelineId);
@@ -272,7 +314,7 @@ export default function AdminSalesPipelinePage() {
   if (pipelinesLoading) {
     return (
       <Stack>
-        <Title order={3}>CRM‑воронка продаж</Title>
+        <ContextBar title="CRM‑воронка продаж" />
         <DataSkeleton lines={4} />
       </Stack>
     );
@@ -280,7 +322,7 @@ export default function AdminSalesPipelinePage() {
 
   return (
     <Stack gap="md">
-      <Title order={3}>CRM‑воронка продаж</Title>
+      <ContextBar title="CRM‑воронка продаж" />
       <ThreeColumnLayout
         preset="wide-center"
         left={
@@ -337,6 +379,11 @@ export default function AdminSalesPipelinePage() {
               <EmptyStateHint
                 title="Стадии не настроены"
                 subtitle="Обратитесь к владельцу, чтобы настроить воронку продаж."
+              />
+            ) : leads.length === 0 ? (
+              <EmptyStateHint
+                title="Нет лидов"
+                subtitle="Лиды появятся из чата (WhatsApp/Telegram), с сайта или при ручном создании. Выберите воронку и стадию или создайте лид в разделе CRM."
               />
             ) : (
               <ScrollArea h={420} type="scroll">
@@ -407,6 +454,41 @@ export default function AdminSalesPipelinePage() {
                     </Badge>
                   </Group>
                 </Stack>
+
+                {leadDetails.lead.omnichannel_contact_id && (
+                  <Button
+                    component={Link}
+                    to={`/admin/omni-chat?contact_id=${leadDetails.lead.omnichannel_contact_id}`}
+                    variant="light"
+                    size="sm"
+                    fullWidth
+                    mb="xs"
+                    leftSection={<IconMessageCircle size={16} />}
+                  >
+                    Открыть чат
+                  </Button>
+                )}
+                <Button
+                  variant="light"
+                  size="sm"
+                  fullWidth
+                  mb="sm"
+                  onClick={() => {
+                    const amount = leadDetails.lead.estimated_value || leadDetails.lead.actual_value || "0";
+                    const url = `${window.location.origin}/prepayment?lead_id=${leadDetails.lead.id}&amount=${amount}`;
+                    navigator.clipboard.writeText(url).then(() => {
+                      setPrepaymentCopyFeedback(true);
+                      setTimeout(() => setPrepaymentCopyFeedback(false), 2500);
+                    });
+                  }}
+                >
+                  Сгенерировать ссылку на предоплату
+                </Button>
+                {prepaymentCopyFeedback && (
+                  <Text size="xs" c="green" mb="xs">
+                    Ссылка скопирована в буфер обмена. Вставьте в чат или отправьте клиенту.
+                  </Text>
+                )}
 
                 <Stack gap={4}>
                   <Text fw={600} size="sm">

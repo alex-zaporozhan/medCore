@@ -35,6 +35,9 @@ ENV/
 
 # Docs
 /docs
+.cursorrules
+.cursorignore
+
 
 # Environment
 .env

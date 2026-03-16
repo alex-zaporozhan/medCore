@@ -9,8 +9,8 @@ import {
   Alert,
   Badge,
   Button,
+  Drawer,
   Group,
-  Modal,
   NumberInput,
   Paper,
   Select,
@@ -19,8 +19,8 @@ import {
   Table,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
 import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
 
@@ -196,7 +196,7 @@ function AdminDiscountsPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Скидки и акции</Title>
+        <ContextBar title="Скидки и акции" />
         <Text c="dimmed">Выберите клинику.</Text>
       </Stack>
     );
@@ -204,7 +204,7 @@ function AdminDiscountsPage() {
   if (isLoading) {
     return (
       <Stack>
-        <Title order={3}>Скидки и акции</Title>
+        <ContextBar title="Скидки и акции" />
         <DataSkeleton lines={5} />
       </Stack>
     );
@@ -212,7 +212,7 @@ function AdminDiscountsPage() {
   if (isError) {
     return (
       <Stack>
-        <Title order={3}>Скидки и акции</Title>
+        <ContextBar title="Скидки и акции" />
         <Text c="red">{error instanceof Error ? error.message : "Ошибка загрузки"}</Text>
       </Stack>
     );
@@ -222,17 +222,10 @@ function AdminDiscountsPage() {
 
   return (
     <Stack gap="md">
-      <Group justify="space-between">
-        <div>
-          <Title order={3}>Скидки и акции</Title>
-          <Text size="sm" c="dimmed">
-            Создание и редактирование скидок. При оплате скидка применяется автоматически.
-          </Text>
-        </div>
-        <Button size="sm" onClick={handleOpenNew}>
-          Добавить скидку
-        </Button>
-      </Group>
+      <ContextBar title="Скидки и акции" actions={<Button size="sm" onClick={handleOpenNew}>Добавить скидку</Button>} />
+      <Text size="sm" c="dimmed" mb="sm">
+        Создание и редактирование скидок. При оплате скидка применяется автоматически.
+      </Text>
       <Paper p="md" radius="md" withBorder>
         {items.length === 0 ? (
           <EmptyStateHint
@@ -240,7 +233,7 @@ function AdminDiscountsPage() {
             subtitle="Нажмите «Добавить скидку», чтобы создать первую."
           />
         ) : (
-          <Table striped>
+          <Table striped verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Название</Table.Th>
@@ -290,11 +283,12 @@ function AdminDiscountsPage() {
         )}
       </Paper>
 
-      <Modal
+      <Drawer
+        position="right"
+        size="md"
         opened={opened}
         onClose={handleCloseModal}
         title={editing ? "Изменить скидку" : "Новая скидка"}
-        size="md"
       >
         <Stack>
           {saveError && (
@@ -386,7 +380,7 @@ function AdminDiscountsPage() {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Modal>
+      </Drawer>
     </Stack>
   );
 }

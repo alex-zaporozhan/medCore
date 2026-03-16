@@ -1,10 +1,13 @@
-import { useCreatePatient, usePatients, useUpdatePatient } from "@/hooks";
-import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { Button, Loader, Modal, Stack, Table, Text, TextInput, Title } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { usePatients, useAdminFormTemplates, useSendFormLink, useDeletePatient } from "@/hooks";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { EmptyState, PageSkeleton } from "@/shared/ui";
+import { ActionIcon, Button, Drawer, Group, HoverCard, Menu, Modal, Select, Stack, Table, Text, TextInput } from "@mantine/core";
+import { IconDotsVertical, IconEdit, IconSend, IconTrash, IconUserPlus } from "@tabler/icons-react";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { usePatientAiInsight, type PatientAiInsightWithStatus } from "@/hooks/useChatAi";
+import { PatientEntityDrawer } from "@/admin/components/entity/PatientEntityDrawer";
+import type { Patient } from "@/api/types";
 
 export default function AdminPatientsPage() {
   const { currentClinicId } = useAdminClinic();
@@ -15,74 +18,57 @@ export default function AdminPatientsPage() {
     phone: phone || undefined,
     full_name: fullName || undefined,
   });
-  const createMutation = useCreatePatient();
-  const updateMutation = useUpdatePatient();
-  const [opened, { open, close }] = useDisclosure(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formPhone, setFormPhone] = useState("");
-  const [formFullName, setFormFullName] = useState("");
-  const [formEmail, setFormEmail] = useState("");
-  const [insightPatientId, setInsightPatientId] = useState<string | null>(null);
-  const [insightText, setInsightText] = useState<string | null>(null);
-  const [insightStatus, setInsightStatus] = useState<string | null>(null);
-  const [insightError, setInsightError] = useState<string | null>(null);
-  const aiInsightMutation = usePatientAiInsight(insightPatientId);
-
-  const resetForm = () => {
-    setEditingId(null);
-    setFormPhone("");
-    setFormFullName("");
-    setFormEmail("");
-  };
-
-  const handleSave = () => {
-    if (editingId) {
-      updateMutation.mutate(
-        { id: editingId, body: { full_name: formFullName || null, email: formEmail || null } },
-        { onSuccess: () => { close(); resetForm(); } }
-      );
-    } else {
-      createMutation.mutate(
-        { phone: formPhone, full_name: formFullName || null, email: formEmail || null },
-        { onSuccess: () => { close(); resetForm(); } }
-      );
-    }
-  };
+  const [patientDrawer, setPatientDrawer] = useState<{
+    mode: "create" | "edit" | "view";
+    patient: Patient | null;
+    initialForm?: { phone: string; full_name: string; email: string };
+  } | null>(null);
+  const [sendFormPatientId, setSendFormPatientId] = useState<string | null>(null);
+  const [formTemplateId, setFormTemplateId] = useState<string | null>(null);
+  const [formSendVia, setFormSendVia] = useState<"whatsapp" | "sms" | "copy_only">("copy_only");
+  const { data: formTemplates } = useAdminFormTemplates();
+  const sendFormLink = useSendFormLink();
+  const deletePatient = useDeletePatient();
+  const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
+  const queryClient = useQueryClient();
 
   const openCreate = () => {
-    resetForm();
-    open();
+    setPatientDrawer({ mode: "create", patient: null, initialForm: { phone: "", full_name: "", email: "" } });
   };
 
-  const openEdit = (id: string, p: { phone: string; full_name: string | null; email: string | null }) => {
-    setEditingId(id);
-    setFormPhone(p.phone);
-    setFormFullName(p.full_name ?? "");
-    setFormEmail(p.email ?? "");
-    open();
+  const openEdit = (p: Patient) => {
+    setPatientDrawer({ mode: "edit", patient: p });
   };
 
-  if (isLoading) return <Loader />;
+  const openView = (p: Patient) => {
+    setPatientDrawer({ mode: "view", patient: p });
+  };
+
+  if (isLoading) return <PageSkeleton variant="table" rows={8} />;
   if (isError) return (
     <Stack>
-      <Title order={3}>Пациенты</Title>
+      <ContextBar title="Пациенты" />
       <span style={{ color: "red" }}>{error instanceof Error ? error.message : "Ошибка"}</span>
     </Stack>
   );
 
   return (
     <Stack>
-      <Title order={3}>Пациенты</Title>
+      <ContextBar title="Пациенты" actions={<Button onClick={openCreate}>Добавить пациента</Button>} />
       <TextInput label="Телефон" placeholder="+7..." value={phone} onChange={(e) => setPhone(e.target.value)} />
       <TextInput label="ФИО" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-      <Button onClick={openCreate}>Добавить пациента</Button>
 
       {patients?.length === 0 && (
-        <EmptyStateHint title="Нет пациентов" subtitle="Добавьте пациента или измените фильтры." />
+        <EmptyState
+          title="Нет пациентов"
+          description="Добавьте первого пациента или измените фильтры."
+          icon={<IconUserPlus size={64} stroke={1} color="var(--mantine-color-gray-4)" />}
+          action={{ label: "Добавить пациента", onClick: openCreate }}
+        />
       )}
 
       {patients && patients.length > 0 && (
-        <Table striped>
+        <Table striped verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Телефон</Table.Th>
@@ -95,36 +81,61 @@ export default function AdminPatientsPage() {
             {patients.map((p) => (
               <Table.Tr key={p.id}>
                 <Table.Td>{p.phone}</Table.Td>
-                <Table.Td>{p.full_name ?? "—"}</Table.Td>
-                <Table.Td>{p.email ?? "—"}</Table.Td>
                 <Table.Td>
-                  <Stack gap={4}>
-                    <Button size="xs" variant="light" onClick={() => openEdit(p.id, p)}>
-                      Изменить
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={async () => {
-                        setInsightPatientId(p.id);
-                        setInsightText(null);
-                        setInsightStatus(null);
-                        setInsightError(null);
-                        try {
-                          const res: PatientAiInsightWithStatus = await aiInsightMutation.mutateAsync();
-                          setInsightText(
-                            [res.summary, res.next_best_action].filter(Boolean).join("\n\n") || res.summary
-                          );
-                          setInsightStatus(res.aiStatus);
-                        } catch (e) {
-                          setInsightError("AI‑обзор временно недоступен. Основные данные по пациенту — ниже.");
-                        }
-                      }}
-                      loading={aiInsightMutation.isPending && insightPatientId === p.id}
-                    >
-                      AI‑обзор
-                    </Button>
-                  </Stack>
+                  <HoverCard openDelay={300} width={240} shadow="md">
+                    <HoverCard.Target>
+                      <Text
+                        span
+                        style={{ cursor: "pointer" }}
+                        onClick={() => openView(p)}
+                      >
+                        {p.full_name ?? "—"}
+                      </Text>
+                    </HoverCard.Target>
+                    <HoverCard.Dropdown>
+                      <Stack gap={4}>
+                        <Text size="sm" fw={500}>{p.full_name ?? p.phone}</Text>
+                        <Text size="xs" c="dimmed">Телефон: {p.phone}</Text>
+                        {p.email && <Text size="xs" c="dimmed">Email: {p.email}</Text>}
+                        <Text size="xs" c="dimmed">Клик — открыть карточку</Text>
+                      </Stack>
+                    </HoverCard.Dropdown>
+                  </HoverCard>
+                </Table.Td>
+                <Table.Td>{p.email ?? "—"}</Table.Td>
+                <Table.Td onClick={(e) => e.stopPropagation()}>
+                  <Menu position="bottom-end" shadow="sm">
+                    <Menu.Target>
+                      <ActionIcon variant="subtle" size="sm" aria-label="Действия">
+                        <IconDotsVertical size={16} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item leftSection={<IconEdit size={14} />} onClick={() => openEdit(p)}>
+                        Редактировать
+                      </Menu.Item>
+                      <Menu.Item leftSection={<IconUserPlus size={14} />} onClick={() => openView(p)}>
+                        Открыть карточку
+                      </Menu.Item>
+                      <Menu.Item
+                        leftSection={<IconSend size={14} />}
+                        onClick={() => {
+                          setSendFormPatientId(p.id);
+                          setFormTemplateId(null);
+                          setFormSendVia("copy_only");
+                        }}
+                      >
+                        Отправить форму
+                      </Menu.Item>
+                      <Menu.Item
+                        leftSection={<IconTrash size={14} />}
+                        color="red"
+                        onClick={() => setPatientToDelete(p)}
+                      >
+                        Удалить
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
                 </Table.Td>
               </Table.Tr>
             ))}
@@ -132,38 +143,102 @@ export default function AdminPatientsPage() {
         </Table>
       )}
 
-      <Modal opened={opened} onClose={() => { close(); resetForm(); }} title={editingId ? "Редактировать пациента" : "Новый пациент"}>
-        <Stack>
-          <TextInput label="Телефон" value={formPhone} onChange={(e) => setFormPhone(e.target.value)} required disabled={!!editingId} />
-          <TextInput label="ФИО" value={formFullName} onChange={(e) => setFormFullName(e.target.value)} />
-          <TextInput label="Email" type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} />
-          <Button onClick={handleSave} loading={createMutation.isPending || updateMutation.isPending}>
-            Сохранить
-          </Button>
-          {(createMutation.isError || updateMutation.isError) && (
-            <span style={{ color: "red" }}>
-              {createMutation.error instanceof Error ? createMutation.error.message : updateMutation.error instanceof Error ? updateMutation.error.message : "Ошибка"}
-            </span>
-          )}
-          {insightError && (
-            <span style={{ color: "red" }}>{insightError}</span>
-          )}
-          {insightText && (
-            <Stack gap={4}>
-              <Text size="sm" c="dimmed">
-                AI‑обзор: {insightText}
-              </Text>
-              {insightStatus && (
-                <Text size="xs" c="dimmed">
-                  {insightStatus === "external_active"
-                    ? "AI‑обзор (модель)."
-                    : insightStatus === "fallback_local"
-                      ? "AI‑обзор (локальный расчёт)."
-                      : "AI‑обзор временно недоступен, основные данные по пациенту — ниже."}
-                </Text>
-              )}
-            </Stack>
-          )}
+      <PatientEntityDrawer
+        opened={patientDrawer !== null}
+        onClose={() => setPatientDrawer(null)}
+        patient={patientDrawer?.patient ?? null}
+        mode={patientDrawer?.mode ?? "view"}
+        initialForm={patientDrawer?.initialForm}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ["patients"] })}
+      />
+
+      <Drawer
+        opened={sendFormPatientId !== null}
+        onClose={() => { setSendFormPatientId(null); setFormTemplateId(null); }}
+        position="right"
+        size="sm"
+        title="Отправить форму"
+      >
+        {sendFormPatientId && (
+          <Stack gap="md">
+            <Select
+              label="Шаблон формы"
+              placeholder="Выберите шаблон"
+              data={(formTemplates ?? []).map((t) => ({ value: t.id, label: t.name }))}
+              value={formTemplateId}
+              onChange={(v) => setFormTemplateId(v)}
+              searchable
+            />
+            <Select
+              label="Куда отправить"
+              data={[
+                { value: "copy_only", label: "Скопировать ссылку" },
+                { value: "whatsapp", label: "WhatsApp" },
+                { value: "sms", label: "SMS" },
+              ]}
+              value={formSendVia}
+              onChange={(v) => setFormSendVia((v as "whatsapp" | "sms" | "copy_only") || "copy_only")}
+            />
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setSendFormPatientId(null)}>
+                Отмена
+              </Button>
+              <Button
+                onClick={() => {
+                  sendFormLink.mutate(
+                    { patient_id: sendFormPatientId, template_id: formTemplateId!, send_via: formSendVia },
+                    {
+                      onSuccess: (res) => {
+                        if (res.sent) setSendFormPatientId(null);
+                        if (res.sent && formSendVia === "copy_only" && res.url) {
+                          try { navigator.clipboard.writeText(res.url); } catch { /* ignore */ }
+                        }
+                      },
+                    }
+                  );
+                }}
+                loading={sendFormLink.isPending}
+                disabled={!formTemplateId}
+              >
+                Отправить ссылку
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Drawer>
+
+      <Modal
+        opened={patientToDelete !== null}
+        onClose={() => setPatientToDelete(null)}
+        title="Удалить пациента?"
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            {patientToDelete
+              ? `Вы уверены, что хотите удалить пациента ${patientToDelete.full_name ?? patientToDelete.phone}? Это действие нельзя отменить.`
+              : ""}
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="subtle" onClick={() => setPatientToDelete(null)}>
+              Отмена
+            </Button>
+            <Button
+              color="red"
+              loading={deletePatient.isPending}
+              onClick={() => {
+                if (!patientToDelete) return;
+                deletePatient.mutate(patientToDelete.id, {
+                  onSuccess: () => {
+                    setPatientToDelete(null);
+                    queryClient.invalidateQueries({ queryKey: ["patients"] });
+                    queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
+                  },
+                });
+              }}
+            >
+              Удалить
+            </Button>
+          </Group>
         </Stack>
       </Modal>
     </Stack>

@@ -142,3 +142,21 @@ body {
   border: 1px solid var(--divider);
   box-shadow: var(--shadow-soft-md);
 }
+
+/* PWA 2.0: Safe Areas (notch, home indicator) */
+.app-main-with-bottom-nav {
+  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+}
+.app-bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* PWA: theme follows system (optional) */
+@media (prefers-color-scheme: dark) {
+  .app-pwa-body.pwa-respect-system {
+    --bg-main: #1a1b1e;
+    --bg-card: #25262b;
+    --text-main: #e0e0e0;
+    --text-muted: #909296;
+  }
+}

@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DashboardReport(BaseModel):
-    """Dashboard metrics for a specific day."""
+    """Dashboard metrics for a specific day (or period)."""
 
     date: date
     bookings_pending: int
@@ -19,6 +19,12 @@ class DashboardReport(BaseModel):
     bookings_no_show: int
     new_patients: int
     revenue: Decimal
+    new_leads_count: int = 0
+    cancellations_count: int = 0
+    nps_avg: float | None = Field(
+        default=None,
+        description="Optional NPS average; null until reviews module exists; frontend hides NPS widget when null.",
+    )
 
 
 class NoShowReport(BaseModel):

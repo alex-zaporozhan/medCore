@@ -105,6 +105,8 @@ services:
       - "3010:80"
     env_file:
       - ./frontend/.env
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:

@@ -9,15 +9,14 @@ import {
 } from "@/hooks";
 import {
   Card,
-  Group,
-  Loader,
   Stack,
   Table,
   Tabs,
   Text,
-  Title,
   TextInput,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 
 export default function AdminLoyaltyPage() {
   const { currentClinicId } = useAdminClinic();
@@ -46,7 +45,7 @@ export default function AdminLoyaltyPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Лояльность</Title>
+        <ContextBar title="Лояльность" />
         <Text size="sm" c="dimmed">
           Выберите клинику в шапке, чтобы работать с программами лояльности.
         </Text>
@@ -56,14 +55,9 @@ export default function AdminLoyaltyPage() {
 
   return (
     <Stack>
-      <Group justify="space-between">
-        <Title order={3}>Лояльность</Title>
-        <Text size="xs" c="dimmed">
-          Пакеты абонементов и кошельки пациентов.
-        </Text>
-      </Group>
+      <ContextBar title="Лояльность" />
 
-      {loading && <Loader size="sm" />}
+      {loading && <PageSkeleton variant="table" rows={4} />}
 
       <Tabs defaultValue="packages" keepMounted={false}>
         <Tabs.List>
@@ -83,7 +77,7 @@ export default function AdminLoyaltyPage() {
               </Text>
             )}
             {packages && packages.length > 0 && (
-              <Table highlightOnHover striped withColumnBorders>
+              <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Код</Table.Th>
@@ -133,7 +127,7 @@ export default function AdminLoyaltyPage() {
                 </Text>
               )}
               {subs && subs.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders>
+                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>ID</Table.Th>
@@ -180,7 +174,7 @@ export default function AdminLoyaltyPage() {
                 </Text>
               )}
               {wallets && wallets.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders>
+                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>ID</Table.Th>
@@ -217,7 +211,7 @@ export default function AdminLoyaltyPage() {
                   </Text>
                 )}
                 {walletTxs && walletTxs.length > 0 && (
-                  <Table highlightOnHover striped withColumnBorders>
+                  <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Дата</Table.Th>

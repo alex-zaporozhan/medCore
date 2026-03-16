@@ -44,3 +44,16 @@ class AggregatedSchedule(BaseModel):
     times: list[time]
     by_doctor: dict[str, list[DoctorSlot]]
 
+
+class SuggestSlotItem(BaseModel):
+    """Single free slot for suggest-slots (start/end as HH:MM strings)."""
+
+    start: str
+    end: str
+
+
+class SuggestSlotsResponse(BaseModel):
+    """Response for GET suggest-slots: list of free time windows."""
+
+    slots: list[SuggestSlotItem]
+

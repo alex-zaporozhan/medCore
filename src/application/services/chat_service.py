@@ -275,6 +275,16 @@ class ChatService:
         ]
         return MessagesResponse(items=dtos, next_cursor=next_cursor)
 
+    async def list_messages_for_admin_by_patient(
+        self, clinic_id: UUID, patient_id: UUID, cursor: UUID | None, limit: int
+    ) -> MessagesResponse:
+        """Return messages for the patient's conversation; empty list if no conversation."""
+        conv = await self.conv_repo.get_by_clinic_patient(clinic_id, patient_id)
+        if conv is None:
+            return MessagesResponse(items=[], next_cursor=None)
+        result = await self.list_messages_for_admin(clinic_id, conv.id, cursor=cursor, limit=limit)
+        return result if result is not None else MessagesResponse(items=[], next_cursor=None)
+
     async def send_message_from_admin(
         self,
         clinic_id: UUID,

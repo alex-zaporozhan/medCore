@@ -94,6 +94,21 @@ export function useMarketingCampaigns() {
   });
 }
 
+export interface MarketingInsightsResponse {
+  insights: string[];
+}
+
+export function useMarketingInsights(clinicId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "clinics", clinicId, "marketing", "insights"],
+    queryFn: () =>
+      api.get<MarketingInsightsResponse>(
+        `/v1/admin/clinics/${clinicId}/marketing/insights`
+      ),
+    enabled: !!clinicId,
+  });
+}
+
 export function useMarketingAttributionDrillDown(params: {
   dateFrom: string | null;
   dateTo: string | null;

@@ -19,18 +19,31 @@ from src.application.dto.forms_dto import (
     DigitalFormTemplateRead,
     DigitalFormTemplateUpdate,
     ESignatureRead,
+    SendLinkRequest,
+    SendLinkResponse,
 )
 from src.application.services.forms_service import (
     FormValidationError,
     FormsService,
     SubmitFormInput,
 )
+from src.core.config import settings
 from src.domain.entities.digital_form_template import DigitalFormTemplate
 from src.domain.entities.digital_form_submission import DigitalFormSubmission
 from src.domain.entities.e_signature import ESignature
 
 
 logger = logging.getLogger(__name__)
+
+def _form_link_base_url() -> str:
+    """Base URL for form fill page (send-link). Prefer form_link_base_url, else first CORS origin."""
+    base = (settings.form_link_base_url or "").strip()
+    if base:
+        return base.rstrip("/")
+    origins = getattr(settings, "cors_origins_list", []) or []
+    if origins:
+        return origins[0].rstrip("/")
+    return "http://localhost:5173"
 
 router = APIRouter(
     prefix="/admin/forms",
@@ -113,6 +126,64 @@ async def export_forms(
         "submissions": submissions_dump,
         "signatures": [ESignatureRead.model_validate(s).model_dump() for s in signatures],
     }
+
+
+@router.post(
+    "/send-link",
+    response_model=SendLinkResponse,
+    dependencies=[Depends(require_permissions("manage_forms"))],
+)
+async def send_form_link(
+    body: SendLinkRequest,
+    session: AsyncSession = Depends(get_session),
+    admin: AdminContext = Depends(require_permissions("manage_forms")),
+) -> SendLinkResponse:
+    """Generate a one-time form fill URL and optionally send via WhatsApp/SMS.
+
+    At least one of patient_id or booking_id is required. If send_via is whatsapp/sms
+    and the channel is not configured, returns url with sent=false (stub).
+    """
+    if not body.patient_id and not body.booking_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one of patient_id or booking_id is required",
+        )
+
+    service = FormsService(session)
+    try:
+        token_str = await service.create_form_link(
+            clinic_id=admin.clinic_id,
+            template_id=body.template_id,
+            patient_id=body.patient_id,
+            booking_id=body.booking_id,
+        )
+    except LookupError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Form template not found or not active",
+        ) from e
+
+    await session.commit()
+
+    base_url = _form_link_base_url()
+    url = f"{base_url}/forms/fill?token={token_str}"
+
+    sent = False
+    channel: str | None = None
+    if body.send_via in ("whatsapp", "sms"):
+        channel = body.send_via
+        # Stub: no actual outbound integration here; when channel is implemented, call it and set sent=True
+        logger.info(
+            "form_send_link_stub",
+            extra={
+                "clinic_id": str(admin.clinic_id),
+                "template_id": str(body.template_id),
+                "send_via": body.send_via,
+                "url_returned": "yes",
+            },
+        )
+
+    return SendLinkResponse(url=url, sent=sent, channel=channel)
 
 
 @router.get(

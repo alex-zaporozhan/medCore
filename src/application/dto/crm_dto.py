@@ -30,6 +30,9 @@ class LeadStageDto(BaseModel):
     color: str
     created_at: datetime
     updated_at: datetime
+    # Aggregates for Kanban header (B4.1)
+    leads_count: int = 0
+    sum_estimated_value: Decimal = Decimal("0")
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -12,6 +12,8 @@ import sqlalchemy as sa
 from src.api.v1.dependencies import AdminContext, get_request_context, get_session, require_permissions
 from src.application.dto.loyalty_dto import (
     CustomerSubscriptionRead,
+    CustomerSubscriptionWithSharedRead,
+    SharedWithItem,
     SubscriptionPackageCreate,
     SubscriptionPackageRead,
     SubscriptionPackageUpdate,
@@ -26,6 +28,7 @@ from src.domain.entities.wallet import Wallet
 from src.domain.entities.subscription_usage import SubscriptionUsage
 from src.domain.entities.customer_subscription import CustomerSubscription
 from src.domain.entities.omnichannel_contact import Contact as OmniContact
+from src.domain.entities.package_family_link import PackageFamilyLink
 from src.domain.entities.patient import Patient
 from src.domain.interfaces.repositories.loyalty_repository import (
     CustomerSubscriptionRepository,
@@ -79,19 +82,25 @@ async def create_subscription_package(
     if context.clinic_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
     service = LoyaltyService(session)
-    package = await service.create_package(
-        clinic_id=context.clinic_id,
-        code=body.code,
-        name=body.name,
-        kind=body.kind,
-        price=body.price,
-        services_included=body.services_included,
-        total_visits=body.total_visits,
-        total_amount=body.total_amount,
-        validity_days=body.validity_days,
-        description=body.description,
-        is_active=body.is_active,
-    )
+    try:
+        package = await service.create_package(
+            clinic_id=context.clinic_id,
+            code=body.code,
+            name=body.name,
+            kind=body.kind,
+            price=body.price,
+            services_included=body.services_included,
+            total_visits=body.total_visits,
+            total_amount=body.total_amount,
+            validity_days=body.validity_days,
+            description=body.description,
+            is_active=body.is_active,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        ) from e
     await session.commit()
     return SubscriptionPackageRead.model_validate(package)
 
@@ -135,6 +144,21 @@ async def update_subscription_package(
         package.validity_days = body.validity_days
     if body.is_active is not None:
         package.is_active = body.is_active
+
+    # G3: validate kind-specific fields before save
+    effective_kind = package.kind or ""
+    if effective_kind in ("COUNT_BASED", "visits"):
+        if package.total_visits is None or package.total_visits <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="total_visits is required and must be > 0 when kind is COUNT_BASED",
+            )
+    elif effective_kind in ("BALANCE_BASED", "balance"):
+        if package.total_amount is None or package.total_amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="total_amount is required and must be > 0 when kind is BALANCE_BASED",
+            )
 
     package = await service.update_package(package)
     await session.commit()
@@ -191,6 +215,107 @@ async def list_customer_subscriptions(
         only_active=only_active,
     )
     return [CustomerSubscriptionRead.model_validate(s) for s in items]
+
+
+@router.get(
+    "/customer-subscriptions/{subscription_id}",
+    response_model=CustomerSubscriptionWithSharedRead,
+)
+async def get_customer_subscription(
+    subscription_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> CustomerSubscriptionWithSharedRead:
+    """Get one customer subscription with shared_with (B6.1 FamilyLink)."""
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    repo: CustomerSubscriptionRepository = CustomerSubscriptionRepositoryImpl(session)
+    sub = await repo.get_by_id(subscription_id)
+    if not sub or sub.clinic_id != context.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    # Load family members (shared_with)
+    family_result = await session.execute(
+        sa.select(PackageFamilyLink.patient_id).where(
+            PackageFamilyLink.customer_subscription_id == subscription_id,
+        )
+    )
+    family_ids = [row[0] for row in family_result.all()]
+    shared_with: list[SharedWithItem] = []
+    if family_ids:
+        patients_result = await session.execute(
+            sa.select(Patient.id, Patient.full_name).where(
+                Patient.id.in_(family_ids),
+                Patient.clinic_id == context.clinic_id,
+            )
+        )
+        name_by_id = {row[0]: (row[1] or "") for row in patients_result.all()}
+        for pid in family_ids:
+            shared_with.append(
+                SharedWithItem(patient_id=pid, patient_name=name_by_id.get(pid, "")),
+            )
+    base = CustomerSubscriptionRead.model_validate(sub)
+    return CustomerSubscriptionWithSharedRead(**base.model_dump(), shared_with=shared_with)
+
+
+@router.post(
+    "/customer-subscriptions/{subscription_id}/family-members",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_loyalty"))],
+)
+async def add_family_member(
+    subscription_id: UUID,
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> dict:
+    """B6.1: Add family member who can use this subscription. Body: { \"patient_id\": \"uuid\" }."""
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    patient_id = body.get("patient_id")
+    if not patient_id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="patient_id required")
+    try:
+        pid = UUID(patient_id) if isinstance(patient_id, str) else patient_id
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid patient_id")
+    service = LoyaltyService(session)
+    try:
+        await service.add_family_member(
+            clinic_id=context.clinic_id,
+            subscription_id=subscription_id,
+            patient_id=pid,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await session.commit()
+    return {"ok": True}
+
+
+@router.delete(
+    "/customer-subscriptions/{subscription_id}/family-members/{patient_id}",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permissions("manage_loyalty"))],
+)
+async def remove_family_member(
+    subscription_id: UUID,
+    patient_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> dict:
+    """B6.1: Remove family member from subscription."""
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    service = LoyaltyService(session)
+    try:
+        await service.remove_family_member(
+            clinic_id=context.clinic_id,
+            subscription_id=subscription_id,
+            patient_id=patient_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    await session.commit()
+    return {"ok": True}
 
 
 @router.get(

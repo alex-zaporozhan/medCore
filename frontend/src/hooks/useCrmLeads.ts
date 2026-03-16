@@ -1,3 +1,4 @@
+import type { QueryKey } from "@tanstack/react-query";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
@@ -22,6 +23,9 @@ export interface LeadStage {
   color: string;
   created_at: string;
   updated_at: string;
+  /** B4.1: aggregates for Kanban column header */
+  leads_count?: number;
+  sum_estimated_value?: string;
 }
 
 export interface LeadCard {
@@ -140,7 +144,33 @@ export function useUpdateLeadStage() {
       api.patch<LeadCard>(`/v1/admin/crm/leads/${leadId}/stage`, {
         new_stage_id: newStageId,
       }),
-    onSuccess: (_data, variables) => {
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey: ["crm-leads"] });
+      const previous: [QueryKey, LeadListResponse | undefined][] = queryClient.getQueriesData(
+        { queryKey: ["crm-leads"] }
+      );
+      queryClient.setQueriesData<LeadListResponse>(
+        { queryKey: ["crm-leads"] },
+        (old) => {
+          if (!old?.items) return old;
+          return {
+            ...old,
+            items: old.items.map((lead) =>
+              lead.id === variables.leadId
+                ? { ...lead, stage_id: variables.newStageId }
+                : lead
+            ),
+          };
+        }
+      );
+      return { previous };
+    },
+    onError: (_err, _variables, context: { previous: [QueryKey, LeadListResponse | undefined][] } | undefined) => {
+      if (context?.previous) {
+        context.previous.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      }
+    },
+    onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: ["crm-leads"] });
       queryClient.invalidateQueries({
         queryKey: ["crm-lead-details", variables.leadId],

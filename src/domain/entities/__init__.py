@@ -17,3 +17,5 @@ from src.domain.entities.loyalty_policy import LoyaltyPolicy  # noqa: F401
 from src.domain.entities.visit_attribution import VisitAttribution  # noqa: F401
 from src.domain.entities.traffic_source import TrafficSource  # noqa: F401
 from src.domain.entities.campaign import Campaign  # noqa: F401
+from src.domain.entities.form_link_token import FormLinkToken  # noqa: F401
+from src.domain.entities.owner_integration_settings import OwnerIntegrationSettings  # noqa: F401

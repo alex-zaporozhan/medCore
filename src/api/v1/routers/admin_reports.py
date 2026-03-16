@@ -5,6 +5,7 @@ from uuid import UUID
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import get_session
@@ -24,6 +25,24 @@ from src.domain.entities.clinic import Clinic
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/clinics", tags=["admin-reports"])
+
+
+class RevenueSavedByAiResponse(BaseModel):
+    """B5.3: Revenue saved by AI (e.g. overnight). Stub when Revenue Hunter disabled."""
+    amount: str | None = None
+    period: str = "night"
+
+
+@router.get("/{clinic_id}/reports/revenue-saved-by-ai", response_model=RevenueSavedByAiResponse)
+async def get_revenue_saved_by_ai(
+    clinic_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> RevenueSavedByAiResponse:
+    """Revenue saved by AI (e.g. overnight). Stub: returns amount=null until Revenue Hunter/Celery is wired."""
+    if clinic_id != current_admin.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
+    return RevenueSavedByAiResponse(amount=None, period="night")
 
 
 @router.get("/{clinic_id}/reports/dashboard", response_model=DashboardReport)

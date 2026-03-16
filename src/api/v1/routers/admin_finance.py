@@ -14,9 +14,14 @@ from src.application.dto.erp_finance_dto import (
     CashboxCreate,
     CashboxRead,
     CashboxUpdate,
+    FinancialTransactionCreate,
     FinancialTransactionRead,
 )
-from src.application.services.finance_service import FinanceService
+from src.application.services.finance_service import (
+    CreateFinancialTransactionInput,
+    FinanceService,
+)
+from src.application.services.loyalty_service import LoyaltyService
 from src.domain.entities.admin_user import AdminUser
 
 router = APIRouter(
@@ -24,6 +29,26 @@ router = APIRouter(
     tags=["admin-finance"],
     dependencies=[Depends(require_permissions("view_finance"))],
 )
+
+
+@router.get(
+    "/{clinic_id}/finance/liability",
+)
+async def get_finance_liability(
+    clinic_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> dict:
+    """B6.2: Liability Dashboard — unearned revenue from active subscriptions."""
+    if clinic_id != current_admin.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
+    service = LoyaltyService(session)
+    total, count = await service.get_liability(clinic_id)
+    from decimal import Decimal
+    return {
+        "unearned_revenue": str(total.quantize(Decimal("0.01"))),
+        "active_subscriptions_count": count,
+    }
 
 
 @router.get(
@@ -39,7 +64,24 @@ async def list_cashboxes(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
     service = FinanceService(session)
     items = await service.list_cashboxes(clinic_id)
-    return [CashboxRead.model_validate(c) for c in items]
+    result = []
+    for c in items:
+        balance = await service.get_cashbox_balance(clinic_id, c.id)
+        result.append(
+            CashboxRead(
+                id=c.id,
+                clinic_id=c.clinic_id,
+                name=c.name,
+                type=c.type,
+                currency=c.currency,
+                is_default=c.is_default,
+                is_active=c.is_active,
+                created_at=c.created_at,
+                updated_at=c.updated_at,
+                balance=balance,
+            )
+        )
+    return result
 
 
 @router.post(
@@ -153,4 +195,113 @@ async def list_financial_transactions(
     )
     return [FinancialTransactionRead.model_validate(t) for t in items]
 
+
+@router.post(
+    "/{clinic_id}/finance/transactions",
+    response_model=FinancialTransactionRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_financial_transaction(
+    clinic_id: UUID,
+    data: FinancialTransactionCreate,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+    _: AdminContext = Depends(require_permissions("manage_finance")),
+) -> FinancialTransactionRead:
+    """Create income, expense or transfer. Transfer creates two movements (expense from, income to)."""
+    if clinic_id != current_admin.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
+    if data.type not in ("income", "expense", "transfer"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="type must be income, expense or transfer",
+        )
+    service = FinanceService(session)
+    now = datetime.now()
+    description = data.category or None
+
+    if data.type == "transfer":
+        if not data.from_cashbox_id or not data.to_cashbox_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="from_cashbox_id and to_cashbox_id required for transfer",
+            )
+        if data.from_cashbox_id == data.to_cashbox_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="from and to cashbox must differ",
+            )
+        from_cashbox = await service.get_cashbox(data.from_cashbox_id)
+        to_cashbox = await service.get_cashbox(data.to_cashbox_id)
+        if not from_cashbox or from_cashbox.clinic_id != clinic_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="From cashbox not found")
+        if not to_cashbox or to_cashbox.clinic_id != clinic_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="To cashbox not found")
+        if data.amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="amount must be positive",
+            )
+        out_tx = await service.create_transaction(
+            CreateFinancialTransactionInput(
+                clinic_id=clinic_id,
+                cashbox_id=data.from_cashbox_id,
+                type="expense",
+                amount=data.amount,
+                currency=from_cashbox.currency,
+                happened_at=now,
+                description=description,
+                booking_id=None,
+                payment_id=None,
+                source="manual",
+            )
+        )
+        await service.create_transaction(
+            CreateFinancialTransactionInput(
+                clinic_id=clinic_id,
+                cashbox_id=data.to_cashbox_id,
+                type="income",
+                amount=data.amount,
+                currency=to_cashbox.currency,
+                happened_at=now,
+                description=description,
+                booking_id=None,
+                payment_id=None,
+                source="manual",
+            )
+        )
+        await session.commit()
+        await session.refresh(out_tx)
+        return FinancialTransactionRead.model_validate(out_tx)
+    else:
+        if not data.cashbox_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="cashbox_id required for income/expense",
+            )
+        if data.amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="amount must be positive",
+            )
+        cashbox = await service.get_cashbox(data.cashbox_id)
+        if not cashbox or cashbox.clinic_id != clinic_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cashbox not found")
+        tx = await service.create_transaction(
+            CreateFinancialTransactionInput(
+                clinic_id=clinic_id,
+                cashbox_id=data.cashbox_id,
+                type=data.type,
+                amount=data.amount,
+                currency=cashbox.currency,
+                happened_at=now,
+                description=description,
+                booking_id=None,
+                payment_id=None,
+                source="manual",
+            )
+        )
+        await session.commit()
+        await session.refresh(tx)
+        return FinancialTransactionRead.model_validate(tx)
 

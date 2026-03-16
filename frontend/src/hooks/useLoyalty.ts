@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { api, authApi } from "@/api/client";
 import type {
   SubscriptionPackage,
@@ -81,3 +81,28 @@ export function useAdminLoyaltySummaryByContact(contactId: string | null) {
   });
 }
 
+/** B6.1 Family Sharing: add a family member to a customer subscription. */
+export function useAddFamilyMember() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      subscriptionId,
+      patientId,
+    }: {
+      subscriptionId: string;
+      patientId: string;
+    }) =>
+      api.post<unknown>(
+        `/v1/admin/loyalty/customer-subscriptions/${subscriptionId}/family-members`,
+        { patient_id: patientId },
+      ),
+    onSuccess: (_data, _variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["admin", "loyalty", "summary-by-contact"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["admin", "loyalty", "customer-subscriptions"],
+      });
+    },
+  });
+}

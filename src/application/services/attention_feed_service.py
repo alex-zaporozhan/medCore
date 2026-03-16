@@ -18,6 +18,7 @@ from src.domain.entities.booking import Booking
 from src.domain.entities.chat_message import ChatMessage
 from src.domain.entities.conversation import Conversation
 from src.domain.entities.patient import Patient
+from src.domain.entities.task import Task
 from src.domain.entities.customer_subscription import CustomerSubscription
 from src.domain.entities.wallet import Wallet
 from src.domain.entities.loyalty_policy import LoyaltyPolicy
@@ -720,3 +721,33 @@ class AttentionFeedService:
                 latest[m.conversation_id] = m
         return latest
 
+    async def claim_item(
+        self,
+        clinic_id: UUID,
+        item_type: str,
+        item_id: UUID,
+        admin_id: UUID,
+    ) -> bool:
+        """Assign feed item to current admin (claim). task: set Task.assignee_id; follow_up: assign conversation or acknowledge ERP."""
+        if item_type == "task":
+            task = await self.session.get(Task, item_id)
+            if not task or task.clinic_id != clinic_id:
+                return False
+            task.assignee_id = admin_id
+            await self.session.flush()
+            return True
+
+        if item_type == "follow_up":
+            msg = await self.session.get(ChatMessage, item_id)
+            if msg and msg.clinic_id == clinic_id:
+                conv = await self.session.get(Conversation, msg.conversation_id)
+                if conv and conv.clinic_id == clinic_id:
+                    conv.assigned_admin_id = admin_id
+                    await self.session.flush()
+                    return True
+            booking = await self.session.get(Booking, item_id)
+            if booking and booking.clinic_id == clinic_id and booking.erp_error_code:
+                return True
+            return False
+
+        return False

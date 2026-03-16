@@ -1,7 +1,7 @@
 import { usePatientAuth } from "@/contexts/PatientAuthContext";
 import { useClinics, usePatientConversation } from "@/hooks";
-import { Anchor, AppShell, Badge, Button, Group, Text, Alert } from "@mantine/core";
-import { Outlet, Link, useNavigate } from "react-router-dom";
+import { Anchor, AppShell, Badge, Box, Button, Group, Text, Alert } from "@mantine/core";
+import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 
 const SELECTED_CLINIC_KEY = "app.selectedClinicId";
@@ -9,14 +9,18 @@ const SELECTED_CLINIC_KEY = "app.selectedClinicId";
 const mainNav = [
   { to: "/app", label: "Главная" },
   { to: "/app/booking", label: "Запись" },
-  { to: "/app/feed", label: "Лента" },
   { to: "/app/chat", label: "Чат" },
+  { to: "/app/profile", label: "Профиль" },
+];
+const mainNavWithHistory = [
+  ...mainNav,
   { to: "/app/history", label: "История" },
 ];
 
 export default function AppLayout() {
   const { accessToken, logout, patientId } = usePatientAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: clinics } = useClinics();
   const { data: conversation } = usePatientConversation(patientId ?? null, accessToken);
   const chatUnread = conversation?.unread_by_patient_count ?? 0;
@@ -27,6 +31,13 @@ export default function AppLayout() {
   const selectedClinicId =
     typeof localStorage !== "undefined" ? localStorage.getItem(SELECTED_CLINIC_KEY) : null;
   const themeClinic = clinics?.find((c) => c.id === selectedClinicId);
+
+  useEffect(() => {
+    document.body.classList.add("app-pwa-body", "pwa-respect-system");
+    return () => {
+      document.body.classList.remove("app-pwa-body", "pwa-respect-system");
+    };
+  }, []);
 
   useEffect(() => {
     if (!themeClinic) return;
@@ -87,8 +98,8 @@ export default function AppLayout() {
               Dental Booking
             </Text>
           )}
-          <Group gap="md" style={{ flex: 1, justifyContent: "center" }}>
-            {mainNav.map((item) => {
+          <Group gap="md" style={{ flex: 1, justifyContent: "center" }} visibleFrom="sm">
+            {mainNavWithHistory.map((item) => {
               const isChat = item.to === "/app/chat";
               const showBadge = isChat && chatUnread > 0;
               return (
@@ -131,7 +142,10 @@ export default function AppLayout() {
           </Group>
         </Group>
       </AppShell.Header>
-      <AppShell.Main style={{ backgroundColor: "var(--bg-main)" }}>
+      <AppShell.Main
+        className="app-main-with-bottom-nav"
+        style={{ backgroundColor: "var(--bg-main)" }}
+      >
         {!isOnline && (
           <Alert
             color="yellow"
@@ -144,6 +158,56 @@ export default function AppLayout() {
         )}
         <Outlet />
       </AppShell.Main>
+
+      {/* PWA 2.0: Bottom Navigation (Главная, Запись, Чат, Профиль) + Safe Area */}
+      <Box
+        className="app-bottom-nav"
+        component="nav"
+        style={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 56,
+          backgroundColor: "var(--primary)",
+          borderTop: "1px solid var(--divider)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-around",
+          zIndex: 100,
+        }}
+      >
+        {mainNav.map((item) => {
+          const isActive = location.pathname === item.to;
+          const isChat = item.to === "/app/chat";
+          const showBadge = isChat && chatUnread > 0;
+          return (
+            <Anchor
+              key={item.to}
+              component={Link}
+              to={item.to}
+              size="sm"
+              fw={500}
+              c={isActive ? "var(--text-on-primary)" : "rgba(255,255,255,0.85)"}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 2,
+                textDecoration: "none",
+                padding: "6px 12px",
+              }}
+            >
+              {item.label}
+              {showBadge && (
+                <Badge size="xs" variant="filled" color="red" circle>
+                  {chatUnread > 99 ? "99+" : chatUnread}
+                </Badge>
+              )}
+            </Anchor>
+          );
+        })}
+      </Box>
     </AppShell>
   );
 }
