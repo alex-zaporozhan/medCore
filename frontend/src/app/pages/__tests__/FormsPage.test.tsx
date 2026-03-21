@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
+import { renderWithProviders } from "@/test-utils";
 import FormsPage from "../FormsPage";
 
 vi.mock("@/contexts/PatientAuthContext", () => ({
@@ -47,7 +48,7 @@ describe("FormsPage", () => {
   });
 
   it("renders list of pending forms and allows opening a form", () => {
-    render(<FormsPage />);
+    renderWithProviders(<FormsPage />);
 
     expect(screen.getByText("Анкеты и согласия")).toBeInTheDocument();
     const card = screen.getByText("Анкета здоровья");

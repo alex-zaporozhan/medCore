@@ -2,6 +2,7 @@ import { usePatientAuth } from "@/contexts/PatientAuthContext";
 import { Center, Loader, Paper, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ROUTE_PATHS } from "@/routePaths";
 
 function useQueryParams() {
   const { search } = useLocation();
@@ -23,25 +24,27 @@ export default function OAuthResultPage() {
   useEffect(() => {
     if (status === "ok" && token && patientId) {
       login(token, patientId);
-      const redirect = window.location.pathname.startsWith("/app") ? window.location.pathname : "/app";
+      const redirect = window.location.pathname.startsWith(ROUTE_PATHS.patient.home)
+        ? window.location.pathname
+        : ROUTE_PATHS.patient.home;
       navigate(redirect, { replace: true });
       return;
     }
 
     if (status === "cancelled") {
-      navigate("/login", { replace: true });
+      navigate(ROUTE_PATHS.other.login, { replace: true });
       return;
     }
 
     if (status && ["error", "state_invalid", "provider_error"].includes(status)) {
       // stay on this page to show error, then redirect back to login after short delay
       const timeout = setTimeout(() => {
-        navigate("/login", { replace: true });
+        navigate(ROUTE_PATHS.other.login, { replace: true });
       }, 3000);
       return () => clearTimeout(timeout);
     }
 
-    navigate("/login", { replace: true });
+    navigate(ROUTE_PATHS.other.login, { replace: true });
   }, [status, token, patientId, login, navigate]);
 
   let message = "Обрабатываем результат входа...";

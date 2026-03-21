@@ -24,10 +24,9 @@ from src.core.metrics import omni_ai_provider_errors_total
 from src.domain.entities.booking import Booking
 from src.domain.entities.conversation import Conversation
 from src.domain.entities.patient import Patient
-from src.infrastructure.external_apis.ai_client import AiClient, AiClientError
+from src.infrastructure.external_apis.ai_client import AiClientError
 from src.infrastructure.external_apis.safe_ai_client import SafeAiClient
-from src.application.services.ai_config_service import AiConfigService
-from src.core.ai_sanitizer import AiSanitizer
+from src.application.services.ai_client_factory import build_safe_ai_client
 
 
 logger = logging.getLogger(__name__)
@@ -40,23 +39,37 @@ class ChatAiServiceError(Exception):
 
 
 class ChatAiService:
-    def __init__(self, session: AsyncSession, ctx: RequestContext, ai_client: AiClient | None = None) -> None:
+    def __init__(self, session: AsyncSession, ctx: RequestContext, ai_client: SafeAiClient | None = None) -> None:
         self.session = session
         self.ctx = ctx
-        if ai_client is None:
-            config = AiConfigService().get_clinic_ai_config(self.ctx.clinic_id or self.ctx.user_id)  # type: ignore[arg-type]
-            base_client = AiClient(config=config)
-        else:
-            base_client = ai_client
-        sanitizer = AiSanitizer(allow_personal_data=config.allow_personal_data)  # type: ignore[name-defined]
-        self.ai_client = SafeAiClient(base_client, sanitizer=sanitizer)
+        # ai_client is expected to be provided via factory in new code paths;
+        # legacy call sites will lazily create SafeAiClient on first use.
+        self.ai_client = ai_client
         self.chat_service = ChatService(session)
+
+    async def _ensure_ai_client(self) -> None:
+        """Lazily initialize SafeAiClient using centralized factory."""
+        if self.ai_client is not None:
+            return
+        clinic_id = self.ctx.clinic_id or self.ctx.user_id  # type: ignore[assignment]
+        safe_client, ctx = await build_safe_ai_client(clinic_id=clinic_id, session=self.session)  # type: ignore[arg-type]
+        logger.info(
+            "build_safe_ai_client used for chat_ai_service",
+            extra={
+                "source": "chat_ai",
+                "clinic_id": str(clinic_id) if clinic_id else None,
+                "provider_type": ctx.provider_type,
+                "allow_personal_data": ctx.allow_personal_data,
+            },
+        )
+        self.ai_client = safe_client
 
     def _base_ai_mode(self) -> str:
         """Return base AI mode for current configuration."""
         return "external_active" if self.ai_client.is_configured() else "fallback_local"
 
     async def summarize_conversation(self, clinic_id: UUID, conversation_id: UUID) -> ConversationSummaryResponse:
+        await self._ensure_ai_client()
         # Reuse existing chat service to fetch last messages
         messages_resp = await self.chat_service.list_messages_for_admin(
             clinic_id=clinic_id,
@@ -100,7 +113,7 @@ class ChatAiService:
             )
 
         # If no external AI configured, return simple heuristic summary
-        if not self.ai_client.is_configured():
+        if not self.ai_client or not self.ai_client.is_configured():
             logger.info(
                 "AI summary fallback: provider not configured",
                 extra={"clinic_id": str(clinic_id), "conversation_id": str(conversation_id)},
@@ -174,6 +187,7 @@ class ChatAiService:
         admin_id: UUID | None,
         intent: str | None,
     ) -> SuggestReplyResponse:
+        await self._ensure_ai_client()
         base_mode = self._base_ai_mode()
         messages_resp = await self.chat_service.list_messages_for_admin(
             clinic_id=clinic_id,
@@ -207,7 +221,7 @@ class ChatAiService:
                 base = f"Клиент написал: «{last_patient.body}». Ответьте вежливо и уточните детали."
             return SuggestReplyResponse(variants=[base], ai_status="fallback_local")
 
-        if not self.ai_client.is_configured():
+        if not self.ai_client or not self.ai_client.is_configured():
             logger.info(
                 "AI suggest_reply fallback: provider not configured",
                 extra={
@@ -270,6 +284,7 @@ class ChatAiService:
         return dto
 
     async def analyze_patient(self, clinic_id: UUID, patient_id: UUID) -> PatientAiInsight:
+        await self._ensure_ai_client()
         base_mode = self._base_ai_mode()
         patient = await self._load_patient(patient_id, clinic_id)
         if patient is None:
@@ -311,7 +326,7 @@ class ChatAiService:
             )
 
         # If external AI is not configured at all, always return heuristic.
-        if not self.ai_client.is_configured():
+        if not self.ai_client or not self.ai_client.is_configured():
             logger.info(
                 "AI analyze_patient fallback: provider not configured",
                 extra={"clinic_id": str(clinic_id), "patient_id": str(patient_id)},

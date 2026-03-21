@@ -97,18 +97,20 @@ async def test_get_lead_by_primary_booking_id_and_list_leads_filters(init_db, se
         assert found.primary_booking_id == booking_id
         assert found.patient_id == patient_id
 
-        by_patient = await service.list_leads(
+        by_patient, total_p = await service.list_leads(
             clinic_id=clinic_id,
             patient_id=patient_id,
             limit=10,
         )
         assert len(by_patient) == 1
+        assert total_p >= 1
         assert by_patient[0].id == lead_id
 
-        by_booking = await service.list_leads(
+        by_booking, total_b = await service.list_leads(
             clinic_id=clinic_id,
             booking_id=booking_id,
             limit=10,
         )
         assert len(by_booking) == 1
+        assert total_b >= 1
         assert by_booking[0].id == lead_id

@@ -20,12 +20,10 @@ from src.application.services.wallet_service import WalletService
 from src.domain.entities.patient import Patient
 from src.domain.entities.subscription_package import SubscriptionPackage
 from src.domain.interfaces.repositories.loyalty_repository import (
-    SubscriptionUsageRepository,
     WalletRepository,
     WalletTransactionRepository,
 )
 from src.infrastructure.database.loyalty_repo_impl import (
-    SubscriptionUsageRepositoryImpl,
     WalletRepositoryImpl,
     WalletTransactionRepositoryImpl,
 )
@@ -107,22 +105,15 @@ async def get_my_loyalty_history(
     session: AsyncSession = Depends(get_session),
     current_patient: Patient = Depends(get_current_patient),
 ) -> PatientLoyaltyHistoryResponse:
-    """Return chronological history of loyalty usage for current patient."""
-    usage_repo: SubscriptionUsageRepository = SubscriptionUsageRepositoryImpl(session)
+    """Return chronological history: own subscription/wallet usage plus owner's subscriptions when FamilyLink allows."""
     tx_repo: WalletTransactionRepository = WalletTransactionRepositoryImpl(session)
     wallet_repo: WalletRepository = WalletRepositoryImpl(session)
 
-    # Collect all usages for patient's subscriptions
     loyalty_service = LoyaltyService(session)
-    subs = await loyalty_service.customer_repo.list_for_patient(
+    usage_rows = await loyalty_service.get_subscription_usages_for_patient_timeline(
         clinic_id=current_patient.clinic_id,
         patient_id=current_patient.id,
-        only_active=False,
     )
-    usages = []
-    for s in subs:
-        items = await usage_repo.list_for_subscription(s.id)
-        usages.extend(items)
 
     wallet = await wallet_repo.get_for_patient(
         clinic_id=current_patient.clinic_id,
@@ -133,7 +124,7 @@ async def get_my_loyalty_history(
         wallet_txs = await tx_repo.list_for_wallet(wallet.id)
 
     history_items: list[PatientLoyaltyHistoryItem] = []
-    for u in usages:
+    for u, meta in usage_rows:
         history_items.append(
             PatientLoyaltyHistoryItem(
                 kind="subscription_usage",
@@ -143,6 +134,14 @@ async def get_my_loyalty_history(
                     "booking_id": str(u.booking_id),
                     "used_visits": u.used_visits,
                     "used_amount": str(u.used_amount) if u.used_amount is not None else None,
+                    "beneficiary_patient_id": str(u.beneficiary_patient_id)
+                    if u.beneficiary_patient_id
+                    else None,
+                    "family_link_id": str(u.family_link_id) if u.family_link_id else None,
+                    "timeline_view": meta.get("timeline_view"),
+                    "subscription_owner_patient_id": meta.get(
+                        "subscription_owner_patient_id"
+                    ),
                 },
             )
         )
@@ -157,6 +156,12 @@ async def get_my_loyalty_history(
                     "booking_id": str(tx.booking_id) if tx.booking_id else None,
                     "subscription_id": str(tx.subscription_id) if tx.subscription_id else None,
                     "description": tx.description,
+                    "beneficiary_patient_id": str(tx.beneficiary_patient_id)
+                    if getattr(tx, "beneficiary_patient_id", None)
+                    else None,
+                    "family_link_id": str(tx.family_link_id)
+                    if getattr(tx, "family_link_id", None)
+                    else None,
                 },
             )
         )

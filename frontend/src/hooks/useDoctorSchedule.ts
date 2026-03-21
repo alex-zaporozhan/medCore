@@ -2,14 +2,22 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { AggregatedSchedule, DailySchedule } from "@/api/types";
 
-export function useDoctorSchedule(doctorId: string | null, date: string | null) {
+export function useDoctorSchedule(
+  doctorId: string | null,
+  date: string | null,
+  clinicId: string | null
+) {
   return useQuery({
-    queryKey: ["schedule", doctorId, date],
-    queryFn: () =>
-      api.get<DailySchedule>(
-        `/v1/doctors/${doctorId}/schedule?date=${date}`
-      ),
-    enabled: !!doctorId && !!date,
+    queryKey: ["schedule", clinicId, doctorId, date],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      params.set("date", date ?? "");
+      params.set("clinic_id", clinicId ?? "");
+      return api.get<DailySchedule>(
+        `/v1/doctors/${doctorId}/schedule?${params.toString()}`
+      );
+    },
+    enabled: !!doctorId && !!date && !!clinicId,
   });
 }
 

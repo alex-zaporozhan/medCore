@@ -1,5 +1,9 @@
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { useAttentionFeed, useCloseFollowUp } from "@/hooks/useAttentionFeed";
+import {
+  useAttentionFeed,
+  useCloseFollowUp,
+  useCreateAttentionFeedTask,
+} from "@/hooks/useAttentionFeed";
 import type { AttentionItem } from "@/api/types";
 import {
   Badge,
@@ -14,13 +18,16 @@ import {
 } from "@mantine/core";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import { PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { useMemo } from "react";
+import { ROUTE_PATHS } from "@/routePaths";
 
 export default function AdminAttentionFeedPage() {
   const { currentClinicId } = useAdminClinic();
   const clinicId = currentClinicId ?? null;
   const { data, isLoading, isError, error } = useAttentionFeed(clinicId);
   const closeMutation = useCloseFollowUp(clinicId);
+  const createTaskMutation = useCreateAttentionFeedTask(clinicId);
 
   const followUps = useMemo(() => data?.follow_up ?? [], [data]);
   const retentionGap = useMemo(() => data?.retention_gap ?? [], [data]);
@@ -41,9 +48,7 @@ export default function AdminAttentionFeedPage() {
     return (
       <Stack>
         <ContextBar title="Лента внимания" />
-        <Text size="sm" c="dimmed">
-          Загрузка...
-        </Text>
+        <PageSkeleton variant="table" rows={6} />
       </Stack>
     );
   }
@@ -52,9 +57,7 @@ export default function AdminAttentionFeedPage() {
     return (
       <Stack>
         <ContextBar title="Лента внимания" />
-        <Text size="sm" c="red">
-          {error instanceof Error ? error.message : "Ошибка загрузки ленты внимания"}
-        </Text>
+        <QueryErrorAlert error={error} title="Не удалось загрузить ленту внимания" />
       </Stack>
     );
   }
@@ -95,7 +98,7 @@ export default function AdminAttentionFeedPage() {
               description="Нет срочных событий для реакции."
               action={{
                 label: "Открыть чат",
-                onClick: () => window.location.assign("/admin/omni-chat"),
+                onClick: () => window.location.assign(ROUTE_PATHS.admin.omniChat),
               }}
             />
           ) : (
@@ -124,6 +127,21 @@ export default function AdminAttentionFeedPage() {
                               ? "Давно не был"
                               : "Конфликт"}
                         </Badge>
+                        <Badge
+                          size="xs"
+                          variant="outline"
+                          color={
+                            item.status === "resolved"
+                              ? "green"
+                              : item.status === "in_progress"
+                                ? "blue"
+                                : item.status === "archived"
+                                  ? "gray"
+                                  : "yellow"
+                          }
+                        >
+                          {item.status}
+                        </Badge>
                       </Group>
                       <Text size="xs" c="dimmed">
                         {item.description}
@@ -134,11 +152,37 @@ export default function AdminAttentionFeedPage() {
                         </Text>
                       )}
                       <Group gap="xs" justify="space-between" align="center" mt={4}>
-                        {item.kind === "follow_up" && item.status === "open" && (
-                          <Button size="xs" variant="light" onClick={() => handleCloseFollowUp(item)}>
-                            Взять в работу
-                          </Button>
-                        )}
+                        <Group gap="xs">
+                          {item.tasks_total > 0 && (
+                            <Text size="xs" c="dimmed">
+                              Задач: {item.tasks_total} (в работе: {item.tasks_open + item.tasks_in_progress})
+                            </Text>
+                          )}
+                        </Group>
+                        <Group gap="xs">
+                          {item.kind === "follow_up" && item.status === "new" && (
+                            <Button size="xs" variant="light" onClick={() => handleCloseFollowUp(item)}>
+                              Взять в работу
+                            </Button>
+                          )}
+                          {clinicId && (
+                            <Button
+                              size="xs"
+                              variant="subtle"
+                              loading={createTaskMutation.isPending}
+                              onClick={() =>
+                                createTaskMutation.mutate({
+                                  kind: item.kind,
+                                  id: item.id,
+                                  title: item.title,
+                                  description: item.description,
+                                })
+                              }
+                            >
+                              Создать задачу
+                            </Button>
+                          )}
+                        </Group>
                       </Group>
                     </Stack>
                   </Card>
@@ -156,7 +200,7 @@ export default function AdminAttentionFeedPage() {
             description="Задачи, взятые в работу, появятся здесь. Управление задачами — в разделе «Задачи»."
             action={{
               label: "Открыть задачи",
-              onClick: () => window.location.assign("/admin/tasks"),
+              onClick: () => window.location.assign(ROUTE_PATHS.admin.tasks),
             }}
           />
         </Grid.Col>

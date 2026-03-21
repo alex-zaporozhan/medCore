@@ -4,6 +4,8 @@ from datetime import date, time
 from decimal import Decimal
 from uuid import UUID
 
+from enum import Enum
+
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -78,4 +80,42 @@ class CompleteBookingRequest(BaseModel):
     """Optional body for complete booking (B4.4): use specific subscription."""
 
     use_subscription_id: UUID | None = None
+
+
+class BookingCompletionResult(BaseModel):
+    """Unified result of booking completion facade."""
+
+    success: bool
+    booking_id: UUID
+    final_status: str
+    erp_summary: dict | None = None
+    loyalty_summary: dict | None = None
+    warnings: list[str] = Field(default_factory=list)
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+class BookingErrorCode(str, Enum):
+    """Machine-readable error codes for booking and payment flows (BKG_ERRORS_005)."""
+
+    SLOT_UNAVAILABLE = "slot_unavailable"
+    PATIENT_NOT_FOUND = "patient_not_found"
+    PAYMENT_FAILED = "payment_failed"
+    PREPAYMENT_REQUIRED = "prepayment_required"
+    VALIDATION_ERROR = "validation_error"
+    SERVICE_UNAVAILABLE = "service_unavailable"
+    BOOKING_NOT_FOUND = "booking_not_found"
+    CLINIC_MISMATCH = "clinic_mismatch"
+    BOOKING_STATUS_INVALID = "booking_status_invalid"
+    PAYMENT_NOT_ALLOWED = "payment_not_allowed"
+
+
+class BookingErrorResponse(BaseModel):
+    """Unified error payload for booking/payment-related endpoints."""
+
+    code: BookingErrorCode
+    message: str
+    details: dict | None = None
+    trace_id: str | None = None
+
 

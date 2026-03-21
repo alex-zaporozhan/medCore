@@ -18,6 +18,7 @@ from src.application.services.omnichannel_ai_orchestrator import (
 )
 from src.application.services.omnichannel_chat_service import OmnichannelChatService
 from src.core.metrics import omni_messages_total
+from src.core.prometheus_labels import account_bucket_label
 from src.domain.entities.omnichannel_contact import Contact
 
 logger = logging.getLogger(__name__)
@@ -294,6 +295,29 @@ class IntegrationGatewayService:
                     "provider": dto.provider,
                 },
             )
+            # Publish domain event so CRM can create a lead for this contact (CRM_EVENTS_007).
+            try:
+                from src.application.events.event_bus import get_event_bus
+                from src.application.events.standard_events import make_contact_created_event
+
+                bus = get_event_bus()
+                await bus.publish(
+                    make_contact_created_event(
+                        contact_id=contact.id,
+                        clinic_id=self.business_account_id,
+                        patient_id=None,
+                        trace_id=getattr(dto, "trace_id", None),
+                    )
+                )
+            except Exception:
+                # Best-effort; never break inbound processing due to CRM integration.
+                logger.exception(
+                    "Failed to publish ContactCreated event",
+                    extra={
+                        "contact_id": str(contact.id),
+                        "business_account_id": str(self.business_account_id),
+                    },
+                )
             return contact
 
     async def handle_inbound_normalized_message(
@@ -305,12 +329,13 @@ class IntegrationGatewayService:
             direction="INBOUND",
             actor_type="CLIENT",
             channel_id="normalized",
-            business_account_id=str(self.business_account_id),
+            account_bucket=account_bucket_label(self.business_account_id),
         ).inc()
         logger.info(
             "IntegrationGatewayService.handle_inbound_normalized_message",
             extra={
                 "component": "integration_gateway",
+                "trace_id": dto.trace_id,
                 "event": "inbound_normalized",
                 "business_account_id": str(self.business_account_id),
                 "provider": dto.provider,
@@ -361,6 +386,7 @@ class IntegrationGatewayService:
             extra={
                 "component": "integration_gateway",
                 "event": "inbound_persisted",
+                "trace_id": dto.trace_id,
                 "business_account_id": str(self.business_account_id),
                 "chat_id": str(chat.id),
                 "message_id": str(message.id),

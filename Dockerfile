@@ -1,4 +1,5 @@
-FROM python:3.11-slim AS builder
+# public.ecr.aws mirrors Docker Official Images — обход сломанных registry-mirrors docker.io (напр. Beget → локальный прокси).
+FROM public.ecr.aws/docker/library/python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -13,7 +14,7 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-interaction --no-ansi --no-root
 
 # Production stage
-FROM python:3.11-slim
+FROM public.ecr.aws/docker/library/python:3.11-slim
 
 WORKDIR /app
 
@@ -30,7 +31,7 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health')" || exit 1
+    CMD python -c "import httpx,sys; r=httpx.get('http://localhost:8000/health', timeout=5); sys.exit(0 if r.status_code==200 else 1)"
 
 EXPOSE 8000
 

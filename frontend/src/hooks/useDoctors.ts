@@ -7,6 +7,8 @@ interface UseDoctorsFilters {
   clinic_id?: string;
   skip?: number;
   limit?: number;
+  /** false — не выполнять запрос (для условных экранов пациента и т.п.) */
+  enabled?: boolean;
 }
 
 export function useDoctors(filters: UseDoctorsFilters = {}) {
@@ -20,6 +22,7 @@ export function useDoctors(filters: UseDoctorsFilters = {}) {
   return useQuery({
     queryKey: ["doctors", filters],
     queryFn: () => api.get<Doctor[]>(`/v1/doctors${query ? `?${query}` : ""}`),
+    enabled: filters.enabled !== false,
   });
 }
 

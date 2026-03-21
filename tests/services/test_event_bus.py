@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 from typing import List
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -73,25 +73,49 @@ async def test_event_bus_many_events_and_subscribers():
     assert all(name.startswith(("h1:", "h2:")) for name in received)
 
 
+async def _event_bus_stub_failing_handler(_event: DomainEvent) -> None:
+    raise RuntimeError("handler failed")
+
+
 @pytest.mark.asyncio
-async def test_event_bus_does_not_swallow_exceptions():
+async def test_event_bus_isolates_failing_handlers():
+    """A failing subscriber must not block subsequent handlers on the same event."""
     bus = EventBus()
     called: list[str] = []
 
-    async def good_handler(event: DomainEvent) -> None:
-        called.append("good")
+    async def first_ok(_event: DomainEvent) -> None:
+        called.append("first")
 
-    async def failing_handler(event: DomainEvent) -> None:
-        raise RuntimeError("handler failed")
+    async def last_ok(_event: DomainEvent) -> None:
+        called.append("last")
 
-    bus.subscribe("BookingCompleted", good_handler)
-    bus.subscribe("BookingCompleted", failing_handler)
+    bus.subscribe("BookingCompleted", first_ok)
+    bus.subscribe("BookingCompleted", _event_bus_stub_failing_handler)
+    bus.subscribe("BookingCompleted", last_ok)
 
     event = DomainEvent(name="BookingCompleted", payload={})
+    await bus.publish(event)
 
-    with pytest.raises(RuntimeError):
-        await bus.publish(event)
+    assert called == ["first", "last"]
 
-    # Even если один из хендлеров упал, остальные вызовы до исключения уже произошли.
-    assert "good" in called
+
+@pytest.mark.asyncio
+async def test_event_bus_handler_failure_increments_metric(monkeypatch):
+    mock_counter = MagicMock()
+    mock_labeled = MagicMock()
+    mock_counter.labels.return_value = mock_labeled
+    monkeypatch.setattr(
+        "src.application.events.event_bus.domain_event_handler_failures_total",
+        mock_counter,
+    )
+
+    bus = EventBus()
+    bus.subscribe("BookingCompleted", _event_bus_stub_failing_handler)
+    await bus.publish(DomainEvent(name="BookingCompleted", payload={}))
+
+    mock_counter.labels.assert_called_once()
+    kwargs = mock_counter.labels.call_args.kwargs
+    assert kwargs["event_name"] == "BookingCompleted"
+    assert kwargs["handler"].endswith("_event_bus_stub_failing_handler")
+    mock_labeled.inc.assert_called_once()
 

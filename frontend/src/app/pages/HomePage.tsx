@@ -1,14 +1,21 @@
 import { Anchor, Button, Card, Group, Paper, ScrollArea, Stack, Text, Title } from "@mantine/core";
 import { Link } from "react-router-dom";
-import { useClinics, usePatientBookings } from "@/hooks";
+import { useClinics, useDoctors, usePatientBookings, usePublicClinicServices } from "@/hooks";
 import { usePatientAuth } from "@/contexts/PatientAuthContext";
 import { useState, useEffect, useMemo } from "react";
 import { useUtmTracking } from "@/shared/utmTracking";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import { QueryErrorAlert } from "@/shared/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconRefresh } from "@tabler/icons-react";
+import { ROUTE_PATHS } from "@/routePaths";
 
 const SELECTED_CLINIC_KEY = "app.selectedClinicId";
+
+function shortId(id: string): string {
+  if (id.length <= 12) return id;
+  return `${id.slice(0, 8)}…`;
+}
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -69,6 +76,26 @@ export default function HomePage() {
     return upcoming[0] ?? null;
   }, [bookings]);
 
+  const nextVisitClinicId = nextVisit?.clinic_id ?? null;
+  const { data: visitServices } = usePublicClinicServices(nextVisitClinicId);
+  const { data: visitDoctors } = useDoctors({
+    clinic_id: nextVisitClinicId ?? undefined,
+    is_active: true,
+    enabled: !!nextVisitClinicId,
+  });
+
+  const nextVisitDoctorLabel = useMemo(() => {
+    if (!nextVisit) return "";
+    const d = visitDoctors?.find((x) => x.id === nextVisit.doctor_id);
+    return d?.full_name ?? shortId(nextVisit.doctor_id);
+  }, [nextVisit, visitDoctors]);
+
+  const nextVisitServiceLabel = useMemo(() => {
+    if (!nextVisit) return "";
+    const s = visitServices?.find((x) => x.id === nextVisit.service_id);
+    return s?.name ?? shortId(nextVisit.service_id);
+  }, [nextVisit, visitServices]);
+
   const hasSingleClinic = clinics && clinics.length === 1;
   const hasMultipleClinics = clinics && clinics.length > 1;
   const greetingText = patientName ? `${getGreeting()}, ${patientName}!` : `${getGreeting()}!`;
@@ -80,11 +107,14 @@ export default function HomePage() {
   };
 
   return (
-    <Stack gap="lg" pb="md">
+    <Stack gap="lg" pb="md" maw={720} w="100%" mx="auto">
       <Group justify="space-between" wrap="nowrap">
-        <Title order={3}>{greetingText}</Title>
+        <Title order={3} c="dark.8">
+          {greetingText}
+        </Title>
         <Button
           variant="subtle"
+          color="indigo"
           size="xs"
           leftSection={<IconRefresh size={14} />}
           loading={bookingsFetching}
@@ -97,26 +127,43 @@ export default function HomePage() {
 
       {/* Next Visit Ticket (PWA 2.0): дата, время, врач, услуга, QR, кнопки */}
       {nextVisit ? (
-        <Card withBorder padding="md" radius="md" shadow="sm">
-          <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb="xs">
+        <Card
+          withBorder
+          padding="md"
+          radius="md"
+          style={{ boxShadow: "var(--shadow-card)", borderColor: "var(--divider)" }}
+        >
+          <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb="xs" style={{ letterSpacing: "0.04em" }}>
             Ближайший визит
           </Text>
           <Group align="flex-start" justify="space-between" wrap="nowrap">
             <Stack gap={4}>
-              <Text fw={600}>
+              <Text fw={600} c="dark.8" size="lg">
                 {String(nextVisit.appointment_date)} в {String(nextVisit.appointment_time).slice(0, 5)}
               </Text>
               <Text size="sm" c="dimmed">
-                Врач: {nextVisit.doctor_id} · Услуга: {nextVisit.service_id}
+                Врач: {nextVisitDoctorLabel} · Услуга: {nextVisitServiceLabel}
               </Text>
               <Group mt="sm">
-                <Button component={Link} to="/app/booking" variant="light" size="xs">
+                <Button
+                  component={Link}
+                  to={ROUTE_PATHS.patient.booking}
+                  variant="light"
+                  color="indigo"
+                  size="xs"
+                >
                   Перенести
                 </Button>
-                <Button component={Link} to="/app/history" variant="light" size="xs">
+                <Button
+                  component={Link}
+                  to={ROUTE_PATHS.patient.history}
+                  variant="light"
+                  color="indigo"
+                  size="xs"
+                >
                   Отменить
                 </Button>
-                <Button component={Link} to="/app/booking" size="xs">
+                <Button component={Link} to={ROUTE_PATHS.patient.booking} color="indigo" size="xs">
                   Добавить в календарь
                 </Button>
               </Group>
@@ -148,13 +195,16 @@ export default function HomePage() {
         <EmptyState
           title="Нет ближайших записей"
           description="Запишитесь на приём — выберите врача и удобное время."
-          action={{ label: "Записаться", onClick: () => window.location.assign("/app/booking") }}
+          action={{
+            label: "Записаться",
+            onClick: () => window.location.assign(ROUTE_PATHS.patient.booking),
+          }}
         />
       )}
 
       {/* Stories Bar — горизонтальный скролл (акции, новости) */}
       <div>
-        <Text size="sm" fw={600} mb="xs">
+        <Text size="sm" fw={600} mb="xs" c="dark.8">
           Акции и новости
         </Text>
         <ScrollArea type="scroll" scrollbarSize={6} style={{ width: "100%" }}>
@@ -172,6 +222,9 @@ export default function HomePage() {
                   alignItems: "center",
                   justifyContent: "center",
                   cursor: "pointer",
+                  boxShadow: "var(--shadow-soft-sm)",
+                  borderColor: "var(--divider)",
+                  background: "var(--bg-card-soft)",
                 }}
               >
                 <Text size="xs" c="dimmed">
@@ -183,16 +236,28 @@ export default function HomePage() {
         </ScrollArea>
       </div>
 
-      <Paper radius="lg" shadow="sm" p="xl" maw={520} w="100%">
+      <Paper
+        radius="lg"
+        p="xl"
+        maw={520}
+        w="100%"
+        style={{
+          boxShadow: "var(--shadow-card)",
+          border: "1px solid var(--divider)",
+          background: "var(--bg-card)",
+        }}
+      >
         <Stack gap="md">
-          <Title order={4}>Онлайн‑запись к врачу</Title>
+          <Title order={4} c="dark.8" fw={600}>
+            Онлайн‑запись к врачу
+          </Title>
           <Text size="sm" c="dimmed">
             Выберите удобное время приёма, не звоня в клинику.
           </Text>
-          <Button component={Link} to="/app/booking" size="md">
+          <Button component={Link} to={ROUTE_PATHS.patient.booking} size="md" color="indigo">
             Записаться на приём
           </Button>
-          <Anchor component={Link} to="/app/history">
+          <Anchor component={Link} to={ROUTE_PATHS.patient.history} c="indigo" fw={500}>
             Смотреть историю посещений
           </Anchor>
           {isLoading && (
@@ -201,12 +266,15 @@ export default function HomePage() {
             </Text>
           )}
           {isError && (
-            <Text size="sm" c="red">
-              {error instanceof Error ? error.message : "Не удалось загрузить клиники"}
-            </Text>
+            <QueryErrorAlert error={error} title="Не удалось загрузить клиники" />
           )}
           {hasSingleClinic && (
-            <Card shadow="sm" radius="md" withBorder mt="md">
+            <Card
+              radius="md"
+              withBorder
+              mt="md"
+              style={{ boxShadow: "var(--shadow-soft-sm)", borderColor: "var(--divider)" }}
+            >
               <Stack gap={4}>
                 <Text fw={500}>Клиника</Text>
                 <Text size="sm">{clinics![0].name}</Text>

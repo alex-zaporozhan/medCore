@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +10,7 @@ from src.core.security import parse_access_token
 from src.core.user_messages import EMPTY_DB_NO_CLINIC
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.patient import Patient
-from src.infrastructure.database.base import get_db
+from src.infrastructure.database.base import get_db, get_db_reporting
 from src.core.context import RequestContext
 from src.application.services.rbac_service import RbacServiceImpl
 from src.infrastructure.database.rbac_repo_impl import RbacRepositoryImpl
@@ -25,6 +25,12 @@ class AdminContext(RequestContext):
 async def get_session() -> AsyncSession:
     """Get database session dependency."""
     async for session in get_db():
+        yield session
+
+
+async def get_reporting_session() -> AsyncSession:
+    """Reporting GETs: optional replica + statement_timeout (ADR-005)."""
+    async for session in get_db_reporting():
         yield session
 
 
@@ -79,6 +85,7 @@ async def get_current_patient(
 
 
 async def get_request_context(
+    request: Request,
     authorization: str | None = Header(None),
     session: AsyncSession = Depends(get_session),
 ) -> RequestContext:
@@ -136,6 +143,7 @@ async def get_request_context(
             clinic_id=admin.clinic_id,
             user_id=admin.id,
             user_type="admin",
+            trace_id=getattr(request.state, "trace_id", None),
             roles=set(rbac_info.roles),
             permissions=set(rbac_info.permissions),
         )
@@ -145,6 +153,7 @@ async def get_request_context(
             clinic_id=None,
             user_id=patient.id,
             user_type="patient",
+            trace_id=getattr(request.state, "trace_id", None),
             roles=set(),
             permissions=set(),
         )
@@ -154,6 +163,7 @@ async def get_request_context(
         clinic_id=None,
         user_id=None,
         user_type="system",
+        trace_id=getattr(request.state, "trace_id", None),
         roles=set(),
         permissions=set(),
     )
@@ -184,6 +194,7 @@ def require_permissions(*permission_codes: str):
             clinic_id=context.clinic_id,
             user_id=context.user_id,
             user_type=context.user_type,
+            trace_id=context.trace_id,
             roles=context.roles,
             permissions=context.permissions,
         )

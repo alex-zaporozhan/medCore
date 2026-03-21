@@ -15,11 +15,9 @@ export function registerPwa(): void {
 
   const updateSW = registerSW({
     onNeedRefresh() {
-      // eslint-disable-next-line no-console
       console.log("[pwa] new version available");
     },
     onOfflineReady() {
-      // eslint-disable-next-line no-console
       console.log("[pwa] app ready to work offline");
     },
   });

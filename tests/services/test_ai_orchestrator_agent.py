@@ -7,7 +7,7 @@ from datetime import datetime
 import pytest
 from sqlalchemy import select
 
-from src.application.dto.chat_ai_agent_dto import AgentResult, ChatMessage
+from src.application.dto.chat_ai_agent_dto import AgentResult, ChatMessage, ToolCall
 from src.application.services.omnichannel_ai_orchestrator import (
     OmnichannelAIOrchestrator,
 )
@@ -40,10 +40,24 @@ class StubAiClient:
         if not self._scenarios:
             return {"choices": [{"message": {"content": "stub fallback"}}]}, []
         _, response, tool_calls = self._scenarios.pop(0)
-        return response, tool_calls
+        normalized: list[ToolCall] = []
+        for tc in tool_calls:
+            if isinstance(tc, ToolCall):
+                normalized.append(tc)
+                continue
+            if isinstance(tc, dict):
+                fn = tc.get("function") or {}
+                normalized.append(
+                    ToolCall(
+                        id=str(tc.get("id") or ""),
+                        name=str(fn.get("name") or ""),
+                        arguments_json=str(fn.get("arguments") or "{}"),
+                    )
+                )
+        return response, normalized
 
 
-def _make_chat_and_message(session, business_account_id):
+async def _make_chat_and_message(session, business_account_id):
     """Helper to create minimal omnichannel chat/contact/message set."""
     contact = OmniContact(
         business_account_id=business_account_id,
@@ -51,7 +65,7 @@ def _make_chat_and_message(session, business_account_id):
         primary_phone="+79999999999",
     )
     session.add(contact)
-    session.flush()
+    await session.flush()
 
     chat = OmniChat(
         business_account_id=business_account_id,
@@ -61,7 +75,7 @@ def _make_chat_and_message(session, business_account_id):
         ai_mode="AUTO_REPLY",
     )
     session.add(chat)
-    session.flush()
+    await session.flush()
 
     inbound = OmniMessage(
         chat_id=chat.id,
@@ -74,7 +88,7 @@ def _make_chat_and_message(session, business_account_id):
         created_at=datetime.utcnow(),
     )
     session.add(inbound)
-    session.flush()
+    await session.flush()
 
     return chat, contact, inbound
 
@@ -85,7 +99,7 @@ async def test_run_ai_agent_text_only_reply(init_db, seed_data, redis_client, mo
     clinic_id = seed_data["clinic_id"]
 
     async with db_base.AsyncSessionLocal() as session:
-        chat, contact, inbound = _make_chat_and_message(session, business_account_id=clinic_id)
+        chat, contact, inbound = await _make_chat_and_message(session, business_account_id=clinic_id)
 
         # Stub AiClient: first call returns plain text, no tool_calls; final call also plain text.
         first_response = {
@@ -115,10 +129,10 @@ async def test_run_ai_agent_text_only_reply(init_db, seed_data, redis_client, mo
             ]
         )
 
-        # Patch AiClient inside orchestrator to use stub instance
-        from src.infrastructure.external_apis import ai_client as ai_client_module
+        # Patch AiClient used by build_safe_ai_client (factory holds its own import ref).
+        from src.application.services import ai_client_factory as ai_client_factory_module
 
-        monkeypatch.setattr(ai_client_module, "AiClient", lambda config=None, timeout=None: stub_client)
+        monkeypatch.setattr(ai_client_factory_module, "AiClient", lambda config=None, timeout=None: stub_client)
 
         orchestrator = OmnichannelAIOrchestrator(session)
         ctx = RequestContext(
@@ -126,7 +140,7 @@ async def test_run_ai_agent_text_only_reply(init_db, seed_data, redis_client, mo
             user_id=None,
             user_type="system",
             roles=set(),
-            permissions=set(),
+            permissions={"booking.ai_tools.use"},
         )
 
         result = await orchestrator.run_ai_agent(
@@ -156,7 +170,7 @@ async def test_run_ai_agent_with_get_available_slots_tool(init_db, seed_data, re
     day = seed_data["date"]
 
     async with db_base.AsyncSessionLocal() as session:
-        chat, contact, inbound = _make_chat_and_message(session, business_account_id=clinic_id)
+        chat, contact, inbound = await _make_chat_and_message(session, business_account_id=clinic_id)
 
         tool_call = {
             "id": "call_1",
@@ -200,9 +214,9 @@ async def test_run_ai_agent_with_get_available_slots_tool(init_db, seed_data, re
             ]
         )
 
-        from src.infrastructure.external_apis import ai_client as ai_client_module
+        from src.application.services import ai_client_factory as ai_client_factory_module
 
-        monkeypatch.setattr(ai_client_module, "AiClient", lambda config=None, timeout=None: stub_client)
+        monkeypatch.setattr(ai_client_factory_module, "AiClient", lambda config=None, timeout=None: stub_client)
 
         orchestrator = OmnichannelAIOrchestrator(session)
         ctx = RequestContext(
@@ -210,7 +224,7 @@ async def test_run_ai_agent_with_get_available_slots_tool(init_db, seed_data, re
             user_id=None,
             user_type="system",
             roles=set(),
-            permissions=set(),
+            permissions={"booking.ai_tools.use"},
         )
 
         result = await orchestrator.run_ai_agent(
@@ -241,7 +255,7 @@ async def test_run_ai_agent_create_booking_success_and_conflict(init_db, seed_da
     day = seed_data["date"]
 
     async with db_base.AsyncSessionLocal() as session:
-        chat, contact, inbound = _make_chat_and_message(session, business_account_id=clinic_id)
+        chat, contact, inbound = await _make_chat_and_message(session, business_account_id=clinic_id)
 
         # First, we need a concrete appointment_start from schedule_service inside orchestrator tools.
         # For stub we pass approximate datetime; actual slot mapping is handled by tool logic.
@@ -300,17 +314,17 @@ async def test_run_ai_agent_create_booking_success_and_conflict(init_db, seed_da
             ]
         )
 
-        from src.infrastructure.external_apis import ai_client as ai_client_module
+        from src.application.services import ai_client_factory as ai_client_factory_module
 
-        monkeypatch.setattr(ai_client_module, "AiClient", lambda config=None, timeout=None: stub_client)
+        monkeypatch.setattr(ai_client_factory_module, "AiClient", lambda config=None, timeout=None: stub_client)
 
         orchestrator = OmnichannelAIOrchestrator(session)
         ctx = RequestContext(
             clinic_id=clinic_id,
             user_id=None,
             user_type="system",
-            roles=set(),
-            permissions=set(),
+            roles={"admin"},
+            permissions={"booking.ai_tools.use"},
         )
 
         result = await orchestrator.run_ai_agent(
@@ -331,7 +345,7 @@ async def test_run_ai_agent_create_booking_success_and_conflict(init_db, seed_da
                 (False, final_response, []),
             ]
         )
-        monkeypatch.setattr(ai_client_module, "AiClient", lambda config=None, timeout=None: stub_client_conflict)
+        monkeypatch.setattr(ai_client_factory_module, "AiClient", lambda config=None, timeout=None: stub_client_conflict)
 
         result2 = await orchestrator.run_ai_agent(
             chat=chat,

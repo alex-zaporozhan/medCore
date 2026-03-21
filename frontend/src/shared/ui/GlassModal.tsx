@@ -1,26 +1,18 @@
 import { Modal, type ModalProps } from "@mantine/core";
+import { useMemo } from "react";
+import { mergeModalStyles, SHELL_OVERLAY_PROPS } from "./shellPanelStyles";
 
 /**
- * Modal with glass effect (backdrop blur). Global styles in index.css
- * also apply; this component sets Mantine overlay/content defaults.
+ * Modal with glass effect (backdrop blur). Shares overlay/content tokens with `AdminDrawer` via `shellPanelStyles`.
  */
-export function GlassModal({ children, ...props }: ModalProps) {
+export function GlassModal({ children, overlayProps, styles, ...props }: ModalProps) {
+  const mergedStyles = useMemo(() => mergeModalStyles(styles), [styles]);
+  const mergedOverlay = useMemo(
+    () => ({ ...SHELL_OVERLAY_PROPS, ...overlayProps }),
+    [overlayProps]
+  );
   return (
-    <Modal
-      centered
-      overlayProps={{
-        backgroundOpacity: 0.08,
-        blur: 10,
-      }}
-      styles={{
-        content: {
-          background: "rgba(255, 255, 255, 0.92)",
-          backdropFilter: "blur(10px)",
-          boxShadow: "0 8px 32px rgba(62, 73, 84, 0.12)",
-        },
-      }}
-      {...props}
-    >
+    <Modal centered overlayProps={mergedOverlay} styles={mergedStyles} {...props}>
       {children}
     </Modal>
   );

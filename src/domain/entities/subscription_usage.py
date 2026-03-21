@@ -42,6 +42,13 @@ class SubscriptionUsage(Base):
         DateTime(timezone=True), nullable=False
     )
 
+    beneficiary_patient_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id"), nullable=True, index=True
+    )
+    family_link_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("family_links.id"), nullable=True, index=True
+    )
+
     __table_args__ = (
         Index("idx_subscription_usages_clinic_id", "clinic_id"),
         Index(

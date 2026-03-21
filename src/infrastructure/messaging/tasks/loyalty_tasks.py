@@ -1,4 +1,4 @@
-"""Celery tasks for loyalty: expiring packages reminders (B6.3)."""
+"""Celery tasks for loyalty: expiring packages reminders (B6.3) and campaign engine."""
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -6,6 +6,11 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from src.application.services.notification_service import send_with_fallback
+from src.application.services.loyalty_campaign_engine import run_campaigns_for_clinic
+from src.core.metrics import loyalty_campaign_batch_errors_total
+from src.core.prometheus_labels import clinic_bucket_label
+from src.domain.entities.clinic import Clinic
+from src.infrastructure.database.base import AsyncSessionLocal
 from src.core.datetime_utils import utc_now
 from src.domain.entities.customer_subscription import CustomerSubscription
 from src.domain.entities.notification import Notification
@@ -163,3 +168,28 @@ def check_expiring_packages() -> None:
     """B6.3: Notify patients whose packages expire in N days. Run daily via beat."""
     import asyncio
     asyncio.run(_check_expiring_packages_async())
+
+
+async def _run_loyalty_campaign_engine_all_clinics_async() -> None:
+    """Create Tasks from loyalty campaign rules for every clinic (LOY_AI_014)."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Clinic.id))
+        clinic_ids = [row[0] for row in result.all()]
+    for cid in clinic_ids:
+        try:
+            async with AsyncSessionLocal() as s:
+                async with s.begin():
+                    await run_campaigns_for_clinic(s, cid)
+        except Exception:
+            loyalty_campaign_batch_errors_total.labels(clinic_bucket=clinic_bucket_label(cid)).inc()
+            logger.exception(
+                "run_loyalty_campaign_engine_all_clinics: clinic failed",
+                extra={"clinic_id": str(cid)},
+            )
+
+
+@celery_app.task(name="loyalty_tasks.run_loyalty_campaign_engine_all_clinics")
+def run_loyalty_campaign_engine_all_clinics() -> None:
+    """Daily: run :func:`run_campaigns_for_clinic` for all clinics."""
+    import asyncio
+    asyncio.run(_run_loyalty_campaign_engine_all_clinics_async())

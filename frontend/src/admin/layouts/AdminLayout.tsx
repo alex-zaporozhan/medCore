@@ -10,6 +10,7 @@ import {
   Group,
   Modal,
   Paper,
+  ScrollArea,
   Select,
   Stack,
   Text,
@@ -68,6 +69,9 @@ import {
 import type { SpotlightActionData } from "@mantine/spotlight";
 import { useAdminSearch } from "@/hooks/useAdminSearch";
 import { useAiAgent } from "@/hooks/useAiAgent";
+import { useAiFeatures, getAiFeatureBadgeColor, getAiFeatureStatusText, getAiFeatureTooltip } from "@/shared/aiFeatures";
+import { logUiEvent } from "@/shared/uiEvents";
+import { ROUTE_PATHS } from "@/routePaths";
 
 const ATTENTION_BAR_STORAGE_KEY = "admin_attention_bar_visible";
 const NAVBAR_COLLAPSED_KEY = "admin_navbar_collapsed";
@@ -80,50 +84,55 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: "OPERATIONS",
     items: [
-      { to: "/admin", label: "Dashboard", icon: IconDashboard },
-      { to: "/admin/schedule", label: "Schedule & Bookings", icon: IconCalendar },
-      { to: "/admin/omni-chat", label: "Chat & AI", icon: IconMessageCircle, badgeKey: "omni-waiting" },
+      { to: ROUTE_PATHS.admin.dashboard, label: "Dashboard", icon: IconDashboard },
+      { to: ROUTE_PATHS.admin.schedule, label: "Schedule & Bookings", icon: IconCalendar },
+      {
+        to: ROUTE_PATHS.admin.omniChat,
+        label: "Chat & AI",
+        icon: IconMessageCircle,
+        badgeKey: "omni-waiting",
+      },
     ],
   },
   {
     title: "BUSINESS",
     items: [
-      { to: "/admin/sales", label: "CRM & Sales", icon: IconBriefcase },
-      { to: "/admin/finance", label: "Finance", icon: IconCash },
-      { to: "/admin/loyalty", label: "Loyalty", icon: IconGift },
-      { to: "/admin/tasks", label: "Tasks", icon: IconListCheck },
-      { to: "/admin/reports", label: "Analytics / Reports", icon: IconChartBar },
-      { to: "/admin/bookings", label: "Записи", icon: IconClipboardList },
-      { to: "/admin/prepayment", label: "Предоплата", icon: IconReceipt },
-      { to: "/admin/waitlist", label: "Очередь", icon: IconListSearch },
-      { to: "/admin/recall", label: "Recall", icon: IconRefresh },
-      { to: "/admin/marketing", label: "Маркетинг", icon: IconChartBar },
-      { to: "/admin/retention", label: "Retention", icon: IconTarget },
-      { to: "/admin/attention", label: "Лента внимания", icon: IconAlertCircle },
+      { to: ROUTE_PATHS.admin.sales, label: "CRM & Sales", icon: IconBriefcase },
+      { to: ROUTE_PATHS.admin.finance, label: "Finance", icon: IconCash },
+      { to: ROUTE_PATHS.admin.loyalty, label: "Loyalty", icon: IconGift },
+      { to: ROUTE_PATHS.admin.tasks, label: "Tasks", icon: IconListCheck },
+      { to: ROUTE_PATHS.admin.reports, label: "Analytics / Reports", icon: IconChartBar },
+      { to: ROUTE_PATHS.admin.bookings, label: "Записи", icon: IconClipboardList },
+      { to: ROUTE_PATHS.admin.prepayment, label: "Предоплата", icon: IconReceipt },
+      { to: ROUTE_PATHS.admin.waitlist, label: "Очередь", icon: IconListSearch },
+      { to: ROUTE_PATHS.admin.recall, label: "Recall", icon: IconRefresh },
+      { to: ROUTE_PATHS.admin.marketing, label: "Маркетинг", icon: IconChartBar },
+      { to: ROUTE_PATHS.admin.retention, label: "Retention", icon: IconTarget },
+      { to: ROUTE_PATHS.admin.attention, label: "Лента внимания", icon: IconAlertCircle },
     ],
   },
   {
     title: "SYSTEM",
     items: [
-      { to: "/admin/settings", label: "Настройки", icon: IconSettings },
-      { to: "/admin/doctors", label: "Врачи", icon: IconStethoscope },
-      { to: "/admin/doctor-schedule", label: "Расписание врачей", icon: IconCalendarWeek },
-      { to: "/admin/patients", label: "Пациенты", icon: IconUserCircle },
-      { to: "/admin/services", label: "Услуги", icon: IconClipboardList },
-      { to: "/admin/clinics", label: "Клиники", icon: IconBuilding },
-      { to: "/admin/omni-channels", label: "Omni‑каналы", icon: IconBrandWhatsapp },
-      { to: "/admin/channels", label: "Каналы", icon: IconBrandWhatsapp },
-      { to: "/admin/integrations", label: "Интеграции", icon: IconPlug },
-      { to: "/admin/styling", label: "Стилизация", icon: IconPalette },
-      { to: "/admin/stickers", label: "Стикеры", icon: IconMoodSmile },
-      { to: "/admin/administrators", label: "Администраторы", icon: IconShield },
-      { to: "/admin/payment-gateway", label: "Платёжный шлюз", icon: IconCreditCard },
-      { to: "/admin/client-reference", label: "Справочник клиентов", icon: IconBook },
-      { to: "/admin/discounts", label: "Скидки и акции", icon: IconDiscount },
-      { to: "/admin/notification-policy", label: "Уведомления", icon: IconBell },
-      { to: "/admin/agreements", label: "Соглашения", icon: IconFileText },
-      { to: "/admin/forms", label: "Формы", icon: IconForms },
-      { to: "/admin/omni-vault", label: "Omni-Vault", icon: IconPhoto },
+      { to: ROUTE_PATHS.admin.settings, label: "Настройки", icon: IconSettings },
+      { to: ROUTE_PATHS.admin.doctors, label: "Врачи", icon: IconStethoscope },
+      { to: ROUTE_PATHS.admin.doctorSchedule, label: "Расписание врачей", icon: IconCalendarWeek },
+      { to: ROUTE_PATHS.admin.patients, label: "Пациенты", icon: IconUserCircle },
+      { to: ROUTE_PATHS.admin.services, label: "Услуги", icon: IconClipboardList },
+      { to: ROUTE_PATHS.admin.clinics, label: "Клиники", icon: IconBuilding },
+      { to: ROUTE_PATHS.admin.omniChannels, label: "Omni‑каналы", icon: IconBrandWhatsapp },
+      { to: ROUTE_PATHS.admin.channels, label: "Каналы", icon: IconBrandWhatsapp },
+      { to: ROUTE_PATHS.admin.integrations, label: "Интеграции", icon: IconPlug },
+      { to: ROUTE_PATHS.admin.styling, label: "Стилизация", icon: IconPalette },
+      { to: ROUTE_PATHS.admin.stickers, label: "Стикеры", icon: IconMoodSmile },
+      { to: ROUTE_PATHS.admin.administrators, label: "Администраторы", icon: IconShield },
+      { to: ROUTE_PATHS.admin.paymentGateway, label: "Платёжный шлюз", icon: IconCreditCard },
+      { to: ROUTE_PATHS.admin.clientReference, label: "Справочник клиентов", icon: IconBook },
+      { to: ROUTE_PATHS.admin.discounts, label: "Скидки и акции", icon: IconDiscount },
+      { to: ROUTE_PATHS.admin.notificationPolicy, label: "Уведомления", icon: IconBell },
+      { to: ROUTE_PATHS.admin.agreements, label: "Соглашения", icon: IconFileText },
+      { to: ROUTE_PATHS.admin.forms, label: "Формы", icon: IconForms },
+      { to: ROUTE_PATHS.admin.omniVault, label: "Omni-Vault", icon: IconPhoto },
       { label: "placeholder", toggleAttentionBar: true },
     ],
   },
@@ -131,7 +140,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
 
 function pickFirstAttentionItem(data: { follow_up: AttentionItem[]; retention_gap: AttentionItem[]; conflicts: AttentionItem[] } | undefined): AttentionItem | null {
   if (!data) return null;
-  const openFollowUps = data.follow_up.filter((i) => i.status === "open");
+  const openFollowUps = data.follow_up.filter((i) => i.status === "new");
   const all = [...openFollowUps, ...data.retention_gap, ...data.conflicts];
   const byPriority = [...all].sort((a, b) => a.priority - b.priority);
   return byPriority[0] ?? null;
@@ -140,7 +149,14 @@ function pickFirstAttentionItem(data: { follow_up: AttentionItem[]; retention_ga
 export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { clinics, currentClinicId, setCurrentClinicId, error: clinicsError, isLoading } = useAdminClinic();
+  const {
+    selectableClinics,
+    currentClinicId,
+    setCurrentClinicId,
+    isClinicScopeLocked,
+    error: clinicsError,
+    isLoading,
+  } = useAdminClinic();
   const { data: omniWaitingData } = useAdminOmniChats({
     status: "WAITING_FOR_OPERATOR",
     page: 1,
@@ -179,7 +195,7 @@ export default function AdminLayout() {
   );
 
   const clinicOptions =
-    clinics.map((c) => ({
+    selectableClinics.map((c) => ({
       value: c.id,
       label: c.name,
     })) ?? [];
@@ -191,6 +207,8 @@ export default function AdminLayout() {
     spotlightQuery.trim().length >= 2 ? spotlightQuery.trim() : null
   );
   const aiAgent = useAiAgent();
+  const aiFeatures = useAiFeatures(currentClinicId ?? null);
+  const spotlightFeature = aiFeatures.get("omni.spotlight.agent");
 
   const navActions: SpotlightActionData[] = useMemo(() => {
     const list: SpotlightActionData[] = [];
@@ -215,14 +233,20 @@ export default function AdminLayout() {
     () => ({
       id: "ask-ai",
       label: "Спросить AI",
-      description: "Задать вопрос AI-ассистенту",
+      description: `Задать вопрос AI‑ассистенту (${getAiFeatureStatusText(spotlightFeature.status)})`,
       leftSection: <IconRobot size={20} stroke={1.5} />,
       onClick: () => {
         spotlight.close();
+        void logUiEvent({
+          event_name: "ai_spotlight_open",
+          clinic_id: currentClinicId,
+          feature_id: spotlightFeature.id,
+          feature_status: spotlightFeature.status,
+        });
         setAskAiOpen(true);
       },
     }),
-    []
+    [spotlightFeature.status, spotlightFeature.id, currentClinicId]
   );
 
   const searchHitActions: SpotlightActionData[] = useMemo(() => {
@@ -248,9 +272,9 @@ export default function AdminLayout() {
 
   const navbarWidth = navbarCollapsed ? 80 : 260;
   const sidebarStyles = {
-    backgroundColor: "var(--mantine-color-dark-8)",
-    borderRight: "1px solid var(--mantine-color-dark-6)",
-    color: "var(--mantine-color-gray-3)",
+    backgroundColor: "var(--admin-sidebar-bg)",
+    borderRight: "1px solid var(--admin-sidebar-border)",
+    color: "var(--admin-sidebar-text)",
   };
 
   return (
@@ -260,9 +284,10 @@ export default function AdminLayout() {
     >
       <AppShell.Navbar
         p="sm"
+        h="100%"
         style={{
           ...sidebarStyles,
-          overflowY: "auto",
+          overflow: "hidden",
           display: "flex",
           flexDirection: "column",
         }}
@@ -283,11 +308,11 @@ export default function AdminLayout() {
         />
 
         {/* Top: clinic selector + links */}
-        <Box mb="md">
+        <Box mb="md" style={{ flexShrink: 0 }}>
           {!navbarCollapsed && (
             <Stack gap="xs">
               {isLoading ? (
-                <Text size="xs" c="gray.4">Загрузка клиник...</Text>
+                <Text size="xs" c="dimmed">Загрузка клиник...</Text>
               ) : (
                 <Select
                   size="xs"
@@ -297,14 +322,20 @@ export default function AdminLayout() {
                   onChange={setCurrentClinicId}
                   placeholder={clinicOptions.length ? undefined : "Нет клиник"}
                   w="100%"
+                  disabled={isClinicScopeLocked && clinicOptions.length <= 1}
+                  title={
+                    isClinicScopeLocked
+                      ? "Клиника совпадает с вашей учётной записью (JWT). Смена филиала — через отдельную роль/вход."
+                      : undefined
+                  }
                   styles={{
                     input: {
-                      backgroundColor: "rgba(255,255,255,0.1)",
-                      borderColor: "rgba(255,255,255,0.2)",
-                      color: "var(--mantine-color-gray-3)",
+                      backgroundColor: "var(--bg-card)",
+                      borderColor: "var(--admin-sidebar-border)",
+                      color: "var(--text-main)",
                     },
                     dropdown: { zIndex: 2000 },
-                    section: { color: "var(--mantine-color-gray-4)" },
+                    section: { color: "var(--admin-sidebar-text-muted)" },
                   }}
                   comboboxProps={{ withinPortal: true }}
                   nothingFoundMessage="Нет клиник"
@@ -320,7 +351,7 @@ export default function AdminLayout() {
                   width: "100%",
                   padding: "6px 8px",
                   borderRadius: 6,
-                  color: "var(--mantine-color-gray-5)",
+                  color: "var(--admin-sidebar-text-muted)",
                   fontSize: 12,
                 }}
               >
@@ -328,17 +359,17 @@ export default function AdminLayout() {
                 <span>Поиск... (⌘K)</span>
               </UnstyledButton>
               <Group gap="xs" wrap="nowrap">
-                <Anchor component={Link} to="/" size="xs" c="gray.4">
+                <Anchor component={Link} to="/" size="xs" c="dimmed">
                   На главную
                 </Anchor>
                 <Anchor
                   size="xs"
-                  c="gray.4"
+                  c="dimmed"
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
                     clearAdminToken();
-                    navigate("/admin/login");
+                    navigate(ROUTE_PATHS.admin.login);
                   }}
                 >
                   Выйти
@@ -348,17 +379,17 @@ export default function AdminLayout() {
           )}
           {navbarCollapsed && (
             <Stack gap="xs" align="center">
-              <Anchor component={Link} to="/" title="На главную" c="gray.4">
+              <Anchor component={Link} to="/" title="На главную" c="dimmed">
                 <IconHome2 size={20} />
               </Anchor>
               <Anchor
                 href="#"
                 title="Выйти"
-                c="gray.4"
+                c="dimmed"
                 onClick={(e) => {
                   e.preventDefault();
                   clearAdminToken();
-                  navigate("/admin/login");
+                  navigate(ROUTE_PATHS.admin.login);
                 }}
               >
                 <IconDoorExit size={20} />
@@ -367,49 +398,53 @@ export default function AdminLayout() {
           )}
         </Box>
 
-        {/* Menu groups — flex: 1 so collapse button stays at bottom */}
-        <Stack gap={6} style={{ flex: 1, minHeight: 0 }}>
-          {navGroups.map((group, gi) => (
-            <Box key={gi}>
-              {!navbarCollapsed && (
-                <Text size="xs" tt="uppercase" c="gray.5" fw={600} mb={4}>
-                  {group.title}
-                </Text>
-              )}
-              <Stack gap={2}>
-                {group.items.map((item) => {
-                  if ("toggleAttentionBar" in item && item.toggleAttentionBar) {
-                    if (navbarCollapsed) return null;
-                    return (
-                      <Box
-                        key="attention-bar-toggle"
-                        component="button"
-                        type="button"
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          borderRadius: 8,
-                          padding: "8px 10px",
-                          fontWeight: 500,
-                          border: "none",
-                          background: "transparent",
-                          cursor: "pointer",
-                          color: "var(--mantine-color-gray-4)",
-                          width: "100%",
-                          textAlign: "left",
-                          font: "inherit",
-                        }}
-                        onClick={toggleAttentionBar}
-                      >
-                        <span>
-                          {attentionBarVisible
-                            ? "Скрыть ленту внимания"
-                            : "Показать ленту внимания"}
-                        </span>
-                      </Box>
-                    );
-                  }
+        {/* Только список разделов скроллится; кнопка «Свернуть» закреплена внизу навбара */}
+        <ScrollArea
+          flex={1}
+          type="scroll"
+          scrollbarSize={6}
+          offsetScrollbars
+          style={{ minHeight: 0 }}
+        >
+          <Stack gap={6} pr={4}>
+            {navGroups.map((group, gi) => (
+              <Box key={gi}>
+                {!navbarCollapsed && (
+                  <Text
+                    size="xs"
+                    tt="uppercase"
+                    fw={600}
+                    mb={4}
+                    style={{ color: "var(--admin-sidebar-text-muted)" }}
+                  >
+                    {group.title}
+                  </Text>
+                )}
+                <Stack gap={2}>
+                  {group.items.map((item) => {
+                    if ("toggleAttentionBar" in item && item.toggleAttentionBar) {
+                      if (navbarCollapsed) return null;
+                      return (
+                        <UnstyledButton
+                          key="attention-bar-toggle"
+                          type="button"
+                          onClick={toggleAttentionBar}
+                          w="100%"
+                          py={8}
+                          px={10}
+                          style={{
+                            borderRadius: 8,
+                            color: "var(--admin-sidebar-text-muted)",
+                          }}
+                        >
+                          <Text component="span" size="sm" fw={500} lineClamp={2}>
+                            {attentionBarVisible
+                              ? "Скрыть ленту внимания"
+                              : "Показать ленту внимания"}
+                          </Text>
+                        </UnstyledButton>
+                      );
+                    }
                   const linkItem = item as { to: string; label: string; icon: React.ComponentType<Record<string, unknown>>; badgeKey?: string };
                   const Icon = linkItem.icon;
                   const isActive = location.pathname === linkItem.to;
@@ -418,6 +453,8 @@ export default function AdminLayout() {
                   const badgeValue = omniWaitingCount;
                   return (
                     <Anchor
+                      className="admin-nav-link"
+                      data-active={isActive || undefined}
                       key={linkItem.to}
                       component={Link}
                       to={linkItem.to}
@@ -431,8 +468,7 @@ export default function AdminLayout() {
                         padding: navbarCollapsed ? 10 : "8px 10px",
                         fontWeight: isActive ? 600 : 500,
                         textDecoration: "none",
-                        color: isActive ? "white" : "var(--mantine-color-gray-4)",
-                        backgroundColor: isActive ? "var(--mantine-color-indigo-6)" : "transparent",
+                        color: "var(--admin-sidebar-text)",
                       }}
                     >
                       <Icon size={20} />
@@ -448,14 +484,22 @@ export default function AdminLayout() {
                       )}
                     </Anchor>
                   );
-                })}
-              </Stack>
-            </Box>
-          ))}
-        </Stack>
+                  })}
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
+        </ScrollArea>
 
         {/* Collapse button at bottom */}
-        <Box pt="sm" style={{ borderTop: "1px solid var(--mantine-color-dark-6)" }}>
+        <Box
+          pt="sm"
+          style={{
+            flexShrink: 0,
+            borderTop: "1px solid var(--admin-sidebar-border)",
+            backgroundColor: "var(--admin-sidebar-footer-bg)",
+          }}
+        >
           <Group justify="center">
             <ActionIcon
               variant="subtle"
@@ -463,7 +507,7 @@ export default function AdminLayout() {
               size="lg"
               onClick={toggleNavbar}
               title={navbarCollapsed ? "Развернуть меню" : "Свернуть меню"}
-              style={{ color: "var(--mantine-color-gray-4)" }}
+              style={{ color: "var(--admin-sidebar-text-muted)" }}
             >
               {navbarCollapsed ? (
                 <IconChevronRight size={22} />
@@ -475,7 +519,7 @@ export default function AdminLayout() {
         </Box>
       </AppShell.Navbar>
 
-      <AppShell.Main style={{ backgroundColor: "var(--mantine-color-gray-0)" }}>
+      <AppShell.Main style={{ backgroundColor: "var(--bg-main)" }}>
         <Container size="xl" py="md">
           {attentionBarVisible && firstAttentionItem && (
             <Box
@@ -497,8 +541,8 @@ export default function AdminLayout() {
                   component={Link}
                   to={
                     firstAttentionItem.conversation_id
-                      ? `/admin/omni-chat?conversation=${firstAttentionItem.conversation_id}`
-                      : "/admin/attention"
+                      ? `${ROUTE_PATHS.admin.omniChat}?conversation=${firstAttentionItem.conversation_id}`
+                      : ROUTE_PATHS.admin.attention
                   }
                   size="sm"
                   fw={500}
@@ -531,10 +575,25 @@ export default function AdminLayout() {
           setAskAiOpen(false);
           setAiQuestion("");
         }}
-        title="Спросить AI"
+        title={
+          <Group gap="xs" wrap="wrap">
+            <Text fw={600}>Спросить AI</Text>
+            <Badge
+              size="sm"
+              variant="light"
+              color={getAiFeatureBadgeColor(spotlightFeature.status)}
+              title={getAiFeatureTooltip(spotlightFeature.status)}
+            >
+              {getAiFeatureStatusText(spotlightFeature.status)}
+            </Badge>
+          </Group>
+        }
         size="md"
       >
         <Stack gap="md">
+          <Text size="xs" c="dimmed">
+            {getAiFeatureTooltip(spotlightFeature.status)}
+          </Text>
           <Textarea
             placeholder="Введите вопрос ассистенту..."
             value={aiQuestion}
@@ -556,6 +615,12 @@ export default function AdminLayout() {
               loading={aiAgent.isPending}
               onClick={() => {
                 if (!aiQuestion.trim()) return;
+                void logUiEvent({
+                  event_name: "ai_spotlight_send",
+                  clinic_id: currentClinicId,
+                  feature_id: spotlightFeature.id,
+                  feature_status: spotlightFeature.status,
+                });
                 aiAgent.mutate({ query: aiQuestion.trim() });
               }}
             >

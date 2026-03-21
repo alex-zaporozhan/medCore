@@ -3,12 +3,11 @@
  */
 
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { ContextBar } from "@/shared/ui/ContextBar";
+import { AdminDrawer, ContextBar } from "@/shared/ui";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import {
   Button,
   Card,
-  Drawer,
   Grid,
   Group,
   MultiSelect,
@@ -21,94 +20,16 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/api/client";
-import { getAdminToken } from "@/api/client";
+import {
+  OMNI_VAULT_EXPORT_PRESETS,
+  useOmniVaultMediaGallery,
+  useOmniVaultExportPresets,
+  useRequestOmniVaultBackupMutation,
+  useOmniVaultBackupStatus,
+} from "@/hooks/useAdminOmniVault";
+import type { OmniVaultExportPreset } from "@/hooks/useAdminOmniVault";
 import { useState } from "react";
 import { IconPhoto, IconFileExport, IconCloudUpload, IconDownload, IconMessageCircle } from "@tabler/icons-react";
-
-const EXPORT_PRESETS = [
-  { id: "tax", label: "Для налоговой", columns: ["date", "patient", "service", "amount", "payment_type"] },
-  { id: "vip_sleep", label: "Спящие VIP-клиенты", columns: ["patient", "ltv", "last_visit", "segment"] },
-  { id: "consumables", label: "Расходники за период", columns: ["date", "service", "product", "amount", "warehouse"] },
-];
-
-function useMediaGallery(clinicId: string | null, filters: { type?: string; date_from?: string } = {}) {
-  const token = getAdminToken();
-  return useQuery({
-    queryKey: ["admin", "omni-vault", "media", clinicId ?? "", filters],
-    queryFn: async () => {
-      if (!clinicId) return { items: [] };
-      try {
-        const params = new URLSearchParams();
-        if (filters.type) params.set("type", filters.type);
-        if (filters.date_from) params.set("date_from", filters.date_from);
-        const res = await api.get<{ items: { id: string; url: string; type: string; patient_name?: string; channel?: string; created_at?: string }[] }>(
-          `/v1/admin/clinics/${clinicId}/media?${params}`,
-          token
-        );
-        return res ?? { items: [] };
-      } catch {
-        return { items: [] };
-      }
-    },
-    enabled: !!token && !!clinicId,
-  });
-}
-
-function useExportPresets(clinicId: string | null) {
-  const token = getAdminToken();
-  return useQuery({
-    queryKey: ["admin", "omni-vault", "export-presets", clinicId ?? ""],
-    queryFn: async () => {
-      if (!clinicId) return EXPORT_PRESETS;
-      try {
-        const res = await api.get<typeof EXPORT_PRESETS>(`/v1/admin/clinics/${clinicId}/export/presets`, token);
-        return Array.isArray(res) && res.length > 0 ? res : EXPORT_PRESETS;
-      } catch {
-        return EXPORT_PRESETS;
-      }
-    },
-    enabled: !!token && !!clinicId,
-  });
-}
-
-function useRequestBackup(clinicId: string | null) {
-  const token = getAdminToken();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      const res = await api.post<{ task_id: string }>(
-        `/v1/admin/clinics/${clinicId}/backup/request`,
-        {},
-        token
-      );
-      return res;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin", "omni-vault", "backup"] });
-    },
-  });
-}
-
-function useBackupStatus(clinicId: string | null) {
-  const token = getAdminToken();
-  return useQuery({
-    queryKey: ["admin", "omni-vault", "backup", clinicId ?? ""],
-    queryFn: async () => {
-      if (!clinicId) return null;
-      try {
-        return await api.get<{ task_id: string; status: string; download_url?: string }>(
-          `/v1/admin/clinics/${clinicId}/backup/status`,
-          token
-        );
-      } catch {
-        return null;
-      }
-    },
-    enabled: !!token && !!clinicId,
-  });
-}
 
 type MediaItem = { id: string; url: string; type: string; patient_name?: string; channel?: string; created_at?: string };
 
@@ -119,16 +40,16 @@ export default function AdminOmniVaultPage() {
   const [exportEntity, setExportEntity] = useState<string>("patients");
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
 
-  const { data: mediaData, isLoading: mediaLoading } = useMediaGallery(currentClinicId ?? null, {
+  const { data: mediaData, isLoading: mediaLoading } = useOmniVaultMediaGallery(currentClinicId ?? null, {
     type: mediaType ?? undefined,
     date_from: new Date().toISOString().slice(0, 10),
   });
-  const { data: presets } = useExportPresets(currentClinicId ?? null);
-  const requestBackup = useRequestBackup(currentClinicId ?? null);
-  const { data: backupStatus } = useBackupStatus(currentClinicId ?? null);
+  const { data: presets } = useOmniVaultExportPresets(currentClinicId ?? null);
+  const requestBackup = useRequestOmniVaultBackupMutation(currentClinicId ?? null);
+  const { data: backupStatus } = useOmniVaultBackupStatus(currentClinicId ?? null);
 
-  const applyPreset = (preset: (typeof EXPORT_PRESETS)[0]) => {
-    setExportColumns(preset.columns);
+  const applyPreset = (preset: OmniVaultExportPreset) => {
+    setExportColumns([...preset.columns]);
   };
 
   const handleExportExcel = () => {
@@ -274,7 +195,7 @@ export default function AdminOmniVaultPage() {
                 Smart Presets
               </Title>
               <Stack gap="xs">
-                {(presets ?? EXPORT_PRESETS).map((p) => (
+                {(presets ?? [...OMNI_VAULT_EXPORT_PRESETS]).map((p) => (
                   <Button key={p.id} variant="light" size="sm" onClick={() => applyPreset(p)}>
                     {p.label}
                   </Button>
@@ -362,7 +283,7 @@ export default function AdminOmniVaultPage() {
       </Tabs>
 
       {/* Drawer медиафайла: файл + контекст чата/визита (Фаза 5) */}
-      <Drawer
+      <AdminDrawer
         position="right"
         size="md"
         opened={!!selectedMedia}
@@ -423,7 +344,7 @@ export default function AdminOmniVaultPage() {
             </Button>
           </Stack>
         )}
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

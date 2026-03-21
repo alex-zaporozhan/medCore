@@ -6,6 +6,7 @@ import {
   type OmniChannelAiSettings,
 } from "@/hooks/useOwnerOmniAiSettings";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { QueryErrorAlert } from "@/shared/ui";
 import {
   Box,
   Button,
@@ -82,7 +83,7 @@ export default function AdminOmniAiSettingsPage() {
     return (
       <Stack>
         <ContextBar title="AI омниканального ассистента" />
-        <Text c="red">{error instanceof Error ? error.message : "Ошибка загрузки"}</Text>
+        <QueryErrorAlert error={error} />
       </Stack>
     );
   }

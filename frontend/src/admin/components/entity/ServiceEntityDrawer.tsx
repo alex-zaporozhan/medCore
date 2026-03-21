@@ -1,7 +1,7 @@
 import type { AdminServiceRead } from "@/api/types";
+import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
 import {
   Button,
-  Drawer,
   Group,
   Menu,
   ActionIcon,
@@ -149,7 +149,7 @@ export function ServiceEntityDrawer({
         : service?.name ?? "";
 
   return (
-    <Drawer
+    <AdminDrawer
       position="right"
       size="lg"
       opened={opened}
@@ -249,13 +249,12 @@ export function ServiceEntityDrawer({
               </Group>
             )}
             {(createMutation.isError || updateMutation.isError) && (
-              <Text size="sm" c="red">
-                {createMutation.error instanceof Error
-                  ? createMutation.error.message
-                  : updateMutation.error instanceof Error
-                    ? updateMutation.error.message
-                    : "Ошибка"}
-              </Text>
+              <QueryErrorAlert
+                error={
+                  createMutation.isError ? createMutation.error : updateMutation.error
+                }
+                title="Не удалось сохранить услугу"
+              />
             )}
           </Stack>
         </Tabs.Panel>
@@ -358,6 +357,6 @@ export function ServiceEntityDrawer({
           )}
         </Tabs.Panel>
       </Tabs>
-    </Drawer>
+    </AdminDrawer>
   );
 }

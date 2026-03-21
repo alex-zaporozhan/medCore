@@ -48,6 +48,13 @@ class WalletTransaction(Base):
 
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    beneficiary_patient_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id"), nullable=True, index=True
+    )
+    family_link_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("family_links.id"), nullable=True, index=True
+    )
+
     __table_args__ = (
         Index("idx_wallet_tx_clinic_happened_at", "clinic_id", "happened_at"),
         Index("idx_wallet_tx_clinic_wallet", "clinic_id", "wallet_id"),

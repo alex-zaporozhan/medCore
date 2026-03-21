@@ -29,6 +29,8 @@ from src.infrastructure.external_apis.yookassa_client import (
 )
 from src.application.events.event_bus import get_event_bus
 from src.application.events.standard_events import make_payment_success_event
+from src.domain.entities.booking import BookingStatus
+from src.application.services.booking_status_service import BookingStatusService
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ class PaymentService:
         self.session: AsyncSession = session
         self.booking_repository: BookingRepository = BookingRepositoryImpl(session)
         self.payment_repository: PaymentRepository = PaymentRepositoryImpl(session)
+        self.status_service = BookingStatusService()
 
     async def create_payment(
         self,
@@ -64,9 +67,9 @@ class PaymentService:
         booking = await self.booking_repository.get_by_id(booking_id)
         if not booking:
             raise LookupError(PAYMENT_BOOKING_NOT_FOUND)
-        if booking.status == "cancelled":
+        if booking.status == BookingStatus.CANCELLED:
             raise ValueError(PAYMENT_CANCELLED_BOOKING)
-        if booking.status == "confirmed":
+        if booking.status == BookingStatus.CONFIRMED:
             raise ValueError(PAYMENT_ALREADY_CONFIRMED)
 
         # Global prepayment switch: if clinic has prepayment disabled, confirm without payment
@@ -81,8 +84,8 @@ class PaymentService:
                 "Prepayment disabled for clinic",
                 extra={"booking_id": str(booking_id), "clinic_id": str(booking.clinic_id)},
             )
-            if booking.status == "pending":
-                booking.status = "confirmed"
+            if booking.status == BookingStatus.PENDING:
+                await self.status_service.transition(booking, BookingStatus.CONFIRMED, context={})
                 await self.booking_repository.update(booking)
             return CreatePaymentResponse(
                 payment_url="",
@@ -121,8 +124,10 @@ class PaymentService:
                         "Prepayment not required (policy mode=none)",
                         extra={"booking_id": str(booking_id), "policy_id": str(p.id)},
                     )
-                    if booking.status == "pending":
-                        booking.status = "confirmed"
+                    if booking.status == BookingStatus.PENDING:
+                        await self.status_service.transition(
+                            booking, BookingStatus.CONFIRMED, context={}
+                        )
                         await self.booking_repository.update(booking)
                     return CreatePaymentResponse(
                         payment_url="",
@@ -283,8 +288,8 @@ class PaymentService:
         event_bus = get_event_bus()
 
         if our_status == "succeeded":
-            if booking.status in ("pending", "awaiting_payment"):
-                booking.status = "confirmed"
+            if booking.status in (BookingStatus.PENDING, BookingStatus.AWAITING_PAYMENT):
+                await self.status_service.transition(booking, BookingStatus.CONFIRMED, context={})
                 await self.booking_repository.update(booking)
                 try:
                     await event_bus.publish(make_payment_success_event(payment_record))
@@ -304,8 +309,8 @@ class PaymentService:
                     },
                 )
         elif our_status in ("canceled", "refunded"):
-            if booking.status == "pending":
-                booking.status = "cancelled"
+            if booking.status == BookingStatus.PENDING:
+                await self.status_service.transition(booking, BookingStatus.CANCELLED, context={})
                 await self.booking_repository.update(booking)
                 logger.info(
                     "Booking cancelled after payment cancel/refund",

@@ -10,15 +10,12 @@ import { usePatients } from "@/hooks/usePatients";
 import { useServices } from "@/hooks/useServices";
 import { useAdminFormTemplates, useSendFormLink } from "@/hooks";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { GlassModal } from "@/shared/ui/GlassModal";
-import { DataSkeleton } from "@/shared/ui/DataSkeleton";
-import { ContextBar } from "@/shared/ui/ContextBar";
+import { AdminDrawer, GlassModal, DataSkeleton, ContextBar, QueryErrorAlert } from "@/shared/ui";
 import { BookingEntityDrawer } from "@/admin/components/entity/BookingEntityDrawer";
 import {
   ActionIcon,
   Button,
   Card,
-  Drawer,
   Group,
   HoverCard,
   Menu,
@@ -34,6 +31,8 @@ import { IconDotsVertical } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useAdminClinic } from "@/contexts/AdminClinicContext";
+import { ROUTE_PATHS } from "@/routePaths";
 
 const EMPTY_DB_HINT =
   "Если ошибка из-за отсутствия данных в базе — добавьте клинику, врачей или пациентов в соответствующих разделах.";
@@ -62,7 +61,10 @@ export default function AdminBookingsPage() {
   const sendFormLink = useSendFormLink();
   const { data: checkoutInfo, isLoading: checkoutInfoLoading } = useCheckoutInfo(checkoutBookingId);
 
-  const { data: doctors } = useDoctors({});
+  const { currentClinicId, clinics } = useAdminClinic();
+  const currentClinicLabel = clinics.find((c) => c.id === currentClinicId)?.name ?? null;
+
+  const { data: doctors } = useDoctors({ clinic_id: currentClinicId ?? undefined });
   const { data: patients } = usePatients({});
   const { data: services } = useServices({});
   const doctorOptions =
@@ -89,7 +91,17 @@ export default function AdminBookingsPage() {
 
   return (
     <Stack>
-      <ContextBar title="Записи" actions={<Button component={Link} to="/admin/schedule">Новая запись</Button>} />
+      <ContextBar
+        title="Записи"
+        breadcrumbs={
+          currentClinicLabel ? (
+            <Text size="sm" c="dimmed">
+              Клиника: {currentClinicLabel}
+            </Text>
+          ) : null
+        }
+        actions={<Button component={Link} to={ROUTE_PATHS.admin.schedule}>Новая запись</Button>}
+      />
       <Select
         label="Врач"
         placeholder="Выберите врача"
@@ -121,7 +133,7 @@ export default function AdminBookingsPage() {
       {isLoading && <DataSkeleton lines={8} />}
       {isError && (
         <>
-          <Text c="red">{errMessage}</Text>
+          <QueryErrorAlert error={error} />
           {isEmptyDb && (
             <Text size="sm" c="dimmed">
               {EMPTY_DB_HINT}
@@ -310,7 +322,7 @@ export default function AdminBookingsPage() {
         </Stack>
       </GlassModal>
 
-      <Drawer
+      <AdminDrawer
         opened={checkoutBookingId !== null}
         onClose={() => setCheckoutBookingId(null)}
         position="right"
@@ -387,11 +399,10 @@ export default function AdminBookingsPage() {
                   </Group>
                 </Card>
                 {completeMutation.isError && (
-                  <Text size="sm" c="red">
-                    {completeMutation.error instanceof Error
-                      ? completeMutation.error.message
-                      : "Ошибка завершения визита"}
-                  </Text>
+                  <QueryErrorAlert
+                    error={completeMutation.error}
+                    title="Не удалось завершить визит"
+                  />
                 )}
                 <Group justify="flex-end">
                   <Button variant="subtle" onClick={() => setCheckoutBookingId(null)}>
@@ -402,9 +413,9 @@ export default function AdminBookingsPage() {
             )}
           </Stack>
         )}
-      </Drawer>
+      </AdminDrawer>
 
-      <Drawer
+      <AdminDrawer
         opened={sendFormBooking !== null}
         onClose={() => { setSendFormBooking(null); setFormTemplateId(null); }}
         position="right"
@@ -462,7 +473,7 @@ export default function AdminBookingsPage() {
             </Group>
           </Stack>
         )}
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

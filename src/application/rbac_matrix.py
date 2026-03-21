@@ -47,6 +47,14 @@ PERMISSIONS: Final[list[PermissionDef]] = [
     PermissionDef("assign_tasks", "Назначение задач другим пользователям"),
     PermissionDef("view_loyalty", "Просмотр модулей лояльности"),
     PermissionDef("manage_loyalty", "Управление программами лояльности"),
+    PermissionDef(
+        "manage_loyalty_campaigns",
+        "Настройки кампаний лояльности (флаги, лимиты, каналы)",
+    ),
+    PermissionDef(
+        "run_loyalty_campaigns",
+        "Запуск кампаний лояльности (оператор/система)",
+    ),
     PermissionDef("view_forms", "Просмотр форм и подписей"),
     PermissionDef("manage_forms", "Управление шаблонами форм"),
     PermissionDef("export_forms", "Экспорт форм и подписей пациента"),
@@ -54,6 +62,19 @@ PERMISSIONS: Final[list[PermissionDef]] = [
     PermissionDef("manage_marketing_campaigns", "Управление маркетинговыми кампаниями"),
     PermissionDef("view_ai_settings", "Просмотр AI-настроек"),
     PermissionDef("manage_ai_settings", "Управление AI-настройками"),
+    PermissionDef(
+        "erp.owner_reports.read",
+        "ERP-отчёты владельца (выручка по периодам, зарплата, склад, витрины)",
+    ),
+    PermissionDef("attribution.reports.read", "Отчёты по атрибуции и ROI по источникам"),
+    PermissionDef(
+        "booking.ai_tools.use",
+        "Использование AI-инструментов записи (слоты, создание/перенос/отмена через Omni)",
+    ),
+    PermissionDef(
+        "ai.tasks.run",
+        "Запуск AI Task Manager / анализа attention для генерации задач",
+    ),
 ]
 
 
@@ -75,12 +96,19 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "assign_tasks",
         "view_loyalty",
         "manage_loyalty",
+        "manage_loyalty_campaigns",
+        "run_loyalty_campaigns",
         "view_forms",
         "manage_forms",
         "export_forms",
         "view_marketing_analytics",
         "manage_marketing_campaigns",
         "view_ai_settings",
+        "booking.ai_tools.use",
+        "ai.tasks.run",
+        # SR5 (QA_ARCH W7): managers may review ERP owner reports + attribution read-only.
+        "erp.owner_reports.read",
+        "attribution.reports.read",
     ],
     # Admin: no finance and no global settings.
     "admin": [
@@ -92,8 +120,10 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "assign_tasks",
         "view_inventory",
         "view_loyalty",
+        "run_loyalty_campaigns",
         "view_forms",
         "view_marketing_analytics",
+        "booking.ai_tools.use",
     ],
     # Doctor: minimal read-only access to tasks (scoped by visibility rules).
     "doctor": [

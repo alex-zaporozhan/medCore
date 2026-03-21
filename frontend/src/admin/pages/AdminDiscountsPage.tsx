@@ -1,15 +1,19 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { api } from "@/api/client";
+import {
+  useAdminDiscounts,
+  useCreateAdminDiscountMutation,
+  useUpdateAdminDiscountMutation,
+  useDeleteAdminDiscountMutation,
+} from "@/hooks/useAdminDiscounts";
+import type { DiscountRead, DiscountCreate } from "@/hooks/useAdminDiscounts";
 import { useAdminClinicServices } from "@/hooks/useAdminClinicServices";
 import { useDoctors } from "@/hooks/useDoctors";
-import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { AdminDrawer, DataSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Alert,
   Badge,
   Button,
-  Drawer,
   Group,
   NumberInput,
   Paper,
@@ -23,32 +27,6 @@ import {
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
-
-interface DiscountRead {
-  id: string;
-  clinic_id: string;
-  name: string;
-  discount_type: string;
-  service_id: string | null;
-  doctor_id: string | null;
-  valid_from: string | null;
-  valid_until: string | null;
-  percent_off: string | null;
-  amount_off: string | null;
-  is_active: boolean;
-}
-
-interface DiscountCreate {
-  name: string;
-  discount_type: "first_visit" | "service" | "doctor" | "period";
-  service_id?: string | null;
-  doctor_id?: string | null;
-  valid_from?: string | null;
-  valid_until?: string | null;
-  percent_off?: number | string | null;
-  amount_off?: number | string | null;
-  is_active?: boolean;
-}
 
 const discountTypeLabels: Record<string, string> = {
   first_visit: "Первый визит",
@@ -67,7 +45,6 @@ const DISCOUNT_TYPE_OPTIONS = [
 function AdminDiscountsPage() {
   const { currentClinicId } = useAdminClinic();
   const clinicId = currentClinicId ?? null;
-  const queryClient = useQueryClient();
   const [opened, { open, close }] = useDisclosure(false);
   const [editing, setEditing] = useState<DiscountRead | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -81,44 +58,15 @@ function AdminDiscountsPage() {
   const [amount_off, setAmountOff] = useState<string | number>("");
   const [is_active, setIsActive] = useState(true);
 
-  const { data: discounts, isLoading, isError, error } = useQuery({
-    queryKey: ["admin-discounts", clinicId],
-    queryFn: () =>
-      api.get<DiscountRead[]>(`/v1/admin/clinics/${clinicId}/discounts`),
-    enabled: !!clinicId,
-  });
+  const { data: discounts, isLoading, isError, error } = useAdminDiscounts(clinicId);
 
   const { data: services } = useAdminClinicServices(clinicId);
   const { data: doctorsData } = useDoctors({ clinic_id: clinicId ?? undefined, is_active: true });
   const doctors = doctorsData ?? [];
 
-  const createMut = useMutation({
-    mutationFn: (body: DiscountCreate) =>
-      api.post<DiscountRead>(`/v1/admin/clinics/${clinicId}/discounts`, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-discounts", clinicId] });
-      handleCloseModal();
-    },
-    onError: (e) => setSaveError(e.message),
-  });
-
-  const updateMut = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Partial<DiscountCreate> }) =>
-      api.put<DiscountRead>(`/v1/admin/clinics/${clinicId}/discounts/${id}`, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-discounts", clinicId] });
-      handleCloseModal();
-    },
-    onError: (e) => setSaveError(e.message),
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: (id: string) =>
-      api.delete(`/v1/admin/clinics/${clinicId}/discounts/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-discounts", clinicId] });
-    },
-  });
+  const createMut = useCreateAdminDiscountMutation(clinicId);
+  const updateMut = useUpdateAdminDiscountMutation(clinicId);
+  const deleteMut = useDeleteAdminDiscountMutation(clinicId);
 
   const resetForm = () => {
     setEditing(null);
@@ -180,10 +128,17 @@ function AdminDiscountsPage() {
   const handleSave = () => {
     setSaveError(null);
     const payload = buildPayload();
+    const onErr = (e: Error) => setSaveError(e.message);
     if (editing) {
-      updateMut.mutate({ id: editing.id, body: payload });
+      updateMut.mutate(
+        { id: editing.id, body: payload },
+        { onSuccess: () => handleCloseModal(), onError: onErr }
+      );
     } else {
-      createMut.mutate(payload);
+      createMut.mutate(payload, {
+        onSuccess: () => handleCloseModal(),
+        onError: onErr,
+      });
     }
   };
 
@@ -213,7 +168,7 @@ function AdminDiscountsPage() {
     return (
       <Stack>
         <ContextBar title="Скидки и акции" />
-        <Text c="red">{error instanceof Error ? error.message : "Ошибка загрузки"}</Text>
+        <QueryErrorAlert error={error} />
       </Stack>
     );
   }
@@ -283,7 +238,7 @@ function AdminDiscountsPage() {
         )}
       </Paper>
 
-      <Drawer
+      <AdminDrawer
         position="right"
         size="md"
         opened={opened}
@@ -380,7 +335,7 @@ function AdminDiscountsPage() {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

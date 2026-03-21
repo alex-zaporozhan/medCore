@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,11 +15,19 @@ from src.application.dto.waitlist_dto import (
     WaitlistEntryRead,
     WaitlistEntryUpdate,
 )
+from src.application.services.waitlist_service import (
+    WaitlistInvalidTransition,
+    WaitlistService,
+    WaitlistServiceError,
+)
 from src.domain.entities.admin_user import AdminUser
 from src.domain.entities.queue_policy import QueuePolicy
-from src.domain.entities.waitlist_entry import WaitlistEntry
 
 router = APIRouter(prefix="/admin/clinics", tags=["admin-waitlist"])
+
+
+def _svc(session: AsyncSession) -> WaitlistService:
+    return WaitlistService(session)
 
 
 @router.get("/{clinic_id}/waitlist", response_model=list[WaitlistEntryRead])
@@ -27,13 +35,23 @@ async def list_waitlist(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    include_inactive: bool = Query(
+        default=False,
+        description="Include cancelled and expired entries",
+    ),
+    include_booked: bool = Query(
+        default=False,
+        description="Include entries already converted to a booking (status booked)",
+    ),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    result = await session.execute(
-        select(WaitlistEntry).where(WaitlistEntry.clinic_id == clinic_id)
+    entries = await _svc(session).list_entries(
+        clinic_id,
+        include_inactive=include_inactive,
+        include_booked=include_booked,
     )
-    return [WaitlistEntryRead.model_validate(r) for r in result.scalars().all()]
+    return [WaitlistEntryRead.model_validate(r) for r in entries]
 
 
 @router.post(
@@ -49,20 +67,16 @@ async def create_waitlist_entry(
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    entry = WaitlistEntry(
-        clinic_id=clinic_id,
-        patient_id=body.patient_id,
-        doctor_id=body.doctor_id,
-        speciality=body.speciality,
-        time_preferences_json=body.time_preferences_json,
-        preferred_date=body.preferred_date,
-        preferred_time=body.preferred_time,
-        priority=body.priority,
-        status=body.status,
-    )
-    session.add(entry)
-    await session.flush()
-    await session.refresh(entry)
+    if body.clinic_id != clinic_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="clinic_id mismatch")
+    try:
+        entry = await _svc(session).create_entry(
+            clinic_id,
+            body,
+            actor_admin_id=current_admin.id,
+        )
+    except WaitlistServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e.args[0])) from e
     return WaitlistEntryRead.model_validate(entry)
 
 
@@ -78,13 +92,7 @@ async def get_waitlist_entry(
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    result = await session.execute(
-        select(WaitlistEntry).where(
-            WaitlistEntry.id == entry_id,
-            WaitlistEntry.clinic_id == clinic_id,
-        )
-    )
-    entry = result.scalar_one_or_none()
+    entry = await _svc(session).get_entry(clinic_id, entry_id)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return WaitlistEntryRead.model_validate(entry)
@@ -103,20 +111,19 @@ async def update_waitlist_entry(
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    result = await session.execute(
-        select(WaitlistEntry).where(
-            WaitlistEntry.id == entry_id,
-            WaitlistEntry.clinic_id == clinic_id,
+    try:
+        entry = await _svc(session).update_entry(
+            clinic_id,
+            entry_id,
+            body,
+            actor_admin_id=current_admin.id,
         )
-    )
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    data = body.model_dump(exclude_unset=True)
-    for k, v in data.items():
-        setattr(entry, k, v)
-    await session.flush()
-    await session.refresh(entry)
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from None
+    except WaitlistInvalidTransition as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    except WaitlistServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e.args[0])) from e
     return WaitlistEntryRead.model_validate(entry)
 
 
@@ -131,19 +138,21 @@ async def delete_waitlist_entry(
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
+    """Soft-cancel: entry remains in DB with status cancelled."""
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    result = await session.execute(
-        select(WaitlistEntry).where(
-            WaitlistEntry.id == entry_id,
-            WaitlistEntry.clinic_id == clinic_id,
+    try:
+        await _svc(session).cancel_entry(
+            clinic_id,
+            entry_id,
+            actor_admin_id=current_admin.id,
         )
-    )
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    await session.delete(entry)
-    await session.flush()
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from None
+    except WaitlistInvalidTransition as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+    except WaitlistServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e.args[0])) from e
 
 
 @router.get("/{clinic_id}/queue-policy", response_model=QueuePolicyRead | None)

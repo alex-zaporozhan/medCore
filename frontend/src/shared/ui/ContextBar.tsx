@@ -11,7 +11,7 @@ interface ContextBarProps {
 
 /**
  * Context Bar for admin pages: one row with page title (left) and action buttons (right).
- * Use at the top of each admin page content per DEV_MASTER_PROMPT Phase 0.
+ * Use at the top of each admin page content (admin shell / context bar pattern).
  */
 export function ContextBar({ title, breadcrumbs, actions }: ContextBarProps) {
   return (

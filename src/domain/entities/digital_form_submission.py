@@ -1,4 +1,4 @@
-"""DigitalFormSubmission entity model for submitted digital forms."""
+"""DigitalFormSubmission entity — form instance (Paperless FormInstance)."""
 
 import uuid
 from datetime import datetime
@@ -11,7 +11,7 @@ from src.infrastructure.database.base import Base
 
 
 class DigitalFormSubmission(Base):
-    """Concrete submitted digital form linked to patient/booking."""
+    """Concrete form instance linked to patient/booking (template snapshot via template_id)."""
 
     __tablename__ = "digital_form_submissions"
 
@@ -48,14 +48,37 @@ class DigitalFormSubmission(Base):
         index=True,
     )
 
-    submitted_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="signed", index=True
     )
+
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    signed_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True, index=True
+    )
+
     submitted_by: Mapped[str] = mapped_column(
         String(32), nullable=False
-    )  # patient|admin|doctor
+    )  # patient|admin|doctor|system|issued
 
-    # Payload validated against template.schema.
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Payload validated against template.schema (filled_data).
     data: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     signature_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -75,6 +98,11 @@ class DigitalFormSubmission(Base):
             "idx_digital_form_submissions_clinic_booking",
             "clinic_id",
             "booking_id",
+        ),
+        Index(
+            "idx_digital_form_submissions_booking_status",
+            "booking_id",
+            "status",
         ),
     )
 

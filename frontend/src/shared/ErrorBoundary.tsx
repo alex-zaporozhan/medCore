@@ -1,4 +1,4 @@
-import { Button, Container, Text, Title } from "@mantine/core";
+import { Alert, Button, Container, Text, Title } from "@mantine/core";
 import { Component, ErrorInfo, ReactNode } from "react";
 
 interface Props {
@@ -41,9 +41,9 @@ export class ErrorBoundary extends Component<Props, State> {
             вы в той же Wi‑Fi, что и компьютер с запущенным фронтом и бэкендом.
           </Text>
           {this.state.error && (
-            <Text size="sm" c="red" mb="md">
+            <Alert color="red" variant="light" title="Ошибка" mb="md">
               {this.state.error.message}
-            </Text>
+            </Alert>
           )}
           <Button onClick={this.handleRetry}>Попробовать снова</Button>
         </Container>

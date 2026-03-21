@@ -13,36 +13,54 @@ from src.application.dto.booking_dto import (
     BookingCreatePatient,
     BookingRead,
     BookingRescheduleRequest,
+    BookingCompletionResult,
 )
+from src.application.multitenancy import assert_entity_belongs_to_clinic
 from src.application.services.schedule_service import ScheduleService
-from src.domain.entities.booking import Booking
+from src.application.services.booking_status_service import (
+    BookingStatusService,
+    all_booking_status_values,
+)
+from src.domain.entities.booking import Booking, BookingStatus
+from src.domain.entities.doctor import Doctor
+from src.domain.entities.service import Service
 from src.domain.entities.service_doctor import ServiceDoctor
+from src.application.services.waitlist_service import WaitlistService, WaitlistServiceError
 from src.domain.entities.waitlist_entry import WaitlistEntry
 from src.domain.interfaces.repositories.booking_repository import BookingRepository
 from src.infrastructure.database.booking_repo_impl import BookingRepositoryImpl
+from src.infrastructure.database.lead_repo_impl import LeadRepositoryImpl
 from src.application.events.event_bus import get_event_bus
 from src.application.events.standard_events import (
+    make_booking_cancelled_event,
     make_booking_completed_event,
     make_booking_created_event,
+    make_booking_no_show_event,
 )
 from src.application.services.loyalty_service import LoyaltyService
 from src.application.services.loyalty_service import UseSubscriptionForBookingInput
+from src.core.context import RequestContext
+from src.core.metrics import waitlist_booking_conversion_total
+from src.core.tracing import with_trace_id
 from src.core.patient_messages import (
     BOOKING_CANNOT_CANCEL_PAST,
     BOOKING_CANNOT_CANCEL_STATUS,
     BOOKING_CANNOT_RESCHEDULE_CANCELLED,
+    BOOKING_CLINIC_MISMATCH_PATIENT,
     BOOKING_DOCTOR_DOES_NOT_PROVIDE_SERVICE,
+    BOOKING_ENTITY_CLINIC_MISMATCH,
     BOOKING_INVALID_STATUS,
     BOOKING_NOT_FOUND,
     BOOKING_ONLY_PENDING_CONFIRMED_COMPLETED,
     BOOKING_ONLY_PENDING_CONFIRMED_NO_SHOW,
     BOOKING_SLOT_ALREADY_BOOKED,
+    BOOKING_WAITLIST_CONVERSION_FAILED,
 )
 
 logger = logging.getLogger(__name__)
 
 
-ALLOWED_STATUSES = {"pending", "confirmed", "cancelled", "completed", "no_show"}
+ALLOWED_STATUSES = set(all_booking_status_values())
 
 
 class BookingService:
@@ -53,6 +71,19 @@ class BookingService:
         self.session = session
         self.repository: BookingRepository = BookingRepositoryImpl(session)
         self.schedule_service = ScheduleService(session)
+        self.status_service = BookingStatusService()
+
+    async def _omnichannel_contact_hint_for_patient(
+        self,
+        clinic_id: UUID,
+        patient_id: UUID,
+    ) -> UUID | None:
+        """Best-effort: open lead may carry omnichannel contact for CRM BookingCreated payload."""
+        lead_repo = LeadRepositoryImpl(self.session)
+        lead = await lead_repo.find_open_lead_for_contact_or_patient(
+            clinic_id, None, patient_id
+        )
+        return lead.omnichannel_contact_id if lead else None
 
     async def _ensure_slot_available(
         self,
@@ -80,6 +111,17 @@ class BookingService:
                 )
                 raise ValueError(BOOKING_SLOT_ALREADY_BOOKED)
 
+    async def _ensure_booking_entities_in_clinic(
+        self, clinic_id: UUID, service_id: UUID, doctor_id: UUID
+    ) -> None:
+        """Ensure doctor and service rows exist and belong to the same clinic as the booking."""
+        doctor = await self.session.get(Doctor, doctor_id)
+        if doctor is None or doctor.clinic_id != clinic_id:
+            raise ValueError(BOOKING_ENTITY_CLINIC_MISMATCH)
+        service = await self.session.get(Service, service_id)
+        if service is None or service.clinic_id != clinic_id:
+            raise ValueError(BOOKING_ENTITY_CLINIC_MISMATCH)
+
     async def _ensure_service_doctor(self, service_id: UUID, doctor_id: UUID) -> None:
         """Raise ValueError if doctor does not provide this service (ServiceDoctor, active)."""
         result = await self.session.execute(
@@ -95,9 +137,17 @@ class BookingService:
     async def create_patient_booking(
         self,
         patient_id: UUID,
+        patient_clinic_id: UUID,
         data: BookingCreatePatient,
+        *,
+        context: RequestContext | None = None,
     ) -> BookingRead:
         """Create booking from patient flow (status pending, no payment yet)."""
+        if data.clinic_id != patient_clinic_id:
+            raise ValueError(BOOKING_CLINIC_MISMATCH_PATIENT)
+        await self._ensure_booking_entities_in_clinic(
+            data.clinic_id, data.service_id, data.doctor_id
+        )
         await self._ensure_service_doctor(data.service_id, data.doctor_id)
         await self._ensure_slot_available(
             doctor_id=data.doctor_id,
@@ -112,7 +162,7 @@ class BookingService:
             service_id=data.service_id,
             appointment_date=data.appointment_date,
             appointment_time=data.appointment_time,
-            status="pending",
+            status=BookingStatus.PENDING,
             prepayment_amount=Decimal("0.00"),
             notes=data.notes,
         )
@@ -126,13 +176,27 @@ class BookingService:
 
         try:
             from src.infrastructure.messaging.tasks.notifications import send_booking_created_task
-            send_booking_created_task.delay(str(booking.id))
+
+            task_kwargs = with_trace_id(
+                {
+                    "booking_id": str(booking.id),
+                },
+                context,
+            )
+            send_booking_created_task.delay(**task_kwargs)
         except Exception as e:
             logger.warning("Failed to enqueue send_booking_created task", extra={"error": str(e)})
 
         event_bus = get_event_bus()
         try:
-            await event_bus.publish(make_booking_created_event(booking))
+            omni = await self._omnichannel_contact_hint_for_patient(data.clinic_id, patient_id)
+            await event_bus.publish(
+                make_booking_created_event(
+                    booking,
+                    trace_id=getattr(context, "trace_id", None),
+                    omnichannel_contact_id=omni,
+                )
+            )
         except Exception as e:
             logger.warning(
                 "Failed to publish BookingCreated event (patient flow)",
@@ -141,12 +205,24 @@ class BookingService:
 
         logger.info(
             "Booking created via patient flow",
-            extra={"booking_id": str(booking.id), "patient_id": str(patient_id)},
+            extra={
+                "booking_id": str(booking.id),
+                "patient_id": str(patient_id),
+                "clinic_id": str(data.clinic_id),
+            },
         )
         return BookingRead.model_validate(booking)
 
-    async def create_admin_booking(self, clinic_id: UUID, data: BookingCreateAdmin) -> BookingRead:
+    async def create_admin_booking(
+        self,
+        clinic_id: UUID,
+        data: BookingCreateAdmin,
+        *,
+        context: RequestContext | None = None,
+    ) -> BookingRead:
         """Create booking from admin flow for a specific clinic. Optionally from waitlist (waitlist_entry_id)."""
+        if data.clinic_id != clinic_id:
+            raise ValueError(BOOKING_ENTITY_CLINIC_MISMATCH)
         patient_id = data.patient_id
         doctor_id = data.doctor_id
         appointment_date = data.appointment_date
@@ -154,11 +230,10 @@ class BookingService:
 
         waitlist_entry: WaitlistEntry | None = None
         if data.waitlist_entry_id:
-            waitlist_entry = await self.session.get(WaitlistEntry, data.waitlist_entry_id)
-            if not waitlist_entry or waitlist_entry.clinic_id != clinic_id:
-                raise LookupError("Waitlist entry not found")
-            if waitlist_entry.status not in ("waiting", "notified"):
-                raise ValueError("Waitlist entry is no longer available for conversion")
+            wl = WaitlistService(self.session)
+            waitlist_entry = await wl.lock_entry_for_admin_booking(
+                clinic_id, data.waitlist_entry_id
+            )
             patient_id = waitlist_entry.patient_id
             if waitlist_entry.doctor_id is not None:
                 doctor_id = waitlist_entry.doctor_id
@@ -169,6 +244,9 @@ class BookingService:
 
         if data.status not in ALLOWED_STATUSES:
             raise ValueError(BOOKING_INVALID_STATUS)
+        await self._ensure_booking_entities_in_clinic(
+            clinic_id, data.service_id, doctor_id
+        )
         await self._ensure_service_doctor(data.service_id, doctor_id)
         await self._ensure_slot_available(
             doctor_id=doctor_id,
@@ -185,30 +263,73 @@ class BookingService:
             service_id=data.service_id,
             appointment_date=appointment_date,
             appointment_time=appointment_time,
-            status=data.status,
+            status=BookingStatus(data.status),
             prepayment_amount=prepayment,
             notes=data.notes,
         )
         booking = await self.repository.create(booking)
 
         if waitlist_entry is not None:
-            waitlist_entry.status = "converted"
-            await self.session.flush()
+            try:
+                await WaitlistService(self.session).mark_booked_after_booking_created(
+                    clinic_id,
+                    waitlist_entry.id,
+                    booking.id,
+                    actor_admin_id=None,
+                )
+            except (WaitlistServiceError, LookupError) as e:
+                waitlist_booking_conversion_total.labels(
+                    clinic_id=str(clinic_id), outcome="error"
+                ).inc()
+                logger.error(
+                    "waitlist_mark_booked_failed",
+                    extra={
+                        "clinic_id": str(clinic_id),
+                        "waitlist_entry_id": str(waitlist_entry.id),
+                        "booking_id": str(booking.id),
+                        "error": str(e.args[0]) if e.args else type(e).__name__,
+                    },
+                )
+                try:
+                    await self.repository.delete(booking.id)
+                except Exception as del_err:
+                    logger.error(
+                        "waitlist_compensate_delete_failed",
+                        extra={
+                            "booking_id": str(booking.id),
+                            "error": str(del_err),
+                        },
+                    )
+                raise ValueError(BOOKING_WAITLIST_CONVERSION_FAILED) from e
 
         await self.schedule_service.invalidate_daily_schedule_cache(
-            doctor_id=data.doctor_id,
-            day=data.appointment_date,
+            doctor_id=doctor_id,
+            day=appointment_date,
         )
 
         try:
             from src.infrastructure.messaging.tasks.notifications import send_booking_created_task
-            send_booking_created_task.delay(str(booking.id))
+
+            task_kwargs = with_trace_id(
+                {
+                    "booking_id": str(booking.id),
+                },
+                context,
+            )
+            send_booking_created_task.delay(**task_kwargs)
         except Exception as e:
             logger.warning("Failed to enqueue send_booking_created task", extra={"error": str(e)})
 
         event_bus = get_event_bus()
         try:
-            await event_bus.publish(make_booking_created_event(booking))
+            omni = await self._omnichannel_contact_hint_for_patient(clinic_id, patient_id)
+            await event_bus.publish(
+                make_booking_created_event(
+                    booking,
+                    trace_id=getattr(context, "trace_id", None),
+                    omnichannel_contact_id=omni,
+                )
+            )
         except Exception as e:
             logger.warning(
                 "Failed to publish BookingCreated event (admin flow)",
@@ -217,7 +338,11 @@ class BookingService:
 
         logger.info(
             "Booking created via admin flow",
-            extra={"booking_id": str(booking.id), "patient_id": str(data.patient_id)},
+            extra={
+                "booking_id": str(booking.id),
+                "patient_id": str(patient_id),
+                "clinic_id": str(clinic_id),
+            },
         )
         return BookingRead.model_validate(booking)
 
@@ -260,13 +385,20 @@ class BookingService:
         )
         return [BookingRead.model_validate(b) for b in bookings]
 
-    async def cancel_booking(self, clinic_id: UUID, booking_id: UUID) -> BookingRead:
+    async def cancel_booking(
+        self,
+        clinic_id: UUID,
+        booking_id: UUID,
+        *,
+        context: RequestContext | None = None,
+    ) -> BookingRead:
         """Cancel booking within a specific clinic (ACL by clinic)."""
         booking = await self.repository.get_by_id(booking_id)
-        if not booking or booking.clinic_id != clinic_id:
+        if not booking:
             raise LookupError(BOOKING_NOT_FOUND)
+        assert_entity_belongs_to_clinic(booking, clinic_id, entity_label="booking")
 
-        if booking.status in {"completed", "cancelled"}:
+        if booking.status in {BookingStatus.COMPLETED, BookingStatus.CANCELLED}:
             raise ValueError(BOOKING_CANNOT_CANCEL_STATUS)
 
         now = datetime.now()
@@ -276,8 +408,17 @@ class BookingService:
         ):
             raise ValueError(BOOKING_CANNOT_CANCEL_PAST)
 
-        booking.status = "cancelled"
+        await self.status_service.transition(booking, BookingStatus.CANCELLED, context={})
         booking = await self.repository.update(booking)
+
+        event_bus = get_event_bus()
+        try:
+            await event_bus.publish(make_booking_cancelled_event(booking, trace_id=getattr(context, "trace_id", None)))
+        except Exception as e:
+            logger.warning(
+                "Failed to publish BookingCancelled event",
+                extra={"error": str(e), "booking_id": str(booking.id)},
+            )
 
         try:
             await self.schedule_service.invalidate_daily_schedule_cache(
@@ -292,18 +433,25 @@ class BookingService:
 
         try:
             from src.infrastructure.messaging.tasks.notifications import send_booking_cancelled_task
-            send_booking_cancelled_task.delay(str(booking_id))
+
+            task_kwargs = with_trace_id(
+                {
+                    "booking_id": str(booking_id),
+                },
+                context,
+            )
+            send_booking_cancelled_task.delay(**task_kwargs)
         except Exception as e:
             logger.warning("Failed to enqueue send_booking_cancelled task", extra={"error": str(e)})
 
         try:
-            from src.application.services.waitlist_service import WaitlistService
             waitlist_svc = WaitlistService(self.session)
             await waitlist_svc.notify_slot_freed(
                 clinic_id=booking.clinic_id,
                 doctor_id=booking.doctor_id,
                 slot_date=booking.appointment_date,
                 slot_time=booking.appointment_time,
+                service_id=booking.service_id,
             )
         except Exception as e:
             logger.warning("Waitlist notify_slot_freed failed", extra={"error": str(e)})
@@ -319,19 +467,19 @@ class BookingService:
         clinic_id: UUID,
         booking_id: UUID,
         use_subscription_id: UUID | None = None,
+        *,
+        context: RequestContext | None = None,
     ) -> BookingRead:
-        """Mark booking as completed within a specific clinic (ACL by clinic).
+        """Legacy entrypoint to mark booking as completed within a specific clinic (ACL by clinic).
 
-        If use_subscription_id is provided, use that subscription for this booking (Checkout Hub).
-        Otherwise try to auto-apply best subscription by priority.
-        On successful usage mark booking.paid_by_subscription = True.
-        Business errors from loyalty layer do not block completion.
+        TODO (DEV_PROMPT_BKG_CORE_001): migrate this flow to BookingCompletionService facade.
         """
         booking = await self.repository.get_by_id(booking_id)
-        if not booking or booking.clinic_id != clinic_id:
+        if not booking:
             raise LookupError(BOOKING_NOT_FOUND)
+        assert_entity_belongs_to_clinic(booking, clinic_id, entity_label="booking")
 
-        if booking.status not in {"confirmed", "pending"}:
+        if booking.status not in {BookingStatus.CONFIRMED, BookingStatus.PENDING}:
             raise ValueError(BOOKING_ONLY_PENDING_CONFIRMED_COMPLETED)
 
         loyalty_service = LoyaltyService(self.session)
@@ -342,8 +490,13 @@ class BookingService:
             if (
                 sub is not None
                 and sub.clinic_id == clinic_id
-                and sub.patient_id == booking.patient_id
                 and sub.status == "active"
+                and await loyalty_service.patient_can_use_subscription(
+                    clinic_id,
+                    sub,
+                    booking.patient_id,
+                    now,
+                )
             ):
                 candidate = sub
         if candidate is None and use_subscription_id is None:
@@ -369,6 +522,7 @@ class BookingService:
                             used_visits=used_visits,
                             used_amount=used_amount,
                             used_at=now,
+                            beneficiary_patient_id=booking.patient_id,
                         )
                     )
                     booking.paid_by_subscription = True
@@ -378,12 +532,12 @@ class BookingService:
                     extra={"booking_id": str(booking_id), "error": str(e)},
                 )
 
-        booking.status = "completed"
+        await self.status_service.transition(booking, BookingStatus.COMPLETED, context={})
         booking = await self.repository.update(booking)
 
         event_bus = get_event_bus()
         try:
-            await event_bus.publish(make_booking_completed_event(booking))
+            await event_bus.publish(make_booking_completed_event(booking, trace_id=getattr(context, "trace_id", None)))
         except Exception as e:
             logger.warning(
                 "Failed to publish BookingCompleted event",
@@ -396,17 +550,33 @@ class BookingService:
         )
         return BookingRead.model_validate(booking)
 
-    async def mark_no_show(self, clinic_id: UUID, booking_id: UUID) -> BookingRead:
+    async def mark_no_show(
+        self,
+        clinic_id: UUID,
+        booking_id: UUID,
+        *,
+        context: RequestContext | None = None,
+    ) -> BookingRead:
         """Mark booking as no_show within a specific clinic (ACL by clinic)."""
         booking = await self.repository.get_by_id(booking_id)
-        if not booking or booking.clinic_id != clinic_id:
+        if not booking:
             raise LookupError(BOOKING_NOT_FOUND)
+        assert_entity_belongs_to_clinic(booking, clinic_id, entity_label="booking")
 
-        if booking.status not in {"confirmed", "pending"}:
+        if booking.status not in {BookingStatus.CONFIRMED, BookingStatus.PENDING}:
             raise ValueError(BOOKING_ONLY_PENDING_CONFIRMED_NO_SHOW)
 
-        booking.status = "no_show"
+        await self.status_service.transition(booking, BookingStatus.NO_SHOW, context={})
         booking = await self.repository.update(booking)
+
+        event_bus = get_event_bus()
+        try:
+            await event_bus.publish(make_booking_no_show_event(booking, trace_id=getattr(context, "trace_id", None)))
+        except Exception as e:
+            logger.warning(
+                "Failed to publish BookingNoShow event",
+                extra={"error": str(e), "booking_id": str(booking.id)},
+            )
 
         logger.info(
             "Booking marked as no_show",
@@ -425,13 +595,17 @@ class BookingService:
         ACL: booking must belong to the given clinic.
         """
         booking = await self.repository.get_by_id(booking_id)
-        if not booking or booking.clinic_id != clinic_id:
+        if not booking:
             raise LookupError(BOOKING_NOT_FOUND)
+        assert_entity_belongs_to_clinic(booking, clinic_id, entity_label="booking")
 
-        if booking.status == "cancelled":
+        if booking.status == BookingStatus.CANCELLED:
             raise ValueError(BOOKING_CANNOT_RESCHEDULE_CANCELLED)
 
         target_doctor_id = data.to_doctor_id if data.to_doctor_id is not None else booking.doctor_id
+        target_doctor = await self.session.get(Doctor, target_doctor_id)
+        if not target_doctor or target_doctor.clinic_id != clinic_id:
+            raise ValueError(BOOKING_ENTITY_CLINIC_MISMATCH)
         if target_doctor_id != booking.doctor_id:
             await self._ensure_service_doctor(booking.service_id, target_doctor_id)
 
@@ -469,7 +643,11 @@ class BookingService:
 
         logger.info(
             "Booking rescheduled",
-            extra={"booking_id": str(booking_id), "to_doctor_id": str(target_doctor_id)},
+            extra={
+                "booking_id": str(booking_id),
+                "clinic_id": str(clinic_id),
+                "to_doctor_id": str(target_doctor_id),
+            },
         )
         return BookingRead.model_validate(booking)
 

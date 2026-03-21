@@ -1,17 +1,23 @@
 """Main FastAPI application entry point."""
 
 import logging
-import traceback
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from src.api.v1.router import api_router
 from src.core.config import settings
 from src.core.logging import setup_logging
-from src.core.metrics import render_prometheus_metrics
+from src.core.metrics import (
+    db_replica_lag_observed_seconds,
+    http_request_duration_seconds,
+    metrics_path_for_request,
+    render_prometheus_metrics,
+)
 from src.application.events.event_bus import get_event_bus
 from src.application.events.lead_event_handlers import register_lead_event_handlers
 from src.application.events.erp_event_handlers import register_erp_event_handlers
@@ -75,6 +81,57 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def trace_id_middleware(request: Request, call_next):
+    """
+    Extract or generate X-Trace-Id and attach to request.state.
+
+    The same trace_id is then propagated via RequestContext and can be
+    included into structured logs and downstream metrics.
+    """
+    trace_id = request.headers.get("X-Trace-Id")
+    if not trace_id:
+        import uuid
+
+        trace_id = str(uuid.uuid4())
+
+    # Attach to request state for later use in dependencies/services
+    request.state.trace_id = trace_id
+
+    response: Response = await call_next(request)
+    # Optionally expose trace id to caller
+    response.headers["X-Trace-Id"] = trace_id
+    return response
+
+
+@app.middleware("http")
+async def prometheus_http_duration_middleware(request: Request, call_next):
+    """Record request duration for key paths (PERF / OBS); skips health and metrics scrapes."""
+    path = request.url.path
+    if path in ("/metrics", "/health", "/health/replica"):
+        return await call_next(request)
+    method = request.method
+    t0 = time.perf_counter()
+    response: Response | None = None
+    status_class = "5xx"
+    try:
+        response = await call_next(request)
+        code = response.status_code
+        status_class = f"{code // 100}xx"
+        return response
+    except Exception:
+        status_class = "5xx"
+        raise
+    finally:
+        elapsed = time.perf_counter() - t0
+        tpl = metrics_path_for_request(request)
+        http_request_duration_seconds.labels(
+            method=method,
+            path=tpl,
+            status_class=status_class,
+        ).observe(elapsed)
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Логируем необработанные исключения и возвращаем 500 без раскрытия деталей."""
@@ -83,12 +140,13 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         exc,
         extra={"path": request.url.path, "method": request.method},
     )
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "Внутренняя ошибка сервера. Проверьте логи бэкенда и применение миграций БД (alembic upgrade head).",
-        },
-    )
+    trace_id = getattr(request.state, "trace_id", None)
+    body: dict = {
+        "detail": "Внутренняя ошибка сервера. Проверьте логи бэкенда и применение миграций БД (alembic upgrade head).",
+    }
+    if trace_id:
+        body["trace_id"] = trace_id
+    return JSONResponse(status_code=500, content=body)
 
 # Include API router
 app.include_router(api_router, prefix=settings.api_v1_prefix)
@@ -98,6 +156,76 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok", "service": settings.app_name}
+
+
+@app.get("/health/replica")
+async def health_replica():
+    """Probe reporting DSN (replica): lag when standby; updates ``db_replica_lag_observed_seconds`` gauge."""
+    if not settings.database_replica_url:
+        return {
+            "replica_configured": False,
+            "detail": "DATABASE_REPLICA_URL unset; reporting uses primary.",
+        }
+    from src.infrastructure.database import base as db_base
+
+    if db_base.AsyncSessionLocalReporting is None:
+        return JSONResponse(
+            status_code=503,
+            content={"replica_configured": True, "reachable": False, "detail": "database session factory not ready"},
+        )
+
+    ms = int(settings.db_reporting_statement_timeout_ms)
+    try:
+        async with db_base.AsyncSessionLocalReporting() as session:
+            if ms > 0:
+                await session.execute(text(f"SET LOCAL statement_timeout = {ms}"))
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT
+                          pg_is_in_recovery() AS in_recovery,
+                          CASE
+                            WHEN pg_is_in_recovery()
+                            THEN EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))
+                          END AS lag_seconds
+                        """
+                    )
+                )
+            ).one()
+            in_recovery = bool(row[0])
+            lag_raw = row[1]
+            lag_seconds = float(lag_raw) if lag_raw is not None else None
+            if in_recovery and lag_seconds is not None:
+                db_replica_lag_observed_seconds.set(lag_seconds)
+            else:
+                db_replica_lag_observed_seconds.set(0.0)
+
+            await session.commit()
+
+            warn = float(settings.db_replica_lag_warn_seconds)
+            lag_warning = bool(
+                in_recovery and lag_seconds is not None and lag_seconds > warn
+            )
+            return {
+                "replica_configured": True,
+                "reachable": True,
+                "in_recovery": in_recovery,
+                "lag_seconds": lag_seconds,
+                "lag_warning": lag_warning,
+                "lag_warn_threshold_seconds": warn,
+            }
+    except Exception as exc:
+        logger.warning("health_replica_probe_failed", extra={"error": str(exc)})
+        return JSONResponse(
+            status_code=503,
+            content={
+                "replica_configured": True,
+                "reachable": False,
+                "detail": "reporting DSN probe failed",
+                "error": str(exc),
+            },
+        )
 
 
 @app.get("/metrics")

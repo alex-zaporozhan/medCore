@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -15,11 +17,20 @@ from src.domain.entities.booking import Booking
 from src.domain.entities.cashbox import Cashbox
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.clinic_ai_settings import ClinicAiSettings
+from src.domain.entities.ai_task_settings import AiTaskSettings
 from src.domain.entities.lead_card import LeadCard
 from src.domain.entities.payroll_policy import PayrollPolicy
-from src.infrastructure.external_apis.ai_client import AiClient
+from src.infrastructure.external_apis.ai_client import AiClientError
 from src.application.services.task_service import TaskService
 from src.infrastructure.database.task_repo_impl import TaskRepositoryImpl
+from src.application.services.ai_client_factory import build_safe_ai_client
+from src.application.services.ai_task_manager_service import AiTaskManagerRunner
+
+
+logger = logging.getLogger(__name__)
+
+_ENGINE = None
+_SESSION_FACTORY: async_sessionmaker[AsyncSession] | None = None
 
 
 # JSON contract for AI response: list of task suggestions
@@ -43,15 +54,17 @@ async def _build_session() -> AsyncSession:
     Celery работает в отдельном процессе, поэтому мы создаём отдельный движок
     и фабрику сессий, не завися от FastAPI DI.
     """
-    engine = create_async_engine(settings.database_url, echo=settings.debug)
-    session_factory = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
-        autocommit=False,
-    )
-    return session_factory()
+    global _ENGINE, _SESSION_FACTORY
+    if _SESSION_FACTORY is None:
+        _ENGINE = create_async_engine(settings.database_url, echo=settings.debug)
+        _SESSION_FACTORY = async_sessionmaker(
+            _ENGINE,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+            autocommit=False,
+        )
+    return _SESSION_FACTORY()
 
 
 async def _collect_daily_anomalies(session: AsyncSession) -> list[dict[str, Any]]:
@@ -175,8 +188,18 @@ def run_ai_task_generator() -> None:
             if not anomalies:
                 return
 
-            ai_client = AiClient()
-            if not ai_client.is_configured():
+            # Global, cross-clinic analytics: use strict external provider with no personal data.
+            safe_client, ctx = await build_safe_ai_client(clinic_id=None, session=None)
+            logger.info(
+                "build_safe_ai_client used for ai_tasks generator",
+                extra={
+                    "source": "ai_tasks",
+                    "clinic_id": None,
+                    "provider_type": ctx.provider_type,
+                    "allow_personal_data": ctx.allow_personal_data,
+                },
+            )
+            if not safe_client.is_configured():
                 return
 
             payload: dict[str, Any] = {
@@ -198,7 +221,11 @@ def run_ai_task_generator() -> None:
                 ],
             }
 
-            data = await ai_client.complete(payload)
+            try:
+                data = await safe_client.complete(payload)
+            except AiClientError:
+                # Silent fail: task generator is best-effort and should not break scheduler.
+                return
             tasks_raw = data.get("tasks") if isinstance(data, dict) else None
             if not isinstance(tasks_raw, list):
                 return
@@ -237,4 +264,60 @@ def run_ai_task_generator() -> None:
             await session.close()
 
     asyncio.run(_run())
+
+
+@shared_task(name="ai_tasks.run_ai_task_manager_for_clinic")
+def run_ai_task_manager_for_clinic(clinic_id: str) -> dict[str, Any]:
+    """
+    Run AI Task Manager pipeline for a single clinic (TASKS_AI_021).
+
+    This is safe to call periodically or manually:
+    - loads AiTaskSettings; when disabled -> no-op
+    - collects signals from Attention feed + domain tables
+    - proposes tasks via rule-based analyzer
+    - creates tasks via TaskService applying limits/settings
+    """
+
+    import asyncio
+
+    async def _run() -> dict[str, Any]:
+        session = await _build_session()
+        try:
+            cid = uuid.UUID(clinic_id)
+            repo = TaskRepositoryImpl(session)
+            service = TaskService(repo)
+            runner = AiTaskManagerRunner(session, service, repo)
+            created = await runner.run_for_clinic(cid)
+            return {
+                "clinic_id": clinic_id,
+                "created": len(created),
+                "task_ids": [str(x.task_id) for x in created],
+            }
+        finally:
+            await session.close()
+
+    return asyncio.run(_run())
+
+
+@shared_task(name="ai_tasks.run_ai_task_manager_all_clinics")
+def run_ai_task_manager_all_clinics() -> dict[str, Any]:
+    """
+    Periodic dispatcher: enqueue AI Task Manager for all clinics with ai_tasks_enabled.
+    """
+
+    import asyncio
+
+    async def _run() -> dict[str, Any]:
+        session = await _build_session()
+        try:
+            stmt = select(AiTaskSettings.clinic_id).where(AiTaskSettings.ai_tasks_enabled.is_(True))
+            res = await session.execute(stmt)
+            clinic_ids = [row[0] for row in res.all() if row[0] is not None]
+            for cid in clinic_ids:
+                run_ai_task_manager_for_clinic.delay(str(cid))
+            return {"enqueued": len(clinic_ids)}
+        finally:
+            await session.close()
+
+    return asyncio.run(_run())
 

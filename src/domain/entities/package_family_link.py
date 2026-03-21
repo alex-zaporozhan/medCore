@@ -1,4 +1,8 @@
-"""PackageFamilyLink entity: family members allowed to use a customer subscription (B6.1)."""
+"""Per-subscription allowlist: which patients may spend a *specific* package (B6.1).
+
+Not to be confused with clinic-wide :class:`~src.domain.entities.family_link.FamilyLink`,
+which models directed relationships and limits between patients for all loyalty resources.
+"""
 
 import uuid
 

@@ -1,7 +1,7 @@
 import { useAdminClinicServices, useDeleteAdminClinicService, useDoctors } from "@/hooks";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { ContextBar } from "@/shared/ui/ContextBar";
-import { EmptyState, PageSkeleton } from "@/shared/ui";
+import { EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { ActionIcon, Button, Menu, Stack, Table, Text } from "@mantine/core";
 import { IconClipboardList, IconDotsVertical, IconEdit, IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
@@ -50,9 +50,7 @@ export default function AdminServicesPage() {
     return (
       <Stack>
         <ContextBar title="Услуги" />
-        <Text c="red">
-          {error instanceof Error ? error.message : "Ошибка загрузки услуг"}
-        </Text>
+        <QueryErrorAlert error={error} title="Не удалось загрузить услуги" />
       </Stack>
     );
   }

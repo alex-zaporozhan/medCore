@@ -1,4 +1,5 @@
 import logging
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +15,13 @@ from src.application.services.loyalty_service import (
     LoyaltyService,
     PurchaseSubscriptionInput,
 )
-from src.core.datetime_utils import utc_now
+from src.core.config import settings
 from src.core.datetime_utils import utc_now
 from src.domain.entities.booking import Booking
 from src.domain.entities.payment import Payment
 from src.infrastructure.database.base import AsyncSessionLocal
+from src.infrastructure.database.redis_client import get_redis
+from src.infrastructure.messaging.tasks.erp_tasks import refresh_clinic_erp_aggregates_window
 
 
 logger = logging.getLogger(__name__)
@@ -174,7 +177,57 @@ async def handle_erp_on_payment_success(event: DomainEvent) -> None:
             await async_session.close()
 
 
+async def handle_erp_aggregate_refresh_on_booking_completed(event: DomainEvent) -> None:
+    """Queue Celery refresh for visit day (A5/A6); debounced via Redis SET NX."""
+    if not settings.erp_aggregate_event_refresh_enabled:
+        return
+    clinic_id_raw = event.payload.get("clinic_id")
+    ad_raw = event.payload.get("appointment_date")
+    if not clinic_id_raw or not ad_raw:
+        return
+    try:
+        clinic_id = UUID(str(clinic_id_raw))
+        ad_str = ad_raw if isinstance(ad_raw, str) else str(ad_raw)
+        visit_day = date.fromisoformat(ad_str[:10])
+    except (ValueError, TypeError):
+        logger.warning(
+            "[ERP] aggregate refresh: bad clinic_id or appointment_date",
+            extra={"payload": event.payload},
+        )
+        return
+
+    debounce_sec = max(1, settings.erp_aggregate_event_debounce_seconds)
+    key = f"erp:agg:evt:debounce:{clinic_id}:{visit_day.isoformat()}"
+    try:
+        r = await get_redis()
+        ok = await r.set(key, "1", nx=True, ex=debounce_sec)
+        if not ok:
+            return
+    except Exception:
+        logger.warning(
+            "[ERP] aggregate refresh debounce failed; enqueueing anyway",
+            exc_info=True,
+        )
+
+    enqueue = getattr(refresh_clinic_erp_aggregates_window, "delay", None)
+    if enqueue is None:
+        logger.warning(
+            "[ERP] Celery task has no .delay; skipping vitrine refresh enqueue",
+            extra={"clinic_id": str(clinic_id)},
+        )
+        return
+    enqueue(
+        str(clinic_id),
+        visit_day.isoformat(),
+        visit_day.isoformat(),
+    )
+    logger.info(
+        "[ERP] queued vitrine refresh for visit day",
+        extra={"clinic_id": str(clinic_id), "visit_day": visit_day.isoformat()},
+    )
+
+
 def register_erp_event_handlers(event_bus: EventBus) -> None:
     event_bus.subscribe(BOOKING_COMPLETED, handle_erp_on_booking_completed)
+    event_bus.subscribe(BOOKING_COMPLETED, handle_erp_aggregate_refresh_on_booking_completed)
     event_bus.subscribe(PAYMENT_SUCCESS, handle_erp_on_payment_success)
-    

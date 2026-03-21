@@ -18,10 +18,11 @@ from datetime import timedelta
 from typing import Any, Iterable
 from uuid import UUID
 
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.ai.tools_base import ToolContext, ToolError
-from src.application.ai.tools_registry import get_default_tools_for_clinic
+from src.application.ai.tools_registry import list_tools_for_context
 from src.application.dto.chat_ai_agent_dto import (
     AgentResult,
     ChatMessage as AgentChatMessage,
@@ -39,24 +40,49 @@ from src.application.services.omnichannel_outbound_dispatcher import (
 )
 from src.application.services.patient_service import PatientService
 from src.application.services.schedule_service import ScheduleService
+from src.application.booking_error_codes import normalize_booking_error_code
+from src.application.booking_error_observability import record_booking_error_event
+from src.application.services.task_service import TaskService
 from src.core.config import settings
 from src.core.context import RequestContext
 from src.core.ai_sanitizer import AiSanitizer
 from src.core.datetime_utils import utc_now
+from src.core.prometheus_labels import account_bucket_label
 from src.core.metrics import (
     omni_ai_auto_replies_total,
     omni_ai_escalations_total,
     omni_ai_provider_errors_total,
     omni_ai_suggestions_total,
+    business_chain_omni_ai_duration_seconds,
+    business_chain_omni_ai_errors_total,
+    business_chain_omni_ai_step_duration_seconds,
+    business_chain_omni_ai_total,
+    ai_tool_calls_total,
+    ai_tool_call_duration_seconds,
 )
 from src.domain.entities.omnichannel_chat import Chat as OmniChat
 from src.domain.entities.omnichannel_contact import Contact as OmniContact
 from src.domain.entities.omnichannel_message import Message as OmniMessage
 from src.domain.entities.ai_tool_event import AiToolEvent
-from src.infrastructure.external_apis.ai_client import AiClient, AiClientError
+from src.infrastructure.database.task_repo_impl import TaskRepositoryImpl
+from src.infrastructure.external_apis.ai_client import AiClientError
 from src.infrastructure.external_apis.safe_ai_client import SafeAiClient
+from src.application.services.ai_client_factory import build_safe_ai_client
 
 logger = logging.getLogger(__name__)
+
+
+def _json_safe_tool_payload(obj: Any) -> Any:
+    """Recursively convert Pydantic models / UUIDs to JSON-serializable structures (AiToolEvent JSONB)."""
+    if isinstance(obj, BaseModel):
+        return json.loads(obj.model_dump_json())
+    if isinstance(obj, UUID):
+        return str(obj)
+    if isinstance(obj, list):
+        return [_json_safe_tool_payload(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _json_safe_tool_payload(v) for k, v in obj.items()}
+    return obj
 
 
 @dataclass
@@ -77,11 +103,20 @@ class LLMReply:
 
 
 class LLMClient:
-    """Thin wrapper around SafeAiClient for omnichannel orchestrator."""
+    """
+    Thin wrapper around SafeAiClient for omnichannel orchestrator.
+
+    When constructed without an explicit SafeAiClient, it uses the defaults from
+    SafeAiClient(), which in turn creates AiSanitizer(allow_personal_data=False).
+    This means that in legacy mode all outbound text is sanitized and personal
+    data is masked before calling external AI, even if provider configuration
+    is misconfigured or missing.
+    """
 
     def __init__(self, safe_client: SafeAiClient | None = None) -> None:
-        base_client = AiClient()
-        self._client = safe_client or SafeAiClient(base_client)
+        # In legacy mode we still allow constructing without explicit config;
+        # for orchestrator we always inject a SafeAiClient built via factory.
+        self._client = safe_client or SafeAiClient()
 
     def is_configured(self) -> bool:
         return self._client.is_configured()
@@ -193,7 +228,10 @@ class OmnichannelAIOrchestrator:
         self.session = session
         self.chat_service = OmnichannelChatService(session)
         self.settings_service = OmnichannelAISettingsService(session)
-        self.llm_client = llm_client or LLMClient()
+        # LLM client for legacy AUTO_REPLY / SUGGEST_ONLY path.
+        # It is populated lazily via build_safe_ai_client(...) in handle_incoming_for_ai
+        # to ensure all legacy calls also respect centralized AI policy.
+        self.llm_client = llm_client
         self.dispatcher = OmnichannelOutboundDispatcher(session)
 
     # ------------------------------------------------------------------
@@ -220,20 +258,36 @@ class OmnichannelAIOrchestrator:
 
         started_at = utc_now()
 
-        # Resolve AI provider configuration for clinic
-        config = await AiConfigService(self.session).get_clinic_ai_config(clinic_id)
-        ai_client = AiClient(config=config)
-        if not ai_client.is_configured():
+        # Resolve AI provider configuration for clinic and build SafeAiClient
+        safe_client, client_ctx = await build_safe_ai_client(clinic_id=clinic_id, session=self.session)
+        if not safe_client.is_configured():
             logger.info(
                 "OmnichannelAIOrchestrator.run_ai_agent: provider not configured",
-                extra={"chat_id": str(chat.id), "clinic_id": str(clinic_id)},
+                extra={
+                    "chat_id": str(chat.id),
+                    "clinic_id": str(clinic_id),
+                    "provider_type": client_ctx.provider_type,
+                    "allow_personal_data": client_ctx.allow_personal_data,
+                },
             )
             return None
 
-        sanitizer = AiSanitizer(allow_personal_data=config.allow_personal_data)
+        business_chain_omni_ai_total.labels(
+            account_bucket=account_bucket_label(clinic_id),
+            status="attempt",
+        ).inc()
 
-        # Prepare tools for this clinic
-        tools = get_default_tools_for_clinic(clinic_id)
+        # Tool context + filtered registry (RBAC: booking.ai_tools.use for Omni system actor)
+        tool_ctx = ToolContext(
+            db=self.session,
+            clinic_id=clinic_id,
+            request_context=request_context,
+            source="omni_chat",
+            booking_service=BookingService(self.session),
+            schedule_service=ScheduleService(self.session),
+            patient_service=PatientService(self.session),
+        )
+        tools = list_tools_for_context(tool_ctx, source="omni_chat")
 
         def _build_tools_schema() -> list[dict[str, Any]]:
             schema: list[dict[str, Any]] = []
@@ -285,57 +339,44 @@ class OmnichannelAIOrchestrator:
         )
         messages: list[AgentChatMessage] = [AgentChatMessage(role="system", content=system_prompt)] + history
 
-        # Shared tool execution context (services reuse the same AsyncSession)
-        tool_ctx = ToolContext(
-            db=self.session,
-            clinic_id=clinic_id,
-            request_context=request_context,
-            booking_service=BookingService(self.session),
-            schedule_service=ScheduleService(self.session),
-            patient_service=PatientService(self.session),
-        )
-
         tool_events: list[dict[str, Any]] = []
 
         async def _call_llm(
             msgs: Iterable[AgentChatMessage],
             with_tools: bool,
+            *,
+            metrics_step: str,
         ) -> tuple[dict[str, Any], list[ToolCall]]:
             tool_choice: str | dict[str, Any] | None
             if with_tools:
                 tool_choice = "auto"
             else:
                 tool_choice = "none"
-            # Optionally sanitize messages before external call, depending on clinic policy.
-            sanitized_msgs: list[AgentChatMessage] = []
-            for m in msgs:
-                if isinstance(m.content, str):
-                    safe_content = sanitizer.sanitize(m.content).sanitized
-                else:
-                    safe_content = m.content
-                sanitized_msgs.append(
-                    AgentChatMessage(
-                        role=m.role,
-                        content=safe_content,
-                        name=m.name,
-                    )
-                )
-
-            data, tool_calls = await ai_client.chat_with_tools(
-                messages=sanitized_msgs,
+            llm_started = utc_now()
+            data, tool_calls = await safe_client.chat_with_tools(
+                messages=msgs,
                 tools_schema=tools_schema if with_tools else None,
                 tool_choice=tool_choice,
             )
+            llm_elapsed = (utc_now() - llm_started).total_seconds()
+            business_chain_omni_ai_step_duration_seconds.labels(
+                account_bucket=account_bucket_label(clinic_id),
+                step=metrics_step,
+            ).observe(llm_elapsed)
             return data, tool_calls
 
         try:
             # First LLM call with tools enabled
-            data, tool_calls = await _call_llm(messages, with_tools=True)
+            data, tool_calls = await _call_llm(messages, with_tools=True, metrics_step="llm_first")
         except AiClientError as exc:
             logger.warning(
                 "run_ai_agent: AiClientError on first call",
                 extra={"chat_id": str(chat.id), "error": str(exc)},
             )
+            business_chain_omni_ai_errors_total.labels(
+                account_bucket=account_bucket_label(clinic_id),
+                error_type="ai_client_error",
+            ).inc()
             return AgentResult(
                 reply_message=AgentChatMessage(role="assistant", content=""),
                 tool_events=tool_events,
@@ -346,6 +387,10 @@ class OmnichannelAIOrchestrator:
                 "run_ai_agent: unexpected error on first call",
                 extra={"chat_id": str(chat.id)},
             )
+            business_chain_omni_ai_errors_total.labels(
+                account_bucket=account_bucket_label(clinic_id),
+                error_type="unexpected_error",
+            ).inc()
             return AgentResult(
                 reply_message=AgentChatMessage(role="assistant", content=""),
                 tool_events=tool_events,
@@ -369,6 +414,19 @@ class OmnichannelAIOrchestrator:
             for call in tool_calls:
                 tool = tools.get(call.name)
                 if tool is None:
+                    logger.info(
+                        "ai_tool_call_unknown_tool",
+                        extra={
+                            "trace_id": request_context.trace_id,
+                            "tool_id": call.name,
+                            "source": "omni_chat",
+                            "clinic_id": str(clinic_id),
+                            "actor_type": request_context.user_type,
+                            "actor_id": str(request_context.user_id) if request_context.user_id else None,
+                            "status": "error",
+                            "error_code": "unknown_tool",
+                        },
+                    )
                     tool_events.append(
                         {
                             "tool": call.name,
@@ -381,6 +439,24 @@ class OmnichannelAIOrchestrator:
                 try:
                     args = tool.args_schema.model_validate_json(call.arguments_json)
                 except Exception as exc:
+                    ai_tool_calls_total.labels(
+                        tool_id=call.name,
+                        source="omni_chat",
+                        status="invalid_arguments",
+                    ).inc()
+                    logger.info(
+                        "ai_tool_call_invalid_arguments",
+                        extra={
+                            "trace_id": request_context.trace_id,
+                            "tool_id": tool.name,
+                            "source": "omni_chat",
+                            "clinic_id": str(clinic_id),
+                            "actor_type": request_context.user_type,
+                            "actor_id": str(request_context.user_id) if request_context.user_id else None,
+                            "status": "error",
+                            "error_code": "invalid_arguments",
+                        },
+                    )
                     tool_events.append(
                         {
                             "tool": tool.name,
@@ -398,8 +474,50 @@ class OmnichannelAIOrchestrator:
                     )
                     continue
 
+                tool_started = utc_now()
                 result = await tool(tool_ctx, args)
+                elapsed = (utc_now() - tool_started).total_seconds()
+                ai_tool_call_duration_seconds.labels(
+                    tool_id=tool.name,
+                    source="omni_chat",
+                ).observe(elapsed)
+                business_chain_omni_ai_step_duration_seconds.labels(
+                    account_bucket=account_bucket_label(clinic_id),
+                    step="tool_execute",
+                ).observe(elapsed)
+
                 if isinstance(result, ToolError):
+                    ai_tool_calls_total.labels(
+                        tool_id=tool.name,
+                        source="omni_chat",
+                        status="error",
+                    ).inc()
+                    logger.info(
+                        "ai_tool_call",
+                        extra={
+                            "trace_id": request_context.trace_id,
+                            "tool_id": tool.name,
+                            "source": "omni_chat",
+                            "clinic_id": str(clinic_id),
+                            "actor_type": request_context.user_type,
+                            "actor_id": str(request_context.user_id) if request_context.user_id else None,
+                            "status": "error",
+                            "error_code": result.code,
+                        },
+                    )
+                    if tool.name in {
+                        "get_available_slots",
+                        "create_booking",
+                        "cancel_booking",
+                        "reschedule_booking",
+                    }:
+                        await record_booking_error_event(
+                            clinic_id=clinic_id,
+                            code=normalize_booking_error_code(result.code),
+                            source="ai_tool",
+                            trace_id=request_context.trace_id,
+                            tool_name=tool.name,
+                        )
                     event = AiToolEvent(
                         clinic_id=clinic_id,
                         chat_id=chat.id,
@@ -407,10 +525,79 @@ class OmnichannelAIOrchestrator:
                         tool_name=tool.name,
                         status="error",
                         error_code=result.code,
-                        args={"raw": args.model_dump()},
+                        args={"raw": _json_safe_tool_payload(args)},
                         result=None,
                     )
                     self.session.add(event)
+
+                    # Tasks/Attention сигнал для повторяющихся/критичных ошибок tools.
+                    # V1 (ARCH_DEV_BKG_AI_TOOLS_006): создаём Task при ошибке выполнения tool,
+                    # чтобы владелец/админ увидел это в Tasks/Attention.
+                    try:
+                        # Throttle: do not create Tasks for simple validation mistakes
+                        # to avoid spamming Tasks on benign parameter issues.
+                        non_actionable_codes = {
+                            "validation_error",
+                            "invalid_arguments",
+                            "invalid_args",
+                            "invalid_patient_token",
+                            "invalid_booking_token",
+                            "doctor_required",
+                            "invalid_date_range",
+                            "date_range_too_large",
+                            "clinic_mismatch",
+                            "patient_required",
+                            "slot_unavailable",
+                            "slot_conflict",
+                        }
+                        if result.code in non_actionable_codes:
+                            raise RuntimeError("skip_task_for_non_actionable_error")
+
+                        task_svc = TaskService(TaskRepositoryImpl(self.session))
+                        raw_args = _json_safe_tool_payload(args)
+                        if not isinstance(raw_args, dict):
+                            raw_args = {}
+                        # Heuristic extraction: if token is present, keep it in description (no PD).
+                        booking_token = raw_args.get("booking_token")
+                        patient_token = raw_args.get("patient_token")
+                        title = f"BOOKING_AI_TOOL_FAILURE: {tool.name}"
+                        desc = json.dumps(
+                            {
+                                "tool_id": tool.name,
+                                "error_code": result.code,
+                                "trace_id": request_context.trace_id,
+                                "booking_token": booking_token,
+                                "patient_token": patient_token,
+                                "source": "omni_chat",
+                            },
+                            ensure_ascii=False,
+                        )
+                        await task_svc.create_task(
+                            clinic_id=clinic_id,
+                            title=title,
+                            description=desc,
+                            priority="high",
+                            creator_id=None,
+                            assignee_id=None,
+                            role_assignee=None,
+                            due_at=None,
+                            booking_id=None,
+                            patient_id=None,
+                            source="system",
+                            attention_kind="follow_up",
+                            attention_ref_id=incoming_message.id,
+                            trace_id=request_context.trace_id,
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.warning(
+                            "Failed to create Task for tool error",
+                            extra={
+                                "trace_id": request_context.trace_id,
+                                "tool_id": tool.name,
+                                "clinic_id": str(clinic_id),
+                                "error_code": result.code,
+                            },
+                        )
                     tool_events.append(
                         {
                             "tool": tool.name,
@@ -419,8 +606,26 @@ class OmnichannelAIOrchestrator:
                             "details": result.details,
                         }
                     )
-                    content = json.dumps({"error": result.model_dump()}, ensure_ascii=False)
+                    content = json.dumps({"error": _json_safe_tool_payload(result)}, ensure_ascii=False)
                 else:
+                    ai_tool_calls_total.labels(
+                        tool_id=tool.name,
+                        source="omni_chat",
+                        status="success",
+                    ).inc()
+                    logger.info(
+                        "ai_tool_call",
+                        extra={
+                            "trace_id": request_context.trace_id,
+                            "tool_id": tool.name,
+                            "source": "omni_chat",
+                            "clinic_id": str(clinic_id),
+                            "actor_type": request_context.user_type,
+                            "actor_id": str(request_context.user_id) if request_context.user_id else None,
+                            "status": "success",
+                            "error_code": None,
+                        },
+                    )
                     event = AiToolEvent(
                         clinic_id=clinic_id,
                         chat_id=chat.id,
@@ -428,8 +633,8 @@ class OmnichannelAIOrchestrator:
                         tool_name=tool.name,
                         status="success",
                         error_code=None,
-                        args={"raw": args.model_dump()},
-                        result=result.model_dump(),
+                        args={"raw": _json_safe_tool_payload(args)},
+                        result=_json_safe_tool_payload(result),
                     )
                     self.session.add(event)
                     tool_events.append(
@@ -438,7 +643,7 @@ class OmnichannelAIOrchestrator:
                             "status": "success",
                         }
                     )
-                    content = result.model_dump_json()
+                    content = json.dumps(_json_safe_tool_payload(result), ensure_ascii=False)
 
                 messages.append(
                     AgentChatMessage(
@@ -450,7 +655,7 @@ class OmnichannelAIOrchestrator:
 
             # After executing tools, ask LLM again without new tool calls (tool_choice="none")
             try:
-                _, tool_calls = await _call_llm(messages, with_tools=False)
+                _, tool_calls = await _call_llm(messages, with_tools=False, metrics_step="llm_followup")
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
                     "run_ai_agent: error during follow-up LLM call",
@@ -467,7 +672,7 @@ class OmnichannelAIOrchestrator:
 
         # Final response: extract last assistant message text
         try:
-            final_data, _ = await _call_llm(messages, with_tools=False)
+            final_data, _ = await _call_llm(messages, with_tools=False, metrics_step="llm_final")
             choices = final_data.get("choices") or []
             content = ""
             if choices:
@@ -475,6 +680,10 @@ class OmnichannelAIOrchestrator:
                 content = str(msg_obj.get("content") or "")
         except Exception:  # noqa: BLE001
             content = ""
+            business_chain_omni_ai_errors_total.labels(
+                account_bucket=account_bucket_label(clinic_id),
+                error_type="llm_final_error",
+            ).inc()
 
         reply_text = content.strip()
         if not reply_text:
@@ -506,6 +715,15 @@ class OmnichannelAIOrchestrator:
                 extra={"chat_id": str(chat.id)},
             )
 
+        total_elapsed = (utc_now() - started_at).total_seconds()
+        business_chain_omni_ai_duration_seconds.labels(
+            account_bucket=account_bucket_label(clinic_id),
+        ).observe(total_elapsed)
+        business_chain_omni_ai_total.labels(
+            account_bucket=account_bucket_label(clinic_id),
+            status="success",
+        ).inc()
+
         return AgentResult(
             reply_message=AgentChatMessage(role="assistant", content=reply_text),
             tool_events=tool_events,
@@ -532,6 +750,13 @@ class OmnichannelAIOrchestrator:
         is disabled; when clinic-level AI is enabled (ClinicAiSettings.ai_enabled=True)
         run_ai_agent is used instead, with graceful degradation on any error.
         """
+        # Try to derive trace_id for this inbound message from source metadata
+        trace_id = None
+        if isinstance(message.source_metadata, dict):
+            raw_trace = message.source_metadata.get("trace_id")
+            if isinstance(raw_trace, str) and raw_trace:
+                trace_id = raw_trace
+
         # Resolve effective settings
         effective = await self.settings_service.get_effective_settings(
             business_account_id=chat.business_account_id,
@@ -568,6 +793,7 @@ class OmnichannelAIOrchestrator:
                 "OmnichannelAIOrchestrator.skip_disabled",
                 extra={
                     "component": "omni_ai_orchestrator",
+                    "trace_id": trace_id,
                     "event": "ai_disabled",
                     "chat_id": str(chat.id),
                     "message_id": str(message.id),
@@ -586,8 +812,9 @@ class OmnichannelAIOrchestrator:
                     clinic_id=chat.business_account_id,
                     user_id=None,
                     user_type="system",
+                    trace_id=trace_id,
                     roles=set(),
-                    permissions=set(),
+                    permissions={"booking.ai_tools.use"},
                 )
                 result = await self.run_ai_agent(
                     chat=chat,
@@ -604,14 +831,25 @@ class OmnichannelAIOrchestrator:
                     extra={"chat_id": str(chat.id), "message_id": str(message.id)},
                 )
 
+        # Legacy path: use simple LLMClient.generate_reply with SafeAiClient built via factory.
+        safe_client, client_ctx = await build_safe_ai_client(
+            clinic_id=chat.business_account_id,
+            session=self.session,
+        )
+        self.llm_client = self.llm_client or LLMClient(safe_client)
+
         if not self.llm_client.is_configured():
             logger.info(
                 "OmnichannelAIOrchestrator: AI disabled because provider not configured",
                 extra={
                     "component": "omni_ai_orchestrator",
+                    "trace_id": trace_id,
                     "event": "provider_not_configured",
                     "chat_id": str(chat.id),
                     "message_id": str(message.id),
+                    "clinic_id": str(chat.business_account_id),
+                    "provider_type": client_ctx.provider_type,
+                    "allow_personal_data": client_ctx.allow_personal_data,
                     "correlation_chat_id": str(chat.id),
                     "correlation_message_id": str(message.id),
                 },
@@ -626,6 +864,7 @@ class OmnichannelAIOrchestrator:
             logger.info(
                 "omni_escalation_client_asked_operator",
                 extra={
+                    "trace_id": trace_id,
                     "chat_id": str(chat.id),
                     "message_id": str(message.id),
                     "business_account_id": str(chat.business_account_id),
@@ -671,12 +910,29 @@ class OmnichannelAIOrchestrator:
             clinic_name=clinic_name,
         )
 
+        # Legacy LLM call; SafeAiClient inside LLMClient already respects provider policy.
+        logger.info(
+            "OmnichannelAIOrchestrator.legacy_llm_call",
+            extra={
+                "component": "omni_ai_orchestrator",
+                "trace_id": trace_id,
+                "event": "legacy_llm_call",
+                "chat_id": str(chat.id),
+                "message_id": str(message.id),
+                "clinic_id": str(chat.business_account_id),
+                "provider_type": client_ctx.provider_type,
+                "allow_personal_data": client_ctx.allow_personal_data,
+                "ai_mode": ai_mode,
+            },
+        )
+
         llm_reply = await self.llm_client.generate_reply(ctx)
         if llm_reply is None or not llm_reply.text.strip():
             logger.info(
                 "OmnichannelAIOrchestrator.no_reply",
                 extra={
                     "component": "omni_ai_orchestrator",
+                    "trace_id": trace_id,
                     "event": "no_reply",
                     "chat_id": str(chat.id),
                     "message_id": str(message.id),
@@ -692,6 +948,21 @@ class OmnichannelAIOrchestrator:
 
         if ai_mode == "AUTO_REPLY":
             if llm_reply.confidence >= auto_threshold:
+                logger.info(
+                    "OmnichannelAIOrchestrator.auto_reply_success",
+                    extra={
+                        "component": "omni_ai_orchestrator",
+                        "trace_id": trace_id,
+                        "event": "auto_reply_success",
+                        "chat_id": str(chat.id),
+                        "message_id": str(message.id),
+                        "clinic_id": str(chat.business_account_id),
+                        "provider_type": client_ctx.provider_type,
+                        "allow_personal_data": client_ctx.allow_personal_data,
+                        "confidence": llm_reply.confidence,
+                        "threshold": auto_threshold,
+                    },
+                )
                 await self._auto_reply(chat, llm_reply)
             else:
                 # Low confidence: mark for operator attention only (no message to client).
@@ -710,6 +981,20 @@ class OmnichannelAIOrchestrator:
                     },
                 )
         elif ai_mode == "SUGGEST_ONLY":
+            logger.info(
+                "OmnichannelAIOrchestrator.suggest_only_success",
+                extra={
+                    "component": "omni_ai_orchestrator",
+                    "trace_id": trace_id,
+                    "event": "suggest_only_success",
+                    "chat_id": str(chat.id),
+                    "message_id": str(message.id),
+                    "clinic_id": str(chat.business_account_id),
+                    "provider_type": client_ctx.provider_type,
+                    "allow_personal_data": client_ctx.allow_personal_data,
+                    "confidence": llm_reply.confidence,
+                },
+            )
             await self._suggest_only(chat, llm_reply)
 
     async def _auto_reply(self, chat: OmniChat, reply: LLMReply) -> None:
@@ -721,7 +1006,7 @@ class OmnichannelAIOrchestrator:
             channel_id=chat.channel_id,
         )
         omni_ai_auto_replies_total.labels(
-            business_account_id=str(chat.business_account_id),
+            account_bucket=account_bucket_label(chat.business_account_id),
         ).inc()
         await self.dispatcher.dispatch_to_channel(msg)
 
@@ -743,7 +1028,7 @@ class OmnichannelAIOrchestrator:
         self.session.add(draft)
         await self.session.flush()
         omni_ai_suggestions_total.labels(
-            business_account_id=str(chat.business_account_id),
+            account_bucket=account_bucket_label(chat.business_account_id),
         ).inc()
         logger.info(
             "omni_ai_suggestion_created",

@@ -83,12 +83,15 @@ async def telegram_webhook(
     if dto is None:
         # Ignore non-text or unsupported updates
         return {"status": "ignored"}
+    # Attach trace_id from HTTP middleware so that omnichannel logs/metrics can be correlated
+    dto.trace_id = getattr(request.state, "trace_id", None)
     await service.handle_inbound_normalized_message(dto)
     return {"status": "ok"}
 
 
 @router.post("/webchat/messages")
 async def webchat_inbound_message(
+    request: Request,
     payload: dict,
     db: AsyncSession = Depends(get_db),
 ):
@@ -110,6 +113,7 @@ async def webchat_inbound_message(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid webchat payload",
         )
+    dto.trace_id = getattr(request.state, "trace_id", None)
     await service.handle_inbound_normalized_message(dto)
     return {"status": "ok"}
 
@@ -176,6 +180,7 @@ async def whatsapp_webhook(
     dto = service.normalize_whatsapp_message(raw)
     if dto is None:
         return {"status": "ignored"}
+    dto.trace_id = getattr(request.state, "trace_id", None)
     await service.handle_inbound_normalized_message(dto)
     return {"status": "ok"}
 
@@ -194,6 +199,7 @@ async def vk_webhook(
     dto = service.normalize_vk_message(raw)
     if dto is None:
         return {"status": "ignored"}
+    dto.trace_id = getattr(request.state, "trace_id", None)
     await service.handle_inbound_normalized_message(dto)
     return {"status": "ok"}
 
@@ -212,6 +218,7 @@ async def instagram_webhook(
     dto = service.normalize_instagram_message(raw)
     if dto is None:
         return {"status": "ignored"}
+    dto.trace_id = getattr(request.state, "trace_id", None)
     await service.handle_inbound_normalized_message(dto)
     return {"status": "ok"}
 
@@ -233,6 +240,7 @@ async def email_inbound_webhook(
     dto = service.normalize_email_message(raw)
     if dto is None:
         return {"status": "ignored"}
+    dto.trace_id = getattr(request.state, "trace_id", None)
     await service.handle_inbound_normalized_message(dto)
     return {"status": "ok"}
 

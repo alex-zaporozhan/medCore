@@ -219,7 +219,6 @@ async def create_financial_transaction(
     service = FinanceService(session)
     now = datetime.now()
     description = data.category or None
-
     if data.type == "transfer":
         if not data.from_cashbox_id or not data.to_cashbox_id:
             raise HTTPException(
@@ -304,4 +303,3 @@ async def create_financial_transaction(
         await session.commit()
         await session.refresh(tx)
         return FinancialTransactionRead.model_validate(tx)
-

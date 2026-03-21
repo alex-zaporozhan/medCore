@@ -5,17 +5,17 @@ import {
   useDeleteWaitlistEntry,
   useUpdateWaitlistEntry,
   useUpsertQueuePolicy,
-} from "@/hooks/useAdminWaitlist";
-import type { WaitlistEntryRead } from "@/hooks/useAdminWaitlist";
+  useDoctors,
+  usePatients,
+  type WaitlistEntryRead,
+} from "@/hooks";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { useDoctors } from "@/hooks/useDoctors";
-import { usePatients } from "@/hooks/usePatients";
 import { ContextBar } from "@/shared/ui/ContextBar";
-import { EmptyState, PageSkeleton } from "@/shared/ui";
+import { ClinicSelector } from "@/admin/components/ClinicSelector";
+import { AdminDrawer, EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import {
   ActionIcon,
   Button,
-  Drawer,
   Group,
   Menu,
   NumberInput,
@@ -164,13 +164,30 @@ export default function AdminWaitlistPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <ContextBar title="Очередь ожидания" />
+        <ContextBar
+          title="Очередь ожидания"
+          breadcrumbs={<ClinicSelector variant="compact" />}
+        />
         <Text size="sm" c="dimmed">Выберите клинику.</Text>
       </Stack>
     );
   }
-  if (isLoading) return <PageSkeleton variant="table" rows={8} />;
-  if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
+  if (isLoading) {
+    return (
+      <Stack>
+        <ContextBar title="Очередь ожидания" breadcrumbs={<ClinicSelector variant="compact" />} />
+        <PageSkeleton variant="table" rows={8} />
+      </Stack>
+    );
+  }
+  if (isError) {
+    return (
+      <Stack>
+        <ContextBar title="Очередь ожидания" breadcrumbs={<ClinicSelector variant="compact" />} />
+        <QueryErrorAlert error={error} />
+      </Stack>
+    );
+  }
 
   const list = entries ?? [];
   const patientOptions = patients?.map((p) => ({ value: p.id, label: p.full_name ? `${p.phone} — ${p.full_name}` : p.phone })) ?? [];
@@ -178,7 +195,11 @@ export default function AdminWaitlistPage() {
 
   return (
     <Stack>
-      <ContextBar title="Очередь ожидания" actions={<Button onClick={open} size="sm">Добавить в очередь</Button>} />
+      <ContextBar
+        title="Очередь ожидания"
+        breadcrumbs={<ClinicSelector variant="compact" />}
+        actions={<Button onClick={open} size="sm">Добавить в очередь</Button>}
+      />
 
       <Stack gap="xs">
         <Text size="sm" fw={500}>Политика очереди</Text>
@@ -253,7 +274,7 @@ export default function AdminWaitlistPage() {
         </Table>
       )}
 
-      <Drawer position="right" size="md" opened={opened} onClose={close} title="Добавить в очередь">
+      <AdminDrawer position="right" size="md" opened={opened} onClose={close} title="Добавить в очередь">
         <Stack>
           <Select label="Пациент" data={patientOptions} value={patientId} onChange={(v) => setPatientId(v ?? "")} searchable placeholder="Выберите пациента" />
           <TextInput label="Дата" type="date" value={preferredDate} onChange={(e) => setPreferredDate(e.target.value || "")} required />
@@ -262,9 +283,9 @@ export default function AdminWaitlistPage() {
           <NumberInput label="Приоритет" value={priority} onChange={(v) => setPriority(Number(v) || 0)} />
           <Button onClick={handleAddEntry} loading={createEntryMutation.isPending} disabled={!patientId || !preferredDate}>Добавить</Button>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
 
-      <Drawer position="right" size="md" opened={editEntry !== null} onClose={() => setEditEntry(null)} title="Редактировать запись очереди">
+      <AdminDrawer position="right" size="md" opened={editEntry !== null} onClose={() => setEditEntry(null)} title="Редактировать запись очереди">
         {editEntry && (
           <EditWaitlistEntryForm
             entry={editEntry}
@@ -286,7 +307,7 @@ export default function AdminWaitlistPage() {
             isLoading={updateEntryMutation.isPending}
           />
         )}
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

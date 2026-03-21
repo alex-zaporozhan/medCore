@@ -93,7 +93,7 @@ async def test_create_payment_pricing_fields_without_discount(
     headers = {"Authorization": f"Bearer {access_token}"}
     schedule_resp = await client.get(
         f"/api/v1/doctors/{doctor_id}/schedule",
-        params={"date": booking_date.isoformat()},
+        params={"date": booking_date.isoformat(), "clinic_id": str(clinic_id)},
         headers=headers,
     )
     assert schedule_resp.status_code == 200, schedule_resp.text

@@ -1,7 +1,5 @@
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { useClinics } from "@/hooks";
-import { api } from "@/api/client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useClinics, useUpdateClinicMutation } from "@/hooks";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Button,
@@ -16,7 +14,7 @@ import { useState, useEffect } from "react";
 export default function AdminStylingPage() {
   const { currentClinicId } = useAdminClinic();
   const { data: clinicsData, refetch } = useClinics();
-  const qc = useQueryClient();
+  const updateClinic = useUpdateClinicMutation();
   const clinic = currentClinicId
     ? (clinicsData ?? []).find((c) => c.id === currentClinicId)
     : null;
@@ -46,12 +44,14 @@ export default function AdminStylingPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put(`/v1/clinics/${currentClinicId}`, {
-        theme_primary_color: primaryColor.trim() || null,
-        theme_logo_url: logoUrl.trim() || null,
-        theme_font_family: fontFamily.trim() || null,
+      await updateClinic.mutateAsync({
+        clinicId: currentClinicId,
+        body: {
+          theme_primary_color: primaryColor.trim() || null,
+          theme_logo_url: logoUrl.trim() || null,
+          theme_font_family: fontFamily.trim() || null,
+        },
       });
-      qc.invalidateQueries({ queryKey: ["clinics"] });
       await refetch();
     } finally {
       setSaving(false);
@@ -59,19 +59,20 @@ export default function AdminStylingPage() {
   };
 
   const paletteRef = [
-    { name: "Фон страницы", var: "--bg-main", hex: "#F8FAFB" },
+    { name: "Фон страницы", var: "--bg-main", hex: "#F6F7FB" },
     { name: "Карточка", var: "--bg-card", hex: "#FFFFFF" },
-    { name: "Боковая панель", var: "--bg-sidebar", hex: "#F1F4F6" },
-    { name: "Акцент (основной)", var: "--primary", hex: "#9CB4C4" },
-    { name: "Акцент hover", var: "--primary-hover", hex: "#8AA3B5" },
-    { name: "Акцент active", var: "--primary-active", hex: "#7A92A3" },
-    { name: "Акцент светлый", var: "--primary-light", hex: "#EBF1F4" },
-    { name: "Граница полей", var: "--input-border", hex: "#DDE4E9" },
-    { name: "Разделитель", var: "--divider", hex: "#EEF2F4" },
-    { name: "Основной текст", var: "--text-main", hex: "#3E4954" },
-    { name: "Вспом. текст", var: "--text-muted", hex: "#86929D" },
-    { name: "Успех", var: "--success", hex: "#92B191" },
-    { name: "Золотой акцент", var: "--accent-gold", hex: "#D4AF37" },
+    { name: "Боковая панель (пациент)", var: "--bg-sidebar", hex: "#EEF1F7" },
+    { name: "Админ-сайдбар", var: "--admin-sidebar-bg", hex: "#F1F3F9" },
+    { name: "Акцент (основной)", var: "--primary", hex: "#4F46E5" },
+    { name: "Акцент hover", var: "--primary-hover", hex: "#4338CA" },
+    { name: "Акцент active", var: "--primary-active", hex: "#3730A3" },
+    { name: "Акцент светлый", var: "--primary-light", hex: "#EEF2FF" },
+    { name: "Граница полей", var: "--input-border", hex: "#D5DBE8" },
+    { name: "Разделитель", var: "--divider", hex: "#E4E8F0" },
+    { name: "Основной текст", var: "--text-main", hex: "#334155" },
+    { name: "Вспом. текст", var: "--text-muted", hex: "#64748B" },
+    { name: "Успех", var: "--success", hex: "#15803D" },
+    { name: "Золотой акцент", var: "--accent-gold", hex: "#B8860B" },
   ];
 
   return (
@@ -84,7 +85,7 @@ export default function AdminStylingPage() {
         <Stack gap="md">
           <TextInput
             label="Основной цвет (переменная --primary, hex или CSS)"
-            placeholder="#9CB4C4"
+            placeholder="#4F46E5"
             value={primaryColor}
             onChange={(e) => setPrimaryColor(e.currentTarget.value)}
             description="Переопределяет цвет кнопок и шапки в приложении пациента"

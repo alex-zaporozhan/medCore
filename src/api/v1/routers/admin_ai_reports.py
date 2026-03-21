@@ -1,5 +1,6 @@
 """Admin API: AI-based conflict and conversation analysis reports."""
 
+import logging
 from datetime import date
 from uuid import UUID
 
@@ -8,18 +9,18 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session, get_request_context
+from src.api.v1.dependencies import get_session, get_request_context, require_permissions
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.services.conversation_analysis_service import ConversationAnalysisService
 from src.core.context import RequestContext
 from src.core.config import settings
 from src.domain.entities.conversation_ai_analysis import ConversationAiAnalysis
-from src.infrastructure.external_apis.ai_client import AiClient
-from src.infrastructure.external_apis.safe_ai_client import SafeAiClient
+from src.application.services.ai_client_factory import build_safe_ai_client
 from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
 
 
 router = APIRouter(prefix="/admin/ai-reports", tags=["admin-ai-reports"])
+logger = logging.getLogger(__name__)
 
 
 class ConflictItem(BaseModel):
@@ -51,7 +52,11 @@ class ReanalyzeRequest(BaseModel):
     date_to: date
 
 
-@router.get("/conflicts", response_model=ConflictReportResponse)
+@router.get(
+    "/conflicts",
+    response_model=ConflictReportResponse,
+    dependencies=[Depends(require_permissions("view_ai_settings"))],
+)
 async def get_conflict_report(
     date_from: date = Query(...),
     date_to: date = Query(...),
@@ -84,7 +89,17 @@ async def get_conflict_report(
     result = await session.execute(stmt)
     rows: list[ConversationAiAnalysis] = list(result.scalars().all())
 
-    safe_client = SafeAiClient(AiClient())
+    # Use centralized AI config to indicate whether conflict reports can rely on external AI.
+    safe_client, ctx_client = await build_safe_ai_client(clinic_id=clinic_id, session=session)
+    logger.info(
+        "build_safe_ai_client used for admin_ai_reports",
+        extra={
+            "source": "admin_ai_reports",
+            "clinic_id": str(clinic_id),
+            "provider_type": ctx_client.provider_type,
+            "allow_personal_data": ctx_client.allow_personal_data,
+        },
+    )
     ai_configured = safe_client.is_configured()
 
     total = len(rows)
@@ -123,7 +138,10 @@ async def get_conflict_report(
     return ConflictReportResponse(summary=summary, items=items, ai_status=ai_status)
 
 
-@router.post("/conflicts/reanalyze")
+@router.post(
+    "/conflicts/reanalyze",
+    dependencies=[Depends(require_permissions("view_ai_settings"))],
+)
 async def reanalyze_conflicts(
     body: ReanalyzeRequest,
     session: AsyncSession = Depends(get_session),

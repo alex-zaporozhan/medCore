@@ -4,23 +4,20 @@ import {
   useCreateAdminBooking,
   useRescheduleBookingAdmin,
   useCancelBookingAdmin,
-} from "@/hooks/useAdminBookings";
+  useAdminSchedule,
+  useAdminWaitlist,
+  useDoctors,
+  useAdminClinicServices,
+  usePatients,
+  type CreateAdminBookingPayload,
+} from "@/hooks";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAdminSchedule } from "@/hooks/useDoctorSchedule";
-import { useAdminWaitlist } from "@/hooks/useAdminWaitlist";
-import { useDoctors } from "@/hooks/useDoctors";
-import { useAdminClinicServices } from "@/hooks/useAdminClinicServices";
-import { usePatients } from "@/hooks/usePatients";
 import { ScheduleCalendarGrid } from "@/admin/components/ScheduleCalendarGrid";
 import { WaitlistPanel } from "@/admin/components/WaitlistPanel";
 import { BookingEntityDrawer } from "@/admin/components/entity/BookingEntityDrawer";
-import { EmptyState } from "@/shared/ui/EmptyState";
-import { GlassModal } from "@/shared/ui/GlassModal";
-import { DataSkeleton } from "@/shared/ui/DataSkeleton";
-import { ContextBar } from "@/shared/ui/ContextBar";
+import { AdminDrawer, EmptyState, GlassModal, DataSkeleton, ContextBar, QueryErrorAlert } from "@/shared/ui";
 import {
   Button,
-  Drawer,
   Group,
   MultiSelect,
   Select,
@@ -30,10 +27,10 @@ import {
 } from "@mantine/core";
 import dayjs from "dayjs";
 import { useState, useEffect, useRef, useMemo } from "react";
-import type { CreateAdminBookingPayload } from "@/hooks/useAdminBookings";
 import type { ComboboxItem } from "@mantine/core";
 import { IconCalendarEvent } from "@tabler/icons-react";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
+import { ClinicSelector } from "@/admin/components/ClinicSelector";
 
 interface ScheduleCreateBookingFormProps {
   date: string;
@@ -160,7 +157,7 @@ function ScheduleCreateBookingForm({
 }
 
 export default function SchedulePage() {
-  const { currentClinicId, clinics } = useAdminClinic();
+  const { currentClinicId, clinics, isClinicScopeLocked } = useAdminClinic();
   const [dateStr, setDateStr] = useState(dayjs().format("YYYY-MM-DD"));
   const [doctorIds, setDoctorIds] = useState<string[]>([]);
   const { data: doctors, isLoading: doctorsLoading } = useDoctors({
@@ -275,10 +272,13 @@ export default function SchedulePage() {
 
   return (
     <Stack>
-      <ContextBar title="Расписание" />
-      {clinics.length > 1 && (
+      <ContextBar
+        title="Расписание"
+        breadcrumbs={<ClinicSelector variant="compact" />}
+      />
+      {!isClinicScopeLocked && clinics.length > 1 && (
         <Text size="sm" c="dimmed">
-          В другой клинике — другие врачи и услуги. Выберите клинику в шапке.
+          В другой клинике — другие врачи и услуги. Выберите клинику выше.
         </Text>
       )}
       <MultiSelect
@@ -324,9 +324,7 @@ export default function SchedulePage() {
 
       {doctorsLoading && <DataSkeleton lines={3} />}
       {doctorIds.length > 0 && scheduleLoading && <DataSkeleton lines={6} />}
-      {doctorIds.length > 0 && isError && (
-        <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>
-      )}
+      {doctorIds.length > 0 && isError && <QueryErrorAlert error={error} />}
       {doctorIds.length === 0 && (
         <EmptyState
           title="Выберите врачей"
@@ -482,7 +480,7 @@ export default function SchedulePage() {
         onEditDoctorIdChange={setEditDoctorId}
       />
 
-      <Drawer
+      <AdminDrawer
         opened={createSlot !== null}
         onClose={() => setCreateSlot(null)}
         position="right"
@@ -510,7 +508,7 @@ export default function SchedulePage() {
             }
           />
         )}
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import sqlalchemy as sa
 
 from src.api.v1.dependencies import AdminContext, get_request_context, get_session, require_permissions
+from src.application.dto.family_link_dto import (
+    FamilyLinkCreate,
+    FamilyLinkRead,
+    FamilyLinkUpdate,
+)
 from src.application.dto.loyalty_dto import (
     CustomerSubscriptionRead,
     CustomerSubscriptionWithSharedRead,
@@ -21,6 +26,18 @@ from src.application.dto.loyalty_dto import (
     WalletTransactionRead,
     SubscriptionUsageRead,
 )
+from src.application.dto.loyalty_campaign_dto import (
+    LoyaltyCampaignRunResult,
+    LoyaltyCampaignSettingsRead,
+    LoyaltyCampaignSettingsUpdate,
+    default_loyalty_campaign_settings_read,
+)
+from src.application.services.family_link_service import FamilyLinkService
+from src.application.services.loyalty_campaign_engine import (
+    get_or_create_loyalty_campaign_settings,
+    run_campaigns_for_clinic,
+)
+from src.domain.entities.loyalty_campaign_settings import LoyaltyCampaignSettings
 from src.application.services.loyalty_service import LoyaltyService
 from src.application.services.wallet_service import WalletService
 from src.domain.entities.loyalty_policy import LoyaltyPolicy
@@ -319,6 +336,105 @@ async def remove_family_member(
 
 
 @router.get(
+    "/family-links",
+    response_model=list[FamilyLinkRead],
+)
+async def list_family_links_for_patient(
+    patient_id: UUID = Query(..., description="Primary or related patient"),
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> list[FamilyLinkRead]:
+    """Clinic-scoped family links where the patient is primary or related (LOY_FAMILY_013)."""
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    service = FamilyLinkService(session)
+    rows = await service.list_for_patient(context.clinic_id, patient_id)
+    return [FamilyLinkRead.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/family-links",
+    response_model=FamilyLinkRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_loyalty"))],
+)
+async def create_family_link_row(
+    body: FamilyLinkCreate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> FamilyLinkRead:
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    service = FamilyLinkService(session)
+    try:
+        row = await service.create_family_link(
+            context.clinic_id,
+            primary_patient_id=body.primary_patient_id,
+            related_patient_id=body.related_patient_id,
+            relation_type=body.relation_type,
+            can_spend_from_owner_loyalty=body.can_spend_from_owner_loyalty,
+            can_view_owner_history=body.can_view_owner_history,
+            spending_limit_total=body.spending_limit_total,
+            spending_limit_periodic=body.spending_limit_periodic,
+            valid_until=body.valid_until,
+            created_by=context.user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    await session.commit()
+    await session.refresh(row)
+    return FamilyLinkRead.model_validate(row)
+
+
+@router.patch(
+    "/family-links/{link_id}",
+    response_model=FamilyLinkRead,
+    dependencies=[Depends(require_permissions("manage_loyalty"))],
+)
+async def update_family_link_row(
+    link_id: UUID,
+    body: FamilyLinkUpdate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> FamilyLinkRead:
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    service = FamilyLinkService(session)
+    try:
+        row = await service.update_family_link(
+            context.clinic_id,
+            link_id,
+            body.model_dump(exclude_unset=True),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    await session.commit()
+    await session.refresh(row)
+    return FamilyLinkRead.model_validate(row)
+
+
+@router.post(
+    "/family-links/{link_id}/deactivate",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permissions("manage_loyalty"))],
+)
+async def deactivate_family_link_row(
+    link_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> dict:
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    service = FamilyLinkService(session)
+    try:
+        await service.deactivate_family_link(context.clinic_id, link_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get(
     "/wallets",
     response_model=list[WalletRead],
 )
@@ -393,7 +509,10 @@ async def list_subscription_usages(
         )
         .where(
             SubscriptionUsage.clinic_id == context.clinic_id,
-            CustomerSubscription.patient_id == patient_id,
+            sa.or_(
+                CustomerSubscription.patient_id == patient_id,
+                SubscriptionUsage.beneficiary_patient_id == patient_id,
+            ),
         )
     )
     if date_from is not None:
@@ -597,4 +716,63 @@ async def update_loyalty_policy(
     await session.commit()
     await session.refresh(policy)
     return await get_loyalty_policy(session=session, context=context)
+
+
+@router.get(
+    "/campaign-settings",
+    response_model=LoyaltyCampaignSettingsRead,
+    dependencies=[Depends(require_permissions("view_loyalty"))],
+)
+async def get_loyalty_campaign_settings(
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> LoyaltyCampaignSettingsRead:
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    result = await session.execute(
+        sa.select(LoyaltyCampaignSettings).where(
+            LoyaltyCampaignSettings.clinic_id == context.clinic_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return default_loyalty_campaign_settings_read(context.clinic_id)
+    return LoyaltyCampaignSettingsRead.model_validate(row)
+
+
+@router.patch(
+    "/campaign-settings",
+    response_model=LoyaltyCampaignSettingsRead,
+    dependencies=[Depends(require_permissions("manage_loyalty_campaigns"))],
+)
+async def patch_loyalty_campaign_settings(
+    body: LoyaltyCampaignSettingsUpdate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> LoyaltyCampaignSettingsRead:
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    row = await get_or_create_loyalty_campaign_settings(session, context.clinic_id)
+    data = body.model_dump(exclude_unset=True)
+    for k, v in data.items():
+        setattr(row, k, v)
+    await session.commit()
+    await session.refresh(row)
+    return LoyaltyCampaignSettingsRead.model_validate(row)
+
+
+@router.post(
+    "/campaigns/run",
+    response_model=LoyaltyCampaignRunResult,
+    dependencies=[Depends(require_permissions("run_loyalty_campaigns"))],
+)
+async def post_run_loyalty_campaigns(
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> LoyaltyCampaignRunResult:
+    if context.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+    result = await run_campaigns_for_clinic(session, context.clinic_id)
+    await session.commit()
+    return result
 

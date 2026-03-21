@@ -38,6 +38,9 @@ class DigitalFormTemplate(Base):
     requires_signature: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    required_for_visit_completion: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )

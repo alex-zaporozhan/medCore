@@ -2,6 +2,8 @@
 
 import os
 
+from typing import Literal
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,12 +20,21 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str
+    # Optional read replica for reporting GETs (Wave 5 / ADR-005). Unset = primary only.
+    database_replica_url: str | None = None
     db_pool_size: int = 20
     db_max_overflow: int = 10
+    # Applied to reporting sessions (SET LOCAL); 0 = disabled.
+    db_reporting_statement_timeout_ms: int = 120_000
+    # GET /health/replica: add "lag_warning" when observed lag exceeds this (seconds).
+    db_replica_lag_warn_seconds: float = 60.0
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
     redis_pool_size: int = 10
+    # ERP admin dashboard JSON cache (A9); invalidated after aggregate refresh.
+    erp_dashboard_cache_enabled: bool = True
+    erp_dashboard_cache_ttl_seconds: int = 60
 
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
@@ -106,6 +117,35 @@ class Settings(BaseSettings):
     # Observability / metrics
     metrics_enabled: bool = True
 
+    # ERP report pre-aggregates (Engine L2): read from vitrine when populated; Celery refresh
+    erp_reports_read_from_aggregate: bool = True
+    # Per-report overrides (A14): if set, wins over erp_reports_read_from_aggregate for that vitrine only.
+    erp_visit_revenue_read_from_aggregate: bool | None = None
+    erp_payroll_read_from_aggregate: bool | None = None
+    erp_materials_read_from_aggregate: bool | None = None
+    erp_attribution_read_from_aggregate: bool | None = None
+    erp_aggregate_refresh_lookback_days: int = 8
+    # If max(updated_at) for vitrine rows in the requested date range is older than this, read path
+    # falls back to raw ERP query (financial correctness over latency).
+    erp_aggregate_stale_max_seconds: int = 7200
+    # BOOKING_COMPLETED → Celery refresh for visit day (off by default; needs Redis + worker).
+    erp_aggregate_event_refresh_enabled: bool = False
+    erp_aggregate_event_debounce_seconds: int = 120
+    # Daily Celery: one clinic × yesterday UTC — compare raw vs visit_revenue vitrine totals (low-cost trust signal).
+    erp_aggregate_parity_sample_enabled: bool = False
+
+    # Compliance: immutable DB audit for selected CRM admin mutations (CRM_MONEY H6).
+    compliance_crm_audit_enabled: bool = False
+
+    # Booking AI tools (BKG_AI_TOOLS_006 / QA_ARCH W4.1 J3): cap LLM-facing slot payloads.
+    booking_ai_tools_max_range_days: int = 14
+    booking_ai_tools_max_slots: int = 80
+
+    # Burst → Attention Task (QA_ARCH W7 BE5); uses Redis + separate DB session.
+    booking_error_attention_enabled: bool = False
+    booking_error_attention_window_seconds: int = 300
+    booking_error_attention_threshold: int = 12
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -120,6 +160,21 @@ class Settings(BaseSettings):
             object.__setattr__(self, "rate_admin_login_ip_limit", 0)
             object.__setattr__(self, "rate_admin_login_email_limit", 0)
         return self
+
+    def erp_read_from_aggregate_for_kind(
+        self,
+        kind: Literal["visit_revenue", "payroll", "materials", "attribution"],
+    ) -> bool:
+        """Whether GET report paths may read from L2 vitrine for this aggregate kind."""
+        override = {
+            "visit_revenue": self.erp_visit_revenue_read_from_aggregate,
+            "payroll": self.erp_payroll_read_from_aggregate,
+            "materials": self.erp_materials_read_from_aggregate,
+            "attribution": self.erp_attribution_read_from_aggregate,
+        }[kind]
+        if override is not None:
+            return bool(override)
+        return bool(self.erp_reports_read_from_aggregate)
 
     @property
     def cors_origins_list(self) -> list[str]:

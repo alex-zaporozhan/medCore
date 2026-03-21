@@ -1,45 +1,21 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import { useAdminAdmins, useCreateAdminMutation } from "@/hooks";
 import { ActionIcon, Alert, Button, Menu, Paper, Stack, Table, Text, TextInput } from "@mantine/core";
 import { IconDotsVertical } from "@tabler/icons-react";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { PageSkeleton } from "@/shared/ui/PageSkeleton";
+import { QueryErrorAlert } from "@/shared/ui";
 import { useState } from "react";
 
 const MIN_PASSWORD_LENGTH = 8;
 
-interface AdminRead {
-  id: string;
-  clinic_id: string;
-  email: string;
-  full_name: string | null;
-  birth_date: string | null;
-}
-
 export default function AdminAdministratorsPage() {
-  const qc = useQueryClient();
-  const { data: admins, isLoading, isError, error } = useQuery({
-    queryKey: ["admin-admins"],
-    queryFn: () => api.get<AdminRead[]>("/v1/admin/admins"),
-  });
+  const { data: admins, isLoading, isError, error } = useAdminAdmins();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const createMut = useMutation({
-    mutationFn: (body: { email: string; password: string; full_name?: string | null; birth_date?: string | null }) =>
-      api.post<AdminRead>("/v1/admin/admins", body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin-admins"] });
-      setEmail("");
-      setPassword("");
-      setFullName("");
-      setBirthDate("");
-      setSubmitError(null);
-    },
-    onError: (e) => setSubmitError(e instanceof Error ? e.message : "Ошибка"),
-  });
+  const createMut = useCreateAdminMutation();
 
   const handleAdd = () => {
     if (password.length < MIN_PASSWORD_LENGTH) {
@@ -47,12 +23,24 @@ export default function AdminAdministratorsPage() {
       return;
     }
     setSubmitError(null);
-    createMut.mutate({
-      email: email.trim(),
-      password,
-      full_name: fullName.trim() || null,
-      birth_date: birthDate.trim() || null,
-    });
+    createMut.mutate(
+      {
+        email: email.trim(),
+        password,
+        full_name: fullName.trim() || null,
+        birth_date: birthDate.trim() || null,
+      },
+      {
+        onSuccess: () => {
+          setEmail("");
+          setPassword("");
+          setFullName("");
+          setBirthDate("");
+          setSubmitError(null);
+        },
+        onError: (e) => setSubmitError(e instanceof Error ? e.message : "Ошибка"),
+      }
+    );
   };
 
   const list = admins ?? [];
@@ -111,7 +99,7 @@ export default function AdminAdministratorsPage() {
       <Paper p="md" withBorder>
         <Text fw={600} size="sm" mb="xs">Список</Text>
         {isLoading && <PageSkeleton variant="table" rows={4} />}
-        {isError && <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>}
+        {isError && <QueryErrorAlert error={error} />}
         {!isLoading && !isError && list.length === 0 && (
           <Text size="sm" c="dimmed">Нет администраторов. Добавьте первого выше.</Text>
         )}

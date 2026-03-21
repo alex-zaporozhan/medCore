@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
+import { renderWithProviders } from "@/test-utils";
 import LoginPage from "../LoginPage";
-
-vi.mock("react-router-dom", () => ({
-  useNavigate: () => vi.fn(),
-}));
 
 const mockVerify = vi.fn();
 
@@ -45,7 +42,7 @@ describe("LoginPage UTM integration", () => {
   });
 
   it("passes UTM context from getCurrentUtm to verifyCode.mutate payload", () => {
-    render(<LoginPage />);
+    renderWithProviders(<LoginPage />, { withRouter: true });
 
     const phoneInput = screen.getByLabelText("Телефон");
     fireEvent.change(phoneInput, { target: { value: "9001234567" } });

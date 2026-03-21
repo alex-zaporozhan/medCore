@@ -1,15 +1,21 @@
-import { useAdminBookings } from "@/hooks/useAdminBookings";
-import { useAdminLoyaltySummaryByContact, useAddFamilyMember } from "@/hooks/useLoyalty";
-import { useCreatePatient, useUpdatePatient, usePatients } from "@/hooks";
-import { usePatientAiInsight, type PatientAiInsightWithStatus } from "@/hooks/useChatAi";
-import { useDoctors } from "@/hooks/useDoctors";
+import {
+  useAdminBookings,
+  useAdminLoyaltySummaryByContact,
+  useAddFamilyMember,
+  useCreatePatient,
+  useUpdatePatient,
+  usePatients,
+  usePatientAiInsight,
+  useDoctors,
+  type PatientAiInsightWithStatus,
+} from "@/hooks";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import type { Patient } from "@/api/types";
+import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
 import {
   Avatar,
   Badge,
   Button,
-  Drawer,
   Group,
   Menu,
   ActionIcon,
@@ -161,7 +167,7 @@ export function PatientEntityDrawer({
         : displayName;
 
   return (
-    <Drawer
+    <AdminDrawer
       position="right"
       size="lg"
       opened={opened}
@@ -266,7 +272,9 @@ export function PatientEntityDrawer({
                 <Button variant="light" size="xs" onClick={loadAiInsight}>
                   AI‑обзор
                 </Button>
-                {insightError && <Text size="sm" c="red">{insightError}</Text>}
+                {insightError && (
+                  <QueryErrorAlert error={insightError} title="Не удалось загрузить AI‑обзор" />
+                )}
                 {insightText && (
                   <Stack gap={4}>
                     <Text size="sm" c="dimmed">{insightText}</Text>
@@ -305,7 +313,9 @@ export function PatientEntityDrawer({
                     <Button variant="light" size="xs" onClick={loadAiInsight}>
                       AI‑обзор
                     </Button>
-                    {insightError && <Text size="sm" c="red">{insightError}</Text>}
+                    {insightError && (
+                      <QueryErrorAlert error={insightError} title="Не удалось загрузить AI‑обзор" />
+                    )}
                     {insightText && (
                       <Stack gap={4}>
                         <Text size="sm" c="dimmed">{insightText}</Text>
@@ -323,13 +333,12 @@ export function PatientEntityDrawer({
                   </Button>
                 </Group>
                 {(createMutation.isError || updateMutation.isError) && (
-                  <Text size="sm" c="red">
-                    {createMutation.error instanceof Error
-                      ? createMutation.error.message
-                      : updateMutation.error instanceof Error
-                        ? updateMutation.error.message
-                        : "Ошибка"}
-                  </Text>
+                  <QueryErrorAlert
+                    error={
+                      createMutation.isError ? createMutation.error : updateMutation.error
+                    }
+                    title="Не удалось сохранить пациента"
+                  />
                 )}
               </>
             )}
@@ -544,6 +553,6 @@ export function PatientEntityDrawer({
           </Stack>
         </Tabs.Panel>
       </Tabs>
-    </Drawer>
+    </AdminDrawer>
   );
 }

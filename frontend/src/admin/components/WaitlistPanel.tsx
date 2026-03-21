@@ -1,5 +1,4 @@
-import type { WaitlistEntry } from "@/hooks/useAdminWaitlist";
-import { useCancelWaitlistEntry } from "@/hooks/useAdminWaitlist";
+import { useCancelWaitlistEntry, type WaitlistEntry } from "@/hooks";
 import { Box, Button, Card, Stack, Text, Title } from "@mantine/core";
 
 /** patient_id -> display name (ФИО или телефон) */

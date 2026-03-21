@@ -7,37 +7,105 @@ import {
   usePublicClinicServices,
   useClinics,
 } from "@/hooks";
-import { Avatar, Button, Card, Group, Loader, Select, SimpleGrid, Stack, Stepper, Text, TextInput, Title } from "@mantine/core";
+import {
+  Avatar,
+  Button,
+  Card,
+  Group,
+  Loader,
+  Select,
+  SimpleGrid,
+  Stack,
+  Stepper,
+  Text,
+  TextInput,
+  Title,
+  Alert,
+} from "@mantine/core";
 import dayjs from "dayjs";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ApiErrorWithCode } from "@/api/client";
+import { getBookingErrorMessage } from "@/shared/errors";
+import { ROUTE_PATHS } from "@/routePaths";
+
+const CLINIC_STORAGE_KEY = "app.selectedClinicId";
 
 export default function BookingWizardPage() {
   const { accessToken, patientId } = usePatientAuth();
   const [step, setStep] = useState(0);
+  const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [dateStr, setDateStr] = useState(dayjs().format("YYYY-MM-DD"));
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
 
   const { data: clinics } = useClinics();
-  const clinicId = (() => {
-    const key = "app.selectedClinicId";
-    const saved = typeof localStorage !== "undefined" ? localStorage.getItem(key) : null;
-    if (saved && clinics?.some((c) => c.id === saved)) return saved;
-    return clinics?.[0]?.id ?? null;
-  })();
+
+  useEffect(() => {
+    if (!clinics?.length) return;
+    const saved = typeof localStorage !== "undefined" ? localStorage.getItem(CLINIC_STORAGE_KEY) : null;
+    if (saved && clinics.some((c) => c.id === saved)) {
+      setSelectedClinicId(saved);
+      return;
+    }
+    if (clinics.length === 1) {
+      setSelectedClinicId(clinics[0].id);
+    }
+  }, [clinics]);
+
+  const multiClinic = (clinics?.length ?? 0) > 1;
+  const clinicStep = 0;
+  const serviceStep = multiClinic ? 1 : 0;
+  const doctorStep = multiClinic ? 2 : 1;
+  const slotStep = multiClinic ? 3 : 2;
+  const payStep = multiClinic ? 4 : 3;
+
+  const clinicId = selectedClinicId;
+
   const { data: publicServices, isLoading: servicesLoading } = usePublicClinicServices(clinicId);
   const { data: doctors, isLoading: doctorsLoading } = useDoctors({
     clinic_id: clinicId ?? undefined,
     is_active: true,
+    enabled: !!clinicId,
   });
-  const { data: schedule, isLoading: scheduleLoading } = useDoctorSchedule(doctorId, dateStr);
+  const { data: schedule, isLoading: scheduleLoading } = useDoctorSchedule(doctorId, dateStr, clinicId);
 
   const createBooking = useCreatePatientBooking(accessToken);
   const createPayment = useCreatePayment(accessToken);
 
   const currentClinic = clinics?.find((c) => c.id === clinicId) ?? null;
   const prepaymentEnabled = !!currentClinic?.prepayment_enabled;
+
+  const lastStep = prepaymentEnabled ? payStep : slotStep;
+
+  const persistClinic = (id: string | null) => {
+    setSelectedClinicId(id);
+    if (typeof localStorage !== "undefined" && id) {
+      localStorage.setItem(CLINIC_STORAGE_KEY, id);
+    }
+    setServiceId(null);
+    setDoctorId(null);
+    setSelectedSlot(null);
+  };
+
+  const bookingError = (createBooking.error ?? null) as ApiErrorWithCode | null;
+  const paymentError = (createPayment.error ?? null) as ApiErrorWithCode | null;
+
+  const bookingErrorMessage = useMemo(
+    () =>
+      bookingError
+        ? getBookingErrorMessage(bookingError.code, bookingError.message, "booking")
+        : null,
+    [bookingError]
+  );
+
+  const paymentErrorMessage = useMemo(
+    () =>
+      paymentError
+        ? getBookingErrorMessage(paymentError.code, paymentError.message, "payment")
+        : null,
+    [paymentError]
+  );
 
   const selectedService = publicServices?.find((s) => s.id === serviceId);
   const serviceOptions =
@@ -51,24 +119,29 @@ export default function BookingWizardPage() {
       return { value: s.id, label };
     }) ?? [];
   const doctorOptions =
-    doctors?.filter((d) =>
-      !selectedService ||
-      (selectedService.doctor_ids?.length ?? 0) === 0 ||
-      selectedService.doctor_ids.includes(d.id)
-    ).map((d) => ({ value: d.id, label: d.full_name })) ?? [];
+    doctors
+      ?.filter(
+        (d) =>
+          !selectedService ||
+          (selectedService.doctor_ids?.length ?? 0) === 0 ||
+          selectedService.doctor_ids.includes(d.id)
+      )
+      .map((d) => ({ value: d.id, label: d.full_name })) ?? [];
 
   const slots = schedule?.slots?.filter((s) => s.is_available) ?? [];
   const selectedSlotObj = selectedSlot
     ? slots.find((s) => {
-        const t = typeof s.start_time === "string" ? s.start_time.slice(0, 5) : String(s.start_time).slice(0, 5);
+        const t =
+          typeof s.start_time === "string" ? s.start_time.slice(0, 5) : String(s.start_time).slice(0, 5);
         return t === selectedSlot;
       })
     : null;
-  const timeForApi = selectedSlotObj && typeof selectedSlotObj.start_time === "string"
-    ? selectedSlotObj.start_time.length === 5
-      ? `${selectedSlotObj.start_time}:00`
-      : selectedSlotObj.start_time
-    : "";
+  const timeForApi =
+    selectedSlotObj && typeof selectedSlotObj.start_time === "string"
+      ? selectedSlotObj.start_time.length === 5
+        ? `${selectedSlotObj.start_time}:00`
+        : selectedSlotObj.start_time
+      : "";
 
   const paymentOptions = currentClinic?.payment_options ?? [];
 
@@ -92,7 +165,7 @@ export default function BookingWizardPage() {
             {
               onSuccess: (res) => {
                 if (res.prepayment_required === false) {
-                  window.location.href = "/booking/success";
+                  window.location.href = ROUTE_PATHS.other.bookingSuccess;
                   return;
                 }
                 if (res.payment_url) {
@@ -121,27 +194,53 @@ export default function BookingWizardPage() {
       },
       {
         onSuccess: () => {
-          window.location.href = "/booking/success";
+          window.location.href = ROUTE_PATHS.other.bookingSuccess;
         },
       }
     );
   };
 
-  const lastStep = prepaymentEnabled ? 3 : 2;
-
   const nextDisabled =
-    (step === 0 && !serviceId) ||
-    (step === 1 && !doctorId) ||
-    (step === 2 && !selectedSlot) ||
+    (multiClinic && step === clinicStep && !selectedClinicId) ||
+    (step === serviceStep && !serviceId) ||
+    (step === doctorStep && !doctorId) ||
+    (step === slotStep && !selectedSlot) ||
     (prepaymentEnabled &&
-      step === 3 &&
+      step === payStep &&
       (!patientId || !clinicId || !serviceId || !doctorId || !dateStr || !timeForApi));
 
   return (
     <Stack>
       <Title order={3}>Запись на приём</Title>
+      {currentClinic && (
+        <Group justify="space-between" align="flex-start" wrap="wrap">
+          <Text size="sm" c="dimmed">
+            Вы записываетесь в: <strong>{currentClinic.name}</strong>
+            {currentClinic.address ? ` — ${currentClinic.address}` : ""}
+          </Text>
+          {multiClinic && step > clinicStep && (
+            <Button variant="subtle" size="xs" onClick={() => setStep(clinicStep)}>
+              Сменить клинику
+            </Button>
+          )}
+        </Group>
+      )}
       <Stepper active={step > lastStep ? lastStep : step} onStepClick={setStep}>
+        {multiClinic && (
+          <Stepper.Step label="Клиника" description="Выберите филиал">
+            <Select
+              label="Клиника"
+              placeholder="Выберите клинику"
+              data={clinics?.map((c) => ({ value: c.id, label: c.address ? `${c.name} — ${c.address}` : c.name })) ?? []}
+              value={selectedClinicId}
+              onChange={(v) => {
+                persistClinic(v);
+              }}
+            />
+          </Stepper.Step>
+        )}
         <Stepper.Step label="Услуга" description="Выберите услугу">
+          {!clinicId && multiClinic && <Text size="sm" c="dimmed">Сначала выберите клинику.</Text>}
           {servicesLoading && <Loader />}
           <Select
             label="Услуга"
@@ -152,12 +251,15 @@ export default function BookingWizardPage() {
               setServiceId(v);
               setDoctorId(null);
             }}
+            disabled={!clinicId}
           />
         </Stepper.Step>
         <Stepper.Step label="Врач" description="Выберите врача">
           {doctorsLoading && <Loader />}
           {!doctorsLoading && doctorOptions.length === 0 && selectedService && (
-            <Text size="sm" c="dimmed">Нет доступных врачей для этой услуги</Text>
+            <Text size="sm" c="dimmed">
+              Нет доступных врачей для этой услуги
+            </Text>
           )}
           {!doctorsLoading && doctors && doctors.length > 0 && (
             <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md" mb="md">
@@ -185,12 +287,7 @@ export default function BookingWizardPage() {
                       onClick={() => setDoctorId(d.id)}
                     >
                       <Stack align="center" gap="xs">
-                        <Avatar
-                          src={d.photo_url ?? undefined}
-                          size="lg"
-                          radius="xl"
-                          color="primary"
-                        >
+                        <Avatar src={d.photo_url ?? undefined} size="lg" radius="xl" color="primary">
                           {d.full_name.slice(0, 2).toUpperCase()}
                         </Avatar>
                         <Text size="sm" fw={600} ta="center" lineClamp={2}>
@@ -223,17 +320,18 @@ export default function BookingWizardPage() {
           />
           {scheduleLoading && <Loader />}
           <Stack gap="xs">
-            <Text size="sm" fw={500}>Доступные слоты</Text>
-            {slots.length === 0 && !scheduleLoading && <Text size="sm" c="dimmed">Нет свободных слотов на эту дату</Text>}
+            <Text size="sm" fw={500}>
+              Доступные слоты
+            </Text>
+            {slots.length === 0 && !scheduleLoading && (
+              <Text size="sm" c="dimmed">
+                Нет свободных слотов на эту дату
+              </Text>
+            )}
             {slots.map((s) => {
               const t = typeof s.start_time === "string" ? s.start_time.slice(0, 5) : s.start_time;
               return (
-                <Button
-                  key={t}
-                  variant={selectedSlot === t ? "filled" : "light"}
-                  size="xs"
-                  onClick={() => setSelectedSlot(t)}
-                >
+                <Button key={t} variant={selectedSlot === t ? "filled" : "light"} size="xs" onClick={() => setSelectedSlot(t)}>
                   {t}
                 </Button>
               );
@@ -243,11 +341,18 @@ export default function BookingWizardPage() {
         {prepaymentEnabled && (
           <Stepper.Step label="Подтверждение" description="Оплата">
             <Text size="sm">Услуга: {publicServices?.find((s) => s.id === serviceId)?.name}</Text>
-            <Text size="sm">{doctors?.find((d) => d.id === doctorId)?.display_role ?? "Специалист"}: {doctors?.find((d) => d.id === doctorId)?.full_name}</Text>
-            <Text size="sm">Дата: {dateStr}, время: {timeForApi || selectedSlot}</Text>
+            <Text size="sm">
+              {doctors?.find((d) => d.id === doctorId)?.display_role ?? "Специалист"}:{" "}
+              {doctors?.find((d) => d.id === doctorId)?.full_name}
+            </Text>
+            <Text size="sm">
+              Дата: {dateStr}, время: {timeForApi || selectedSlot}
+            </Text>
             {paymentOptions.length > 0 ? (
               <Stack gap="xs">
-                <Text size="sm" fw={500}>Способ оплаты</Text>
+                <Text size="sm" fw={500}>
+                  Способ оплаты
+                </Text>
                 {paymentOptions.map((opt) => (
                   <Button
                     key={opt.gateway_id}
@@ -268,27 +373,42 @@ export default function BookingWizardPage() {
                 Перейти к оплате
               </Button>
             )}
-            {(createBooking.isError || createPayment.isError) && (
-              <Text c="red" size="sm">
-                {createBooking.error instanceof Error ? createBooking.error.message : createPayment.error instanceof Error ? createPayment.error.message : "Ошибка"}
-              </Text>
-            )}
           </Stepper.Step>
         )}
       </Stepper>
+      {(bookingErrorMessage || paymentErrorMessage) && (
+        <Alert
+          color="red"
+          radius="md"
+          mt="md"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+        >
+          <Stack gap={4}>
+            {bookingErrorMessage && <Text size="sm">{bookingErrorMessage}</Text>}
+            {paymentErrorMessage && <Text size="sm">{paymentErrorMessage}</Text>}
+            {(bookingError?.traceId || paymentError?.traceId) && (
+              <Text size="xs" c="dimmed">
+                Код для поддержки: {bookingError?.traceId || paymentError?.traceId}
+              </Text>
+            )}
+          </Stack>
+        </Alert>
+      )}
       <Group>
-        {step > 0 && <Button variant="light" onClick={() => setStep(step - 1)}>Назад</Button>}
+        {step > 0 && (
+          <Button variant="light" onClick={() => setStep(step - 1)}>
+            Назад
+          </Button>
+        )}
         {step < lastStep && (
           <Button onClick={() => setStep(step + 1)} disabled={!!nextDisabled}>
             Далее
           </Button>
         )}
-        {!prepaymentEnabled && step === lastStep && (
-          <Button
-            onClick={handleConfirmWithoutPayment}
-            loading={createBooking.isPending}
-            disabled={!!nextDisabled}
-          >
+        {!prepaymentEnabled && step === slotStep && (
+          <Button onClick={handleConfirmWithoutPayment} loading={createBooking.isPending} disabled={!!nextDisabled}>
             Подтвердить запись
           </Button>
         )}

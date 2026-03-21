@@ -1,5 +1,30 @@
 /** Shared API response types aligned with backend DTOs */
 
+/**
+ * Тело ошибки FastAPI/HTTPException в JSON — техпаспорт §3 (`client.ts` разбор).
+ * `detail` — строка, объект бизнес-ошибки, **массив** (часто 422 validation), или реже `string[]`.
+ */
+export interface ApiErrorDetailObject {
+  message?: string;
+  code?: string;
+  trace_id?: string;
+  details?: Record<string, unknown>;
+}
+
+/** Элемент `detail[]` при 422 (FastAPI validation). */
+export interface ApiValidationErrorItem {
+  loc?: (string | number)[];
+  msg?: string;
+  type?: string;
+}
+
+export interface ApiErrorResponseBody {
+  detail?: string | ApiErrorDetailObject | ApiValidationErrorItem[] | string[];
+  /** Редко сверх `detail`; учитывается, если из `detail` не извлечено сообщение */
+  message?: string;
+  code?: string;
+}
+
 export const SPECIALIST_ROLE_OPTIONS = [
   { value: "doctor", label: "Врач" },
   { value: "nurse", label: "Медсестра" },
@@ -398,12 +423,17 @@ export interface AttentionItem {
   patient_full_name: string | null;
   patient_phone: string;
   patient_tags: string[];
-  status: "open" | "done";
+  status: "new" | "in_progress" | "resolved" | "archived";
   assigned_admin_id: string | null;
   assigned_admin_name: string | null;
   has_comment: boolean;
   last_comment_preview: string | null;
   conversation_id: string | null;
+  tasks_total: number;
+  tasks_open: number;
+  tasks_in_progress: number;
+  tasks_done: number;
+  tasks_cancelled: number;
 }
 
 export interface AttentionFeed {
@@ -504,6 +534,37 @@ export interface AdminLoyaltySummaryByContactResponse {
   wallet_transactions: WalletTransaction[];
 }
 
+/** LOY_AI_014: per-clinic loyalty campaign automation */
+export interface LoyaltyCampaignSettings {
+  clinic_id: string;
+  expiring_packages_enabled: boolean;
+  high_balance_low_activity_enabled: boolean;
+  reengagement_enabled: boolean;
+  channel_tasks_enabled: boolean;
+  channel_omnichannel_enabled: boolean;
+  /** Skip expiring Task if SMS expiring notification already sent today (same subscription). */
+  skip_expiring_task_if_sms_expiring_sent_today: boolean;
+  max_contacts_per_day_clinic: number;
+  max_contacts_per_day_patient: number;
+  campaign_cooldown_days: number;
+  reengagement_inactive_days: number;
+  /** Max LOYALTY_* tasks per patient in current calendar month (UTC). */
+  max_campaign_touches_per_patient_month: number;
+  updated_at?: string | null;
+}
+
+export interface LoyaltyCampaignRunResult {
+  clinic_id: string;
+  created_expiring: number;
+  created_high_balance: number;
+  created_reengagement: number;
+  skipped_limits: number;
+  skipped_cooldown: number;
+  skipped_cross_campaign: number;
+  skipped_sms_duplicate: number;
+  skipped_opt_out: number;
+}
+
 // Paperless Office: digital forms
 
 export interface DigitalFormFieldSchema {
@@ -519,6 +580,16 @@ export interface DigitalFormTemplateSchema {
   fields: DigitalFormFieldSchema[];
 }
 
+export type FormInstanceStatus =
+  | "draft"
+  | "issued"
+  | "in_progress"
+  | "signed"
+  | "cancelled"
+  | "expired"
+  | "revoked"
+  | "unknown";
+
 export interface DigitalFormTemplate {
   id: string;
   clinic_id: string;
@@ -528,6 +599,8 @@ export interface DigitalFormTemplate {
   version: number;
   schema: DigitalFormTemplateSchema;
   requires_signature: boolean;
+  /** @deprecated optional only during rollout; API always sends boolean after PPR-2 migration */
+  required_for_visit_completion?: boolean;
   active: boolean;
 }
 
@@ -537,10 +610,15 @@ export interface DigitalFormSubmission {
   template_id: string;
   patient_id: string | null;
   booking_id: string | null;
-  submitted_at: string;
+  status: FormInstanceStatus;
+  submitted_at: string | null;
+  signed_at: string | null;
+  expires_at: string | null;
   submitted_by: string;
   data: Record<string, unknown>;
   signature_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface DigitalFormSubmissionListItem extends DigitalFormSubmission {

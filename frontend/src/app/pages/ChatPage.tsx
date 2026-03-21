@@ -9,7 +9,7 @@ import {
 } from "@/hooks/usePatientChat";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStickerSets } from "@/hooks/useStickers";
-import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { DataSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Box,
@@ -102,7 +102,7 @@ export default function ChatPage() {
     return (
       <Stack>
         <Title order={3}>Чат с клиникой</Title>
-        <Text c="red">{convErr instanceof Error ? convErr.message : "Ошибка загрузки"}</Text>
+        <QueryErrorAlert error={convErr} title="Не удалось загрузить чат" />
       </Stack>
     );
   }
@@ -234,7 +234,7 @@ export default function ChatPage() {
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
         />
         <Group gap="xs">
-          <Button onClick={handleSend} loading={sendMessage.isPending}>
+          <Button color="indigo" onClick={handleSend} loading={sendMessage.isPending}>
             Отправить
           </Button>
           {defaultStickers.length > 0 && (
