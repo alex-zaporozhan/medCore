@@ -14,6 +14,7 @@ import {
   type SuggestReplyWithStatus,
 } from "@/hooks/useChatAi";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { QueryErrorAlert } from "@/shared/ui";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Box,
@@ -89,7 +90,7 @@ export default function AdminChatPage() {
       const res: ConversationSummaryWithStatus = await summaryMutation.mutateAsync();
       setAiSummary(res.summary);
       setAiSummaryStatus(res.aiStatus);
-    } catch (e) {
+    } catch {
       setAiError("Подсказка резюме временно недоступна. Попробуйте ещё раз позже.");
     }
   };
@@ -103,7 +104,7 @@ export default function AdminChatPage() {
       const res: SuggestReplyWithStatus = await suggestMutation.mutateAsync(undefined);
       setAiVariants(res.variants || []);
       setAiSuggestStatus(res.aiStatus);
-    } catch (e) {
+    } catch {
       setAiError("AI‑подсказка временно недоступна. Напишите ответ вручную.");
     }
   };
@@ -129,7 +130,7 @@ export default function AdminChatPage() {
     return (
       <Stack>
         <Title order={3}>Чат</Title>
-        <Text c="red">{convErr instanceof Error ? convErr.message : "Ошибка загрузки"}</Text>
+        <QueryErrorAlert error={convErr} title="Не удалось загрузить диалоги" />
       </Stack>
     );
   }
@@ -146,9 +147,7 @@ export default function AdminChatPage() {
         </Group>
       )}
       {aiError && (
-        <Text size="xs" c="red">
-          {aiError}
-        </Text>
+        <QueryErrorAlert error={aiError} title="AI‑подсказки недоступны" />
       )}
       <Flex gap="sm" wrap="wrap">
         <Select

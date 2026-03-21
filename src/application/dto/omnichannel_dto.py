@@ -15,6 +15,7 @@ class NormalizedMessageDTO(BaseModel):
     chat_external_id: str
     text: str
     timestamp: datetime
+    trace_id: str | None = None
 
 
 class OutgoingMessageDTO(BaseModel):

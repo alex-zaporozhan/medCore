@@ -6,9 +6,12 @@ const STORAGE_KEY = "marketing.utm";
 describe("utmTracking helpers", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "test-session-id",
+    } as unknown as Crypto);
     (global as any).window = {
       location: {
-        href: "https://example.com/?utm_source=google&utm_medium=cpc&utm_campaign=camp&utm_content=ad&utm_term=kw",
+        href: "https://example.com/?utm_source=google&utm_medium=cpc&utm_campaign=camp&utm_content=ad&utm_term=kw#hero",
         pathname: "/",
         search: "?utm_source=google&utm_medium=cpc&utm_campaign=camp&utm_content=ad&utm_term=kw",
         hash: "#hero",
@@ -25,10 +28,11 @@ describe("utmTracking helpers", () => {
           delete this.store[key];
         },
       },
-      crypto: {
-        randomUUID: () => "test-session-id",
-      },
     } as any;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("captures UTM params and stores them with session_id", () => {

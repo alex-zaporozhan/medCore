@@ -89,6 +89,7 @@ async def test_admin_forms_create_template_and_submission_flow(
   assert resp_submit.status_code == 200, resp_submit.text
   submission = resp_submit.json()
   assert submission["patient_id"] == str(patient.id)
+  assert submission.get("status") == "signed"
 
   # Ensure submission appears in admin list
   resp_list = await client.get(

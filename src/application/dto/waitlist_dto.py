@@ -3,7 +3,7 @@
 from datetime import date, time
 from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WaitlistEntryRead(BaseModel):
@@ -11,12 +11,18 @@ class WaitlistEntryRead(BaseModel):
     clinic_id: UUID
     patient_id: UUID
     doctor_id: UUID | None = None
+    preferred_service_id: UUID | None = None
     speciality: str | None = None
     time_preferences_json: dict | None = None
     preferred_date: date | None = None
     preferred_time: time | None = None
     priority: int
     status: str
+    source: str | None = None
+    notes: str | None = None
+    booking_id: UUID | None = None
+    created_by_id: UUID | None = None
+    updated_by_id: UUID | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -25,23 +31,29 @@ class WaitlistEntryCreate(BaseModel):
     clinic_id: UUID
     patient_id: UUID
     doctor_id: UUID | None = None
+    preferred_service_id: UUID | None = None
     speciality: str | None = None
     time_preferences_json: dict | None = None
     preferred_date: date | None = None
     preferred_time: time | None = None
     priority: int = 0
     status: str = Field(default="waiting", max_length=32)
+    source: str | None = Field(default="admin", max_length=32)
+    notes: str | None = None
 
 
 class WaitlistEntryUpdate(BaseModel):
     patient_id: UUID | None = None
     doctor_id: UUID | None = None
+    preferred_service_id: UUID | None = None
     speciality: str | None = None
     time_preferences_json: dict | None = None
     preferred_date: date | None = None
     preferred_time: time | None = None
     priority: int | None = None
     status: str | None = None
+    source: str | None = None
+    notes: str | None = None
 
 
 class QueuePolicyRead(BaseModel):

@@ -2,13 +2,19 @@
 
 import logging
 from datetime import date
+from typing import NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_current_patient, get_session
+from src.api.v1.dependencies import (
+    get_current_patient,
+    get_session,
+    get_request_context,
+    require_permissions,
+)
 from src.application.dto.booking_dto import (
     BookingCreateAdmin,
     BookingCreatePatient,
@@ -17,7 +23,15 @@ from src.application.dto.booking_dto import (
     CheckoutInfoResponse,
     CompleteBookingRequest,
     EligibleSubscriptionItem,
+    BookingCompletionResult,
+    BookingErrorResponse,
+    BookingErrorCode,
 )
+from src.application.multitenancy import ClinicForbiddenError
+from src.application.services.multitenancy_alert_service import record_multitenancy_mismatch_for_admin
+from src.api.v1.multitenancy_http import clinic_forbidden_admin_detail
+from src.core.patient_messages import BOOKING_NOT_FOUND
+from src.core.context import RequestContext
 from src.application.dto.card_dto import (
     BookingCardConsumableItem,
     BookingCardResponse,
@@ -25,12 +39,55 @@ from src.application.dto.card_dto import (
     BookingCardTaskItem,
 )
 from src.application.services.booking_service import BookingService
+from src.application.services.booking_completion_service import (
+    BookingCompletionService,
+    booking_completion_erp_retry_total,
+)
+from src.core.prometheus_labels import clinic_bucket_label
+from src.domain.entities.booking import Booking
+from src.application.errors import (
+    booking_error_from_completion_result,
+    booking_error_from_value_error,
+)
+from src.application.booking_error_observability import record_booking_error_event
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.domain.entities.admin_user import AdminUser
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["bookings"])
+
+BOOKING_ERROR_OPENAPI = {
+    400: {"model": BookingErrorResponse, "description": "Business validation / slot / status"},
+    404: {"model": BookingErrorResponse, "description": "Booking not found (structured body)"},
+}
+
+
+async def _emit_booking_api_error(
+    status: int,
+    error: BookingErrorResponse,
+    clinic_id: UUID,
+) -> NoReturn:
+    await record_booking_error_event(
+        clinic_id=clinic_id,
+        code=error.code,
+        source="api",
+        trace_id=error.trace_id,
+    )
+    raise HTTPException(status_code=status, detail=error.model_dump())
+
+
+def _booking_error_from_value_error(exc: ValueError, ctx: RequestContext | None) -> BookingErrorResponse:
+    # For backwards compatibility within this module, delegate to shared helper.
+    return booking_error_from_value_error(exc, ctx)
+
+
+def _booking_not_found_error(ctx: RequestContext | None) -> BookingErrorResponse:
+    return BookingErrorResponse(
+        code=BookingErrorCode.BOOKING_NOT_FOUND,
+        message=BOOKING_NOT_FOUND,
+        trace_id=getattr(ctx, "trace_id", None) if ctx is not None else None,
+    )
 
 
 @router.get(
@@ -52,41 +109,73 @@ async def get_patient_bookings(
     "/patient/bookings",
     response_model=BookingRead,
     status_code=status.HTTP_201_CREATED,
+    responses={400: BOOKING_ERROR_OPENAPI[400]},
 )
 async def create_patient_booking(
     data: BookingCreatePatient,
     session: AsyncSession = Depends(get_session),
     current_patient=Depends(get_current_patient),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Create booking from patient flow (status pending)."""
     service = BookingService(session)
     try:
-        booking = await service.create_patient_booking(patient_id=current_patient.id, data=data)
+        booking = await service.create_patient_booking(
+            patient_id=current_patient.id,
+            patient_clinic_id=current_patient.clinic_id,
+            data=data,
+            context=context,
+        )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
+        error = _booking_error_from_value_error(exc, context)
+        await _emit_booking_api_error(
+            status.HTTP_400_BAD_REQUEST,
+            error,
+            data.clinic_id,
+        )
     return booking
 
 
 @router.delete(
     "/patient/bookings/{booking_id}",
     response_model=BookingRead,
+    responses={400: BOOKING_ERROR_OPENAPI[400], 404: BOOKING_ERROR_OPENAPI[404]},
 )
 async def cancel_own_booking(
     booking_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_patient=Depends(get_current_patient),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Cancel own booking."""
     service = BookingService(session)
     try:
-        booking = await service.cancel_booking(booking_id)
+        booking = await service.cancel_booking(
+            clinic_id=current_patient.clinic_id,
+            booking_id=booking_id,
+            context=context,
+        )
+    except ClinicForbiddenError:
+        error = _booking_not_found_error(context)
+        await _emit_booking_api_error(
+            status.HTTP_404_NOT_FOUND,
+            error,
+            current_patient.clinic_id,
+        )
     except LookupError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+        error = _booking_not_found_error(context)
+        await _emit_booking_api_error(
+            status.HTTP_404_NOT_FOUND,
+            error,
+            current_patient.clinic_id,
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        error = _booking_error_from_value_error(exc, context)
+        await _emit_booking_api_error(
+            status.HTTP_400_BAD_REQUEST,
+            error,
+            current_patient.clinic_id,
+        )
 
     if booking.patient_id != current_patient.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot cancel other patient's booking")
@@ -253,7 +342,12 @@ async def get_admin_bookings(
             limit=limit,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        # For now keep generic 400 without BookingErrorResponse as it's a filter error,
+        # not a booking/payment lifecycle error.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     return bookings
 
 
@@ -261,104 +355,283 @@ async def get_admin_bookings(
     "/admin/bookings",
     response_model=BookingRead,
     status_code=status.HTTP_201_CREATED,
+    responses={400: BOOKING_ERROR_OPENAPI[400]},
 )
 async def create_admin_booking(
     data: BookingCreateAdmin,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Create booking from admin side. Optionally pass waitlist_entry_id to convert a waitlist entry."""
     service = BookingService(session)
     try:
-        booking = await service.create_admin_booking(current_admin.clinic_id, data)
-    except LookupError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Waitlist entry not found")
+        booking = await service.create_admin_booking(
+            current_admin.clinic_id,
+            data,
+            context=context,
+        )
+    except LookupError as exc:
+        # For waitlist-specific errors keep existing behavior for admin UX.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        error = _booking_error_from_value_error(exc, context)
+        await _emit_booking_api_error(
+            status.HTTP_400_BAD_REQUEST,
+            error,
+            current_admin.clinic_id,
+        )
     return booking
 
 
 @router.put(
     "/admin/bookings/{booking_id}/cancel",
     response_model=BookingRead,
+    responses={400: BOOKING_ERROR_OPENAPI[400], 404: BOOKING_ERROR_OPENAPI[404]},
 )
 async def cancel_booking_admin(
     booking_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Admin cancel booking."""
     service = BookingService(session)
     try:
-        booking = await service.cancel_booking(current_admin.clinic_id, booking_id)
+        booking = await service.cancel_booking(
+            current_admin.clinic_id,
+            booking_id,
+            context=context,
+        )
+    except ClinicForbiddenError as exc:
+        await record_multitenancy_mismatch_for_admin(session, current_admin, exc)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=clinic_forbidden_admin_detail(exc, context),
+        ) from exc
     except LookupError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+        error = _booking_not_found_error(context)
+        await _emit_booking_api_error(
+            status.HTTP_404_NOT_FOUND,
+            error,
+            current_admin.clinic_id,
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        error = _booking_error_from_value_error(exc, context)
+        await _emit_booking_api_error(
+            status.HTTP_400_BAD_REQUEST,
+            error,
+            current_admin.clinic_id,
+        )
     return booking
 
 
 @router.put(
     "/admin/bookings/{booking_id}/complete",
-    response_model=BookingRead,
+    response_model=BookingCompletionResult,
+    dependencies=[Depends(require_permissions("manage_finance"))],
+    responses={
+        400: BOOKING_ERROR_OPENAPI[400],
+        404: BOOKING_ERROR_OPENAPI[404],
+    },
 )
 async def complete_booking_admin(
     booking_id: UUID,
+    request: Request,
     body: CompleteBookingRequest | None = Body(None),
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
-    """Admin mark booking as completed. Optional use_subscription_id to apply specific package."""
-    service = BookingService(session)
+    """
+    Admin mark booking as completed via unified completion facade.
+
+    RBAC: доступ только для админских ролей с пермишеном `manage_finance`,
+    так как операция завершения визита приводит к денежным/ERP‑движениям.
+    """
+    trace_id = getattr(request.state, "trace_id", None)
+    completion_service = BookingCompletionService(session)
     use_subscription_id = body.use_subscription_id if body else None
-    try:
-        booking = await service.complete_booking(
-            current_admin.clinic_id, booking_id, use_subscription_id=use_subscription_id
+    result = await completion_service.complete_visit(
+        booking_id=booking_id,
+        actor=current_admin,  # current_admin implements RequestContext-ish fields
+        use_subscription_id=use_subscription_id,
+    )
+    if not result.success:
+        err = booking_error_from_completion_result(result, None, trace_id=trace_id)
+        await record_booking_error_event(
+            clinic_id=current_admin.clinic_id,
+            code=err.code,
+            source="api",
+            trace_id=err.trace_id,
         )
-    except LookupError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return booking
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if result.error_code == "booking_not_found"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=err.model_dump())
+    return result
+
+
+@router.put(
+    "/admin/bookings/{booking_id}/complete/retry",
+    response_model=BookingCompletionResult,
+    dependencies=[Depends(require_permissions("manage_finance"))],
+    responses={
+        400: BOOKING_ERROR_OPENAPI[400],
+        404: BOOKING_ERROR_OPENAPI[404],
+    },
+)
+async def retry_complete_booking_admin(
+    booking_id: UUID,
+    request: Request,
+    body: CompleteBookingRequest | None = Body(None),
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+):
+    """
+    Retry posting a visit to ERP after a previous failure left ``erp_error_code`` set (BKG_CORE G4).
+    """
+    trace_id = getattr(request.state, "trace_id", None)
+    b = await session.get(Booking, booking_id)
+    if not b or b.clinic_id != current_admin.clinic_id:
+        err = BookingErrorResponse(
+            code=BookingErrorCode.BOOKING_NOT_FOUND,
+            message=BOOKING_NOT_FOUND,
+            trace_id=trace_id,
+        )
+        await record_booking_error_event(
+            clinic_id=current_admin.clinic_id,
+            code=err.code,
+            source="api",
+            trace_id=err.trace_id,
+        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err.model_dump())
+    if b.erp_error_code is None:
+        err = BookingErrorResponse(
+            code=BookingErrorCode.VALIDATION_ERROR,
+            message="No pending ERP error on this booking; use PUT /admin/bookings/{id}/complete.",
+            details={"reason": "no_pending_erp_error"},
+            trace_id=trace_id,
+        )
+        await record_booking_error_event(
+            clinic_id=current_admin.clinic_id,
+            code=err.code,
+            source="api",
+            trace_id=err.trace_id,
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err.model_dump())
+    logger.info(
+        "booking_complete_erp_retry_attempt",
+        extra={
+            "booking_id": str(booking_id),
+            "clinic_id": str(b.clinic_id),
+            "previous_erp_error_code": b.erp_error_code,
+        },
+    )
+    booking_completion_erp_retry_total.labels(
+        clinic_bucket=clinic_bucket_label(str(b.clinic_id)),
+    ).inc()
+    completion_service = BookingCompletionService(session)
+    use_subscription_id = body.use_subscription_id if body else None
+    result = await completion_service.complete_visit(
+        booking_id=booking_id,
+        actor=current_admin,
+        use_subscription_id=use_subscription_id,
+    )
+    if not result.success:
+        err = booking_error_from_completion_result(result, None, trace_id=trace_id)
+        await record_booking_error_event(
+            clinic_id=current_admin.clinic_id,
+            code=err.code,
+            source="api",
+            trace_id=err.trace_id,
+        )
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if result.error_code == "booking_not_found"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=err.model_dump())
+    return result
 
 
 @router.put(
     "/admin/bookings/{booking_id}/mark-no-show",
     response_model=BookingRead,
+    responses={400: BOOKING_ERROR_OPENAPI[400], 404: BOOKING_ERROR_OPENAPI[404]},
 )
 async def mark_no_show_admin(
     booking_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Admin mark booking as no_show."""
     service = BookingService(session)
     try:
-        booking = await service.mark_no_show(current_admin.clinic_id, booking_id)
+        booking = await service.mark_no_show(current_admin.clinic_id, booking_id, context=context)
+    except ClinicForbiddenError as exc:
+        await record_multitenancy_mismatch_for_admin(session, current_admin, exc)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=clinic_forbidden_admin_detail(exc, context),
+        ) from exc
     except LookupError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+        error = _booking_not_found_error(context)
+        await _emit_booking_api_error(
+            status.HTTP_404_NOT_FOUND,
+            error,
+            current_admin.clinic_id,
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        error = _booking_error_from_value_error(exc, context)
+        await _emit_booking_api_error(
+            status.HTTP_400_BAD_REQUEST,
+            error,
+            current_admin.clinic_id,
+        )
     return booking
 
 
 @router.put(
     "/admin/bookings/{booking_id}/reschedule",
     response_model=BookingRead,
+    responses={400: BOOKING_ERROR_OPENAPI[400], 404: BOOKING_ERROR_OPENAPI[404]},
 )
 async def reschedule_booking_admin(
     booking_id: UUID,
     data: BookingRescheduleRequest,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    context: RequestContext = Depends(get_request_context),
 ):
     """Admin reschedule booking (optionally to another doctor via to_doctor_id)."""
     service = BookingService(session)
     try:
         booking = await service.reschedule_booking(current_admin.clinic_id, booking_id, data)
+    except ClinicForbiddenError as exc:
+        await record_multitenancy_mismatch_for_admin(session, current_admin, exc)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=clinic_forbidden_admin_detail(exc, context),
+        ) from exc
     except LookupError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+        error = _booking_not_found_error(context)
+        await _emit_booking_api_error(
+            status.HTTP_404_NOT_FOUND,
+            error,
+            current_admin.clinic_id,
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        error = _booking_error_from_value_error(exc, context)
+        await _emit_booking_api_error(
+            status.HTTP_400_BAD_REQUEST,
+            error,
+            current_admin.clinic_id,
+        )
     return booking
 

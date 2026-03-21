@@ -178,3 +178,103 @@ async def test_ai_orchestrator_suggest_only_creates_template(init_db, seed_data)
         templates = [m for m in msgs if m.content_type == "TEMPLATE" and m.actor_type == "AI"]
         assert templates, "Expected at least one TEMPLATE AI draft message"
 
+
+@pytest.mark.asyncio
+async def test_legacy_orchestrator_uses_factory_for_safe_client(init_db, seed_data, monkeypatch):
+    """Legacy handle_incoming_for_ai path must obtain SafeAiClient via build_safe_ai_client factory."""
+
+    business_account_id = seed_data["clinic_id"]
+
+    # Arrange chat, settings and inbound message similar to SUGGEST_ONLY scenario to hit legacy path.
+    async with db_base.AsyncSessionLocal() as session:
+        chat_service = OmnichannelChatService(session)
+        contact = await chat_service.create_contact(
+            business_account_id=business_account_id,
+            full_name="AI Legacy Factory Test",
+            primary_phone="+79990006666",
+        )
+        chat = await chat_service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+        )
+        inbound = await chat_service.create_inbound_message(
+            chat=chat,
+            contact=contact,
+            content="Подскажите расписание работы.",
+        )
+
+        ai_settings = OmniAISettings(
+            scope="CHAT",
+            scope_id=chat.id,
+            ai_mode="SUGGEST_ONLY",
+            confidence_thresholds={"auto_reply": 0.5},
+        )
+        session.add(ai_settings)
+
+        # Force use_agent=False so that legacy branch is used.
+        from src.application.services import ai_config_service as ai_config_module
+
+        async def fake_get_clinic_ai_config(self, clinic_id):  # type: ignore[unused-argument]
+            # Return default strict config so that run_ai_agent is not used.
+            return await ai_config_module.AiConfigService(None).get_clinic_ai_config(clinic_id)
+
+        monkeypatch.setattr(
+            ai_config_module.AiConfigService,
+            "get_clinic_ai_config",
+            fake_get_clinic_ai_config,
+        )
+
+        # Capture calls to build_safe_ai_client from legacy path.
+        from src.application.services import omnichannel_ai_orchestrator as orch_module
+        from src.application.services.ai_client_factory import SafeAiClientContext
+
+        captured_calls = []
+
+        class StubSafeAiClient:
+            def is_configured(self) -> bool:
+                return True
+
+            async def complete(self, payload: dict) -> dict:
+                # Minimal JSON reply understood by LLMClient.generate_reply
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"text": "Работаем ежедневно.", "confidence": 0.95}',
+                            }
+                        }
+                    ]
+                }
+
+        async def fake_build_safe_ai_client(clinic_id, session_arg):
+            captured_calls.append((clinic_id, session_arg))
+            return StubSafeAiClient(), SafeAiClientContext(
+                clinic_id=clinic_id,
+                provider_type="ru_compliant",
+                allow_personal_data=True,
+            )
+
+        monkeypatch.setattr(orch_module, "build_safe_ai_client", fake_build_safe_ai_client)
+
+        orchestrator = OmnichannelAIOrchestrator(session)
+
+        await orchestrator.handle_incoming_for_ai(
+            message=inbound,
+            chat=chat,
+            contact=contact,
+        )
+
+        # Factory must be invoked with correct clinic_id and session.
+        assert captured_calls, "Expected factory to be called from legacy path"
+        called_clinic_id, called_session = captured_calls[0]
+        assert called_clinic_id == business_account_id
+        assert called_session is session
+
+        # And legacy LLM path should still create AI suggestion/template.
+        result = await session.execute(
+            select(OmniMessage).where(OmniMessage.chat_id == chat.id)
+        )
+        msgs = list(result.scalars().all())
+        templates = [m for m in msgs if m.content_type == "TEMPLATE" and m.actor_type == "AI"]
+        assert templates, "Expected TEMPLATE AI draft message from legacy path using factory"
+

@@ -1,8 +1,7 @@
-import { useClinics } from "@/hooks";
-import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { useClinics, useCreateClinicMutation, useUpdateClinicMutation } from "@/hooks";
+import { AdminDrawer, DataSkeleton, QueryErrorAlert } from "@/shared/ui";
 import {
   Button,
-  Drawer,
   Group,
   Select,
   Stack,
@@ -15,8 +14,6 @@ import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
 import type { Clinic } from "@/api/types";
 import { BUSINESS_TYPE_OPTIONS } from "@/api/types";
-import { api } from "@/api/client";
-
 interface ClinicFormState {
   id?: string;
   name: string;
@@ -32,6 +29,8 @@ interface ClinicFormState {
 
 export default function AdminClinicsPage() {
   const { data, isLoading, isError, error, refetch } = useClinics();
+  const createClinic = useCreateClinicMutation();
+  const updateClinic = useUpdateClinicMutation();
   const [opened, { open, close }] = useDisclosure(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ClinicFormState>({
@@ -97,9 +96,9 @@ export default function AdminClinicsPage() {
         staff_label_plural: form.staff_label_plural.trim() || null,
       };
       if (form.id) {
-        await api.put(`/v1/clinics/${form.id}`, payload);
+        await updateClinic.mutateAsync({ clinicId: form.id, body: payload });
       } else {
-        await api.post("/v1/clinics", payload);
+        await createClinic.mutateAsync(payload);
       }
       await refetch();
       close();
@@ -118,11 +117,10 @@ export default function AdminClinicsPage() {
   }
 
   if (isError) {
-    const message = error instanceof Error ? error.message : "Ошибка загрузки";
     return (
       <Stack>
         <ContextBar title="Клиники" />
-        <Text c="red">{message}</Text>
+        <QueryErrorAlert error={error} />
       </Stack>
     );
   }
@@ -174,7 +172,7 @@ export default function AdminClinicsPage() {
         </Table>
       )}
 
-      <Drawer
+      <AdminDrawer
         position="right"
         size="lg"
         opened={opened}
@@ -262,7 +260,7 @@ export default function AdminClinicsPage() {
             </Button>
           </Group>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

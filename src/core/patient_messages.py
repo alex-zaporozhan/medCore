@@ -12,6 +12,12 @@ BOOKING_SLOT_ALREADY_BOOKED = (
     "Слот уже занят. Выберите другое время или другого врача."
 )
 BOOKING_NOT_FOUND = "Запись не найдена. Обновите страницу или создайте запись заново."
+BOOKING_CLINIC_MISMATCH_PATIENT = (
+    "Выбранная клиника не совпадает с вашим профилем. Выберите клинику, в которой вы зарегистрированы."
+)
+BOOKING_ENTITY_CLINIC_MISMATCH = (
+    "Услуга или врач не относятся к выбранной клинике. Обновите страницу и выберите клинику заново."
+)
 BOOKING_CANNOT_CANCEL_STATUS = (
     "Отмена невозможна для текущего статуса записи. Проверьте историю посещений."
 )
@@ -26,6 +32,9 @@ BOOKING_ONLY_PENDING_CONFIRMED_NO_SHOW = (
 )
 BOOKING_CANNOT_RESCHEDULE_CANCELLED = "Перенос отменённой записи невозможен."
 BOOKING_INVALID_STATUS = "Недопустимый статус записи."
+BOOKING_WAITLIST_CONVERSION_FAILED = (
+    "Не удалось завершить запись из листа ожидания. Попробуйте снова или создайте запись вручную."
+)
 
 # --- Оплата ---
 PAYMENT_CANCELLED_BOOKING = (

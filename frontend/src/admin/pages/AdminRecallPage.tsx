@@ -25,7 +25,6 @@ import {
   Badge,
   Button,
   Group,
-  Drawer,
   Select,
   Stack,
   Switch,
@@ -35,8 +34,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { ContextBar } from "@/shared/ui/ContextBar";
-import { PageSkeleton } from "@/shared/ui/PageSkeleton";
+import { AdminDrawer, ContextBar, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { useDisclosure } from "@mantine/hooks";
 import { useState } from "react";
 
@@ -79,7 +77,7 @@ function SegmentsTab({ clinicId }: { clinicId: string }) {
   };
 
   if (isLoading) return <PageSkeleton variant="table" rows={5} />;
-  if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
+  if (isError) return <QueryErrorAlert error={error} />;
 
   const list = segments ?? [];
 
@@ -144,7 +142,7 @@ function SegmentsTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title={editing ? "Изменить сегмент" : "Новый сегмент"}>
+      <AdminDrawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title={editing ? "Изменить сегмент" : "Новый сегмент"}>
         <Stack>
           <TextInput label="Название" value={name} onChange={(e) => setName(e.target.value)} />
           <TextInput
@@ -157,7 +155,7 @@ function SegmentsTab({ clinicId }: { clinicId: string }) {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }
@@ -200,7 +198,7 @@ function TemplatesTab({ clinicId }: { clinicId: string }) {
   };
 
   if (isLoading) return <PageSkeleton variant="table" rows={5} />;
-  if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
+  if (isError) return <QueryErrorAlert error={error} />;
 
   const list = templates ?? [];
 
@@ -252,7 +250,7 @@ function TemplatesTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title={editing ? "Изменить шаблон" : "Новый шаблон"}>
+      <AdminDrawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title={editing ? "Изменить шаблон" : "Новый шаблон"}>
         <Stack>
           <TextInput label="Название" value={name} onChange={(e) => setName(e.target.value)} />
           <TextInput
@@ -272,7 +270,7 @@ function TemplatesTab({ clinicId }: { clinicId: string }) {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }
@@ -304,7 +302,7 @@ function CampaignsTab({ clinicId }: { clinicId: string }) {
   };
 
   if (isLoading) return <PageSkeleton variant="table" rows={5} />;
-  if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
+  if (isError) return <QueryErrorAlert error={error} />;
 
   const list = campaigns ?? [];
   const segmentOptions = segments?.map((s) => ({ value: s.id, label: `${s.name} (${s.patient_count})` })) ?? [];
@@ -360,7 +358,7 @@ function CampaignsTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title="Новая кампания">
+      <AdminDrawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title="Новая кампания">
         <Stack>
           <TextInput label="Название" value={name} onChange={(e) => setName(e.target.value)} placeholder="Кампания" />
           <Select
@@ -381,7 +379,7 @@ function CampaignsTab({ clinicId }: { clinicId: string }) {
             Создать
           </Button>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }
@@ -426,7 +424,7 @@ function AutomationsTab({ clinicId }: { clinicId: string }) {
   };
 
   if (isLoading) return <PageSkeleton variant="table" rows={5} />;
-  if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
+  if (isError) return <QueryErrorAlert error={error} />;
 
   const list = automations ?? [];
   const templateOptions = templates?.map((t) => ({ value: t.id, label: t.name })) ?? [];
@@ -469,7 +467,7 @@ function AutomationsTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title="Новая автоматизация">
+      <AdminDrawer position="right" size="md" opened={opened} onClose={() => { close(); reset(); }} title="Новая автоматизация">
         <Stack>
           <TextInput label="Название" value={name} onChange={(e) => setName(e.target.value)} placeholder="Автоматизация" />
           <Select
@@ -490,7 +488,7 @@ function AutomationsTab({ clinicId }: { clinicId: string }) {
             Создать
           </Button>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

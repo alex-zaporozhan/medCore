@@ -17,7 +17,7 @@ export function AppCard({ children, padded = true, ...props }: AppCardProps) {
       style={{
         background: "var(--bg-card)",
         borderColor: "var(--divider)",
-        boxShadow: "var(--shadow-soft-sm)",
+        boxShadow: "var(--shadow-card)",
         ...props.style,
       }}
       {...props}

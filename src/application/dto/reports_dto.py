@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
@@ -104,4 +104,127 @@ class OwnerDashboardReport(BaseModel):
     prepayment_transactions_count: int
     waitlist_entries_count: int
     recall_campaigns_count: int
+
+
+class VisitRevenueItem(BaseModel):
+    """ERP-based revenue per visit date."""
+
+    date: date
+    booking_id: str | None = None
+    amount: Decimal
+
+
+class VisitRevenueByPeriodReport(BaseModel):
+    """ERP-based revenue report grouped by visit date."""
+
+    clinic_id: str
+    date_from: date
+    date_to: date
+    total_revenue: Decimal
+    items: list[VisitRevenueItem]
+    data_source: str | None = Field(
+        default=None,
+        description="aggregate | raw — источник строк (при включённом чтении из витрины).",
+    )
+    aggregate_max_updated_at: datetime | None = Field(
+        default=None,
+        description="Максимум updated_at по строкам витрины в запрошенном диапазоне дат визита.",
+    )
+    aggregate_stale: bool | None = Field(
+        default=None,
+        description="True если ответ собран из raw-запроса из‑за устаревшей витрины по диапазону.",
+    )
+
+
+class PayrollByPeriodItem(BaseModel):
+    """Aggregated salary movements for doctor/booking in period."""
+
+    doctor_id: str
+    booking_id: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    amount: Decimal
+
+
+class PayrollByPeriodReport(BaseModel):
+    """ERP-based payroll movements for a clinic in period."""
+
+    clinic_id: str
+    date_from: date
+    date_to: date
+    items: list[PayrollByPeriodItem]
+    data_source: str | None = Field(
+        default=None,
+        description="aggregate | raw — источник строк (при включённом чтении из витрины).",
+    )
+    aggregate_max_updated_at: datetime | None = Field(default=None)
+    aggregate_stale: bool | None = Field(default=None)
+
+
+class MaterialsByPeriodItem(BaseModel):
+    """Inventory movements per product/booking in period."""
+
+    product_id: str
+    booking_id: str | None = None
+    total_quantity: Decimal
+
+
+class MaterialsByPeriodReport(BaseModel):
+    """ERP-based inventory movements for a clinic in period."""
+
+    clinic_id: str
+    date_from: date
+    date_to: date
+    items: list[MaterialsByPeriodItem] = Field(
+        ...,
+        description=(
+            "Rows ordered by product_id ascending, then booking_id (NULL last), "
+            "matching Engine L2 vitrine read path."
+        ),
+    )
+    data_source: str | None = Field(default=None)
+    aggregate_max_updated_at: datetime | None = Field(default=None)
+    aggregate_stale: bool | None = Field(default=None)
+
+
+class LoyaltyObligationItem(BaseModel):
+    """Current loyalty obligations for a patient in clinic."""
+
+    patient_id: str | None = None
+    total_obligations_amount: Decimal
+
+
+class LoyaltyObligationsReport(BaseModel):
+    """Snapshot of loyalty obligations for clinic."""
+
+    clinic_id: str
+    as_of: date | None = None
+    items: list[LoyaltyObligationItem]
+
+
+class RoiBySourceItem(BaseModel):
+    """ERP-based revenue aggregated by traffic source / campaign."""
+
+    date: date
+    traffic_source_id: str | None = None
+    campaign_id: str | None = None
+    revenue: Decimal
+
+
+class RoiBySourceReport(BaseModel):
+    """ERP-based revenue by marketing source for period."""
+
+    clinic_id: str
+    date_from: date
+    date_to: date
+    items: list[RoiBySourceItem] = Field(
+        ...,
+        description=(
+            "Rows ordered by visit date, then traffic_source_id (NULL last), then campaign_id (NULL last); "
+            "aligned with ``ErpAggregateService.fetch_attribution_revenue_aggregate``."
+        ),
+    )
+    data_source: str | None = Field(default=None)
+    aggregate_max_updated_at: datetime | None = Field(default=None)
+    aggregate_stale: bool | None = Field(default=None)
 

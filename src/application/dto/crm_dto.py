@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LeadPipelineDto(BaseModel):
@@ -48,6 +48,30 @@ class LeadNoteDto(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LeadKanbanCardDto(BaseModel):
+    """Minimal lead fields for Kanban board (PERF: smaller JSON, ORM load_only)."""
+
+    id: UUID
+    clinic_id: UUID
+    pipeline_id: UUID
+    stage_id: UUID
+    omnichannel_contact_id: UUID | None = None
+    title: str
+    source: str
+    estimated_value: Decimal = Field(
+        ...,
+        description="CRM forecast (e.g. catalog estimate), not an ERP posting.",
+    )
+    actual_value: Decimal = Field(
+        ...,
+        description="Sum of ERP income (financial_transactions) for this lead/booking keys; read-only via API.",
+    )
+    status: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class LeadCardDto(BaseModel):
     id: UUID
     clinic_id: UUID
@@ -64,8 +88,14 @@ class LeadCardDto(BaseModel):
     utm_campaign: str | None = None
     utm_content: str | None = None
     utm_term: str | None = None
-    estimated_value: Decimal
-    actual_value: Decimal
+    estimated_value: Decimal = Field(
+        ...,
+        description="CRM forecast (e.g. catalog estimate), not an ERP posting.",
+    )
+    actual_value: Decimal = Field(
+        ...,
+        description="Sum of ERP income (financial_transactions) for this lead/booking keys; read-only via API.",
+    )
     status: str
     created_at: datetime
     updated_at: datetime
@@ -80,6 +110,14 @@ class LeadListResponse(BaseModel):
     total: int
 
 
+class LeadKanbanListResponse(BaseModel):
+    """Kanban list response: lighter items than LeadListResponse."""
+
+    items: list[LeadKanbanCardDto]
+    total: int | None = None
+    next_cursor: str | None = None
+
+
 class LeadDetailsResponse(BaseModel):
     lead: LeadCardDto
     notes: list[LeadNoteDto]
@@ -87,6 +125,16 @@ class LeadDetailsResponse(BaseModel):
 
 class ChangeLeadStageRequest(BaseModel):
     new_stage_id: UUID
+    enforce_semantic_transition: bool = Field(
+        default=False,
+        description="When true, reject transition if both stages resolve to semantics and the move violates the state machine.",
+    )
+
+
+class UpdateLeadEstimatedValueRequest(BaseModel):
+    """Manual forecast adjustment; does not change ERP fact."""
+
+    estimated_value: Decimal = Field(..., description="New CRM estimated_value (forecast).")
 
 
 class CreateLeadNoteRequest(BaseModel):

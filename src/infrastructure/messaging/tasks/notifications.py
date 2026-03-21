@@ -15,6 +15,7 @@ from src.domain.entities.notification import Notification
 from src.domain.entities.patient import Patient
 from src.infrastructure.database.base import AsyncSessionLocal
 from src.infrastructure.messaging.celery_app import celery_app
+from src.core.tracing import extract_trace_id_from_payload
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ def _run_async(coro):
 
 
 @celery_app.task(name="notifications.send_booking_created", bind=True)
-def send_booking_created_task(self, booking_id: str):
+def send_booking_created_task(self, booking_id: str, trace_id: str | None = None):
     """Send notification when booking is created (patient + optional admin)."""
     bid = UUID(booking_id)
 
@@ -128,7 +129,11 @@ def send_booking_created_task(self, booking_id: str):
             channel=channel,
             template="new_booking",
             message=message,
-            meta={"booking_id": str(booking.id), "phone": phone},
+            meta={
+                "booking_id": str(booking.id),
+                "phone": phone,
+                "trace_id": trace_id or "",
+            },
         )
         # Optional: notify admin in Telegram (admin_chat_id from TELEGRAM_BOT channel or env)
         from src.application.services.omnichannel_integrations_config_service import (
@@ -155,7 +160,7 @@ def send_booking_created_task(self, booking_id: str):
 
 
 @celery_app.task(name="notifications.send_booking_cancelled", bind=True)
-def send_booking_cancelled_task(self, booking_id: str):
+def send_booking_cancelled_task(self, booking_id: str, trace_id: str | None = None):
     """Send notification when booking is cancelled."""
     bid = UUID(booking_id)
 
@@ -180,7 +185,10 @@ def send_booking_cancelled_task(self, booking_id: str):
             channel="sms",
             template="booking_cancelled",
             message=message,
-            meta={"booking_id": str(booking.id)},
+            meta={
+                "booking_id": str(booking.id),
+                "trace_id": trace_id or "",
+            },
         )
         # Optional: notify admin in Telegram
         from src.application.services.omnichannel_integrations_config_service import (
@@ -207,7 +215,7 @@ def send_booking_cancelled_task(self, booking_id: str):
 
 
 @celery_app.task(name="notifications.send_reminder_24h", bind=True)
-def send_reminder_24h_task(self, booking_id: str):
+def send_reminder_24h_task(self, booking_id: str, trace_id: str | None = None):
     """Send reminder 24 hours before appointment."""
     bid = UUID(booking_id)
 
@@ -233,7 +241,10 @@ def send_reminder_24h_task(self, booking_id: str):
             channel=patient.preferred_channel if patient else "sms",
             template="reminder_24h",
             message=message,
-            meta={"booking_id": str(booking.id)},
+            meta={
+                "booking_id": str(booking.id),
+                "trace_id": trace_id or "",
+            },
         )
 
     _run_async(_do())
@@ -241,7 +252,7 @@ def send_reminder_24h_task(self, booking_id: str):
 
 
 @celery_app.task(name="notifications.send_reminder_2h", bind=True)
-def send_reminder_2h_task(self, booking_id: str):
+def send_reminder_2h_task(self, booking_id: str, trace_id: str | None = None):
     """Send reminder 2 hours before appointment."""
     bid = UUID(booking_id)
 
@@ -267,7 +278,10 @@ def send_reminder_2h_task(self, booking_id: str):
             channel=patient.preferred_channel if patient else "sms",
             template="reminder_2h",
             message=message,
-            meta={"booking_id": str(booking.id)},
+            meta={
+                "booking_id": str(booking.id),
+                "trace_id": trace_id or "",
+            },
         )
 
     _run_async(_do())

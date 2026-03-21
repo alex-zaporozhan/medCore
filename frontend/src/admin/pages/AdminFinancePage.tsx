@@ -16,7 +16,6 @@ import {
   Anchor,
   Button,
   Card,
-  Drawer,
   Group,
   Menu,
   NumberInput,
@@ -29,9 +28,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { IconDotsVertical, IconPlus, IconMinus, IconTransfer } from "@tabler/icons-react";
-import { EmptyState } from "@/shared/ui/EmptyState";
-import { ContextBar } from "@/shared/ui/ContextBar";
-import { PageSkeleton } from "@/shared/ui/PageSkeleton";
+import { AdminDrawer, EmptyState, ContextBar, PageSkeleton } from "@/shared/ui";
 import dayjs from "dayjs";
 import { useMemo, useState } from "react";
 import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
@@ -693,7 +690,7 @@ export default function AdminFinancePage() {
         </Tabs.Panel>
       </Tabs>
 
-      <Drawer
+      <AdminDrawer
         position="right"
         size="md"
         opened={txDrawerOpen}
@@ -805,7 +802,7 @@ export default function AdminFinancePage() {
             </Button>
           </Group>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

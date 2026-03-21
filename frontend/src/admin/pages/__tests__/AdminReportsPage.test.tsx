@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { renderWithProviders } from "@/test-utils";
 import AdminReportsPage from "../AdminReportsPage";
 
 vi.mock("@/contexts/AdminClinicContext", () => ({
@@ -17,6 +19,18 @@ const mockUseMarketingAttributionSummary = vi.fn();
 
 vi.mock("@/hooks/useMarketingAttribution", () => ({
   useMarketingAttributionSummary: (...args: any[]) => mockUseMarketingAttributionSummary(...args),
+  useMarketingInsights: () => ({
+    data: null,
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+  useMarketingAttributionDrillDown: () => ({
+    data: null,
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
   useMarketingCampaigns: () => ({
     data: [
       {
@@ -65,32 +79,33 @@ describe("AdminReportsPage marketing attribution filters", () => {
   });
 
   it("renders marketing attribution table and filter controls", () => {
-    render(<AdminReportsPage />);
+    renderWithProviders(<AdminReportsPage />);
 
-    expect(screen.getByText("Маркетинг и атрибуция")).toBeInTheDocument();
+    expect(screen.getByText(/Маркетинг и атрибуция/)).toBeInTheDocument();
     expect(screen.getByText("Источник трафика")).toBeInTheDocument();
     expect(screen.getByText("Кампания")).toBeInTheDocument();
 
-    expect(screen.getByText("Кампания 1")).toBeInTheDocument();
+    expect(screen.getAllByText("Кампания 1").length).toBeGreaterThan(0);
     expect(screen.getByText("Google Ads")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
   });
 
-  it("updates attribution query hook when filters change", () => {
-    render(<AdminReportsPage />);
+  it("updates attribution query hook when filters change", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminReportsPage />);
 
-    const trafficSelect = screen.getByLabelText("Источник трафика");
-    fireEvent.change(trafficSelect, { target: { value: "google" } });
+    await user.click(screen.getAllByLabelText("Источник трафика")[0]);
+    await user.click(await screen.findByRole("option", { name: /Google Ads/i }));
 
-    const campaignSelect = screen.getByLabelText("Кампания");
-    fireEvent.change(campaignSelect, { target: { value: "cmp-1" } });
+    await user.click(screen.getAllByLabelText("Кампания")[0]);
+    await user.click(await screen.findByRole("option", { name: /Кампания 1/i }));
 
-    // Last call should include selected filters as last arguments
-    const lastCallArgs = mockUseMarketingAttributionSummary.mock.calls.at(-1);
-    expect(lastCallArgs?.[0]).toBe("clinic-1");
-    // dateFrom and dateTo are dynamic; we only assert that traffic/campaign ids are passed
-    expect(lastCallArgs?.[3]).toBe("google");
-    expect(lastCallArgs?.[4]).toBe("cmp-1");
+    await waitFor(() => {
+      const lastCallArgs = mockUseMarketingAttributionSummary.mock.calls.at(-1);
+      expect(lastCallArgs?.[0]).toBe("clinic-1");
+      expect(lastCallArgs?.[3]).toBe("google");
+      expect(lastCallArgs?.[4]).toBe("cmp-1");
+    });
   });
 });
 

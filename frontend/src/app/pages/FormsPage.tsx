@@ -16,6 +16,7 @@ import {
 } from "@mantine/core";
 import type { DigitalFormFieldSchema, DigitalFormTemplate } from "@/api/types";
 import { SignatureCanvas, type SignaturePayload } from "@/shared/ui/SignatureCanvas";
+import { QueryErrorAlert } from "@/shared/ui";
 
 type FormValues = Record<string, unknown>;
 
@@ -176,9 +177,10 @@ export default function FormsPage() {
   }
   if (isError) {
     return (
-      <Text c="red">
-        {error instanceof Error ? error.message : "Ошибка загрузки форм"}
-      </Text>
+      <Stack>
+        <Title order={3}>Анкеты и согласия</Title>
+        <QueryErrorAlert error={error} title="Не удалось загрузить формы" />
+      </Stack>
     );
   }
 

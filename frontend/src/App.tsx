@@ -1,3 +1,7 @@
+/**
+ * Дерево маршрутов и зоны — техпаспорт §2; §7: не менять разделение `/admin` / `/app` и цепочки guard’ов
+ * (`AdminAuthGuard`, `PatientAuthProvider` + `AppLayout`) без архитектурного эпика.
+ */
 import { ErrorBoundary } from "@/shared/ErrorBoundary";
 import { PatientAuthProvider } from "@/contexts/PatientAuthContext";
 import AdminLayout from "@/admin/layouts/AdminLayout";
@@ -51,7 +55,15 @@ import ProfilePage from "@/app/pages/ProfilePage";
 import LoginPage from "@/app/pages/LoginPage";
 import OAuthResultPage from "@/app/pages/OAuthResultPage";
 import FormsPage from "@/app/pages/FormsPage";
+import {
+  ADMIN_SHELL_ROUTE_SEGMENTS,
+  PATIENT_APP_ROUTE_SEGMENTS,
+  ROUTE_PATHS,
+  type AdminShellSegment,
+  type PatientAppSegment,
+} from "@/routePaths";
 import { Box, Button, Container, Grid, Paper, Stack, Text, Title } from "@mantine/core";
+import { createElement, type ComponentType } from "react";
 import {
   createBrowserRouter,
   Link,
@@ -59,6 +71,53 @@ import {
   Route,
   createRoutesFromElements,
 } from "react-router-dom";
+
+const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
+  clinics: AdminClinicsPage,
+  services: AdminServicesPage,
+  schedule: SchedulePage,
+  tasks: AdminTasksPage,
+  bookings: AdminBookingsPage,
+  prepayment: AdminPrepaymentPage,
+  waitlist: AdminWaitlistPage,
+  recall: AdminRecallPage,
+  marketing: AdminMarketingPage,
+  retention: AdminRetentionPage,
+  sales: AdminSalesPipelinePage,
+  attention: AdminAttentionFeedPage,
+  reports: AdminReportsPage,
+  finance: AdminFinancePage,
+  loyalty: AdminLoyaltyPage,
+  forms: AdminFormsPage,
+  doctors: AdminDoctorsPage,
+  "doctor-schedule": AdminDoctorSchedulePage,
+  patients: AdminPatientsPage,
+  "omni-chat": AdminOmniChatPage,
+  "omni-channels": AdminOmniChannelsPage,
+  "omni-ai-settings": AdminOmniAiSettingsPage,
+  channels: AdminChannelsPage,
+  integrations: AdminIntegrationsPage,
+  "omni-vault": AdminOmniVaultPage,
+  styling: AdminStylingPage,
+  stickers: AdminStickersPage,
+  settings: AdminSettingsPage,
+  administrators: AdminAdministratorsPage,
+  "payment-gateway": AdminPaymentGatewayPage,
+  "client-reference": AdminClientReferencePage,
+  discounts: AdminDiscountsPage,
+  "notification-policy": AdminNotificationPolicyPage,
+  agreements: AdminAgreementsPage,
+};
+
+const PATIENT_APP_PAGE_BY_SEGMENT: Record<PatientAppSegment, ComponentType> = {
+  feed: FeedPage,
+  booking: BookingWizardPage,
+  history: HistoryPage,
+  loyalty: LoyaltyPage,
+  forms: FormsPage,
+  chat: ChatPage,
+  profile: ProfilePage,
+};
 
 function LandingPage() {
   return (
@@ -99,16 +158,16 @@ function LandingPage() {
                   <Stack gap="sm">
                     <Button
                       component={Link}
-                      to="/app"
+                      to={ROUTE_PATHS.patient.home}
                       size="lg"
                       variant="filled"
-                      color="brand"
+                      color="indigo"
                     >
                       Приложение пациента
                     </Button>
                     <Button
                       component={Link}
-                      to="/admin"
+                      to={ROUTE_PATHS.admin.dashboard}
                       size="md"
                       variant="light"
                       color="gray"
@@ -214,8 +273,8 @@ function LandingPage() {
 const router = createBrowserRouter(
   createRoutesFromElements(
     <>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/admin" element={<AdminAuthGuard />}>
+      <Route path={ROUTE_PATHS.marketing.landing} element={<LandingPage />} />
+      <Route path={ROUTE_PATHS.admin.dashboard} element={<AdminAuthGuard />}>
         <Route path="login" element={<AdminLoginPage />} />
         <Route
           path=""
@@ -228,44 +287,17 @@ const router = createBrowserRouter(
           }
         >
           <Route index element={<AdminDashboardPage />} />
-        <Route path="clinics" element={<AdminClinicsPage />} />
-        <Route path="services" element={<AdminServicesPage />} />
-        <Route path="schedule" element={<SchedulePage />} />
-        <Route path="tasks" element={<AdminTasksPage />} />
-        <Route path="bookings" element={<AdminBookingsPage />} />
-        <Route path="prepayment" element={<AdminPrepaymentPage />} />
-        <Route path="waitlist" element={<AdminWaitlistPage />} />
-        <Route path="recall" element={<AdminRecallPage />} />
-        <Route path="marketing" element={<AdminMarketingPage />} />
-        <Route path="retention" element={<AdminRetentionPage />} />
-        <Route path="sales" element={<AdminSalesPipelinePage />} />
-        <Route path="attention" element={<AdminAttentionFeedPage />} />
-        <Route path="reports" element={<AdminReportsPage />} />
-        <Route path="finance" element={<AdminFinancePage />} />
-        <Route path="loyalty" element={<AdminLoyaltyPage />} />
-        <Route path="forms" element={<AdminFormsPage />} />
-        <Route path="doctors" element={<AdminDoctorsPage />} />
-        <Route path="doctor-schedule" element={<AdminDoctorSchedulePage />} />
-        <Route path="patients" element={<AdminPatientsPage />} />
-        <Route path="omni-chat" element={<AdminOmniChatPage />} />
-        <Route path="omni-channels" element={<AdminOmniChannelsPage />} />
-        <Route path="omni-ai-settings" element={<AdminOmniAiSettingsPage />} />
-        <Route path="channels" element={<AdminChannelsPage />} />
-        <Route path="integrations" element={<AdminIntegrationsPage />} />
-        <Route path="omni-vault" element={<AdminOmniVaultPage />} />
-        <Route path="styling" element={<AdminStylingPage />} />
-        <Route path="stickers" element={<AdminStickersPage />} />
-        <Route path="settings" element={<AdminSettingsPage />} />
-        <Route path="administrators" element={<AdminAdministratorsPage />} />
-        <Route path="payment-gateway" element={<AdminPaymentGatewayPage />} />
-        <Route path="client-reference" element={<AdminClientReferencePage />} />
-        <Route path="discounts" element={<AdminDiscountsPage />} />
-        <Route path="notification-policy" element={<AdminNotificationPolicyPage />} />
-        <Route path="agreements" element={<AdminAgreementsPage />} />
+          {ADMIN_SHELL_ROUTE_SEGMENTS.map((seg) => (
+            <Route
+              key={seg}
+              path={seg}
+              element={createElement(ADMIN_SHELL_PAGE_BY_SEGMENT[seg])}
+            />
+          ))}
         </Route>
       </Route>
       <Route
-        path="/login"
+        path={ROUTE_PATHS.other.login}
         element={
           <PatientAuthProvider>
             <LoginPage />
@@ -273,7 +305,7 @@ const router = createBrowserRouter(
         }
       />
       <Route
-        path="/oauth/result"
+        path={ROUTE_PATHS.other.oauthResult}
         element={
           <PatientAuthProvider>
             <OAuthResultPage />
@@ -281,7 +313,7 @@ const router = createBrowserRouter(
         }
       />
       <Route
-        path="/app"
+        path={ROUTE_PATHS.patient.home}
         element={
           <PatientAuthProvider>
             <AppLayout />
@@ -289,15 +321,15 @@ const router = createBrowserRouter(
         }
       >
         <Route index element={<HomePage />} />
-        <Route path="feed" element={<FeedPage />} />
-        <Route path="booking" element={<BookingWizardPage />} />
-        <Route path="history" element={<HistoryPage />} />
-        <Route path="loyalty" element={<LoyaltyPage />} />
-        <Route path="forms" element={<FormsPage />} />
-        <Route path="chat" element={<ChatPage />} />
-        <Route path="profile" element={<ProfilePage />} />
+        {PATIENT_APP_ROUTE_SEGMENTS.map((seg) => (
+          <Route
+            key={seg}
+            path={seg}
+            element={createElement(PATIENT_APP_PAGE_BY_SEGMENT[seg])}
+          />
+        ))}
       </Route>
-      <Route path="/booking/success" element={<BookingSuccessPage />} />
+      <Route path={ROUTE_PATHS.other.bookingSuccess} element={<BookingSuccessPage />} />
     </>
   ),
   { future: { v7_relativeSplatPath: true } }

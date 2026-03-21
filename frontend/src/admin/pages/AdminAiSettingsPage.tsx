@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { api } from "@/api/client";
+import {
+  useAdminClinicAiSettings,
+  useAdminAiStatus,
+  useUpdateAdminClinicAiSettingsMutation,
+  type AdminClinicAiSettings,
+  type AiMode,
+} from "@/hooks";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { QueryErrorAlert } from "@/shared/ui";
 import {
   Button,
   Checkbox,
@@ -16,23 +23,6 @@ import {
   Select,
 } from "@mantine/core";
 
-type AiMode = "draft_only" | "safe_autoreply" | "analytics_only";
-
-interface AiSettings {
-  ai_enabled: boolean;
-  ai_mode: AiMode;
-  ai_business_prompt: string | null;
-  ai_allowed_intents: string[];
-  ai_autoreply_enabled: boolean;
-  ai_autoreply_hours: Record<string, unknown> | null;
-  ai_provider_type: string;
-}
-
-interface AiStatusResponse {
-  ai_mode: "disabled" | "fallback_local" | "external_active";
-  features: Record<string, boolean>;
-}
-
 const INTENT_OPTIONS = [
   { value: "schedule", label: "Расписание" },
   { value: "location", label: "Адрес / как добраться" },
@@ -45,50 +35,28 @@ export default function AdminAiSettingsPage() {
   const { currentClinicId } = useAdminClinic();
   const clinicId = currentClinicId ?? null;
 
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [settings, setSettings] = useState<AiSettings | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [statusLoading, setStatusLoading] = useState(false);
-  const [aiStatus, setAiStatus] = useState<AiStatusResponse | null>(null);
+  const {
+    data: settingsData,
+    isLoading,
+    isError,
+    error: loadError,
+  } = useAdminClinicAiSettings(clinicId);
+  const {
+    data: aiStatus,
+    isLoading: statusLoading,
+    isError: statusError,
+  } = useAdminAiStatus();
+  const updateMutation = useUpdateAdminClinicAiSettingsMutation(clinicId);
+
+  const [draft, setDraft] = useState<AdminClinicAiSettings | null>(null);
 
   useEffect(() => {
-    if (!clinicId) return;
-    setLoading(true);
-    setError(null);
-    api
-      .get<AiSettings>(`/v1/admin/clinics/${clinicId}/ai-settings`)
-      .then((res) => {
-        setSettings(res);
-      })
-      .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : "Ошибка загрузки настроек AI");
-      })
-      .finally(() => setLoading(false));
-
-    setStatusLoading(true);
-    api
-      .get<AiStatusResponse>("/v1/admin/ai-status")
-      .then((res) => {
-        setAiStatus(res);
-      })
-      .catch(() => {
-        // мягко игнорируем, статус не блокирует работу страницы
-      })
-      .finally(() => setStatusLoading(false));
-  }, [clinicId]);
+    if (settingsData) setDraft(settingsData);
+  }, [settingsData]);
 
   const handleSave = () => {
-    if (!clinicId || !settings) return;
-    setSaving(true);
-    setError(null);
-    api
-      .put<AiSettings>(`/v1/admin/clinics/${clinicId}/ai-settings`, settings)
-      .then((res) => setSettings(res))
-      .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : "Ошибка сохранения настроек AI");
-      })
-      .finally(() => setSaving(false));
+    if (!draft || !clinicId) return;
+    updateMutation.mutate(draft);
   };
 
   if (!clinicId) {
@@ -102,7 +70,7 @@ export default function AdminAiSettingsPage() {
     );
   }
 
-  if (loading && !settings) {
+  if (isLoading && !draft) {
     return (
       <Stack>
         <Title order={3}>AI и ассистент</Title>
@@ -111,18 +79,24 @@ export default function AdminAiSettingsPage() {
     );
   }
 
-  if (error && !settings) {
+  if (isError && !draft) {
     return (
       <Stack>
         <Title order={3}>AI и ассистент</Title>
-        <Text c="red" size="sm">
-          {error}
-        </Text>
+        <QueryErrorAlert error={loadError} title="Не удалось загрузить настройки AI" />
       </Stack>
     );
   }
 
-  const s = settings!;
+  const s = draft;
+  if (!s) {
+    return (
+      <Stack>
+        <Title order={3}>AI и ассистент</Title>
+        <DataSkeleton lines={4} />
+      </Stack>
+    );
+  }
 
   return (
     <Stack>
@@ -146,6 +120,11 @@ export default function AdminAiSettingsPage() {
               </Text>
             </Stack>
           )}
+          {statusError && !statusLoading && !aiStatus && (
+            <Text size="xs" c="dimmed">
+              Статус AI недоступен (сервер или сеть). Настройки клиники ниже можно редактировать.
+            </Text>
+          )}
         </Stack>
       </Paper>
       <Paper p="md" radius="md" withBorder>
@@ -154,7 +133,7 @@ export default function AdminAiSettingsPage() {
             label="Включить AI‑ассистента"
             checked={s.ai_enabled}
             onChange={(e) =>
-              setSettings((prev) => (prev ? { ...prev, ai_enabled: e.currentTarget.checked } : prev))
+              setDraft((prev) => (prev ? { ...prev, ai_enabled: e.currentTarget.checked } : prev))
             }
           />
           <Select
@@ -167,7 +146,7 @@ export default function AdminAiSettingsPage() {
             ]}
             value={s.ai_mode}
             onChange={(v) =>
-              setSettings((prev) => (prev ? { ...prev, ai_mode: (v as AiMode) ?? "draft_only" } : prev))
+              setDraft((prev) => (prev ? { ...prev, ai_mode: (v as AiMode) ?? "draft_only" } : prev))
             }
           />
           <Textarea
@@ -176,7 +155,7 @@ export default function AdminAiSettingsPage() {
             minRows={4}
             value={s.ai_business_prompt ?? ""}
             onChange={(e) =>
-              setSettings((prev) => (prev ? { ...prev, ai_business_prompt: e.currentTarget.value } : prev))
+              setDraft((prev) => (prev ? { ...prev, ai_business_prompt: e.currentTarget.value } : prev))
             }
           />
           <MultiSelect
@@ -185,14 +164,14 @@ export default function AdminAiSettingsPage() {
             data={INTENT_OPTIONS}
             value={s.ai_allowed_intents ?? []}
             onChange={(vals) =>
-              setSettings((prev) => (prev ? { ...prev, ai_allowed_intents: vals } : prev))
+              setDraft((prev) => (prev ? { ...prev, ai_allowed_intents: vals } : prev))
             }
           />
           <Checkbox
             label="Разрешить автоответ в разрешённых сценариях"
             checked={s.ai_autoreply_enabled}
             onChange={(e) =>
-              setSettings((prev) =>
+              setDraft((prev) =>
                 prev ? { ...prev, ai_autoreply_enabled: e.currentTarget.checked } : prev,
               )
             }
@@ -204,13 +183,11 @@ export default function AdminAiSettingsPage() {
           <Text size="sm">
             Текущий тип провайдера: <b>{s.ai_provider_type}</b>
           </Text>
-          {error && (
-            <Text c="red" size="sm">
-              {error}
-            </Text>
+          {updateMutation.isError && (
+            <QueryErrorAlert error={updateMutation.error} title="Не удалось сохранить настройки AI" />
           )}
           <Group justify="flex-end" mt="sm">
-            <Button onClick={handleSave} loading={saving}>
+            <Button onClick={handleSave} loading={updateMutation.isPending}>
               Сохранить настройки
             </Button>
           </Group>
@@ -219,4 +196,3 @@ export default function AdminAiSettingsPage() {
     </Stack>
   );
 }
-

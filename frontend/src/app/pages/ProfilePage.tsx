@@ -8,6 +8,7 @@ import { usePatientLoyaltyMe } from "@/hooks";
 import { Button, Card, Group, Stack, Text, Title } from "@mantine/core";
 import { IconGift, IconWallet, IconDoorExit } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
+import { ROUTE_PATHS } from "@/routePaths";
 
 export default function ProfilePage() {
   const { accessToken, logout } = usePatientAuth();
@@ -20,11 +21,11 @@ export default function ProfilePage() {
         .share({
           title: "Dental Booking",
           text: "Подари другу 1000₽ — запишись по моей ссылке!",
-          url: window.location.origin + "/app",
+          url: window.location.origin + ROUTE_PATHS.patient.home,
         })
         .catch(() => {});
     } else {
-      navigator.clipboard?.writeText(window.location.origin + "/app");
+      navigator.clipboard?.writeText(window.location.origin + ROUTE_PATHS.patient.home);
     }
   };
 
@@ -45,7 +46,14 @@ export default function ProfilePage() {
           <Text size="xs" c="dimmed">
             Кэшбэк с визитов. Можно списать при записи.
           </Text>
-          <Button component={Link} to="/app/loyalty" variant="light" size="sm" mt="sm">
+          <Button
+            component={Link}
+            to={ROUTE_PATHS.patient.loyalty}
+            variant="light"
+            color="indigo"
+            size="sm"
+            mt="sm"
+          >
             Абонементы и баллы
           </Button>
         </Card>
@@ -56,7 +64,13 @@ export default function ProfilePage() {
           <Text size="sm" c="dimmed" mb="sm">
             Баланс и абонементы появятся после визитов.
           </Text>
-          <Button component={Link} to="/app/loyalty" variant="light" size="sm">
+          <Button
+            component={Link}
+            to={ROUTE_PATHS.patient.loyalty}
+            variant="light"
+            color="indigo"
+            size="sm"
+          >
             Перейти в раздел лояльности
           </Button>
         </Card>
@@ -71,7 +85,7 @@ export default function ProfilePage() {
         <Text size="sm" c="dimmed" mb="sm">
           Поделитесь ссылкой — друг получит бонус при записи.
         </Text>
-        <Button onClick={handleReferral} leftSection={<IconGift size={16} />}>
+        <Button color="indigo" onClick={handleReferral} leftSection={<IconGift size={16} />}>
           Поделиться ссылкой
         </Button>
       </Card>
@@ -82,7 +96,7 @@ export default function ProfilePage() {
         leftSection={<IconDoorExit size={18} />}
         onClick={() => {
           logout();
-          navigate("/");
+          navigate(ROUTE_PATHS.marketing.landing);
         }}
       >
         Выйти

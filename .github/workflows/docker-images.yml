@@ -1,13 +1,209 @@
-name: Build and push Docker images
+name: CI (tests) + Build & push Docker images
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  build-and-push:
+  backend-tests:
+    name: Backend tests (pytest + ruff)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dental_booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: "1.7.1"
+
+      - name: Install backend dependencies
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-ansi --with dev --no-root
+
+      - name: Ruff (lint)
+        run: poetry run ruff check .
+
+      - name: Pytest (full suite)
+        run: poetry run pytest -v tests/
+
+  frontend-tests:
+    name: Frontend tests (lint + build + vitest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend deps
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Frontend ESLint
+        run: |
+          cd frontend
+          npm run lint
+
+      - name: Frontend tests (Vitest once)
+        run: |
+          cd frontend
+          npm run test -- --run
+
+      - name: Frontend build
+        run: |
+          cd frontend
+          npm run build
+
+  e2e-frontend-pages:
+    name: E2E frontend pages (Playwright)
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dental_booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/2
+      SECRET_KEY: test-secret-key
+      JWT_SECRET_KEY: test-jwt-secret-key
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: "1.7.1"
+
+      - name: Install backend dependencies
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-interaction --no-ansi --with dev --no-root
+
+      - name: Install Playwright browsers
+        run: poetry run playwright install chromium
+
+      - name: Alembic upgrade
+        run: poetry run python -m alembic -c alembic.ini upgrade head
+
+      - name: Seed demo data
+        run: poetry run python -m src.scripts.seed_demo_data
+
+      - name: Start backend (uvicorn)
+        run: |
+          nohup poetry run uvicorn src.main:app --host 0.0.0.0 --port 8000 > /tmp/uvicorn.log 2>&1 &
+          echo "Waiting for backend..."
+          for i in {1..30}; do
+            curl -fsS http://localhost:8000/health > /dev/null && exit 0
+            sleep 1
+          done
+          exit 1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend deps
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Start frontend (Vite dev server)
+        run: |
+          cd frontend
+          nohup npm run dev -- --host 0.0.0.0 --port 5175 > /tmp/vite.log 2>&1 &
+          echo "Waiting for frontend..."
+          for i in {1..30}; do
+            curl -fsS http://localhost:5175/ > /dev/null && exit 0
+            sleep 1
+          done
+          exit 1
+
+      - name: Run Playwright e2e
+        env:
+          FRONTEND_E2E_URL: http://localhost:5175
+        run: poetry run pytest -v tests/e2e/test_frontend_pages.py
+
+  build-and-push:
+    name: Build & push Docker images (Docker Hub)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests, e2e-frontend-pages]
 
     steps:
       - name: Checkout
@@ -45,7 +241,12 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: moircreator/dental-booking-backend:latest
+          tags: |
+            moircreator/dental-booking-backend:${{ github.sha }}
+            moircreator/dental-booking-backend:main
+            moircreator/dental-booking-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and push frontend image
         if: steps.changes.outputs.frontend == 'true'
@@ -54,5 +255,10 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
-          tags: moircreator/dental-booking-frontend:latest
+          tags: |
+            moircreator/dental-booking-frontend:${{ github.sha }}
+            moircreator/dental-booking-frontend:main
+            moircreator/dental-booking-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 

@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MantineProvider } from "@mantine/core";
 import { appTheme } from "@/theme";
 import AdminSalesPipelinePage from "../AdminSalesPipelinePage";
@@ -9,11 +10,61 @@ vi.mock("react-router-dom", () => ({
   useSearchParams: () => [new URLSearchParams()],
 }));
 
+vi.mock("@/contexts/AdminClinicContext", () => ({
+  useAdminClinic: () => ({
+    clinics: [],
+    currentClinicId: "clinic-1",
+    setCurrentClinicId: vi.fn(),
+    isLoading: false,
+    error: null,
+    businessLexicon: null,
+  }),
+}));
+
+vi.mock("@/shared/aiFeatures", () => ({
+  useAiFeatures: () => ({
+    get: (id: string) => ({ id, label: id, status: "beta" }),
+  }),
+  getAiFeatureBadgeColor: () => "blue",
+  getAiFeatureStatusText: () => "beta",
+  getAiFeatureTooltip: () => "beta",
+}));
+
+vi.mock("@/shared/uiEvents", () => ({
+  logUiEvent: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/hooks/useAvailableAiTools", () => ({
+  useAvailableAiTools: () => ({
+    hasAll: () => true,
+  }),
+}));
+
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: (opts: { count: number }) => ({
+    getVirtualItems: () =>
+      Array.from({ length: opts.count }, (_, i) => ({
+        index: i,
+        start: i * 148,
+        key: String(i),
+        size: 148,
+      })),
+    getTotalSize: () => opts.count * 148,
+    measureElement: vi.fn(),
+  }),
+}));
+
+const testQueryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
 function renderWithMantine(ui: ReactElement) {
   return render(
-    <MantineProvider theme={appTheme} defaultColorScheme="light">
-      {ui}
-    </MantineProvider>
+    <QueryClientProvider client={testQueryClient}>
+      <MantineProvider theme={appTheme} defaultColorScheme="light">
+        {ui}
+      </MantineProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -99,16 +150,51 @@ const mockLeadDetails = {
 
 const mockUseCrmPipelines = vi.fn();
 const mockUseCrmStages = vi.fn();
-const mockUseCrmLeads = vi.fn();
+const mockUseCrmKanbanStageLeadsInfinite = vi.fn();
 const mockUseCrmLeadDetails = vi.fn();
 const mockUseCreateLeadNote = vi.fn();
 
 vi.mock("@/hooks/useCrmLeads", () => ({
   useCrmPipelines: () => mockUseCrmPipelines(),
   useCrmStages: (pipelineId: string | null) => mockUseCrmStages(pipelineId),
-  useCrmLeads: (filters: object) => mockUseCrmLeads(filters),
+  useCrmKanbanStageLeadsInfinite: (filters: { stageId: string }) =>
+    mockUseCrmKanbanStageLeadsInfinite(filters),
   useCrmLeadDetails: (leadId: string | null) => mockUseCrmLeadDetails(leadId),
   useCreateLeadNote: () => mockUseCreateLeadNote(),
+  useAiLeadSummary: () => ({
+    data: null,
+    isFetching: false,
+    refetch: vi.fn(),
+  }),
+  useAiSuggestNextStage: () => ({
+    data: null,
+    isFetching: false,
+    refetch: vi.fn(),
+  }),
+  useAiUpdateLeadStage: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+  useAiCreateTaskForLead: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+  useAiIgnoreLeadRecommendation: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+  usePipelineStageSemantics: () => ({
+    data: {
+      pipeline_id: "pipe-1",
+      supported_semantics: ["start", "scheduled", "won"],
+      mappings: [],
+      resolved_stage_semantics: [
+        { stage_id: "stage-new", semantic: "start" },
+        { stage_id: "stage-booked", semantic: "scheduled" },
+      ],
+    },
+    isLoading: false,
+  }),
   useUpdateLeadStage: () => ({
     mutate: vi.fn(),
     isPending: false,
@@ -125,9 +211,21 @@ describe("AdminSalesPipelinePage Kanban", () => {
       data: mockStages,
       isLoading: false,
     }));
-    mockUseCrmLeads.mockReturnValue({
-      data: { items: mockLeads, total: 1 },
-    });
+    mockUseCrmKanbanStageLeadsInfinite.mockImplementation(({ stageId }: { stageId: string }) => ({
+      data: {
+        pages: [
+          {
+            items: mockLeads.filter((l) => l.stage_id === stageId),
+            total: 1,
+            next_cursor: null,
+          },
+        ],
+        pageParams: [undefined],
+      },
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+    }));
     mockUseCrmLeadDetails.mockReturnValue({
       data: null,
       isLoading: false,
@@ -153,7 +251,7 @@ describe("AdminSalesPipelinePage Kanban", () => {
 
     expect(screen.getAllByText("Новое").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Записан").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("1 лидов")).toBeInTheDocument();
+    expect(screen.getByText(/\(1\)\s+—/)).toBeInTheDocument();
   });
 
   it("renders lead cards with title, source, estimated and actual value, status", () => {

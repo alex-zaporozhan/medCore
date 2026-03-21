@@ -16,6 +16,11 @@ Run from project root: poetry run pytest tests/
   в PowerShell не используйте плейсхолдер в угловых скобках — только реальное имя контейнера):
     docker exec dental_booking_postgres psql -U postgres -c "CREATE DATABASE dental_booking_test;"
 
+  Схема должна совпадать с Alembic head (иначе ORM запросы падают с UndefinedColumnError):
+    python scripts/upgrade_test_db.py
+  Скрипт подставляет DATABASE_URL_TEST в DATABASE_URL и выполняет `alembic upgrade head`.
+  Если таблицы уже есть, но alembic_version пуста или рассинхронизирована — см. docs/MIGRATION_UPGRADE.md (stamp/upgrade).
+
 - If connection to the test DB fails, tests are SKIPPED with a hint.
 - TRUNCATE runs only when the DB name contains "test". Never point at production.
 """
@@ -26,6 +31,15 @@ from urllib.parse import urlparse
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+# Minimal built-in async support for environments where pytest-asyncio plugin
+# is not installed (e.g. system Python runs).
+try:
+    import pytest_asyncio  # noqa: F401
+
+    pytest_plugins = []
+except Exception:
+    pytest_plugins = ["tests.pytest_asyncio_compat"]
 
 # Set test env before any src import so app uses test DB/Redis
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
@@ -87,6 +101,10 @@ try:
     from src.domain.entities.lead_card import LeadCard  # noqa: F401
     from src.domain.entities.lead_note import LeadNote  # noqa: F401
     from src.domain.entities.visit_attribution import VisitAttribution  # noqa: F401
+    from src.domain.entities.family_link import FamilyLink  # noqa: F401
+    from src.domain.entities.loyalty_campaign_settings import (  # noqa: F401
+        LoyaltyCampaignSettings,
+    )
     from src.domain.entities.lead_pipeline import LeadPipeline  # noqa: F401
     from src.domain.entities.lead_stage import LeadStage  # noqa: F401
     from src.domain.entities.lead_card import LeadCard  # noqa: F401
@@ -130,15 +148,110 @@ else:
         from src.main import app as _app
         this_conftest.app = _app
         try:
+            # Keep tests lightweight: use create_all() for fresh DBs.
+            # Note: create_all() does not ALTER existing tables; for incremental
+            # schema updates in a persistent local test DB we apply a minimal set
+            # of idempotent DDL patches required by the suite.
+            from sqlalchemy import text
+
             async with db_base.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+
+                # Idempotent schema patches for Tasks&Attention migrations.
+                await conn.execute(
+                    text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attention_kind VARCHAR(64)")
+                )
+                await conn.execute(
+                    text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attention_ref_id UUID")
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_tasks_clinic_attention_ref "
+                        "ON tasks (clinic_id, attention_kind, attention_ref_id)"
+                    )
+                )
+                # Waitlist BKG-4 columns (idempotent for DBs created before migration)
+                for col, typ in (
+                    ("booking_id", "UUID"),
+                    ("preferred_service_id", "UUID"),
+                    ("source", "VARCHAR(32)"),
+                    ("notes", "TEXT"),
+                    ("created_by_id", "UUID"),
+                    ("updated_by_id", "UUID"),
+                ):
+                    await conn.execute(
+                        text(
+                            f"ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS {col} {typ}"
+                        )
+                    )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_waitlist_entries_status "
+                        "ON waitlist_entries (status)"
+                    )
+                )
+                # ERP payroll vitrine: NULL period flags + PK (migration n0o1p2q3r4s5; create_all does not ALTER).
+                reg = await conn.execute(
+                    text("SELECT to_regclass('public.erp_payroll_aggregate')::text")
+                )
+                if reg.scalar():
+                    await conn.execute(
+                        text(
+                            "ALTER TABLE erp_payroll_aggregate ADD COLUMN IF NOT EXISTS "
+                            "period_start_is_null BOOLEAN NOT NULL DEFAULT false"
+                        )
+                    )
+                    await conn.execute(
+                        text(
+                            "ALTER TABLE erp_payroll_aggregate ADD COLUMN IF NOT EXISTS "
+                            "period_end_is_null BOOLEAN NOT NULL DEFAULT false"
+                        )
+                    )
+                    await conn.execute(
+                        text(
+                            """
+                            UPDATE erp_payroll_aggregate SET
+                              period_start_is_null = (period_start_key = DATE '0001-01-01'),
+                              period_end_is_null = (period_end_key = DATE '9999-12-31')
+                            """
+                        )
+                    )
+                    await conn.execute(
+                        text(
+                            "ALTER TABLE erp_payroll_aggregate "
+                            "DROP CONSTRAINT IF EXISTS erp_payroll_aggregate_pkey"
+                        )
+                    )
+                    try:
+                        await conn.execute(
+                            text(
+                                """
+                                ALTER TABLE erp_payroll_aggregate ADD PRIMARY KEY (
+                                  clinic_id, doctor_id, booking_bucket_id,
+                                  period_start_is_null, period_start_key,
+                                  period_end_is_null, period_end_key
+                                )
+                                """
+                            )
+                        )
+                    except Exception:
+                        pass
         except Exception as e:
             if "InvalidPasswordError" in type(e).__name__ or "password" in str(e).lower():
                 pytest.skip(
                     "Cannot connect to test DB (invalid password). "
                     "Set DATABASE_URL (or DATABASE_URL_TEST) to your test DB, e.g. same as .env but database=dental_booking_test."
                 )
-            if "connection" in str(e).lower() or "refused" in str(e).lower():
+            msg = str(e).lower()
+            type_name = type(e).__name__.lower()
+            # Windows локализует сообщения (может не содержать "refused"), поэтому
+            # дополнительно смотрим на тип исключения.
+            if (
+                "connection" in msg
+                or "refused" in msg
+                or "connectionrefusederror" in type_name
+                or "cannot connect" in msg
+            ):
                 pytest.skip(
                     "Cannot connect to test DB (Postgres/Redis not reachable). "
                     "Start: docker compose up -d postgres redis, then create DB: docker exec dental_booking_postgres psql -U postgres -c 'CREATE DATABASE dental_booking_test;'"
@@ -246,6 +359,54 @@ else:
                     full_name="Test Admin",
                 )
             )
+            # RBAC: test admin as clinic owner with all permissions (forms, etc.)
+            from sqlalchemy import select
+
+            from src.application.rbac_matrix import PERMISSIONS
+            from src.domain.entities.permission import Permission
+            from src.domain.entities.role import Role
+            from src.domain.entities.role_permission import RolePermission
+            from src.domain.entities.user_role import UserRole
+
+            for pd in PERMISSIONS:
+                ex = await session.execute(select(Permission).where(Permission.code == pd.code))
+                if ex.scalar_one_or_none() is None:
+                    session.add(
+                        Permission(
+                            id=uuid.uuid4(),
+                            code=pd.code,
+                            description=pd.description,
+                        )
+                    )
+            await session.flush()
+
+            owner_role_id = uuid.uuid4()
+            session.add(
+                Role(
+                    id=owner_role_id,
+                    clinic_id=clinic_id,
+                    code="owner",
+                    name="Owner",
+                    description="Test seed owner",
+                )
+            )
+            await session.flush()
+            perm_result = await session.execute(select(Permission))
+            for perm in perm_result.scalars():
+                session.add(
+                    RolePermission(
+                        role_id=owner_role_id,
+                        permission_id=perm.id,
+                    )
+                )
+            session.add(
+                UserRole(
+                    id=uuid.uuid4(),
+                    user_id=admin_id,
+                    role_id=owner_role_id,
+                    clinic_id=clinic_id,
+                )
+            )
             await session.commit()
 
         yield {
@@ -316,3 +477,18 @@ else:
             base_url="http://test",
         ) as ac:
             yield ac
+
+    @pytest.fixture
+    async def db_session(init_db, seed_data):
+        """
+        Async SQLAlchemy session for service-layer tests.
+
+        Kept function-scoped to avoid state leaks between tests.
+        """
+        from src.infrastructure.database import base as db_base
+
+        async with db_base.AsyncSessionLocal() as session:
+            # Note: do not force rollback in fixture finalizer. On Windows/Proactor loop
+            # some environments close the loop before async-generator teardown runs,
+            # which makes rollback fail with "Event loop is closed".
+            yield session

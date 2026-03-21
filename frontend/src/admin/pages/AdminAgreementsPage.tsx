@@ -1,6 +1,8 @@
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import {
+  useAdminAgreementSettings,
+  useUpdateAdminAgreementSettingsMutation,
+} from "@/hooks/useAdminAgreements";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Button,
@@ -10,25 +12,14 @@ import {
   Textarea,
 } from "@mantine/core";
 import { ContextBar } from "@/shared/ui/ContextBar";
+import { QueryErrorAlert } from "@/shared/ui";
 import { useState, useEffect } from "react";
-
-interface AgreementSettings {
-  clinic_id: string;
-  pd_agreement_text: string | null;
-  allow_registration_without_mailing_consent: boolean;
-}
 
 export default function AdminAgreementsPage() {
   const { currentClinicId } = useAdminClinic();
-  const qc = useQueryClient();
   const clinicId = currentClinicId ?? null;
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["agreement-settings", clinicId],
-    queryFn: () =>
-      api.get<AgreementSettings>(`/v1/admin/clinics/${clinicId}/agreement-settings`),
-    enabled: !!clinicId,
-  });
+  const { data, isLoading, isError, error } = useAdminAgreementSettings(clinicId);
 
   const [pdText, setPdText] = useState("");
   const [allowWithoutMailing, setAllowWithoutMailing] = useState(true);
@@ -40,16 +31,7 @@ export default function AdminAgreementsPage() {
     }
   }, [data?.clinic_id, data?.pd_agreement_text, data?.allow_registration_without_mailing_consent]);
 
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      api.put<AgreementSettings>(`/v1/admin/clinics/${clinicId}/agreement-settings`, {
-        pd_agreement_text: pdText || null,
-        allow_registration_without_mailing_consent: allowWithoutMailing,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["agreement-settings", clinicId] });
-    },
-  });
+  const saveMutation = useUpdateAdminAgreementSettingsMutation(clinicId);
 
   if (!clinicId) {
     return (
@@ -73,7 +55,7 @@ export default function AdminAgreementsPage() {
     return (
       <Stack>
         <ContextBar title="Соглашения" />
-        <Text c="red">Ошибка загрузки настроек.</Text>
+        <QueryErrorAlert error={error} title="Не удалось загрузить настройки" />
       </Stack>
     );
   }
@@ -97,7 +79,15 @@ export default function AdminAgreementsPage() {
         checked={allowWithoutMailing}
         onChange={(e) => setAllowWithoutMailing(e.currentTarget.checked)}
       />
-      <Button onClick={() => saveMutation.mutate()} loading={saveMutation.isPending}>
+      <Button
+        onClick={() =>
+          saveMutation.mutate({
+            pd_agreement_text: pdText || null,
+            allow_registration_without_mailing_consent: allowWithoutMailing,
+          })
+        }
+        loading={saveMutation.isPending}
+      >
         Сохранить
       </Button>
     </Stack>

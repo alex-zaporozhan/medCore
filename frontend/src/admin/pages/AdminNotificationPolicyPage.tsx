@@ -1,40 +1,19 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { api } from "@/api/client";
+import {
+  useAdminNotificationPolicy,
+  useUpdateAdminNotificationPolicyMutation,
+} from "@/hooks/useAdminNotificationPolicy";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { QueryErrorAlert } from "@/shared/ui";
 import { Paper, Stack, Switch, Text } from "@mantine/core";
 import { ContextBar } from "@/shared/ui/ContextBar";
 
-interface PolicyRead {
-  allow_patient_disable_discount_notifications: boolean;
-  allow_patient_disable_reminders: boolean;
-  allow_patient_disable_all_notifications: boolean;
-}
-
 export default function AdminNotificationPolicyPage() {
   const { currentClinicId } = useAdminClinic();
-  const queryClient = useQueryClient();
-  const { data: policy, isLoading, isError, error } = useQuery({
-    queryKey: ["admin-notification-policy", currentClinicId],
-    queryFn: () =>
-      api.get<PolicyRead>(
-        `/v1/admin/clinics/${currentClinicId}/notification-policy`
-      ),
-    enabled: !!currentClinicId,
-  });
-
-  const updatePolicy = useMutation({
-    mutationFn: (body: Partial<PolicyRead>) =>
-      api.put<PolicyRead>(
-        `/v1/admin/clinics/${currentClinicId}/notification-policy`,
-        body
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["admin-notification-policy", currentClinicId],
-      });
-    },
-  });
+  const { data: policy, isLoading, isError, error } = useAdminNotificationPolicy(
+    currentClinicId ?? null
+  );
+  const updatePolicy = useUpdateAdminNotificationPolicyMutation(currentClinicId ?? null);
 
   if (!currentClinicId) {
     return (
@@ -56,14 +35,20 @@ export default function AdminNotificationPolicyPage() {
     return (
       <Stack>
         <ContextBar title="Политика уведомлений" />
-        <Text c="red">{error instanceof Error ? error.message : "Ошибка загрузки"}</Text>
+        <QueryErrorAlert error={error} />
       </Stack>
     );
   }
 
   const p = policy!;
 
-  const handleChange = (key: keyof PolicyRead, value: boolean) => {
+  const handleChange = (
+    key:
+      | "allow_patient_disable_discount_notifications"
+      | "allow_patient_disable_reminders"
+      | "allow_patient_disable_all_notifications",
+    value: boolean
+  ) => {
     updatePolicy.mutate({ [key]: value });
   };
 

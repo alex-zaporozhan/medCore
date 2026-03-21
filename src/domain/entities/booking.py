@@ -3,6 +3,7 @@
 import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
+from enum import Enum
 
 from sqlalchemy import (
     Date,
@@ -21,12 +22,40 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.infrastructure.database.base import Base
 
 
+class BookingStatus(str, Enum):
+    """Unified booking status enum.
+
+    Underlying values are stored as strings in the database
+    to remain backward compatible with existing data.
+    """
+
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+    NO_SHOW = "no_show"
+
+    # Extended lifecycle statuses from ARCH_DEV_BKG_STATE_002
+    DRAFT = "draft"
+    SCHEDULED = "scheduled"
+    RESCHEDULED = "rescheduled"
+    IN_PROGRESS = "in_progress"
+    CANCELED_BY_PATIENT = "canceled_by_patient"
+    CANCELED_BY_CLINIC = "canceled_by_clinic"
+    BLOCKED = "blocked"
+    MAINTENANCE = "maintenance"
+    ERROR = "error"
+    INCONSISTENT = "inconsistent"
+    AWAITING_PAYMENT = "awaiting_payment"
+
+
 class Booking(Base):
     """Patient booking model."""
 
     __tablename__ = "bookings"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # clinic_id is immutable after insert (multi-tenant boundary; see ARCH_DECISIONS / BKG_MULTI).
     clinic_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clinics.id"), nullable=False, index=True
     )
@@ -41,9 +70,9 @@ class Booking(Base):
     )
     appointment_date: Mapped[date] = mapped_column(Date, nullable=False)
     appointment_time: Mapped[time] = mapped_column(Time, nullable=False)
-    status: Mapped[str] = mapped_column(
+    status: Mapped[BookingStatus] = mapped_column(
         String(32), nullable=False
-    )  # pending|confirmed|cancelled|completed|no_show
+    )  # stored as BookingStatus value
     prepayment_amount: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), nullable=False, server_default="0.00"
     )

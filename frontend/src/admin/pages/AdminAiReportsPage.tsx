@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import { useAdminAiConflictReport } from "@/hooks/useAdminAiReports";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { QueryErrorAlert } from "@/shared/ui";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Button,
@@ -14,44 +14,14 @@ import {
   Title,
 } from "@mantine/core";
 
-interface ConflictItem {
-  conversation_id: string;
-  sentiment: string;
-  issue_category: string;
-  is_conflict: boolean;
-  is_resolved: boolean;
-  admin_mistakes: string[];
-  business_root_causes: string[];
-  suggested_playbook: string[];
-  created_at: string;
-}
-
-interface ConflictSummary {
-  total: number;
-  unresolved_conflicts: number;
-  top_issue_categories: string[];
-}
-
-interface ConflictReportResponse {
-  summary: ConflictSummary;
-  items: ConflictItem[];
-  ai_status?: string | null;
-}
-
 function AdminAiReportsPage() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
 
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ["admin-ai-reports-conflicts", dateFrom, dateTo],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (dateFrom) params.set("date_from", dateFrom);
-      if (dateTo) params.set("date_to", dateTo);
-      return api.get<ConflictReportResponse>(`/v1/admin/ai-reports/conflicts?${params.toString()}`);
-    },
-    enabled: !!dateFrom && !!dateTo,
-  });
+  const { data, isLoading, isError, error, refetch, isFetching } = useAdminAiConflictReport(
+    dateFrom,
+    dateTo
+  );
 
   const report = data;
   const items = report?.items ?? [];
@@ -102,11 +72,7 @@ function AdminAiReportsPage() {
 
           {isLoading && !report && <DataSkeleton lines={4} />}
 
-          {isError && !report && (
-            <Text c="red">
-              {error instanceof Error ? error.message : "Ошибка загрузки отчёта"}
-            </Text>
-          )}
+          {isError && !report && <QueryErrorAlert error={error} title="Не удалось загрузить отчёт" />}
 
           {summary && (
             <Paper p="sm" radius="md" withBorder>

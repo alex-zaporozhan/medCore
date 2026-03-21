@@ -1,0 +1,54 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Booking/payment structured errors (W7 BE4).",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "mode": "markdown",
+        "content": "**booking_errors_total** — разрез `code`, `clinic_bucket`, `source` (api | ai_tool). Пороги алертов: `deploy/prometheus/dental_booking_alerts.yml`, NFR: `docs/artifacts/NONFUNCTIONAL_AUDIT_NEXT.md`."
+      },
+      "title": "Notes",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 3 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum by (code, source) (rate(booking_errors_total[5m]))",
+          "legendFormat": "{{code}} / {{source}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Booking/payment error rate by code and source",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["dental_booking", "booking_errors", "w7"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "Dental Booking — Booking errors (W7)",
+  "uid": "dental-booking-booking-errors-w7",
+  "version": 1
+}

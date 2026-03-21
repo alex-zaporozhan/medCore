@@ -72,3 +72,5 @@ frontend/.env
 pgdata/
 __pycache__/
 frontend/node_modules/
+frontend/playwright-report/
+frontend/test-results/

@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from src.core.datetime_utils import utc_now
+from src.core.datetime_utils import utc_now_naive
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,7 +74,7 @@ class ChatMessageRepositoryImpl(ChatMessageRepository):
     async def mark_read_by_patient_up_to(
         self, conversation_id: UUID, up_to_message_id: UUID | None
     ) -> int:
-        now = utc_now()
+        now = utc_now_naive()
         q = (
             update(ChatMessage)
             .where(
@@ -95,7 +95,7 @@ class ChatMessageRepositoryImpl(ChatMessageRepository):
     async def mark_read_by_admin_up_to(
         self, conversation_id: UUID, up_to_message_id: UUID | None
     ) -> int:
-        now = utc_now()
+        now = utc_now_naive()
         q = (
             update(ChatMessage)
             .where(

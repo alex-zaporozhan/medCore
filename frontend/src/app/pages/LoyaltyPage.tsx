@@ -4,6 +4,8 @@ import { usePatientLoyaltyMe, usePatientLoyaltyHistory } from "@/hooks";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import type { PatientLoyaltyMeResponse, PatientLoyaltyHistoryResponse } from "@/api/types";
 import { Badge, Button, Card, Group, Loader, Progress, Stack, Table, Text, Title } from "@mantine/core";
+import { ROUTE_PATHS } from "@/routePaths";
+import { QueryErrorAlert } from "@/shared/ui";
 
 export default function LoyaltyPage() {
   const { accessToken } = usePatientAuth();
@@ -24,17 +26,15 @@ export default function LoyaltyPage() {
   if (meLoading || historyLoading) return <Loader />;
   if (meError)
     return (
-      <Text c="red">
-        {meErrorObj instanceof Error ? meErrorObj.message : "Ошибка загрузки лояльности"}
-      </Text>
+      <Stack>
+        <QueryErrorAlert error={meErrorObj} title="Не удалось загрузить данные лояльности" />
+      </Stack>
     );
   if (historyError)
     return (
-      <Text c="red">
-        {historyErrorObj instanceof Error
-          ? historyErrorObj.message
-          : "Ошибка загрузки истории"}
-      </Text>
+      <Stack>
+        <QueryErrorAlert error={historyErrorObj} title="Не удалось загрузить историю" />
+      </Stack>
     );
 
   if (!loyaltyMe || (!loyaltyMe.subscriptions.length && !loyaltyMe.wallet)) {
@@ -54,15 +54,15 @@ export default function LoyaltyPage() {
   );
 
   const handleBookVisit = () => {
-    navigate("/app/booking");
+    navigate(ROUTE_PATHS.patient.booking);
   };
 
   const handleBookWithPoints = () => {
-    navigate("/app/booking?use_loyalty=wallet");
+    navigate(`${ROUTE_PATHS.patient.booking}?use_loyalty=wallet`);
   };
 
   const handleUseSubscription = (subscriptionId: string) => {
-    navigate(`/app/booking?subscription_id=${encodeURIComponent(subscriptionId)}`);
+    navigate(`${ROUTE_PATHS.patient.booking}?subscription_id=${encodeURIComponent(subscriptionId)}`);
   };
 
   return (

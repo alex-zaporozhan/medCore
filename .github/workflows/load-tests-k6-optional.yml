@@ -1,0 +1,39 @@
+# Wave 5 (A4): optional k6 — does not block merge (continue-on-error).
+# Set repo Variable LOADTEST_BASE_URL or pass base_url when dispatching manually.
+
+name: Load tests (k6, optional)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "API base URL (overrides LOADTEST_BASE_URL)"
+        required: false
+        default: ""
+
+jobs:
+  k6-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D969
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install -y k6
+
+      - name: Run k6 smoke
+        env:
+          BASE_URL: ${{ github.event.inputs.base_url != '' && github.event.inputs.base_url || vars.LOADTEST_BASE_URL }}
+          ADMIN_TOKEN: ${{ secrets.K6_ADMIN_TOKEN }}
+          ADMIN_CLINIC_ID: ${{ vars.K6_ADMIN_CLINIC_ID }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "No BASE_URL — set repository Variable LOADTEST_BASE_URL or workflow input base_url."
+            export BASE_URL=http://127.0.0.1:9
+          fi
+          k6 run scripts/loadtests/k6_wave5_smoke.js

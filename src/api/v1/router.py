@@ -40,6 +40,7 @@ from src.api.v1.routers import (
     admin_patient_ai,
     admin_ai_settings,
     admin_ai_status,
+    admin_ai_tasks_settings,
     public_services,
     patient_notification_settings,
     public_marketing,
@@ -64,6 +65,8 @@ from src.api.v1.routers import (
     ai_agent,
     admin_retention,
     admin_vault,
+    admin_ui_events,
+    admin_omni_tools,
 )
 
 # Create main API router
@@ -101,6 +104,7 @@ api_router.include_router(admin_patient_ai.router)
 api_router.include_router(admin_ai_settings.router)
 api_router.include_router(admin_ai_reports.router)
 api_router.include_router(admin_ai_status.router)
+api_router.include_router(admin_ai_tasks_settings.router)
 api_router.include_router(admin_payment_gateway.router)
 api_router.include_router(admin_finance.router)
 api_router.include_router(admin_payroll.router)
@@ -130,3 +134,5 @@ api_router.include_router(admin_search.router)
 api_router.include_router(ai_agent.router)
 api_router.include_router(admin_retention.router)
 api_router.include_router(admin_vault.router)
+api_router.include_router(admin_ui_events.router)
+api_router.include_router(admin_omni_tools.router)

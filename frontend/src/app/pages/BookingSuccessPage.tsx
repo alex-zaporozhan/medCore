@@ -1,6 +1,7 @@
 import { Anchor, Stack, Text, Title } from "@mantine/core";
 import { Link } from "react-router-dom";
 import { useClinics } from "@/hooks";
+import { ROUTE_PATHS } from "@/routePaths";
 
 export default function BookingSuccessPage() {
   const { data: clinics } = useClinics();
@@ -23,10 +24,10 @@ export default function BookingSuccessPage() {
       ) : (
         <Text>Ждём вас на приёме.</Text>
       )}
-      <Anchor component={Link} to="/app/history">
+      <Anchor component={Link} to={ROUTE_PATHS.patient.history}>
         В историю
       </Anchor>
-      <Anchor component={Link} to="/app">
+      <Anchor component={Link} to={ROUTE_PATHS.patient.home}>
         На главную
       </Anchor>
     </Stack>

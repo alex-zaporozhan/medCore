@@ -54,9 +54,11 @@ class LeadCard(Base):
     utm_campaign: Mapped[str | None] = mapped_column(String(128), nullable=True)
     utm_content: Mapped[str | None] = mapped_column(String(128), nullable=True)
     utm_term: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Forecast only (e.g. catalog price); not an ERP financial fact.
     estimated_value: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), nullable=False, server_default="0.00"
     )
+    # Mirror of ERP income (financial_transactions); updated via LeadService.update_actual_value_from_erp.
     actual_value: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), nullable=False, server_default="0.00"
     )

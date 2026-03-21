@@ -76,7 +76,7 @@ async def export_forms(
     submissions_stmt = select(DigitalFormSubmission).where(
         DigitalFormSubmission.clinic_id == admin.clinic_id,
         DigitalFormSubmission.patient_id == patient_id,
-    ).order_by(DigitalFormSubmission.submitted_at.asc())
+    ).order_by(DigitalFormSubmission.created_at.asc())
     submissions_result = await session.execute(submissions_stmt)
     submissions = list(submissions_result.scalars().all())
 
@@ -105,18 +105,9 @@ async def export_forms(
     for s in submissions:
         t = templates_by_id.get(s.template_id)
         masked_data = FormsService.mask_sensitive_data(s.data, t.schema if t else {})
+        base = DigitalFormSubmissionRead.model_validate(s)
         submissions_dump.append(
-            DigitalFormSubmissionRead(
-                id=s.id,
-                clinic_id=s.clinic_id,
-                template_id=s.template_id,
-                patient_id=s.patient_id,
-                booking_id=s.booking_id,
-                submitted_at=s.submitted_at,
-                submitted_by=s.submitted_by,
-                data=masked_data,
-                signature_id=s.signature_id,
-            ).model_dump()
+            base.model_copy(update={"data": masked_data}).model_dump()
         )
 
     return {
@@ -235,6 +226,7 @@ async def create_form_template(
         version=next_version,
         schema=body.schema.model_dump(),
         requires_signature=body.requires_signature,
+        required_for_visit_completion=body.required_for_visit_completion,
         active=body.active,
     )
     session.add(template)
@@ -269,6 +261,8 @@ async def update_form_template(
         template.requires_signature = body.requires_signature
     if body.active is not None:
         template.active = body.active
+    if body.required_for_visit_completion is not None:
+        template.required_for_visit_completion = body.required_for_visit_completion
 
     await session.commit()
     await session.refresh(template)
@@ -283,6 +277,7 @@ async def list_form_submissions(
     patient_id: UUID | None = Query(None),
     booking_id: UUID | None = Query(None),
     template_code: str | None = Query(None),
+    form_status: str | None = Query(None, alias="status", description="Filter by FormStatus value"),
     session: AsyncSession = Depends(get_session),
     admin: AdminContext = Depends(require_permissions("view_forms")),
 ) -> list[DigitalFormSubmissionListItem]:
@@ -292,6 +287,8 @@ async def list_form_submissions(
         stmt = stmt.where(DigitalFormSubmission.patient_id == patient_id)
     if booking_id is not None:
         stmt = stmt.where(DigitalFormSubmission.booking_id == booking_id)
+    if form_status is not None:
+        stmt = stmt.where(DigitalFormSubmission.status == form_status)
     if template_code is not None:
         tmpl_ids_stmt = select(DigitalFormTemplate.id).where(
             DigitalFormTemplate.clinic_id == admin.clinic_id,
@@ -304,7 +301,7 @@ async def list_form_submissions(
         else:
             return []
 
-    stmt = stmt.order_by(DigitalFormSubmission.submitted_at.desc())
+    stmt = stmt.order_by(DigitalFormSubmission.created_at.desc())
     result = await session.execute(stmt)
     submissions = list(result.scalars().all())
     if not submissions:
@@ -357,10 +354,15 @@ async def get_form_submission_details(
         template_id=submission.template_id,
         patient_id=submission.patient_id,
         booking_id=submission.booking_id,
+        status=submission.status,
         submitted_at=submission.submitted_at,
+        signed_at=submission.signed_at,
+        expires_at=submission.expires_at,
         submitted_by=submission.submitted_by,
         data=masked_data,
         signature_id=submission.signature_id,
+        created_at=submission.created_at,
+        updated_at=submission.updated_at,
     )
 
     return DigitalFormSubmissionWithTemplateAndSignature(
@@ -368,6 +370,62 @@ async def get_form_submission_details(
         template=DigitalFormTemplateRead.model_validate(template),
         signature=ESignatureRead.model_validate(signature) if signature else None,
     )
+
+
+@router.patch(
+    "/submissions/{submission_id}/revoke",
+    response_model=DigitalFormSubmissionRead,
+    dependencies=[Depends(require_permissions("manage_forms"))],
+)
+async def revoke_form_submission(
+    submission_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    admin: AdminContext = Depends(require_permissions("manage_forms")),
+) -> DigitalFormSubmissionRead:
+    """Revoke a signed form (legal/compliance)."""
+    service = FormsService(session)
+    try:
+        sub = await service.revoke_submission(
+            submission_id=submission_id,
+            clinic_id=admin.clinic_id,
+            actor=f"admin:{admin.user_id}" if getattr(admin, "user_id", None) else "admin",
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Form submission not found") from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+    await session.commit()
+    await session.refresh(sub)
+    return DigitalFormSubmissionRead.model_validate(sub)
+
+
+@router.patch(
+    "/submissions/{submission_id}/cancel",
+    response_model=DigitalFormSubmissionRead,
+    dependencies=[Depends(require_permissions("manage_forms"))],
+)
+async def cancel_form_submission(
+    submission_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    admin: AdminContext = Depends(require_permissions("manage_forms")),
+) -> DigitalFormSubmissionRead:
+    """Cancel an issued/in-progress form before signing."""
+    service = FormsService(session)
+    try:
+        sub = await service.cancel_submission(
+            submission_id=submission_id,
+            clinic_id=admin.clinic_id,
+            actor=f"admin:{admin.user_id}" if getattr(admin, "user_id", None) else "admin",
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Form submission not found") from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+    await session.commit()
+    await session.refresh(sub)
+    return DigitalFormSubmissionRead.model_validate(sub)
 
 
 @router.post(

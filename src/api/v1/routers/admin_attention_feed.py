@@ -1,6 +1,7 @@
 """Admin attention feed API router."""
 
 import logging
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,7 +12,14 @@ from src.api.v1.dependencies import get_session
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.dto.attention_feed_dto import AttentionFeedRead
 from src.application.services.attention_feed_service import AttentionFeedService
+from src.application.dto.task_dto import TaskResponse, task_entity_to_response
+from src.application.services.task_service import TaskService
+from src.domain.entities.task import Task
+from src.domain.interfaces.repositories.task_repository import TaskRepository
+from src.infrastructure.database.task_repo_impl import TaskRepositoryImpl
 from src.domain.entities.admin_user import AdminUser
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +31,11 @@ class ClaimItemBody(BaseModel):
 
     item_type: str = Field(..., description="task | follow_up")
     item_id: UUID
+
+
+def _get_task_service(session: AsyncSession) -> TaskService:
+    repo: TaskRepository = TaskRepositoryImpl(session)
+    return TaskService(repo)
 
 
 @router.get(
@@ -69,6 +82,88 @@ async def claim_attention_feed_item(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     await session.commit()
     return {"ok": True}
+
+
+@router.get(
+    "/{clinic_id}/attention-feed/{item_type}/{item_id}/tasks",
+    response_model=list[TaskResponse],
+)
+async def get_tasks_for_attention_item(
+    clinic_id: UUID,
+    item_type: str,
+    item_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> list[TaskResponse]:
+    """Return tasks linked to a specific attention item (by kind and underlying id)."""
+    if clinic_id != current_admin.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
+    if item_type not in ("follow_up", "retention_gap", "conflict"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="item_type must be follow_up, retention_gap or conflict",
+        )
+    stmt = (
+        select(Task)
+        .where(
+            Task.clinic_id == clinic_id,
+            Task.attention_kind == item_type,
+            Task.attention_ref_id == item_id,
+        )
+        .order_by(Task.due_at.asc().nullslast(), Task.created_at.desc())
+    )
+    result = await session.execute(stmt)
+    tasks = result.scalars().unique().all()
+    return [task_entity_to_response(t) for t in tasks]
+
+
+class CreateTaskFromAttentionBody(BaseModel):
+    """Body for creating a task explicitly linked to an attention item from UI."""
+
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str | None = None
+    priority: str = Field(default="medium", pattern="^(low|medium|high|urgent)$")
+    assignee_id: UUID | None = None
+    role_assignee: str | None = None
+    due_at: datetime | None = None
+
+
+@router.post(
+    "/{clinic_id}/attention-feed/{item_type}/{item_id}/tasks",
+    response_model=TaskResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_task_from_attention_item(
+    clinic_id: UUID,
+    item_type: str,
+    item_id: UUID,
+    body: CreateTaskFromAttentionBody,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> TaskResponse:
+    """Create a new task linked to a specific attention item."""
+    if clinic_id != current_admin.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
+    if item_type not in ("follow_up", "retention_gap", "conflict"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="item_type must be follow_up, retention_gap or conflict",
+        )
+    service = _get_task_service(session)
+    task = await service.create_task(
+        clinic_id=clinic_id,
+        title=body.title.strip(),
+        description=body.description,
+        priority=body.priority,
+        creator_id=current_admin.id,
+        assignee_id=body.assignee_id,
+        role_assignee=body.role_assignee,
+        due_at=body.due_at,
+        source="from_attention",
+        attention_kind=item_type,
+        attention_ref_id=item_id,
+    )
+    return task_entity_to_response(task)
 
 
 @router.post(

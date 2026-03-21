@@ -1,27 +1,18 @@
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import {
+  useAdminIntegrationSettings1c,
+  useUpdateAdminIntegrationSettings1cMutation,
+} from "@/hooks/useAdminIntegrations";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import { Alert, Button, Card, Stack, Text, TextInput } from "@mantine/core";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { useState, useEffect } from "react";
 
-interface IntegrationSettings {
-  provider: string;
-  api_url: string | null;
-  has_credentials: boolean;
-}
-
 export default function AdminIntegrationsPage() {
   const { currentClinicId } = useAdminClinic();
-  const qc = useQueryClient();
   const clinicId = currentClinicId ?? "";
 
-  const { data: settings1c } = useQuery({
-    queryKey: ["integration-settings", clinicId, "1c"],
-    queryFn: () => api.get<IntegrationSettings>(`/v1/admin/clinics/${clinicId}/integration-settings/1c`),
-    enabled: !!clinicId,
-  });
+  const { data: settings1c } = useAdminIntegrationSettings1c(clinicId);
   const [url1c, setUrl1c] = useState(settings1c?.api_url ?? "");
   const [key1c, setKey1c] = useState("");
   const [saving1c, setSaving1c] = useState(false);
@@ -30,20 +21,16 @@ export default function AdminIntegrationsPage() {
     setUrl1c(settings1c?.api_url ?? "");
   }, [settings1c?.api_url]);
 
-  const save1c = useMutation({
-    mutationFn: (body: { api_url?: string | null; credentials?: string | null }) =>
-      api.put<IntegrationSettings>(`/v1/admin/clinics/${clinicId}/integration-settings/1c`, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["integration-settings", clinicId, "1c"] });
-      setKey1c("");
-    },
-  });
+  const save1c = useUpdateAdminIntegrationSettings1cMutation(clinicId);
 
   const handleSave1c = () => {
     setSaving1c(true);
     save1c.mutate(
       { api_url: url1c.trim() || null, credentials: key1c.trim() || null },
-      { onSettled: () => setSaving1c(false) }
+      {
+        onSuccess: () => setKey1c(""),
+        onSettled: () => setSaving1c(false),
+      }
     );
   };
 

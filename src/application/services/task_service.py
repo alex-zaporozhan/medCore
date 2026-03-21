@@ -7,6 +7,8 @@ from uuid import UUID
 from src.domain.entities.task import Task
 from src.domain.entities.task_comment import TaskComment
 from src.domain.interfaces.repositories.task_repository import TaskRepository
+from src.core.metrics import tasks_created_total, task_time_to_close_seconds
+from src.core.prometheus_labels import clinic_bucket_label
 
 
 class TaskService:
@@ -31,6 +33,9 @@ class TaskService:
         inventory_product_id: UUID | None = None,
         source: str = "manual",
         source_event_id: UUID | None = None,
+        attention_kind: str | None = None,
+        attention_ref_id: UUID | None = None,
+        trace_id: str | None = None,
     ) -> Task:
         task = Task(
             clinic_id=clinic_id,
@@ -48,8 +53,17 @@ class TaskService:
             inventory_product_id=inventory_product_id,
             source=source,
             source_event_id=source_event_id,
+            attention_kind=attention_kind,
+            attention_ref_id=attention_ref_id,
+            trace_id=trace_id,
         )
-        return await self._repo.create_task(task)
+        created = await self._repo.create_task(task)
+        tasks_created_total.labels(
+            clinic_bucket=clinic_bucket_label(created.clinic_id),
+            source=created.source,
+            attention_kind=created.attention_kind or "none",
+        ).inc()
+        return created
 
     async def update_task_status(
         self,
@@ -62,7 +76,16 @@ class TaskService:
         task.status = status
         if completed_at is not None:
             task.completed_at = completed_at
-        return await self._repo.save_task(task)
+        saved = await self._repo.save_task(task)
+        if saved.status == "done" and saved.completed_at is not None:
+            delta = (saved.completed_at - saved.created_at).total_seconds()
+            if delta >= 0:
+                task_time_to_close_seconds.labels(
+                    clinic_bucket=clinic_bucket_label(saved.clinic_id),
+                    source=saved.source,
+                    attention_kind=saved.attention_kind or "none",
+                ).observe(delta)
+        return saved
 
     async def reassign_task(
         self,

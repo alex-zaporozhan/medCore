@@ -8,7 +8,6 @@ import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Card,
-  Drawer,
   Grid,
   Group,
   Progress,
@@ -19,8 +18,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { ContextBar } from "@/shared/ui/ContextBar";
-import { PageSkeleton } from "@/shared/ui/PageSkeleton";
+import { AdminDrawer, ContextBar, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import dayjs from "dayjs";
 import { useMemo, useState } from "react";
 import {
@@ -170,7 +168,7 @@ export default function AdminReportsPage() {
 
       {anyError && (
         <>
-          <Text c="red">{errMsg}</Text>
+          <QueryErrorAlert error={dashErr ?? noShowErr ?? revErr ?? attrErr ?? errMsg} />
           {isEmptyDb && (
             <Text size="sm" c="dimmed">
               {EMPTY_DB_HINT}
@@ -412,7 +410,7 @@ export default function AdminReportsPage() {
         </Card>
       )}
 
-      <Drawer
+      <AdminDrawer
         position="right"
         size="md"
         opened={!!drillDownRow}
@@ -444,7 +442,7 @@ export default function AdminReportsPage() {
             )}
           </Stack>
         )}
-      </Drawer>
+      </AdminDrawer>
 
       {!dashboard && !noShow && !revenue && !ownerDashboard && !anyError && !loading && (
         <EmptyStateHint title="Нет данных за выбранный период" />

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Alert,
   Badge,
   Box,
   Button,
@@ -25,6 +26,7 @@ import {
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { GlassModal } from "@/shared/ui/GlassModal";
+import { QueryErrorAlert } from "@/shared/ui";
 
 const CHANNEL_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "TELEGRAM_BOT", label: "Telegram бот" },
@@ -256,7 +258,7 @@ export default function AdminOmniChannelsPage() {
         const raw = credentialsState.other_json || "{}";
         try {
           payload = JSON.parse(raw);
-        } catch (e) {
+        } catch {
           setCredentialsError("Некорректный JSON. Проверьте формат.");
           return;
         }
@@ -283,7 +285,7 @@ export default function AdminOmniChannelsPage() {
           },
         },
       );
-    } catch (e) {
+    } catch {
       setCredentialsError("Не удалось сохранить ключи. Попробуйте ещё раз.");
     }
   };
@@ -301,9 +303,7 @@ export default function AdminOmniChannelsPage() {
     return (
       <Stack>
         <ContextBar title="Омниканальные каналы" />
-        <Text c="red">
-          {error instanceof Error ? error.message : "Ошибка загрузки каналов"}
-        </Text>
+        <QueryErrorAlert error={error} title="Не удалось загрузить каналы" />
       </Stack>
     );
   }
@@ -775,9 +775,9 @@ export default function AdminOmniChannelsPage() {
             )}
 
             {credentialsError && (
-              <Text c="red" size="sm">
+              <Alert color="red" variant="light" title="Ошибка">
                 {credentialsError}
-              </Text>
+              </Alert>
             )}
 
             <Group justify="flex-end" mt="md">

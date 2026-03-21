@@ -1,10 +1,8 @@
 import { useAdminReportsDashboardByClinics } from "@/hooks/useAdminReports";
 import { useAttentionFeed } from "@/hooks/useAttentionFeed";
 import { useAdminBookings } from "@/hooks/useAdminBookings";
-import { useRevenueHunterSaved, isRevenueHunterEnabled } from "@/hooks/useRevenueHunter";
-import { PageSkeleton } from "@/shared/ui/PageSkeleton";
-import { EmptyState } from "@/shared/ui/EmptyState";
-import { ContextBar } from "@/shared/ui/ContextBar";
+import { useRevenueHunterSaved, isRevenueHunterEnabled } from "@/hooks";
+import { AdminDrawer, PageSkeleton, EmptyState, ContextBar, QueryErrorAlert } from "@/shared/ui";
 import {
   Card,
   Grid,
@@ -15,10 +13,10 @@ import {
   Badge,
   Button,
   ScrollArea,
-  Drawer,
 } from "@mantine/core";
 import { Link } from "react-router-dom";
 import { useState, useMemo } from "react";
+import { ROUTE_PATHS } from "@/routePaths";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import type { AttentionItem } from "@/api/types";
@@ -120,7 +118,6 @@ export default function AdminDashboardPage() {
   }
 
   if (isError) {
-    const message = error instanceof Error ? error.message : "Ошибка загрузки";
     return (
       <Stack gap="lg">
         <ContextBar title="Дашборд" />
@@ -135,7 +132,7 @@ export default function AdminDashboardPage() {
             clearable
           />
         )}
-        <Text c="red">{message}</Text>
+        <QueryErrorAlert error={error} />
         <Text size="sm" c="dimmed">
           {BACKEND_HINT}
         </Text>
@@ -289,7 +286,7 @@ export default function AdminDashboardPage() {
               description="Нет срочных событий для реакции. Новые элементы появятся из чатов, конфликтов и напоминаний."
               action={{
                 label: "Открыть чат",
-                onClick: () => window.location.assign("/admin/omni-chat"),
+                onClick: () => window.location.assign(ROUTE_PATHS.admin.omniChat),
               }}
             />
           ) : (
@@ -322,8 +319,8 @@ export default function AdminDashboardPage() {
                         component={Link}
                         to={
                           item.conversation_id
-                            ? `/admin/omni-chat?conversation=${item.conversation_id}`
-                            : "/admin/attention"
+                            ? `${ROUTE_PATHS.admin.omniChat}?conversation=${item.conversation_id}`
+                            : ROUTE_PATHS.admin.attention
                         }
                       >
                         Взять в работу
@@ -347,7 +344,7 @@ export default function AdminDashboardPage() {
               description="Записи на сегодня появятся в календаре."
               action={{
                 label: "Расписание",
-                onClick: () => window.location.assign("/admin/schedule"),
+                onClick: () => window.location.assign(ROUTE_PATHS.admin.schedule),
               }}
             />
           ) : (
@@ -392,7 +389,7 @@ export default function AdminDashboardPage() {
         </Grid.Col>
       </Grid>
 
-      <Drawer
+      <AdminDrawer
         opened={timelineBooking !== null}
         onClose={() => setTimelineBooking(null)}
         position="right"
@@ -425,7 +422,7 @@ export default function AdminDashboardPage() {
             </Badge>
             <Button
               component={Link}
-              to="/admin/schedule"
+              to={ROUTE_PATHS.admin.schedule}
               variant="light"
               mt="md"
               onClick={() => setTimelineBooking(null)}
@@ -434,7 +431,7 @@ export default function AdminDashboardPage() {
             </Button>
           </Stack>
         )}
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

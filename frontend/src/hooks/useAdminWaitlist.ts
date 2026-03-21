@@ -6,12 +6,18 @@ export interface WaitlistEntryRead {
   clinic_id: string;
   patient_id: string;
   doctor_id: string | null;
+  preferred_service_id: string | null;
   speciality: string | null;
   time_preferences_json: Record<string, unknown> | null;
   preferred_date: string | null;
   preferred_time: string | null;
   priority: number;
   status: string;
+  source: string | null;
+  notes: string | null;
+  booking_id: string | null;
+  created_by_id: string | null;
+  updated_by_id: string | null;
 }
 
 /** Alias for compatibility with WaitlistPanel */
@@ -21,23 +27,29 @@ export interface WaitlistEntryCreate {
   clinic_id: string;
   patient_id: string;
   doctor_id?: string | null;
+  preferred_service_id?: string | null;
   speciality?: string | null;
   time_preferences_json?: Record<string, unknown> | null;
   preferred_date?: string | null;
   preferred_time?: string | null;
   priority?: number;
   status?: string;
+  source?: string | null;
+  notes?: string | null;
 }
 
 export interface WaitlistEntryUpdate {
   patient_id?: string;
   doctor_id?: string | null;
+  preferred_service_id?: string | null;
   speciality?: string | null;
   time_preferences_json?: Record<string, unknown> | null;
   preferred_date?: string | null;
   preferred_time?: string | null;
   priority?: number;
   status?: string;
+  source?: string | null;
+  notes?: string | null;
 }
 
 export interface QueuePolicyRead {
@@ -56,11 +68,40 @@ export interface QueuePolicyUpdate {
   max_notifications_per_entry?: number | null;
 }
 
-export function useAdminWaitlistEntries(clinicId: string | null) {
+export type AdminWaitlistListOptions = {
+  /** When true, include rows already linked to a booking (default true for admin list page). */
+  includeBooked?: boolean;
+  includeInactive?: boolean;
+};
+
+function waitlistQueryString(options?: AdminWaitlistListOptions): string {
+  const includeBooked = options?.includeBooked ?? true;
+  const includeInactive = options?.includeInactive ?? false;
+  const qs = new URLSearchParams();
+  if (includeInactive) qs.set("include_inactive", "true");
+  if (includeBooked) qs.set("include_booked", "true");
+  const s = qs.toString();
+  return s ? `?${s}` : "";
+}
+
+export function useAdminWaitlistEntries(
+  clinicId: string | null,
+  options?: AdminWaitlistListOptions
+) {
+  const includeBooked = options?.includeBooked ?? true;
+  const includeInactive = options?.includeInactive ?? false;
   return useQuery({
-    queryKey: ["admin", "clinics", clinicId, "waitlist"],
+    queryKey: [
+      "admin",
+      "clinics",
+      clinicId,
+      "waitlist",
+      { includeBooked, includeInactive },
+    ],
     queryFn: () =>
-      api.get<WaitlistEntryRead[]>(`/v1/admin/clinics/${clinicId}/waitlist`),
+      api.get<WaitlistEntryRead[]>(
+        `/v1/admin/clinics/${clinicId}/waitlist${waitlistQueryString(options)}`
+      ),
     enabled: !!clinicId,
   });
 }
@@ -139,17 +180,17 @@ export function useUpsertQueuePolicy(clinicId: string | null) {
   });
 }
 
-/** Entries for schedule panel: filter by doctor (and optional date). */
+/** Entries for schedule panel: filter by doctor (and optional date). Active queue only (no booked). */
 export function useAdminWaitlist(
   clinicId: string | null,
   doctorId: string | null,
   _date: string | null
 ) {
-  const q = useAdminWaitlistEntries(clinicId);
+  const q = useAdminWaitlistEntries(clinicId, { includeBooked: false });
   const filtered =
     q.data?.filter(
       (e) =>
-        (!doctorId || e.doctor_id === doctorId || e.doctor_id === null)
+        !doctorId || e.doctor_id === doctorId || e.doctor_id === null
     ) ?? [];
   return { ...q, data: filtered };
 }

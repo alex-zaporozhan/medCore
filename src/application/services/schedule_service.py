@@ -17,6 +17,9 @@ from src.application.dto.schedule_dto import (
     SuggestSlotItem,
     SuggestSlotsResponse,
 )
+from src.application.multitenancy import EntityClinicMismatchError
+from src.core.metrics import multitenancy_clinic_mismatch_total
+from src.core.patient_messages import BOOKING_NOT_FOUND
 from src.domain.entities.booking import Booking
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.doctor import Doctor
@@ -43,15 +46,42 @@ class ScheduleService:
 
     @staticmethod
     def _cache_key(doctor_id: UUID, day: date) -> str:
-        """Build Redis cache key for schedule."""
+        """Build Redis cache key for schedule.
+
+        Slot grid is per doctor+day; clinic_id is validated before cache read when required.
+        Including clinic_id in the key is unnecessary because a doctor belongs to one clinic.
+        """
         return f"schedule:{doctor_id}:{day.isoformat()}"
 
     async def get_daily_schedule(
         self,
         doctor_id: UUID,
         day: date,
+        clinic_id: UUID | None = None,
     ) -> DailySchedule:
-        """Get doctor's schedule for a specific day, using cache-aside in Redis."""
+        """Get doctor's schedule for a specific day, using cache-aside in Redis.
+
+        When ``clinic_id`` is set, the doctor must belong to that clinic (multi-tenant guard).
+        """
+        if clinic_id is not None:
+            doc_row = await self.session.execute(
+                select(Doctor.id, Doctor.clinic_id).where(
+                    Doctor.id == doctor_id,
+                    Doctor.deleted_at.is_(None),
+                )
+            )
+            row = doc_row.one_or_none()
+            if row is None or row[1] != clinic_id:
+                logger.warning(
+                    "schedule_clinic_guard_failed",
+                    extra={"doctor_id": str(doctor_id), "expected_clinic_id": str(clinic_id)},
+                )
+                try:
+                    multitenancy_clinic_mismatch_total.labels(source="schedule_guard").inc()
+                except Exception:
+                    pass
+                raise EntityClinicMismatchError(BOOKING_NOT_FOUND)
+
         try:
             redis = await self._get_redis()
             cache_key = self._cache_key(doctor_id, day)
@@ -85,6 +115,8 @@ class ScheduleService:
                 )
 
             return schedule
+        except EntityClinicMismatchError:
+            raise
         except Exception as redis_exc:
             logger.warning(
                 "Redis unavailable for schedule cache, building without cache",
@@ -131,9 +163,21 @@ class ScheduleService:
 
         weekday = day.weekday()  # 0 = Monday
 
-        # Load clinic config via any doctor clinic (we assume single-clinic instance)
-        clinic_result = await self.session.execute(select(Clinic).limit(1))
-        clinic = clinic_result.scalar_one()
+        doc_for_clinic = await self.session.execute(select(Doctor).where(Doctor.id == doctor_id))
+        doctor_entity = doc_for_clinic.scalar_one_or_none()
+        if doctor_entity is None:
+            return DailySchedule(doctor_id=doctor_id, date=day, slots=[])
+
+        clinic_result = await self.session.execute(
+            select(Clinic).where(Clinic.id == doctor_entity.clinic_id)
+        )
+        clinic = clinic_result.scalar_one_or_none()
+        if clinic is None:
+            logger.error(
+                "clinic_missing_for_doctor",
+                extra={"doctor_id": str(doctor_id), "clinic_id": str(doctor_entity.clinic_id)},
+            )
+            return DailySchedule(doctor_id=doctor_id, date=day, slots=[])
 
         # Load working hours for doctor and weekday
         wh_result = await self.session.execute(
@@ -190,6 +234,7 @@ class ScheduleService:
             "Schedule built",
             extra={
                 "doctor_id": str(doctor_id),
+                "clinic_id": str(clinic.id),
                 "date": day.isoformat(),
                 "slots_total": len(slots),
                 "slots_available": sum(1 for s in slots if s.is_available),
@@ -213,6 +258,7 @@ class ScheduleService:
         self,
         doctor_ids: list[UUID],
         day: date,
+        clinic_id: UUID | None = None,
     ) -> AggregatedSchedule:
         """Build aggregated schedule for multiple doctors: unified time grid, by_doctor slots aligned to times."""
         if not doctor_ids:
@@ -221,7 +267,9 @@ class ScheduleService:
         all_times_set: set[time] = set()
         doctor_slots_by_time: dict[UUID, dict[time, DoctorSlot]] = {}
         for doctor_id in doctor_ids:
-            daily = await self.get_daily_schedule(doctor_id=doctor_id, day=day)
+            daily = await self.get_daily_schedule(
+                doctor_id=doctor_id, day=day, clinic_id=clinic_id
+            )
             by_t: dict[time, DoctorSlot] = {}
             for slot in daily.slots:
                 all_times_set.add(slot.start_time)
@@ -275,9 +323,10 @@ class ScheduleService:
         doctor_id: UUID,
         day: date,
         service_id: UUID | None = None,
+        clinic_id: UUID | None = None,
     ) -> SuggestSlotsResponse:
         """Return free slots for a doctor on a date (for booking suggestion). service_id optional for future filtering by service duration."""
-        daily = await self.get_daily_schedule(doctor_id=doctor_id, day=day)
+        daily = await self.get_daily_schedule(doctor_id=doctor_id, day=day, clinic_id=clinic_id)
         slots = [
             SuggestSlotItem(
                 start=s.start_time.strftime("%H:%M"),

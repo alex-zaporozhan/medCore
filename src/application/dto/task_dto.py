@@ -63,6 +63,7 @@ class TaskResponse(BaseModel):
     lead_id: UUID | None
     inventory_product_id: UUID | None
     source: str
+    trace_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -106,6 +107,7 @@ def task_entity_to_response(task: "Task") -> TaskResponse:
         lead_id=task.lead_id,
         inventory_product_id=task.inventory_product_id,
         source=task.source,
+        trace_id=task.trace_id,
         created_at=task.created_at,
         updated_at=task.updated_at,
     )

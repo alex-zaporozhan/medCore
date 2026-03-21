@@ -3,14 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import (
-    String,
-    Text,
-    ForeignKey,
-    Index,
-    TIMESTAMP,
-    func,
-)
+from sqlalchemy import String, Text, ForeignKey, Index, TIMESTAMP, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.database.base import Base
@@ -59,12 +52,20 @@ class Task(Base):
     inventory_product_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("products.id"), nullable=True
     )
+    # Optional link to an attention item from owner's attention feed
+    attention_kind: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )  # follow_up|retention_gap|conflict|LOYALTY_*
+    attention_ref_id: Mapped[uuid.UUID | None] = mapped_column(
+        nullable=True, index=True
+    )
     source: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
         default="manual",
     )  # manual|ai_suggested|ai_auto|system
     source_event_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
     )
@@ -80,5 +81,11 @@ class Task(Base):
         Index("idx_tasks_clinic_assignee", "clinic_id", "assignee_id"),
         Index("idx_tasks_clinic_role_assignee", "clinic_id", "role_assignee"),
         Index("idx_tasks_clinic_due_at", "clinic_id", "due_at"),
+        Index(
+            "idx_tasks_clinic_attention_ref",
+            "clinic_id",
+            "attention_kind",
+            "attention_ref_id",
+        ),
     )
 

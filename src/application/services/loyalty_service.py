@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
+import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 
+from src.core.metrics import (
+    loyalty_family_spend_denied_total,
+    loyalty_subscription_usage_path_total,
+)
+from src.core.prometheus_labels import clinic_bucket_label
 from src.domain.entities.customer_subscription import CustomerSubscription
+from src.domain.entities.family_link import FamilyLink
 from src.domain.entities.package_family_link import PackageFamilyLink
 from src.domain.entities.subscription_package import SubscriptionPackage
 from src.domain.entities.subscription_usage import SubscriptionUsage
@@ -24,16 +32,29 @@ from src.infrastructure.database.loyalty_repo_impl import (
     SubscriptionPackageRepositoryImpl,
     SubscriptionUsageRepositoryImpl,
 )
+from src.application.dto.erp_loyalty_dto import (
+    CreateObligationFromSaleInput,
+    RegisterWriteOffForVisitInput,
+)
+from src.application.services.erp_loyalty_service import ErpLoyaltyService, ErpLoyaltyError
+from src.application.services.family_link_service import FamilyLinkService
+from src.application.services.task_service import TaskService
+from src.domain.interfaces.repositories.task_repository import TaskRepository
+from src.infrastructure.database.task_repo_impl import TaskRepositoryImpl
+from src.core.context import RequestContext
+from src.application.loyalty_completion_errors import LoyaltyVisitCompletionBlocked
 
 
-class SubscriptionBusinessError(Exception):
+logger = logging.getLogger(__name__)
+
+
+class SubscriptionBusinessError(LoyaltyVisitCompletionBlocked):
     """Base class for subscription-related business errors with code attribute."""
 
     code: str = "subscription_error"
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
-        self.message = message
 
 
 class InsufficientSubscriptionBalance(SubscriptionBusinessError):
@@ -46,6 +67,12 @@ class SubscriptionExpired(SubscriptionBusinessError):
     """Raised when trying to use an expired subscription."""
 
     code = "subscription_expired"
+
+
+class FamilySpendDenied(SubscriptionBusinessError):
+    """Raised when beneficiary may not spend owner's subscription (family link / limits)."""
+
+    code = "family_spend_denied"
 
 
 @dataclass
@@ -65,6 +92,8 @@ class UseSubscriptionForBookingInput:
     used_visits: int | None
     used_amount: Decimal | None
     used_at: datetime
+    # Patient who receives the visit / benefit (defaults to subscription owner if omitted).
+    beneficiary_patient_id: UUID | None = None
 
 
 class LoyaltyService:
@@ -81,6 +110,159 @@ class LoyaltyService:
         self.usage_repo: SubscriptionUsageRepository = SubscriptionUsageRepositoryImpl(
             session
         )
+        self.task_repository: TaskRepository = TaskRepositoryImpl(session)
+        self.task_service = TaskService(self.task_repository)
+
+    async def patient_can_use_subscription(
+        self,
+        clinic_id: UUID,
+        subscription: CustomerSubscription,
+        beneficiary_patient_id: UUID,
+        at_time: datetime,
+    ) -> bool:
+        """Whether beneficiary may consume owner's subscription (owner, package link, or FamilyLink)."""
+        if subscription.clinic_id != clinic_id:
+            return False
+        if subscription.patient_id == beneficiary_patient_id:
+            return True
+        r = await self.session.execute(
+            select(PackageFamilyLink.id).where(
+                PackageFamilyLink.customer_subscription_id == subscription.id,
+                PackageFamilyLink.patient_id == beneficiary_patient_id,
+            )
+        )
+        if r.scalar_one_or_none() is not None:
+            return True
+        fls = FamilyLinkService(self.session)
+        link = await fls.get_active_spend_link(
+            clinic_id, subscription.patient_id, beneficiary_patient_id, at_time
+        )
+        return link is not None
+
+    async def _resolve_family_spend_family_link_id(
+        self,
+        clinic_id: UUID,
+        subscription: CustomerSubscription,
+        beneficiary_patient_id: UUID,
+        used_at: datetime,
+        *,
+        used_amount: Decimal | None,
+        used_visits: int | None,
+    ) -> UUID | None:
+        """Return family_link_id when spend goes through FamilyLink; None for owner or package link."""
+        owner = subscription.patient_id
+        if beneficiary_patient_id == owner:
+            return None
+
+        r = await self.session.execute(
+            select(PackageFamilyLink.id).where(
+                PackageFamilyLink.customer_subscription_id == subscription.id,
+                PackageFamilyLink.patient_id == beneficiary_patient_id,
+            )
+        )
+        if r.scalar_one_or_none() is not None:
+            return None
+
+        fls = FamilyLinkService(self.session)
+        link = await fls.get_active_spend_link(
+            clinic_id, owner, beneficiary_patient_id, used_at
+        )
+        if link is None:
+            loyalty_family_spend_denied_total.labels(
+                clinic_bucket=clinic_bucket_label(clinic_id),
+                reason="not_linked",
+            ).inc()
+            raise FamilySpendDenied(
+                "Beneficiary is not allowed to spend from this subscription"
+            )
+        try:
+            await fls.assert_spend_within_limits(
+                link,
+                used_amount=used_amount,
+                used_visits=used_visits,
+                at_time=used_at,
+            )
+        except ValueError as e:
+            msg = str(e)
+            if "family_spend_limit_total" in msg:
+                loyalty_family_spend_denied_total.labels(
+                    clinic_bucket=clinic_bucket_label(clinic_id),
+                    reason="limit_total",
+                ).inc()
+            elif "family_spend_limit_periodic" in msg:
+                loyalty_family_spend_denied_total.labels(
+                    clinic_bucket=clinic_bucket_label(clinic_id),
+                    reason="limit_periodic",
+                ).inc()
+            else:
+                loyalty_family_spend_denied_total.labels(
+                    clinic_bucket=clinic_bucket_label(clinic_id),
+                    reason="limit",
+                ).inc()
+            raise FamilySpendDenied(msg) from e
+        return link.id
+
+    async def get_subscription_usages_for_patient_timeline(
+        self,
+        clinic_id: UUID,
+        patient_id: UUID,
+    ) -> list[tuple[SubscriptionUsage, dict[str, Any]]]:
+        """Usages for PWA history: own subscriptions plus owners' usages when can_view_owner_history."""
+        now = datetime.now(timezone.utc)
+        seen: set[UUID] = set()
+        out: list[tuple[SubscriptionUsage, dict[str, Any]]] = []
+
+        subs = await self.customer_repo.list_for_patient(
+            clinic_id=clinic_id,
+            patient_id=patient_id,
+            only_active=False,
+        )
+        for s in subs:
+            items = await self.usage_repo.list_for_subscription(s.id)
+            for u in items:
+                if u.id in seen:
+                    continue
+                seen.add(u.id)
+                out.append(
+                    (
+                        u,
+                        {
+                            "timeline_view": "owner",
+                            "subscription_owner_patient_id": str(s.patient_id),
+                        },
+                    )
+                )
+
+        fls = FamilyLinkService(self.session)
+        owner_ids = await fls.primary_patient_ids_for_whom_viewer_can_see_loyalty_history(
+            clinic_id, patient_id, now
+        )
+        for owner_id in owner_ids:
+            if owner_id == patient_id:
+                continue
+            subs_o = await self.customer_repo.list_for_patient(
+                clinic_id=clinic_id,
+                patient_id=owner_id,
+                only_active=False,
+            )
+            for s in subs_o:
+                items = await self.usage_repo.list_for_subscription(s.id)
+                for u in items:
+                    if u.id in seen:
+                        continue
+                    seen.add(u.id)
+                    out.append(
+                        (
+                            u,
+                            {
+                                "timeline_view": "family_member_viewer",
+                                "subscription_owner_patient_id": str(
+                                    owner_id
+                                ),
+                            },
+                        )
+                    )
+        return out
 
     async def select_subscription_for_booking(
         self,
@@ -100,15 +282,37 @@ class LoyaltyService:
           3) higher remaining_visits then higher remaining_amount;
           4) older purchased_at first for stability.
         """
-        subq = select(PackageFamilyLink.customer_subscription_id).where(
+        subq_pkg = select(PackageFamilyLink.customer_subscription_id).where(
             PackageFamilyLink.patient_id == patient_id,
+        )
+        fl_subq = (
+            select(CustomerSubscription.id)
+            .join(
+                FamilyLink,
+                and_(
+                    FamilyLink.primary_patient_id == CustomerSubscription.patient_id,
+                    FamilyLink.related_patient_id == patient_id,
+                    FamilyLink.clinic_id == clinic_id,
+                    FamilyLink.is_active.is_(True),
+                    FamilyLink.can_spend_from_owner_loyalty.is_(True),
+                    or_(
+                        FamilyLink.valid_until.is_(None),
+                        FamilyLink.valid_until >= on_date,
+                    ),
+                ),
+            )
+            .where(
+                CustomerSubscription.clinic_id == clinic_id,
+                CustomerSubscription.status == "active",
+            )
         )
         stmt = select(CustomerSubscription).where(
             CustomerSubscription.clinic_id == clinic_id,
             CustomerSubscription.status == "active",
             or_(
                 CustomerSubscription.patient_id == patient_id,
-                CustomerSubscription.id.in_(subq),
+                CustomerSubscription.id.in_(subq_pkg),
+                CustomerSubscription.id.in_(fl_subq),
             ),
         )
         result = await self.session.execute(stmt)
@@ -156,16 +360,38 @@ class LoyaltyService:
         service_id: UUID,
         on_date: datetime,
     ) -> list[tuple[CustomerSubscription, SubscriptionPackage]]:
-        """Return all active, non-expired subscriptions for patient (owner or family member) that cover the given service and have remaining balance (for Checkout Hub). B6.1: family_links included."""
-        subq = select(PackageFamilyLink.customer_subscription_id).where(
+        """Return all active, non-expired subscriptions for patient (owner or family member) that cover the given service and have remaining balance (for Checkout Hub). B6.1: package_family_links + FamilyLink."""
+        subq_pkg = select(PackageFamilyLink.customer_subscription_id).where(
             PackageFamilyLink.patient_id == patient_id,
+        )
+        fl_subq = (
+            select(CustomerSubscription.id)
+            .join(
+                FamilyLink,
+                and_(
+                    FamilyLink.primary_patient_id == CustomerSubscription.patient_id,
+                    FamilyLink.related_patient_id == patient_id,
+                    FamilyLink.clinic_id == clinic_id,
+                    FamilyLink.is_active.is_(True),
+                    FamilyLink.can_spend_from_owner_loyalty.is_(True),
+                    or_(
+                        FamilyLink.valid_until.is_(None),
+                        FamilyLink.valid_until >= on_date,
+                    ),
+                ),
+            )
+            .where(
+                CustomerSubscription.clinic_id == clinic_id,
+                CustomerSubscription.status == "active",
+            )
         )
         stmt = select(CustomerSubscription).where(
             CustomerSubscription.clinic_id == clinic_id,
             CustomerSubscription.status == "active",
             or_(
                 CustomerSubscription.patient_id == patient_id,
-                CustomerSubscription.id.in_(subq),
+                CustomerSubscription.id.in_(subq_pkg),
+                CustomerSubscription.id.in_(fl_subq),
             ),
         )
         result = await self.session.execute(stmt)
@@ -269,6 +495,8 @@ class LoyaltyService:
     async def purchase_subscription(
         self,
         data: PurchaseSubscriptionInput,
+        *,
+        context: RequestContext | None = None,
     ) -> CustomerSubscription:
         # Idempotency guard for payment-linked purchases: if we already created
         # a subscription for this clinic/patient/package/payment_id, return it.
@@ -306,7 +534,77 @@ class LoyaltyService:
             remaining_amount=package.total_amount,
             payment_id=data.payment_id,
         )
-        return await self.customer_repo.create(subscription)
+        subscription = await self.customer_repo.create(subscription)
+
+        # Best-effort ERP obligation creation; failures are logged and surfaced via Attention task.
+        erp_loyalty_service = ErpLoyaltyService(self.session)
+        try:
+            await erp_loyalty_service.create_obligation_from_sale(
+                CreateObligationFromSaleInput(
+                    clinic_id=data.clinic_id,
+                    patient_id=data.patient_id,
+                    customer_subscription_id=subscription.id,
+                    package_price=package.price,
+                    kind=package.kind,
+                    total_visits=package.total_visits,
+                    total_amount=package.total_amount,
+                    created_at=now,
+                )
+            )
+        except ErpLoyaltyError as exc:
+            logger.error(
+                "Failed to create ERP loyalty obligation for subscription sale",
+                extra={
+                    "clinic_id": str(data.clinic_id),
+                    "patient_id": str(data.patient_id),
+                    "customer_subscription_id": str(subscription.id),
+                    "error_code": getattr(exc, "code", "erp_loyalty_error"),
+                    "trace_id": context.trace_id if context else None,
+                    "chain": "crm_attribution",
+                    "step": "erp_loyalty_obligation",
+                },
+            )
+            await self.task_service.create_task(
+                clinic_id=data.clinic_id,
+                title="LOYALTY_ERP_SYNC_FAILURE: обязательство не создано",
+                description=(
+                    "Не удалось создать ERP‑обязательство по подписке при успешной продаже. "
+                    "Проверьте настройки ERP и обязательств по подпискам, затем перепроведите операцию. "
+                    f"Код ошибки: {getattr(exc, 'code', 'erp_loyalty_error')}."
+                ),
+                priority="high",
+                role_assignee="owner",
+                patient_id=data.patient_id,
+                source="system",
+                source_event_id=subscription.id,
+            )
+        except Exception as exc:
+            logger.exception(
+                "Unexpected error during ERP loyalty obligation creation for subscription sale",
+                extra={
+                    "clinic_id": str(data.clinic_id),
+                    "patient_id": str(data.patient_id),
+                    "customer_subscription_id": str(subscription.id),
+                    "trace_id": context.trace_id if context else None,
+                    "chain": "crm_attribution",
+                    "step": "erp_loyalty_obligation",
+                },
+            )
+            await self.task_service.create_task(
+                clinic_id=data.clinic_id,
+                title="LOYALTY_ERP_SYNC_FAILURE: техническая ошибка ERP‑обязательства",
+                description=(
+                    "Произошла техническая ошибка при создании ERP‑обязательства по подписке. "
+                    "ERP‑обязательство могло не создаться, проверьте состояние подписки и ERP‑узла."
+                ),
+                priority="high",
+                role_assignee="owner",
+                patient_id=data.patient_id,
+                source="system",
+                source_event_id=subscription.id,
+            )
+
+        return subscription
 
     async def mark_subscription_expired(self, subscription: CustomerSubscription) -> CustomerSubscription:
         subscription.status = "expired"
@@ -332,6 +630,20 @@ class LoyaltyService:
             raise InsufficientSubscriptionBalance(
                 "Either used_visits or used_amount must be provided"
             )
+
+        beneficiary = (
+            data.beneficiary_patient_id
+            if data.beneficiary_patient_id is not None
+            else subscription.patient_id
+        )
+        family_link_id = await self._resolve_family_spend_family_link_id(
+            data.clinic_id,
+            subscription,
+            beneficiary,
+            data.used_at,
+            used_amount=data.used_amount,
+            used_visits=data.used_visits,
+        )
 
         # Check remaining balance/visits
         if data.used_visits is not None:
@@ -371,8 +683,48 @@ class LoyaltyService:
             used_visits=data.used_visits,
             used_amount=data.used_amount,
             used_at=data.used_at,
+            beneficiary_patient_id=beneficiary,
+            family_link_id=family_link_id,
         )
-        return await self.usage_repo.create(usage)
+        usage = await self.usage_repo.create(usage)
+
+        if family_link_id is not None:
+            logger.info(
+                "loyalty subscription usage via FamilyLink",
+                extra={
+                    "clinic_id": str(data.clinic_id),
+                    "subscription_id": str(subscription.id),
+                    "booking_id": str(data.booking_id),
+                    "family_link_id": str(family_link_id),
+                    "beneficiary_patient_id": str(beneficiary),
+                },
+            )
+
+        # Best-effort ERP obligation movement registration; failures are logged upstream.
+        erp_loyalty_service = ErpLoyaltyService(self.session)
+        await erp_loyalty_service.register_write_off_for_visit(
+            RegisterWriteOffForVisitInput(
+                clinic_id=data.clinic_id,
+                booking_id=data.booking_id,
+                customer_subscription_id=subscription.id,
+                subscription_usage_id=usage.id,
+                used_visits=data.used_visits,
+                used_amount=data.used_amount,
+                happened_at=data.used_at,
+                beneficiary_patient_id=beneficiary,
+                family_link_id=family_link_id,
+            )
+        )
+
+        path = "owner"
+        if beneficiary != subscription.patient_id:
+            path = "family_link" if family_link_id is not None else "package_member"
+        loyalty_subscription_usage_path_total.labels(
+            clinic_bucket=clinic_bucket_label(data.clinic_id),
+            path=path,
+        ).inc()
+
+        return usage
 
     # B6.1 FamilyLink
     async def add_family_member(

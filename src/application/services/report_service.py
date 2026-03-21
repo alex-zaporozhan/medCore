@@ -646,9 +646,14 @@ class ReportsService:
             )
         )
         prepay_count = int(prepay_count_result.scalar() or 0)
+        from src.domain.entities.waitlist_status import WaitlistStatus
+
         waitlist_result = await self.session.execute(
             select(func.count()).select_from(WaitlistEntry).where(
                 WaitlistEntry.clinic_id == clinic_id,
+                WaitlistEntry.status.in_(
+                    [WaitlistStatus.WAITING.value, WaitlistStatus.NOTIFIED.value]
+                ),
             )
         )
         waitlist_count = int(waitlist_result.scalar() or 0)

@@ -1,33 +1,22 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import {
+  useAdminClientReference,
+  useUpdateAdminClientReferenceMutation,
+} from "@/hooks/useAdminClientReference";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
+import { QueryErrorAlert } from "@/shared/ui";
 import { Button, Paper, ScrollArea, Stack, Text, Textarea } from "@mantine/core";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { useState, useEffect } from "react";
 
-interface ClientReferenceResponse {
-  content: string;
-}
-
 export default function AdminClientReferencePage() {
-  const qc = useQueryClient();
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["admin-client-reference"],
-    queryFn: () => api.get<ClientReferenceResponse>("/v1/admin/client-reference"),
-  });
+  const { data, isLoading, isError, error } = useAdminClientReference();
   const [content, setContent] = useState(data?.content ?? "");
 
   useEffect(() => {
     if (data?.content !== undefined) setContent(data.content);
   }, [data?.content]);
 
-  const saveMutation = useMutation({
-    mutationFn: (body: { content: string }) =>
-      api.put<ClientReferenceResponse>("/v1/admin/client-reference", body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin-client-reference"] });
-    },
-  });
+  const saveMutation = useUpdateAdminClientReferenceMutation();
 
   if (isLoading) {
     return (
@@ -41,7 +30,7 @@ export default function AdminClientReferencePage() {
     return (
       <Stack>
         <ContextBar title="Справка для клиента" />
-        <Text c="red">{error instanceof Error ? error.message : "Ошибка загрузки"}</Text>
+        <QueryErrorAlert error={error} />
       </Stack>
     );
   }

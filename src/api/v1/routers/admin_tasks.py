@@ -68,6 +68,14 @@ async def list_tasks(
     due_from: datetime | None = Query(None),
     due_to: datetime | None = Query(None),
     source: str | None = Query(None, description="Filter by source; use 'ai' for AI-suggested/auto tasks"),
+    attention_kind: str | None = Query(
+        None,
+        description="Filter by linked attention item kind (follow_up|retention_gap|conflict)",
+    ),
+    attention_ref_id: UUID | None = Query(
+        None,
+        description="Filter by linked attention item id (underlying entity id from attention feed)",
+    ),
     session: AsyncSession = Depends(get_session),
     context: AdminContext = Depends(get_request_context),
 ) -> list[TaskResponse]:
@@ -98,6 +106,10 @@ async def list_tasks(
         stmt = stmt.where(Task.source.in_(["ai_suggested", "ai_auto"]))
     elif source:
         stmt = stmt.where(Task.source == source)
+    if attention_kind:
+        stmt = stmt.where(Task.attention_kind == attention_kind)
+    if attention_ref_id:
+        stmt = stmt.where(Task.attention_ref_id == attention_ref_id)
     stmt = stmt.order_by(Task.due_at.asc().nullslast(), Task.created_at.desc())
 
     result = await session.execute(stmt)

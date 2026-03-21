@@ -1,7 +1,8 @@
 import { usePatients, useAdminFormTemplates, useSendFormLink, useDeletePatient } from "@/hooks";
 import { ContextBar } from "@/shared/ui/ContextBar";
-import { EmptyState, PageSkeleton } from "@/shared/ui";
-import { ActionIcon, Button, Drawer, Group, HoverCard, Menu, Modal, Select, Stack, Table, Text, TextInput } from "@mantine/core";
+import { EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
+import { ActionIcon, Button, Group, HoverCard, Menu, Modal, Select, Stack, Table, Text, TextInput } from "@mantine/core";
+import { AdminDrawer } from "@/shared/ui";
 import { IconDotsVertical, IconEdit, IconSend, IconTrash, IconUserPlus } from "@tabler/icons-react";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -45,12 +46,14 @@ export default function AdminPatientsPage() {
   };
 
   if (isLoading) return <PageSkeleton variant="table" rows={8} />;
-  if (isError) return (
-    <Stack>
-      <ContextBar title="Пациенты" />
-      <span style={{ color: "red" }}>{error instanceof Error ? error.message : "Ошибка"}</span>
-    </Stack>
-  );
+  if (isError) {
+    return (
+      <Stack>
+        <ContextBar title="Пациенты" />
+        <QueryErrorAlert error={error} />
+      </Stack>
+    );
+  }
 
   return (
     <Stack>
@@ -152,7 +155,7 @@ export default function AdminPatientsPage() {
         onSaved={() => queryClient.invalidateQueries({ queryKey: ["patients"] })}
       />
 
-      <Drawer
+      <AdminDrawer
         opened={sendFormPatientId !== null}
         onClose={() => { setSendFormPatientId(null); setFormTemplateId(null); }}
         position="right"
@@ -205,7 +208,7 @@ export default function AdminPatientsPage() {
             </Group>
           </Stack>
         )}
-      </Drawer>
+      </AdminDrawer>
 
       <Modal
         opened={patientToDelete !== null}

@@ -4,7 +4,6 @@ import {
   Badge,
   Button,
   Card,
-  Drawer,
   Group,
   HoverCard,
   Menu,
@@ -20,15 +19,24 @@ import {
 } from "@mantine/core";
 import { IconDotsVertical, IconRobot, IconMessageCircle, IconCalendarEvent, IconPhone, IconBrandWhatsapp } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
+import { AdminDrawer } from "@/shared/ui";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { usePatients } from "@/hooks/usePatients";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { QueryKey } from "@tanstack/react-query";
-import { api, getAdminId } from "@/api/client";
+import {
+  useAdminAdmins,
+  useAdminTasksList,
+  useAdminTasksMyFocus,
+  useAdminTasksAi,
+  useCreateAdminTaskMutation,
+  useClaimAdminTaskMutation,
+  useUpdateAdminTaskStatusMutation,
+} from "@/hooks";
+import type { AdminTaskRow } from "@/hooks";
+import { getAdminId } from "@/api/client";
 import {
   DndContext,
   PointerSensor,
@@ -39,30 +47,6 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-
-interface Task {
-  id: string;
-  clinic_id: string;
-  title: string;
-  description: string | null;
-  status: string;
-  priority: string;
-  assignee_id: string | null;
-  role_assignee: string | null;
-  due_at: string | null;
-  source?: string;
-  created_at?: string;
-  booking_id?: string | null;
-  patient_id?: string | null;
-  lead_id?: string | null;
-}
-
-interface AdminRead {
-  id: string;
-  clinic_id: string;
-  email: string;
-  full_name: string | null;
-}
 
 const STATUS_COLUMNS = [
   { id: "open", label: "Открыты" },
@@ -79,21 +63,6 @@ function isTimeBomb(dueAt: string | null): boolean {
   return due.isBefore(now) || due.diff(now, "hour", true) <= TIME_BOMB_HOURS;
 }
 
-function fetchTasks(params?: { source?: string; assignee_id?: string }) {
-  const search = new URLSearchParams();
-  if (params?.source) search.set("source", params.source);
-  if (params?.assignee_id) search.set("assignee_id", params.assignee_id);
-  const qs = search.toString();
-  return api.get<Task[]>(`/v1/admin/tasks${qs ? `?${qs}` : ""}`);
-}
-
-function useAdmins() {
-  return useQuery({
-    queryKey: ["admin-admins"],
-    queryFn: () => api.get<AdminRead[]>("/v1/admin/admins"),
-  });
-}
-
 function TaskKanbanCard({
   task,
   isTimeBombActive,
@@ -101,7 +70,7 @@ function TaskKanbanCard({
   isAi,
   patientPhone,
 }: {
-  task: Task;
+  task: AdminTaskRow;
   isTimeBombActive: boolean;
   onClaim?: (taskId: string) => void;
   isAi?: boolean;
@@ -215,7 +184,6 @@ function TaskKanbanCard({
 
 export default function AdminTasksPage() {
   const { currentClinicId } = useAdminClinic();
-  const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<"table" | "kanban">("table");
   const [createOpened, setCreateOpened] = useState(false);
   const [title, setTitle] = useState("");
@@ -225,20 +193,10 @@ export default function AdminTasksPage() {
   const [dueDate, setDueDate] = useState("");
 
   const currentAdminId = getAdminId();
-  const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ["admin-tasks"],
-    queryFn: () => fetchTasks(),
-  });
-  const { data: myFocusTasks = [] } = useQuery({
-    queryKey: ["admin-tasks", "my-focus", currentAdminId],
-    queryFn: () => fetchTasks({ assignee_id: currentAdminId ?? undefined }),
-    enabled: !!currentAdminId,
-  });
-  const { data: aiTasks = [] } = useQuery({
-    queryKey: ["admin-tasks", "ai"],
-    queryFn: () => fetchTasks({ source: "ai" }),
-  });
-  const { data: admins = [] } = useAdmins();
+  const { data: tasks = [], isLoading } = useAdminTasksList();
+  const { data: myFocusTasks = [] } = useAdminTasksMyFocus(currentAdminId);
+  const { data: aiTasks = [] } = useAdminTasksAi();
+  const { data: admins = [] } = useAdminAdmins();
   const { data: patientsList = [] } = usePatients({ clinic_id: currentClinicId ?? undefined, limit: 500 });
   const patientIdToPhone = useMemo(() => {
     const m = new Map<string, string>();
@@ -248,69 +206,32 @@ export default function AdminTasksPage() {
     return m;
   }, [patientsList]);
 
-  const createTaskMutation = useMutation({
-    mutationFn: (payload: {
-      title: string;
-      description?: string | null;
-      priority?: string;
-      assignee_id: string | null;
-      due_at: string | null;
-    }) => api.post<Task>("/v1/admin/tasks", payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-tasks"] });
-      setCreateOpened(false);
-      setTitle("");
-      setDescription("");
-      setPriority("medium");
-      setAssigneeId(null);
-      setDueDate("");
-    },
-  });
-
-  const claimMutation = useMutation({
-    mutationFn: (taskId: string) => api.post<Task>(`/v1/admin/tasks/${taskId}/claim`, {}),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-tasks"] });
-    },
-  });
-
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ taskId, status }: { taskId: string; status: string }) =>
-      api.patch<Task>(`/v1/admin/tasks/${taskId}`, { status }),
-    onMutate: async (variables) => {
-      await queryClient.cancelQueries({ queryKey: ["admin-tasks"] });
-      const previous: [QueryKey, Task[] | undefined][] = queryClient.getQueriesData(
-        { queryKey: ["admin-tasks"] }
-      );
-      queryClient.setQueriesData<Task[]>(
-        { queryKey: ["admin-tasks"] },
-        (old) =>
-          old?.map((t) =>
-            t.id === variables.taskId ? { ...t, status: variables.status } : t
-          ) ?? old
-      );
-      return { previous };
-    },
-    onError: (_err, _variables, context: { previous: [QueryKey, Task[] | undefined][] } | undefined) => {
-      if (context?.previous) {
-        context.previous.forEach(([key, data]) => queryClient.setQueryData(key, data));
-      }
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-tasks"] });
-    },
-  });
+  const createTaskMutation = useCreateAdminTaskMutation();
+  const claimMutation = useClaimAdminTaskMutation();
+  const updateStatusMutation = useUpdateAdminTaskStatusMutation();
 
   const handleCreate = () => {
     if (!title.trim()) return;
     if (!assigneeId || !dueDate) return;
-    createTaskMutation.mutate({
-      title: title.trim(),
-      description: description.trim() || null,
-      priority: priority ?? "medium",
-      assignee_id: assigneeId,
-      due_at: dueDate ? new Date(dueDate).toISOString() : null,
-    });
+    createTaskMutation.mutate(
+      {
+        title: title.trim(),
+        description: description.trim() || null,
+        priority: priority ?? "medium",
+        assignee_id: assigneeId,
+        due_at: dueDate ? new Date(dueDate).toISOString() : null,
+      },
+      {
+        onSuccess: () => {
+          setCreateOpened(false);
+          setTitle("");
+          setDescription("");
+          setPriority("medium");
+          setAssigneeId(null);
+          setDueDate("");
+        },
+      }
+    );
   };
 
   const adminOptions = admins.map((a) => ({
@@ -318,8 +239,8 @@ export default function AdminTasksPage() {
     label: a.full_name || a.email || a.id.slice(0, 8),
   }));
 
-  const tasksByStatus = (list: Task[]) => {
-    const m: Record<string, Task[]> = { open: [], in_progress: [], done: [] };
+  const tasksByStatus = (list: AdminTaskRow[]) => {
+    const m: Record<string, AdminTaskRow[]> = { open: [], in_progress: [], done: [] };
     list.forEach((t) => {
       const key = t.status === "done" ? "done" : t.status === "in_progress" ? "in_progress" : "open";
       if (m[key]) m[key].push(t);
@@ -447,6 +368,7 @@ export default function AdminTasksPage() {
                     <Table.Tr>
                       <Table.Th>Заголовок</Table.Th>
                       <Table.Th>Приоритет</Table.Th>
+                      <Table.Th>Источник</Table.Th>
                       <Table.Th>Статус</Table.Th>
                       <Table.Th>Исполнитель</Table.Th>
                       <Table.Th>Срок</Table.Th>
@@ -479,6 +401,17 @@ export default function AdminTasksPage() {
                             {t.priority}
                           </Badge>
                         </Table.Td>
+                      <Table.Td>
+                        <Badge size="sm" variant="outline">
+                          {t.attention_kind
+                            ? "from Attention"
+                            : t.source === "ai_suggested" || t.source === "ai_auto"
+                              ? "from AI"
+                              : t.source === "system"
+                                ? "system"
+                                : "manual"}
+                        </Badge>
+                      </Table.Td>
                         <Table.Td>
                           <Badge
                             size="sm"
@@ -641,7 +574,7 @@ export default function AdminTasksPage() {
         </Box>
       </Group>
 
-      <Drawer
+      <AdminDrawer
         position="right"
         size="md"
         opened={createOpened}
@@ -700,7 +633,7 @@ export default function AdminTasksPage() {
             </Button>
           </Group>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }
@@ -715,7 +648,7 @@ function KanbanColumn({
 }: {
   id: string;
   title: string;
-  tasks: Task[];
+  tasks: AdminTaskRow[];
   isTimeBomb: (due: string | null) => boolean;
   onClaim: (taskId: string) => void;
   patientIdToPhone: Map<string, string>;

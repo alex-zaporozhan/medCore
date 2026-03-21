@@ -20,12 +20,20 @@ class AttentionItemRead(BaseModel):
     patient_full_name: str | None
     patient_phone: str
     patient_tags: list[str] = []
-    status: str  # "open" | "done"
+    # Attention status in Tasks&Attention model:
+    # new|in_progress|resolved|archived
+    status: str
     assigned_admin_id: UUID | None = None
     assigned_admin_name: str | None = None
     has_comment: bool = False
     last_comment_preview: str | None = None
     conversation_id: UUID | None = None
+    # Aggregated task info for this attention item
+    tasks_total: int = 0
+    tasks_open: int = 0
+    tasks_in_progress: int = 0
+    tasks_done: int = 0
+    tasks_cancelled: int = 0
 
 
 class AttentionFeedRead(BaseModel):

@@ -11,6 +11,13 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.metrics import (  # no-op fallback when prometheus_client is absent
+    business_chain_tasks_attention_duration_seconds,
+    business_chain_tasks_attention_errors_total,
+    business_chain_tasks_attention_total,
+)
+from src.core.prometheus_labels import clinic_bucket_label
+
 from src.application.dto.attention_feed_dto import AttentionFeedRead, AttentionItemRead
 from src.core.datetime_utils import utc_now, utc_now_naive
 from src.domain.entities.admin_user import AdminUser
@@ -43,10 +50,44 @@ class AttentionFeedService:
         self.session = session
 
     async def get_feed(self, clinic_id: UUID) -> AttentionFeedRead:
-        follow_up_items = await self._build_follow_up_items(clinic_id)
-        retention_items = await self._build_retention_gap_items(clinic_id)
-        loyalty_items = await self._build_loyalty_loyalty_gap_items(clinic_id)
-        conflict_items = await self._build_conflict_items(clinic_id)
+        started_at = utc_now()
+        business_chain_tasks_attention_total.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id),
+            status="attempt",
+        ).inc()
+
+        try:
+            follow_up_items = await self._build_follow_up_items(clinic_id)
+            retention_items = await self._build_retention_gap_items(clinic_id)
+            loyalty_items = await self._build_loyalty_loyalty_gap_items(clinic_id)
+            conflict_items = await self._build_conflict_items(clinic_id)
+            # Enrich all items with task linkage and computed attention status
+            all_items = (
+                follow_up_items + retention_items + loyalty_items + conflict_items
+            )
+            if all_items:
+                await self._enrich_with_tasks_and_status(clinic_id, all_items)
+                # Split back per kind preserving original ordering
+                follow_up_items = [i for i in all_items if i.kind == "follow_up"]
+                retention_items = [i for i in all_items if i.kind == "retention_gap"]
+                conflict_items = [i for i in all_items if i.kind == "conflict"]
+        except Exception:
+            business_chain_tasks_attention_errors_total.labels(
+                clinic_bucket=clinic_bucket_label(clinic_id),
+                error_type="build_feed_error",
+            ).inc()
+            business_chain_tasks_attention_duration_seconds.labels(
+                clinic_bucket=clinic_bucket_label(clinic_id),
+            ).observe((utc_now() - started_at).total_seconds())
+            raise
+
+        business_chain_tasks_attention_duration_seconds.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id),
+        ).observe((utc_now() - started_at).total_seconds())
+        business_chain_tasks_attention_total.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id),
+            status="success",
+        ).inc()
         return AttentionFeedRead(
             follow_up=follow_up_items,
             retention_gap=retention_items + loyalty_items,
@@ -115,8 +156,6 @@ class AttentionFeedService:
             if len(description) > 240:
                 description = description[:237] + "..."
 
-            status = "open" if not m.follow_up_closed else "done"
-
             has_comment = comment is not None
             last_comment_preview: str | None = None
             if comment is not None:
@@ -139,7 +178,7 @@ class AttentionFeedService:
                     patient_full_name=patient_full_name,
                     patient_phone=patient_phone,
                     patient_tags=[],
-                    status=status,
+                    status="open" if not m.follow_up_closed else "resolved",
                     assigned_admin_id=conv.assigned_admin_id if conv else None,
                     assigned_admin_name=admin.full_name if admin else None,
                     has_comment=has_comment,
@@ -528,6 +567,79 @@ class AttentionFeedService:
             )
 
         return items
+
+    async def _enrich_with_tasks_and_status(
+        self,
+        clinic_id: UUID,
+        items: list[AttentionItemRead],
+    ) -> None:
+        """Attach aggregated task info and compute attention status for each item.
+
+        Mapping rules (ARCH_DEV_TASKS_MODEL_020_TASKS):
+        - new: нет связанных задач
+        - in_progress: есть хотя бы одна задача open|in_progress
+        - resolved: все задачи done|cancelled
+        - archived: зарезервирован под отдельное явное действие (пока не реализовано)
+        """
+        if not items:
+            return
+
+        stmt: Select[tuple[Task]] = (
+            select(Task)
+            .where(Task.clinic_id == clinic_id)
+            .where(
+                func.row(
+                    Task.attention_kind,
+                    Task.attention_ref_id,
+                ).in_(
+                    [
+                        (item.kind, item.id)
+                        for item in items
+                    ]
+                )
+            )
+        )
+        result = await self.session.execute(stmt)
+        tasks: list[Task] = list(result.scalars().all())
+
+        by_key: dict[tuple[str, UUID], list[Task]] = defaultdict(list)
+        for t in tasks:
+            if t.attention_kind and t.attention_ref_id:
+                by_key[(t.attention_kind, t.attention_ref_id)].append(t)
+
+        for item in items:
+            key = (item.kind, item.id)
+            related = by_key.get(key, [])
+            if not related:
+                item.tasks_total = 0
+                item.tasks_open = 0
+                item.tasks_in_progress = 0
+                item.tasks_done = 0
+                item.tasks_cancelled = 0
+                # Если из исходных данных уже выставлен статус resolved (например, follow_up_closed),
+                # не понижаем его до new.
+                if item.status not in ("resolved", "archived"):
+                    item.status = "new"
+                continue
+
+            total = len(related)
+            open_count = sum(1 for t in related if t.status == "open")
+            in_progress_count = sum(1 for t in related if t.status == "in_progress")
+            done_count = sum(1 for t in related if t.status == "done")
+            cancelled_count = sum(1 for t in related if t.status == "cancelled")
+
+            item.tasks_total = total
+            item.tasks_open = open_count
+            item.tasks_in_progress = in_progress_count
+            item.tasks_done = done_count
+            item.tasks_cancelled = cancelled_count
+
+            if open_count > 0 or in_progress_count > 0:
+                item.status = "in_progress"
+            elif total > 0 and done_count + cancelled_count == total:
+                item.status = "resolved"
+            elif item.status not in ("resolved", "archived"):
+                item.status = "new"
 
     async def _build_conflict_items(self, clinic_id: UUID) -> list[AttentionItemRead]:
         """Items for conflict / complaint clients.

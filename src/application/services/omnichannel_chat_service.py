@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.metrics import omni_messages_total
+from src.core.prometheus_labels import account_bucket_label
 from src.domain.entities.omnichannel_chat import Chat
 from src.domain.entities.omnichannel_channel import Channel
 from src.domain.entities.omnichannel_contact import Contact
@@ -227,7 +228,7 @@ class OmnichannelChatService:
             direction="INBOUND",
             actor_type=msg.actor_type,
             channel_id=str(channel_id) if channel_id else "unknown",
-            business_account_id=str(chat.business_account_id),
+            account_bucket=account_bucket_label(chat.business_account_id),
         ).inc()
         logger.info(
             "Omnichannel inbound message created",
@@ -273,7 +274,7 @@ class OmnichannelChatService:
             direction="OUTBOUND",
             actor_type=actor_type,
             channel_id=str(channel_id) if channel_id else "unknown",
-            business_account_id=str(chat.business_account_id),
+            account_bucket=account_bucket_label(chat.business_account_id),
         ).inc()
         logger.info(
             "Omnichannel outbound message created",

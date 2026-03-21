@@ -1,6 +1,7 @@
 import { usePatientAuth } from "@/contexts/PatientAuthContext";
 import { useAgreement, useSendCode, useVerifyCode } from "@/hooks/useAuth";
 import {
+  Alert,
   Anchor,
   Button,
   Center,
@@ -8,6 +9,7 @@ import {
   Group,
   Modal,
   Paper,
+  SegmentedControl,
   Stack,
   Text,
   TextInput,
@@ -17,6 +19,9 @@ import { useDisclosure } from "@mantine/hooks";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { getCurrentUtm } from "@/shared/utmTracking";
+import { ROUTE_PATHS } from "@/routePaths";
+
+const oauthRedirectHome = encodeURIComponent(ROUTE_PATHS.patient.home);
 
 const EMPTY_DB_MESSAGE = "В базе данных нет ни одной клиники";
 
@@ -39,15 +44,25 @@ export default function LoginPage() {
 
   const requireMailingConsent = agreement?.allow_registration_without_mailing_consent === false;
   const canSendCodeRegister = consentPd && (!requireMailingConsent || consentMailing);
-  const canSendCodeLogin = phone.trim().length > 0;
-
-  const normalizePhone = () => {
-    const normalized = phone.replace(/\D/g, "");
-    return normalized.length === 10 ? `+7${normalized}` : phone;
+  /** Должно совпадать с `AuthService._normalize_phone` на бэкенде. */
+  const normalizePhoneE164 = (): string => {
+    let digits = phone.replace(/\D/g, "");
+    if (digits.startsWith("8") && digits.length === 11) {
+      digits = `7${digits.slice(1)}`;
+    }
+    if (digits.length === 10) {
+      digits = `7${digits}`;
+    }
+    return `+${digits}`;
   };
 
+  const digitsOnly = phone.replace(/\D/g, "");
+  const canSendCodeLogin =
+    digitsOnly.length === 10 ||
+    (digitsOnly.length === 11 && (digitsOnly.startsWith("7") || digitsOnly.startsWith("8")));
+
   const handleSendCodeLogin = () => {
-    const full = normalizePhone();
+    const full = normalizePhoneE164();
     sendCode.mutate(full, {
       onSuccess: () => setStep("code"),
       onError: () => {},
@@ -55,7 +70,7 @@ export default function LoginPage() {
   };
 
   const handleSendCodeRegister = () => {
-    const full = normalizePhone();
+    const full = normalizePhoneE164();
     sendCode.mutate(full, {
       onSuccess: () => setStep("code"),
       onError: () => {},
@@ -63,7 +78,7 @@ export default function LoginPage() {
   };
 
   const handleVerify = () => {
-    const full = normalizePhone();
+    const full = normalizePhoneE164();
     const utm = getCurrentUtm();
     verifyCode.mutate(
       {
@@ -85,7 +100,7 @@ export default function LoginPage() {
       {
         onSuccess: (data) => {
           login(data.access_token, data.patient_id);
-          navigate("/app", { replace: true });
+          navigate(ROUTE_PATHS.patient.home, { replace: true });
         },
         onError: () => {},
       }
@@ -113,46 +128,41 @@ export default function LoginPage() {
               ? "Если вы уже записывались в клинику, просто введите номер телефона — мы отправим SMS‑код для входа."
               : "Если вы впервые записываетесь в клинику, заполните данные и получите SMS‑код для входа."}
           </Text>
-          <Group gap="xs">
-            <Button
-              size="xs"
-              variant={mode === "login" ? "filled" : "light"}
-              onClick={() => {
-                setMode("login");
-                setStep("phone");
-              }}
-            >
-              Уже есть запись
-            </Button>
-            <Button
-              size="xs"
-              variant={mode === "register" ? "filled" : "light"}
-              onClick={() => {
-                setMode("register");
-                setStep("phone");
-              }}
-            >
-              Я новый пациент
-            </Button>
-          </Group>
+          <SegmentedControl
+            fullWidth
+            size="sm"
+            value={mode}
+            onChange={(v) => {
+              setMode(v as "login" | "register");
+              setStep("phone");
+              setCode("");
+            }}
+            data={[
+              { label: "Уже есть запись", value: "login" },
+              { label: "Я новый пациент", value: "register" },
+            ]}
+            aria-label="Режим: вход или регистрация"
+          />
           <Text size="xs" c="dimmed">
             Или войдите через социальную сеть:
           </Text>
           <Group gap="xs">
             <Button
+              type="button"
               variant="outline"
               size="xs"
               onClick={() => {
-                window.location.href = `/api/v1/auth/oauth/vk/start?redirect=/app`;
+                window.location.href = `/api/v1/auth/oauth/vk/start?redirect=${oauthRedirectHome}`;
               }}
             >
               Войти через VK
             </Button>
             <Button
+              type="button"
               variant="outline"
               size="xs"
               onClick={() => {
-                window.location.href = `/api/v1/auth/oauth/yandex/start?redirect=/app`;
+                window.location.href = `/api/v1/auth/oauth/yandex/start?redirect=${oauthRedirectHome}`;
               }}
             >
               Войти через Яндекс
@@ -206,6 +216,7 @@ export default function LoginPage() {
                 </>
               )}
               <Button
+                type="button"
                 onClick={mode === "login" ? handleSendCodeLogin : handleSendCodeRegister}
                 loading={sendCode.isPending}
                 fullWidth
@@ -226,19 +237,19 @@ export default function LoginPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
               />
-              <Button onClick={handleVerify} loading={verifyCode.isPending} fullWidth>
+              <Button type="button" onClick={handleVerify} loading={verifyCode.isPending} fullWidth>
                 Войти
               </Button>
-              <Button variant="subtle" onClick={() => setStep("phone")} fullWidth>
+              <Button type="button" variant="subtle" onClick={() => setStep("phone")} fullWidth>
                 Изменить номер
               </Button>
             </>
           )}
           {apiError && (
-            <Text c="red" size="sm">
+            <Alert color="red" variant="light" title="Ошибка">
               {message}
               {isEmptyDb && " Добавьте клинику в настройках бэкенда."}
-            </Text>
+            </Alert>
           )}
         </Stack>
       </Paper>

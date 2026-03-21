@@ -11,6 +11,8 @@ import {
   Title,
 } from "@mantine/core";
 import { Link } from "react-router-dom";
+import { ROUTE_PATHS } from "@/routePaths";
+import { QueryErrorAlert } from "@/shared/ui";
 
 export default function FeedPage() {
   const { data: clinics } = useClinics();
@@ -91,7 +93,7 @@ export default function FeedPage() {
         {storiesLoading || feedLoading ? (
           <Loader size="sm" />
         ) : feedError ? (
-          <Text c="red">{feedErr instanceof Error ? feedErr.message : "Ошибка загрузки"}</Text>
+          <QueryErrorAlert error={feedErr} title="Не удалось загрузить ленту" />
         ) : posts.length === 0 ? (
           <Text size="sm" c="dimmed">Пока нет записей в ленте.</Text>
         ) : (
@@ -167,7 +169,14 @@ export default function FeedPage() {
                     {p.body}
                   </Text>
                   {p.link && (
-                    <Anchor href={p.link} target="_blank" rel="noopener noreferrer" size="sm">
+                    <Anchor
+                      href={p.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      size="sm"
+                      c="indigo"
+                      fw={500}
+                    >
                       Подробнее
                     </Anchor>
                   )}
@@ -178,7 +187,7 @@ export default function FeedPage() {
         )}
       </Stack>
 
-      <Anchor component={Link} to="/app/booking" size="sm">
+      <Anchor component={Link} to={ROUTE_PATHS.patient.booking} size="sm" c="indigo" fw={500}>
         Записаться на приём
       </Anchor>
     </Stack>

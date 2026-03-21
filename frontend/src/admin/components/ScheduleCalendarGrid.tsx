@@ -134,7 +134,7 @@ export function ScheduleCalendarGrid({
     const overId = String(over.id);
     if (!overId.startsWith("cell-")) return;
     const rest = overId.replace("cell-", "");
-    const [toDoctorId, _d, time] = rest.split("__");
+    const [toDoctorId, , time] = rest.split("__");
     if (!time || !toDoctorId) return;
     const bookingId = String(active.id);
     const booking = bookings?.find((b) => b.id === bookingId);

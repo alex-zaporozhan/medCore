@@ -18,11 +18,13 @@ export function useAdminFormSubmissions(params: {
   patient_id?: string | null;
   booking_id?: string | null;
   template_code?: string | null;
+  status?: string | null;
 }) {
   const searchParams = new URLSearchParams();
   if (params.patient_id) searchParams.set("patient_id", params.patient_id);
   if (params.booking_id) searchParams.set("booking_id", params.booking_id);
   if (params.template_code) searchParams.set("template_code", params.template_code);
+  if (params.status) searchParams.set("status", params.status);
 
   return useQuery({
     queryKey: ["admin", "forms", "submissions", params],
@@ -83,6 +85,7 @@ export function useUpsertAdminFormTemplate() {
         description: payload.body.description,
         schema: payload.body.schema,
         requires_signature: payload.body.requires_signature,
+        required_for_visit_completion: payload.body.required_for_visit_completion,
         active: payload.body.active,
       };
       if (payload.id) {

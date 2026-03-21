@@ -1,8 +1,8 @@
 import type { Doctor } from "@/api/types";
+import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
 import {
   Avatar,
   Button,
-  Drawer,
   Group,
   Menu,
   ActionIcon,
@@ -153,7 +153,7 @@ export function DoctorEntityDrawer({
         : doctor?.full_name ?? "";
 
   return (
-    <Drawer
+    <AdminDrawer
       position="right"
       size="lg"
       opened={opened}
@@ -287,13 +287,12 @@ export function DoctorEntityDrawer({
               </Group>
             )}
             {(createMutation.isError || updateMutation.isError) && (
-              <Text size="sm" c="red">
-                {createMutation.error instanceof Error
-                  ? createMutation.error.message
-                  : updateMutation.error instanceof Error
-                    ? updateMutation.error.message
-                    : "Ошибка"}
-              </Text>
+              <QueryErrorAlert
+                error={
+                  createMutation.isError ? createMutation.error : updateMutation.error
+                }
+                title="Не удалось сохранить врача"
+              />
             )}
           </Stack>
         </Tabs.Panel>
@@ -425,6 +424,6 @@ export function DoctorEntityDrawer({
           )}
         </Tabs.Panel>
       </Tabs>
-    </Drawer>
+    </AdminDrawer>
   );
 }

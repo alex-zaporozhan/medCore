@@ -47,10 +47,11 @@ async def test_doctor_schedule(client: AsyncClient, seed_data):
     if not doctors:
         pytest.skip("No doctors in seed")
     doctor_id = doctors[0]["id"]
+    clinic_id = doctors[0]["clinic_id"]
     day = seed_data["date"]
     r = await client.get(
         f"/api/v1/doctors/{doctor_id}/schedule",
-        params={"date": day.isoformat()},
+        params={"date": day.isoformat(), "clinic_id": clinic_id},
     )
     assert r.status_code == 200
     assert "slots" in r.json()
@@ -112,15 +113,17 @@ async def test_patients_list(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_admin_doctor_schedule(client: AsyncClient, seed_data):
+async def test_admin_doctor_schedule(client: AsyncClient, seed_data, admin_auth: dict):
     """Admin schedule: GET admin doctor schedule."""
     doctors = (await client.get("/api/v1/doctors")).json()
     if not doctors:
         pytest.skip("No doctors in seed")
     doctor_id = doctors[0]["id"]
     day = seed_data["date"]
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
     r = await client.get(
         f"/api/v1/doctors/admin/{doctor_id}/schedule",
         params={"date": day.isoformat()},
+        headers=headers,
     )
     assert r.status_code == 200

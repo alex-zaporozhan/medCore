@@ -20,6 +20,11 @@ class FormLinkToken(Base):
     template_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("digital_form_templates.id"), nullable=False, index=True
     )
+    digital_form_submission_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("digital_form_submissions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     patient_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("patients.id"), nullable=True, index=True)
     booking_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bookings.id"), nullable=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)

@@ -6,6 +6,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { getAdminToken } from "@/api/client";
+import { useAdminClinic } from "@/contexts/AdminClinicContext";
+import { useAiFeatures } from "@/shared/aiFeatures";
 
 export interface AiAgentRequest {
   query: string;
@@ -17,19 +19,38 @@ export interface AiAgentResponse {
 
 export function useAiAgent() {
   const token = getAdminToken();
+  const { currentClinicId } = useAdminClinic();
+  const aiFeatures = useAiFeatures(currentClinicId ?? null);
+  const spotlightFeature = aiFeatures.get("omni.spotlight.agent");
+
   return useMutation({
     mutationFn: async (body: AiAgentRequest): Promise<AiAgentResponse> => {
+      const trimmed = body.query.trim();
+      if (!trimmed) return { answer: "Введите вопрос." };
+
+      if (spotlightFeature.status === "stub") {
+        return {
+          answer:
+            "AI‑агент сейчас в режиме stub (демо): реальные вызовы отключены.\n\n" +
+            "Ваш вопрос: «" +
+            trimmed +
+            "»\n\n" +
+            "Подсказка: включите внешний AI‑провайдер в настройках (если доступно) или обратитесь к администратору.",
+        };
+      }
       try {
-        const res = await api.post<AiAgentResponse>("/v1/ai/agent", body, token);
+        const res = await api.post<AiAgentResponse>("/v1/ai/agent", { query: trimmed }, token);
         if (res?.answer) return res;
       } catch {
         // fallback to stub
       }
       return {
         answer:
-          "Сервис AI-ассистента пока настраивается. Ваш вопрос: «" +
-          body.query +
-          "». Обратитесь к администратору для подключения.",
+          `AI‑агент временно недоступен (mode: ${spotlightFeature.status}). ` +
+          "Попробуйте позже или используйте ручной сценарий.\n\n" +
+          "Ваш вопрос: «" +
+          trimmed +
+          "».",
       };
     },
   });

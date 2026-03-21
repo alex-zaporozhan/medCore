@@ -1,9 +1,10 @@
 """Safe AI client that always sanitizes text payloads before external calls."""
 
-from typing import Any
+from typing import Any, Iterable
 
 from src.core.ai_sanitizer import AiSanitizer
 from src.infrastructure.external_apis.ai_client import AiClient
+from src.application.dto.chat_ai_agent_dto import ChatMessage as AgentChatMessage, ToolCall
 
 
 class SafeAiClient:
@@ -20,6 +21,35 @@ class SafeAiClient:
         """Sanitize known text fields in payload and call underlying AiClient."""
         safe_payload = self._sanitize_messages(payload)
         return await self._client.complete(safe_payload)
+
+    async def chat_with_tools(
+        self,
+        messages: Iterable[AgentChatMessage],
+        tools_schema: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], list[ToolCall]]:
+        """
+        Wrapper around AiClient.chat_with_tools that applies sanitizer to message content.
+        """
+        sanitized_messages: list[AgentChatMessage] = []
+        for m in messages:
+            content = m.content
+            if isinstance(content, str):
+                safe_content = self._sanitizer.sanitize(content).sanitized
+            else:
+                safe_content = content
+            sanitized_messages.append(
+                AgentChatMessage(
+                    role=m.role,
+                    content=safe_content,
+                    name=m.name,
+                )
+            )
+        return await self._client.chat_with_tools(
+            messages=sanitized_messages,
+            tools_schema=tools_schema,
+            tool_choice=tool_choice,
+        )
 
     def _sanitize_messages(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Sanitize `messages[n].content` in-place copy of payload."""

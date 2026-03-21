@@ -5,14 +5,11 @@ import {
   useUpdatePrepaymentPolicy,
 } from "@/hooks/useAdminPrepayment";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { useClinics } from "@/hooks";
-import { api } from "@/api/client";
-import { useQueryClient } from "@tanstack/react-query";
-import { EmptyState, PageSkeleton } from "@/shared/ui";
+import { useClinics, useUpdateClinicMutation } from "@/hooks";
+import { AdminDrawer, EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import {
   ActionIcon,
   Button,
-  Drawer,
   Menu,
   NumberInput,
   Paper,
@@ -46,7 +43,7 @@ const AMOUNT_TYPES = [
 export default function AdminPrepaymentPage() {
   const { currentClinicId } = useAdminClinic();
   const clinicId = currentClinicId ?? null;
-  const queryClient = useQueryClient();
+  const updateClinic = useUpdateClinicMutation();
   const { data: clinicsData } = useClinics();
   const clinic = clinicId ? (clinicsData ?? []).find((c) => c.id === clinicId) : null;
   const prepaymentEnabled = clinic?.prepayment_enabled ?? false;
@@ -61,8 +58,10 @@ export default function AdminPrepaymentPage() {
     if (!clinicId) return;
     setSavingSwitch(true);
     try {
-      await api.put(`/v1/clinics/${clinicId}`, { prepayment_enabled: checked });
-      queryClient.invalidateQueries({ queryKey: ["clinics"] });
+      await updateClinic.mutateAsync({
+        clinicId,
+        body: { prepayment_enabled: checked },
+      });
     } finally {
       setSavingSwitch(false);
     }
@@ -130,8 +129,22 @@ export default function AdminPrepaymentPage() {
       </Stack>
     );
   }
-  if (isLoading) return <PageSkeleton variant="table" rows={6} />;
-  if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
+  if (isLoading) {
+    return (
+      <Stack>
+        <ContextBar title="Предоплата" />
+        <PageSkeleton variant="table" rows={6} />
+      </Stack>
+    );
+  }
+  if (isError) {
+    return (
+      <Stack>
+        <ContextBar title="Предоплата" />
+        <QueryErrorAlert error={error} />
+      </Stack>
+    );
+  }
 
   const list = policies ?? [];
 
@@ -219,7 +232,7 @@ export default function AdminPrepaymentPage() {
         </Table>
       )}
 
-      <Drawer position="right" size="md" opened={opened} onClose={() => { close(); resetForm(); }} title={editingId ? "Редактировать политику" : "Новая политика"}>
+      <AdminDrawer position="right" size="md" opened={opened} onClose={() => { close(); resetForm(); }} title={editingId ? "Редактировать политику" : "Новая политика"}>
         <Stack>
           <Select label="Область" data={SCOPE_TYPES} value={scope_type} onChange={setScopeType} />
           <Select label="Режим" data={MODES} value={mode} onChange={setMode} />
@@ -230,7 +243,7 @@ export default function AdminPrepaymentPage() {
           <Switch label="Включена" checked={enabled} onChange={(e) => setEnabled(e.currentTarget.checked)} />
           <Button onClick={handleSave} loading={createMutation.isPending || updateMutation.isPending}>Сохранить</Button>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

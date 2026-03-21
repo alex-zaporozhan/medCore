@@ -11,6 +11,7 @@ class RequestContext:
     clinic_id: UUID | None
     user_id: UUID | None
     user_type: UserType | None
+    trace_id: str | None = None
     roles: Set[str] = field(default_factory=set)
     permissions: Set[str] = field(default_factory=set)
 

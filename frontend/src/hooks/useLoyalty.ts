@@ -8,6 +8,8 @@ import type {
   PatientLoyaltyMeResponse,
   PatientLoyaltyHistoryResponse,
   AdminLoyaltySummaryByContactResponse,
+  LoyaltyCampaignSettings,
+  LoyaltyCampaignRunResult,
 } from "@/api/types";
 
 export function useLoyaltyPackages() {
@@ -82,6 +84,48 @@ export function useAdminLoyaltySummaryByContact(contactId: string | null) {
 }
 
 /** B6.1 Family Sharing: add a family member to a customer subscription. */
+export function useLoyaltyCampaignSettings(clinicId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "loyalty", "campaign-settings"],
+    queryFn: () =>
+      api.get<LoyaltyCampaignSettings>("/v1/admin/loyalty/campaign-settings"),
+    enabled: !!clinicId,
+  });
+}
+
+export function useUpdateLoyaltyCampaignSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<LoyaltyCampaignSettings>) =>
+      api.patch<LoyaltyCampaignSettings>(
+        "/v1/admin/loyalty/campaign-settings",
+        body,
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["admin", "loyalty", "campaign-settings"],
+      });
+    },
+  });
+}
+
+export function useRunLoyaltyCampaigns() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.post<LoyaltyCampaignRunResult>(
+        "/v1/admin/loyalty/campaigns/run",
+        {},
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "tasks"] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin", "loyalty", "campaign-settings"],
+      });
+    },
+  });
+}
+
 export function useAddFamilyMember() {
   const queryClient = useQueryClient();
   return useMutation({

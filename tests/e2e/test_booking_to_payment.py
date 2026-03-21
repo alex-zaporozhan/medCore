@@ -63,7 +63,7 @@ async def test_booking_to_payment_flow(
     day = seed_data["date"]
     r = await client.get(
         f"/api/v1/doctors/{doctor_id}/schedule",
-        params={"date": day.isoformat()},
+        params={"date": day.isoformat(), "clinic_id": str(seed_data["clinic_id"])},
         headers=headers,
     )
     assert r.status_code == 200

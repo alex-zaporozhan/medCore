@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import {
@@ -6,17 +6,24 @@ import {
   useCustomerSubscriptions,
   useWallets,
   useWalletTransactions,
+  useLoyaltyCampaignSettings,
+  useUpdateLoyaltyCampaignSettings,
+  useRunLoyaltyCampaigns,
 } from "@/hooks";
+import type { LoyaltyCampaignSettings } from "@/api/types";
 import {
+  Button,
   Card,
+  Group,
+  NumberInput,
   Stack,
+  Switch,
   Table,
   Tabs,
   Text,
   TextInput,
 } from "@mantine/core";
-import { ContextBar } from "@/shared/ui/ContextBar";
-import { PageSkeleton } from "@/shared/ui/PageSkeleton";
+import { ContextBar, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 
 export default function AdminLoyaltyPage() {
   const { currentClinicId } = useAdminClinic();
@@ -38,6 +45,17 @@ export default function AdminLoyaltyPage() {
     data: walletTxs,
     isLoading: walletTxsLoading,
   } = useWalletTransactions(selectedWalletId);
+
+  const { data: campaignSettings, isLoading: campaignSettingsLoading } =
+    useLoyaltyCampaignSettings(clinicId);
+  const updateCampaignSettings = useUpdateLoyaltyCampaignSettings();
+  const runCampaigns = useRunLoyaltyCampaigns();
+  const [campaignDraft, setCampaignDraft] = useState<LoyaltyCampaignSettings | null>(
+    null,
+  );
+  useEffect(() => {
+    if (campaignSettings) setCampaignDraft(campaignSettings);
+  }, [campaignSettings]);
 
   const loading =
     packagesLoading || subsLoading || walletsLoading || walletTxsLoading;
@@ -64,6 +82,7 @@ export default function AdminLoyaltyPage() {
           <Tabs.Tab value="packages">Пакеты</Tabs.Tab>
           <Tabs.Tab value="subscriptions">Абонементы</Tabs.Tab>
           <Tabs.Tab value="wallets">Кошельки</Tabs.Tab>
+          <Tabs.Tab value="campaigns">Кампании</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="packages" pt="md">
@@ -235,6 +254,204 @@ export default function AdminLoyaltyPage() {
               </Card>
             )}
           </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="campaigns" pt="md">
+          <Card shadow="sm" padding="md" withBorder>
+            <Text size="sm" fw={500} mb="xs">
+              Автокампании лояльности (задачи для операторов)
+            </Text>
+            <Text size="sm" c="dimmed" mb="md">
+              Задачи с типами LOYALTY_* не создаются при отключённых уведомлениях у пациента
+              или без согласия на рассылку (для реактивации). Учитесь дневные и месячные лимиты.
+            </Text>
+            {!campaignDraft && campaignSettingsLoading && (
+              <Text size="sm" c="dimmed">
+                Загрузка…
+              </Text>
+            )}
+            {campaignDraft && (
+              <Stack gap="md">
+                <Switch
+                  label="Истекающие пакеты"
+                  checked={campaignDraft.expiring_packages_enabled}
+                  onChange={(e) =>
+                    setCampaignDraft({
+                      ...campaignDraft,
+                      expiring_packages_enabled: e.currentTarget.checked,
+                    })
+                  }
+                />
+                <Switch
+                  label="Высокий баланс + низкая активность"
+                  checked={campaignDraft.high_balance_low_activity_enabled}
+                  onChange={(e) =>
+                    setCampaignDraft({
+                      ...campaignDraft,
+                      high_balance_low_activity_enabled: e.currentTarget.checked,
+                    })
+                  }
+                />
+                <Switch
+                  label="Реактивация (не было визита давно)"
+                  checked={campaignDraft.reengagement_enabled}
+                  onChange={(e) =>
+                    setCampaignDraft({
+                      ...campaignDraft,
+                      reengagement_enabled: e.currentTarget.checked,
+                    })
+                  }
+                />
+                <Switch
+                  label="Создавать задачи (канал Tasks)"
+                  checked={campaignDraft.channel_tasks_enabled}
+                  onChange={(e) =>
+                    setCampaignDraft({
+                      ...campaignDraft,
+                      channel_tasks_enabled: e.currentTarget.checked,
+                    })
+                  }
+                />
+                <Switch
+                  label="Не дублировать с SMS по истекающим (если уже отправлено сегодня)"
+                  checked={campaignDraft.skip_expiring_task_if_sms_expiring_sent_today}
+                  onChange={(e) =>
+                    setCampaignDraft({
+                      ...campaignDraft,
+                      skip_expiring_task_if_sms_expiring_sent_today:
+                        e.currentTarget.checked,
+                    })
+                  }
+                />
+                <Group grow>
+                  <NumberInput
+                    label="Макс. касаний клиники / день"
+                    min={1}
+                    max={10000}
+                    value={campaignDraft.max_contacts_per_day_clinic}
+                    onChange={(v) =>
+                      setCampaignDraft({
+                        ...campaignDraft,
+                        max_contacts_per_day_clinic: typeof v === "number" ? v : 50,
+                      })
+                    }
+                  />
+                  <NumberInput
+                    label="Макс. касаний пациента / день"
+                    min={1}
+                    max={100}
+                    value={campaignDraft.max_contacts_per_day_patient}
+                    onChange={(v) =>
+                      setCampaignDraft({
+                        ...campaignDraft,
+                        max_contacts_per_day_patient: typeof v === "number" ? v : 3,
+                      })
+                    }
+                  />
+                </Group>
+                <Group grow>
+                  <NumberInput
+                    label="Макс. задач LOYALTY_* на пациента / месяц (UTC)"
+                    min={1}
+                    max={100}
+                    value={campaignDraft.max_campaign_touches_per_patient_month}
+                    onChange={(v) =>
+                      setCampaignDraft({
+                        ...campaignDraft,
+                        max_campaign_touches_per_patient_month:
+                          typeof v === "number" ? v : 12,
+                      })
+                    }
+                  />
+                  <NumberInput
+                    label="Cooldown между однотипными кампаниями, дни"
+                    min={1}
+                    max={365}
+                    value={campaignDraft.campaign_cooldown_days}
+                    onChange={(v) =>
+                      setCampaignDraft({
+                        ...campaignDraft,
+                        campaign_cooldown_days: typeof v === "number" ? v : 14,
+                      })
+                    }
+                  />
+                </Group>
+                <NumberInput
+                  label="Дней без визита для реактивации"
+                  min={30}
+                  max={730}
+                  value={campaignDraft.reengagement_inactive_days}
+                  onChange={(v) =>
+                    setCampaignDraft({
+                      ...campaignDraft,
+                      reengagement_inactive_days: typeof v === "number" ? v : 180,
+                    })
+                  }
+                />
+                <Group>
+                  <Button
+                    loading={updateCampaignSettings.isPending}
+                    onClick={() =>
+                      updateCampaignSettings.mutate({
+                        expiring_packages_enabled:
+                          campaignDraft.expiring_packages_enabled,
+                        high_balance_low_activity_enabled:
+                          campaignDraft.high_balance_low_activity_enabled,
+                        reengagement_enabled: campaignDraft.reengagement_enabled,
+                        channel_tasks_enabled: campaignDraft.channel_tasks_enabled,
+                        channel_omnichannel_enabled:
+                          campaignDraft.channel_omnichannel_enabled,
+                        skip_expiring_task_if_sms_expiring_sent_today:
+                          campaignDraft.skip_expiring_task_if_sms_expiring_sent_today,
+                        max_contacts_per_day_clinic:
+                          campaignDraft.max_contacts_per_day_clinic,
+                        max_contacts_per_day_patient:
+                          campaignDraft.max_contacts_per_day_patient,
+                        max_campaign_touches_per_patient_month:
+                          campaignDraft.max_campaign_touches_per_patient_month,
+                        campaign_cooldown_days: campaignDraft.campaign_cooldown_days,
+                        reengagement_inactive_days:
+                          campaignDraft.reengagement_inactive_days,
+                      })
+                    }
+                  >
+                    Сохранить настройки
+                  </Button>
+                  <Button
+                    variant="light"
+                    loading={runCampaigns.isPending}
+                    onClick={() => runCampaigns.mutate()}
+                  >
+                    Запустить кампании сейчас
+                  </Button>
+                </Group>
+                {runCampaigns.data && (
+                  <Text size="sm">
+                    Последний запуск: expiring {runCampaigns.data.created_expiring}, high
+                    balance {runCampaigns.data.created_high_balance}, реактивация{" "}
+                    {runCampaigns.data.created_reengagement}; пропуски: лимиты{" "}
+                    {runCampaigns.data.skipped_limits}, cooldown{" "}
+                    {runCampaigns.data.skipped_cooldown}, пересечение кампаний{" "}
+                    {runCampaigns.data.skipped_cross_campaign}, SMS-дубль{" "}
+                    {runCampaigns.data.skipped_sms_duplicate}, opt-out{" "}
+                    {runCampaigns.data.skipped_opt_out}
+                  </Text>
+                )}
+                {updateCampaignSettings.isError && (
+                  <QueryErrorAlert
+                    error={updateCampaignSettings.error}
+                    title="Не удалось сохранить настройки кампаний"
+                  />
+                )}
+                {runCampaigns.isError && (
+                  <QueryErrorAlert
+                    error={runCampaigns.error}
+                    title="Не удалось запустить кампании"
+                  />
+                )}
+              </Stack>
+            )}
+          </Card>
         </Tabs.Panel>
       </Tabs>
     </Stack>

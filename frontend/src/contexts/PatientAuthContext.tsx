@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { API_STORAGE_KEYS } from "@/api/client";
 
-const TOKEN_KEY = "dental_booking_patient_token";
-const PATIENT_ID_KEY = "dental_booking_patient_id";
+const TOKEN_KEY = API_STORAGE_KEYS.patientToken;
+const PATIENT_ID_KEY = API_STORAGE_KEYS.patientId;
 
 interface PatientAuthState {
   accessToken: string | null;

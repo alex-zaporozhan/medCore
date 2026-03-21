@@ -118,6 +118,8 @@ class WalletTransactionRead(BaseModel):
     booking_id: UUID | None = None
     subscription_id: UUID | None = None
     description: str | None = None
+    beneficiary_patient_id: UUID | None = None
+    family_link_id: UUID | None = None
 
     class Config:
         from_attributes = True
@@ -131,6 +133,8 @@ class SubscriptionUsageRead(BaseModel):
     used_visits: int | None
     used_amount: Decimal | None
     used_at: datetime
+    beneficiary_patient_id: UUID | None = None
+    family_link_id: UUID | None = None
 
     class Config:
         from_attributes = True
@@ -175,4 +179,35 @@ class PatientLoyaltyHistoryItem(BaseModel):
 
 class PatientLoyaltyHistoryResponse(BaseModel):
     items: list[PatientLoyaltyHistoryItem]
+
+
+class LoyaltyWriteOffRequest(BaseModel):
+    """Facade-level request DTO for Loyalty write-off on booking completion.
+
+    This is the contract that BookingCompletionService (or ERP/Loyalty nodes)
+    can use to describe how a visit should consume subscription balance/visits.
+    """
+
+    clinic_id: UUID
+    patient_id: UUID
+    booking_id: UUID
+    subscription_id: UUID
+    used_visits: int | None = None
+    used_amount: Decimal | None = None
+    used_at: datetime
+
+
+class LoyaltyWriteOffResult(BaseModel):
+    """Facade-level result DTO for Loyalty write-off on booking completion.
+
+    Designed to be embeddable into BookingCompletionResult.loyalty_summary.
+    """
+
+    success: bool
+    booking_id: UUID
+    subscription_id: UUID | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    remaining_visits: int | None = None
+    remaining_amount: Decimal | None = None
 

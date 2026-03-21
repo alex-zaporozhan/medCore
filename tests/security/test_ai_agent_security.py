@@ -40,7 +40,7 @@ class RecordingStubAiClient:
         return self._response, []
 
 
-def _make_chat_with_pd(session, business_account_id):
+async def _make_chat_with_pd(session, business_account_id):
     """Create chat where inbound message contains phone/email to test masking."""
     contact = OmniContact(
         business_account_id=business_account_id,
@@ -48,7 +48,7 @@ def _make_chat_with_pd(session, business_account_id):
         primary_phone="+79001234567",
     )
     session.add(contact)
-    session.flush()
+    await session.flush()
 
     chat = OmniChat(
         business_account_id=business_account_id,
@@ -58,7 +58,7 @@ def _make_chat_with_pd(session, business_account_id):
         ai_mode="AUTO_REPLY",
     )
     session.add(chat)
-    session.flush()
+    await session.flush()
 
     inbound = OmniMessage(
         chat_id=chat.id,
@@ -71,7 +71,7 @@ def _make_chat_with_pd(session, business_account_id):
         created_at=datetime.utcnow(),
     )
     session.add(inbound)
-    session.flush()
+    await session.flush()
 
     return chat, contact, inbound
 
@@ -102,7 +102,7 @@ async def test_run_ai_agent_sanitizes_personal_data_when_not_allowed(
             row.ai_provider_type = "external"
             await session.flush()
 
-        chat, contact, inbound = _make_chat_with_pd(session, business_account_id=clinic_id)
+        chat, contact, inbound = await _make_chat_with_pd(session, business_account_id=clinic_id)
 
         ai_response = {
             "choices": [
@@ -116,9 +116,9 @@ async def test_run_ai_agent_sanitizes_personal_data_when_not_allowed(
         }
         stub_client = RecordingStubAiClient(ai_response)
 
-        from src.infrastructure.external_apis import ai_client as ai_client_module
+        from src.application.services import ai_client_factory as ai_client_factory_module
 
-        monkeypatch.setattr(ai_client_module, "AiClient", lambda config=None, timeout=None: stub_client)
+        monkeypatch.setattr(ai_client_factory_module, "AiClient", lambda config=None, timeout=None: stub_client)
 
         orchestrator = OmnichannelAIOrchestrator(session)
         ctx = RequestContext(
@@ -126,7 +126,7 @@ async def test_run_ai_agent_sanitizes_personal_data_when_not_allowed(
             user_id=None,
             user_type="system",
             roles=set(),
-            permissions=set(),
+            permissions={"booking.ai_tools.use"},
         )
 
         await orchestrator.run_ai_agent(
@@ -152,7 +152,7 @@ async def test_run_ai_agent_respects_clinic_boundary_in_tools(
     clinic_id = seed_data["clinic_id"]
 
     async with db_base.AsyncSessionLocal() as session:
-        chat, contact, inbound = _make_chat_with_pd(session, business_account_id=clinic_id)
+        chat, contact, inbound = await _make_chat_with_pd(session, business_account_id=clinic_id)
 
         # Tool call with wrong clinic_id in arguments – tools should return clinic_mismatch.
         from uuid import uuid4
@@ -223,9 +223,9 @@ async def test_run_ai_agent_respects_clinic_boundary_in_tools(
 
         stub_client = SimpleStubAiClient()
 
-        from src.infrastructure.external_apis import ai_client as ai_client_module
+        from src.application.services import ai_client_factory as ai_client_factory_module
 
-        monkeypatch.setattr(ai_client_module, "AiClient", lambda config=None, timeout=None: stub_client)
+        monkeypatch.setattr(ai_client_factory_module, "AiClient", lambda config=None, timeout=None: stub_client)
 
         orchestrator = OmnichannelAIOrchestrator(session)
         ctx = RequestContext(
@@ -233,7 +233,7 @@ async def test_run_ai_agent_respects_clinic_boundary_in_tools(
             user_id=None,
             user_type="system",
             roles=set(),
-            permissions=set(),
+            permissions={"booking.ai_tools.use"},
         )
 
         result = await orchestrator.run_ai_agent(

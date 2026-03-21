@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { renderWithProviders } from "@/test-utils";
 import LoyaltyPage from "../LoyaltyPage";
 
 vi.mock("@/contexts/PatientAuthContext", () => ({
@@ -55,12 +56,13 @@ describe("LoyaltyPage", () => {
   });
 
   it("renders wallet balance and active subscriptions", () => {
-    render(<LoyaltyPage />);
+    renderWithProviders(<LoyaltyPage />, { withRouter: true });
 
     expect(screen.getByText("Мои абонементы и баллы")).toBeInTheDocument();
     expect(screen.getByText("Баланс кошелька")).toBeInTheDocument();
     expect(screen.getByText(/150.00/)).toBeInTheDocument();
-    expect(screen.getByText("Активные абонементы")).toBeInTheDocument();
+    expect(screen.getByText("Digital Pass — Абонементы")).toBeInTheDocument();
+    expect(screen.getByText("Записаться по абонементу")).toBeInTheDocument();
   });
 });
 

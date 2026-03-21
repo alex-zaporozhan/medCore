@@ -19,8 +19,8 @@ from src.domain.entities.conversation import Conversation
 from src.domain.entities.chat_message import ChatMessage
 from src.domain.entities.conversation_ai_analysis import ConversationAiAnalysis
 from src.infrastructure.external_apis.safe_ai_client import SafeAiClient
-from src.infrastructure.external_apis.ai_client import AiClient, AiClientError
-from src.application.services.ai_config_service import AiConfigService
+from src.infrastructure.external_apis.ai_client import AiClientError
+from src.application.services.ai_client_factory import build_safe_ai_client
 
 logger = logging.getLogger(__name__)
 
@@ -29,17 +29,33 @@ class ConversationAnalysisService:
     def __init__(self, session: AsyncSession, ctx: RequestContext, ai_client: SafeAiClient | None = None) -> None:
         self.session = session
         self.ctx = ctx
-        if ai_client is None:
-            config = AiConfigService().get_clinic_ai_config(self.ctx.clinic_id or self.ctx.user_id)  # type: ignore[arg-type]
-            base_client = AiClient(config=config)
-            sanitizer = AiSanitizer(allow_personal_data=config.allow_personal_data)
-            self.ai_client = SafeAiClient(base_client, sanitizer)
-        else:
-            self.ai_client = ai_client
+        # ai_client is expected to be provided via factory in new code paths;
+        # legacy call sites will lazily create SafeAiClient on first use.
+        self.ai_client = ai_client
+        self.ai_client_ctx: SafeAiClientContext | None = None
+
+    async def _ensure_ai_client(self) -> None:
+        """Lazily initialize SafeAiClient using centralized factory."""
+        if self.ai_client is not None:
+            return
+        clinic_id = self.ctx.clinic_id or self.ctx.user_id  # type: ignore[assignment]
+        safe_client, ctx = await build_safe_ai_client(clinic_id=clinic_id, session=self.session)  # type: ignore[arg-type]
+        logger.info(
+            "build_safe_ai_client used for conversation_analysis_service",
+            extra={
+                "source": "conversation_analysis",
+                "clinic_id": str(clinic_id) if clinic_id else None,
+                "provider_type": ctx.provider_type,
+                "allow_personal_data": ctx.allow_personal_data,
+            },
+        )
+        self.ai_client = safe_client
+        self.ai_client_ctx = ctx
 
     async def analyze_range(self, clinic_id: UUID, date_from: date, date_to: date) -> None:
         """Analyze conversations in date range and store AI insights."""
-        if not self.ai_client.is_configured():
+        await self._ensure_ai_client()
+        if not self.ai_client or not self.ai_client.is_configured():
             logger.info("AI provider not configured, skipping conversation analysis", extra={"clinic_id": str(clinic_id)})
             return
 
@@ -90,7 +106,10 @@ class ConversationAnalysisService:
             return
 
         lines: list[str] = []
-        sanitizer = AiSanitizer()
+        allow_personal_data = False
+        if self.ai_client_ctx is not None:
+            allow_personal_data = self.ai_client_ctx.allow_personal_data
+        sanitizer = AiSanitizer(allow_personal_data=allow_personal_data)
         for m in messages:
             role = "КЛИЕНТ" if m.sender_type == "patient" else "АДМИН"
             body = (m.body or "").strip()

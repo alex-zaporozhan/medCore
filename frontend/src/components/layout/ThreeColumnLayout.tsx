@@ -1,7 +1,17 @@
-import { Box, Flex, ScrollArea } from "@mantine/core";
+import { Box, ScrollArea } from "@mantine/core";
 import type { ReactNode } from "react";
 
-type ColumnWidthPreset = "narrow-left" | "equal" | "wide-center";
+/**
+ * Пресеты колонок — только валидные значения для `grid-template-columns`
+ * (раньше третья колонка использовала `fr` как `width` во Flex — браузер игнорировал,
+ * из‑за чего правая панель сжималась по содержимому и «прыгала» при смене вкладок).
+ */
+export type ColumnWidthPreset =
+  | "narrow-left"
+  | "equal"
+  | "wide-center"
+  /** Фиксированная ширина инспектора справа (Omni Chat и др.) — стабильная вёрстка. */
+  | "omni-inspector";
 
 interface ThreeColumnLayoutProps {
   left: ReactNode;
@@ -11,6 +21,38 @@ interface ThreeColumnLayoutProps {
   fullHeight?: boolean;
 }
 
+function ColumnCell({ children }: { children: ReactNode }) {
+  return (
+    <Box
+      style={{
+        minWidth: 0,
+        minHeight: 0,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <ScrollArea type="scroll" scrollbarSize={6} style={{ flex: 1, minHeight: 0 }}>
+        {children}
+      </ScrollArea>
+    </Box>
+  );
+}
+
+function gridTemplateColumns(preset: ColumnWidthPreset): string {
+  switch (preset) {
+    case "narrow-left":
+      return "260px minmax(0, 1.4fr) minmax(0, 1fr)";
+    case "equal":
+      return "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)";
+    case "omni-inspector":
+      return "260px minmax(0, 1fr) 360px";
+    case "wide-center":
+    default:
+      return "280px minmax(0, 1fr) 360px";
+  }
+}
+
 export function ThreeColumnLayout({
   left,
   center,
@@ -18,55 +60,21 @@ export function ThreeColumnLayout({
   preset = "wide-center",
   fullHeight = true,
 }: ThreeColumnLayoutProps) {
-  const heightsStyle = fullHeight ? { height: "100%" } : {};
-
-  const columns =
-    preset === "narrow-left"
-      ? ["260px", "minmax(0, 1.4fr)", "minmax(0, 1fr)"]
-      : preset === "equal"
-        ? ["minmax(0, 1fr)", "minmax(0, 1fr)", "minmax(0, 1fr)"]
-        : ["280px", "minmax(0, 1.6fr)", "minmax(0, 1.1fr)"];
+  const heightsStyle = fullHeight ? { minHeight: 0, height: "100%" as const } : { minHeight: 360 };
 
   return (
-    <Flex
-      gap="md"
-      align="stretch"
+    <Box
       style={{
+        display: "grid",
+        gridTemplateColumns: gridTemplateColumns(preset),
+        gap: "var(--mantine-spacing-md)",
+        alignItems: "stretch",
         ...heightsStyle,
-        minHeight: 360,
       }}
     >
-      <Box
-        style={{
-          width: columns[0],
-          minWidth: 0,
-        }}
-      >
-        <ScrollArea h="100%" type="scroll">
-          {left}
-        </ScrollArea>
-      </Box>
-      <Box
-        style={{
-          flex: 1,
-          minWidth: 0,
-        }}
-      >
-        <ScrollArea h="100%" type="scroll">
-          {center}
-        </ScrollArea>
-      </Box>
-      <Box
-        style={{
-          width: columns[2],
-          minWidth: 0,
-        }}
-      >
-        <ScrollArea h="100%" type="scroll">
-          {right}
-        </ScrollArea>
-      </Box>
-    </Flex>
+      <ColumnCell>{left}</ColumnCell>
+      <ColumnCell>{center}</ColumnCell>
+      <ColumnCell>{right}</ColumnCell>
+    </Box>
   );
 }
-

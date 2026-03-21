@@ -35,6 +35,7 @@ class DigitalFormTemplateBase(BaseModel):
     description: str | None = None
     schema: DigitalFormTemplateSchema
     requires_signature: bool = False
+    required_for_visit_completion: bool = False
     active: bool = True
 
 
@@ -47,6 +48,7 @@ class DigitalFormTemplateUpdate(BaseModel):
     description: str | None = None
     schema: DigitalFormTemplateSchema | None = None
     requires_signature: bool | None = None
+    required_for_visit_completion: bool | None = None
     active: bool | None = None
 
 
@@ -65,10 +67,15 @@ class DigitalFormSubmissionRead(BaseModel):
     template_id: UUID
     patient_id: UUID | None
     booking_id: UUID | None
-    submitted_at: datetime
+    status: str = "signed"
+    submitted_at: datetime | None = None
+    signed_at: datetime | None = None
+    expires_at: datetime | None = None
     submitted_by: str
     data: dict[str, Any]
     signature_id: UUID | None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     class Config:
         from_attributes = True

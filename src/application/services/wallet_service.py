@@ -9,6 +9,9 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.application.services.family_link_service import FamilyLinkService
+from src.core.metrics import loyalty_family_spend_denied_total
+from src.core.prometheus_labels import clinic_bucket_label
 from src.domain.entities.wallet import Wallet
 from src.domain.entities.wallet_transaction import WalletTransaction
 from src.domain.interfaces.repositories.loyalty_repository import (
@@ -19,10 +22,19 @@ from src.infrastructure.database.loyalty_repo_impl import (
     WalletRepositoryImpl,
     WalletTransactionRepositoryImpl,
 )
+from src.application.loyalty_completion_errors import LoyaltyVisitCompletionBlocked
 
 
-class InsufficientWalletBalance(Exception):
+class InsufficientWalletBalance(LoyaltyVisitCompletionBlocked):
     """Raised when wallet does not have enough points/balance for spending."""
+
+    code = "insufficient_wallet_balance"
+
+
+class WalletFamilySpendDenied(LoyaltyVisitCompletionBlocked):
+    """Raised when spending for another patient is not allowed via FamilyLink or limits."""
+
+    code = "wallet_family_spend_denied"
 
 
 @dataclass
@@ -44,6 +56,8 @@ class SpendPointsInput:
     happened_at: datetime
     booking_id: UUID | None = None
     description: str | None = None
+    # Patient who receives the benefit; defaults to wallet owner. Requires FamilyLink if different.
+    beneficiary_patient_id: UUID | None = None
 
 
 @dataclass
@@ -109,7 +123,11 @@ class WalletService:
         return tx
 
     async def spend_points(self, data: SpendPointsInput) -> WalletTransaction:
-        """Spend points from patient wallet with limit check."""
+        """Spend points from patient wallet with limit check.
+
+        If ``beneficiary_patient_id`` is set and differs from wallet owner, an active
+        FamilyLink with spend permission and shared limits (subscription + wallet) applies.
+        """
         wallet = await self.get_or_create_wallet(
             clinic_id=data.clinic_id,
             patient_id=data.patient_id,
@@ -117,6 +135,55 @@ class WalletService:
         current_balance = await self.tx_repo.get_balance_for_wallet(wallet.id)
         if data.amount > current_balance:
             raise InsufficientWalletBalance("Not enough points in wallet")
+
+        beneficiary = (
+            data.beneficiary_patient_id
+            if data.beneficiary_patient_id is not None
+            else data.patient_id
+        )
+        family_link_id = None
+        if beneficiary != data.patient_id:
+            fls = FamilyLinkService(self.session)
+            link = await fls.get_active_spend_link(
+                data.clinic_id,
+                data.patient_id,
+                beneficiary,
+                data.happened_at,
+            )
+            if link is None:
+                loyalty_family_spend_denied_total.labels(
+                    clinic_bucket=clinic_bucket_label(data.clinic_id),
+                    reason="wallet_not_linked",
+                ).inc()
+                raise WalletFamilySpendDenied(
+                    "Beneficiary is not allowed to spend from this wallet"
+                )
+            try:
+                await fls.assert_spend_within_limits(
+                    link,
+                    used_amount=data.amount,
+                    used_visits=None,
+                    at_time=data.happened_at,
+                )
+            except ValueError as e:
+                msg = str(e)
+                if "family_spend_limit_total" in msg:
+                    loyalty_family_spend_denied_total.labels(
+                        clinic_bucket=clinic_bucket_label(data.clinic_id),
+                        reason="limit_total",
+                    ).inc()
+                elif "family_spend_limit_periodic" in msg:
+                    loyalty_family_spend_denied_total.labels(
+                        clinic_bucket=clinic_bucket_label(data.clinic_id),
+                        reason="limit_periodic",
+                    ).inc()
+                else:
+                    loyalty_family_spend_denied_total.labels(
+                        clinic_bucket=clinic_bucket_label(data.clinic_id),
+                        reason="limit",
+                    ).inc()
+                raise WalletFamilySpendDenied(msg) from e
+            family_link_id = link.id
 
         tx = WalletTransaction(
             clinic_id=data.clinic_id,
@@ -126,6 +193,10 @@ class WalletService:
             happened_at=data.happened_at,
             booking_id=data.booking_id,
             description=data.description,
+            beneficiary_patient_id=beneficiary
+            if beneficiary != data.patient_id
+            else None,
+            family_link_id=family_link_id,
         )
         tx = await self.tx_repo.create(tx)
 

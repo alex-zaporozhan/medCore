@@ -36,13 +36,35 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Одноразовый job: upgrade head, затем контейнер завершается с кодом 0 — это норма (не «павший» сервис).
+  migrations:
+    image: moircreator/dental-booking-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dental_booking_migrations
+    command: sh -c "python -m alembic -c alembic.ini upgrade head && echo alembic_upgrade_ok"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dental_booking}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     image: moircreator/dental-booking-backend:latest
     build:
       context: .
       dockerfile: Dockerfile
     container_name: dental_booking_backend
-    command: sh -c "python -m alembic -c alembic.ini upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "exec uvicorn src.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8010:8000"
     environment:
@@ -53,16 +75,25 @@ services:
     env_file:
       - .env
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import httpx,sys; r=httpx.get('http://localhost:8000/health', timeout=5); sys.exit(0 if r.status_code==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   celery:
     image: moircreator/dental-booking-backend:latest
     container_name: dental_booking_celery
     command: celery -A src.infrastructure.messaging.celery_app worker --loglevel=info
+    healthcheck:
+      disable: true
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dental_booking}
       REDIS_URL: redis://redis:6379/0
@@ -71,6 +102,8 @@ services:
     env_file:
       - .env
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -81,6 +114,8 @@ services:
     image: moircreator/dental-booking-backend:latest
     container_name: dental_booking_celery_beat
     command: celery -A src.infrastructure.messaging.celery_app beat --loglevel=info
+    healthcheck:
+      disable: true
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-dental_booking}
       REDIS_URL: redis://redis:6379/0
@@ -89,6 +124,8 @@ services:
     env_file:
       - .env
     depends_on:
+      migrations:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:

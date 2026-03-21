@@ -7,11 +7,11 @@ import {
   useUpsertAdminFormTemplate,
 } from "@/hooks";
 import type { DigitalFormSubmissionListItem, DigitalFormTemplate } from "@/api/types";
+import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
 import {
   ActionIcon,
   Box,
   Button,
-  Drawer,
   Group,
   JsonInput,
   Menu,
@@ -27,7 +27,6 @@ import { IconDotsVertical } from "@tabler/icons-react";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { PageSkeleton } from "@/shared/ui/PageSkeleton";
-
 type Mode = "templates" | "submissions";
 
 export default function AdminFormsPage() {
@@ -37,6 +36,7 @@ export default function AdminFormsPage() {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [requiresSignature, setRequiresSignature] = useState(false);
+  const [requiredForVisit, setRequiredForVisit] = useState(false);
   const [active, setActive] = useState(true);
   const [schemaJson, setSchemaJson] = useState<string>('{"fields": []}');
   const [filterPatientId, setFilterPatientId] = useState("");
@@ -50,9 +50,18 @@ export default function AdminFormsPage() {
     if (pid) setFilterPatientId(pid);
   }, [searchParams]);
 
-  const { data: templates, isLoading: templatesLoading, isError: templatesError } = useAdminFormTemplates();
-  const { data: submissions, isLoading: submissionsLoading, isError: submissionsError } =
-    useAdminFormSubmissions({
+  const {
+    data: templates,
+    isLoading: templatesLoading,
+    isError: templatesError,
+    error: templatesQueryError,
+  } = useAdminFormTemplates();
+  const {
+    data: submissions,
+    isLoading: submissionsLoading,
+    isError: submissionsError,
+    error: submissionsQueryError,
+  } = useAdminFormSubmissions({
       patient_id: filterPatientId.trim() || null,
       booking_id: filterBookingId.trim() || null,
       template_code: filterTemplateCode.trim() || null,
@@ -66,6 +75,7 @@ export default function AdminFormsPage() {
     setCode("");
     setName("");
     setRequiresSignature(false);
+    setRequiredForVisit(false);
     setActive(true);
     setSchemaJson(
       JSON.stringify(
@@ -92,6 +102,7 @@ export default function AdminFormsPage() {
     setCode(t.code);
     setName(t.name);
     setRequiresSignature(t.requires_signature);
+    setRequiredForVisit(t.required_for_visit_completion ?? false);
     setActive(t.active);
     setSchemaJson(JSON.stringify(t.schema, null, 2));
     setEditorOpen(true);
@@ -102,6 +113,7 @@ export default function AdminFormsPage() {
     setCode(t.code + "_copy");
     setName(t.name + " (копия)");
     setRequiresSignature(t.requires_signature);
+    setRequiredForVisit(t.required_for_visit_completion ?? false);
     setActive(false);
     setSchemaJson(JSON.stringify(t.schema, null, 2));
     setEditorOpen(true);
@@ -111,13 +123,11 @@ export default function AdminFormsPage() {
     let parsedSchema: unknown;
     try {
       parsedSchema = JSON.parse(schemaJson);
-    } catch (e) {
-      // eslint-disable-next-line no-alert
+    } catch {
       alert("Некорректный JSON схемы");
       return;
     }
     if (!code.trim() || !name.trim()) {
-      // eslint-disable-next-line no-alert
       alert("Укажите код и название шаблона");
       return;
     }
@@ -130,6 +140,7 @@ export default function AdminFormsPage() {
           description: editingTemplate?.description ?? null,
           schema: parsedSchema as DigitalFormTemplate["schema"],
           requires_signature: requiresSignature,
+          required_for_visit_completion: requiredForVisit,
           active,
         },
       },
@@ -169,9 +180,7 @@ export default function AdminFormsPage() {
           </Group>
           {templatesLoading && <PageSkeleton variant="table" rows={5} />}
           {templatesError && (
-            <Text size="sm" c="red">
-              Ошибка загрузки шаблонов.
-            </Text>
+            <QueryErrorAlert error={templatesQueryError} title="Не удалось загрузить шаблоны" />
           )}
           {!templatesLoading && !templatesError && !(templates?.length) && (
             <EmptyState
@@ -189,6 +198,7 @@ export default function AdminFormsPage() {
                     <Table.Th>Название</Table.Th>
                     <Table.Th>Версия</Table.Th>
                     <Table.Th>Подпись</Table.Th>
+                    <Table.Th>К завершению визита</Table.Th>
                     <Table.Th>Активен</Table.Th>
                     <Table.Th style={{ width: 52 }} />
                   </Table.Tr>
@@ -200,6 +210,7 @@ export default function AdminFormsPage() {
                       <Table.Td>{t.name}</Table.Td>
                       <Table.Td>{t.version}</Table.Td>
                       <Table.Td>{t.requires_signature ? "Да" : "Нет"}</Table.Td>
+                      <Table.Td>{t.required_for_visit_completion ? "Да" : "Нет"}</Table.Td>
                       <Table.Td>{t.active ? "Да" : "Нет"}</Table.Td>
                       <Table.Td>
                         <Menu position="bottom-end" withArrow>
@@ -261,15 +272,14 @@ export default function AdminFormsPage() {
           <Paper withBorder radius="md" p="sm">
             {submissionsLoading && <Text size="sm">Загрузка форм...</Text>}
             {submissionsError && (
-              <Text size="sm" c="red">
-                Ошибка загрузки отправленных форм.
-              </Text>
+              <QueryErrorAlert error={submissionsQueryError} title="Не удалось загрузить отправленные формы" />
             )}
             {!submissionsLoading && !submissionsError && (
               <Table striped highlightOnHover verticalSpacing="sm">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Дата</Table.Th>
+                    <Table.Th>Статус</Table.Th>
                     <Table.Th>Шаблон</Table.Th>
                     <Table.Th>Пациент</Table.Th>
                     <Table.Th>Визит</Table.Th>
@@ -284,7 +294,18 @@ export default function AdminFormsPage() {
                       style={{ cursor: "pointer" }}
                       onClick={() => setSelectedSubmissionId(s.id)}
                     >
-                      <Table.Td>{new Date(s.submitted_at).toLocaleString()}</Table.Td>
+                      <Table.Td>
+                        {s.submitted_at || s.signed_at || s.created_at
+                          ? new Date(
+                              s.submitted_at ?? s.signed_at ?? s.created_at ?? ""
+                            ).toLocaleString()
+                          : "—"}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="xs" tt="uppercase">
+                          {s.status}
+                        </Text>
+                      </Table.Td>
                       <Table.Td>
                         <Stack gap={2}>
                           <Text size="sm" fw={500}>
@@ -307,7 +328,7 @@ export default function AdminFormsPage() {
                   ))}
                   {!submissions?.length && (
                     <Table.Tr>
-                      <Table.Td colSpan={6}>
+                      <Table.Td colSpan={7}>
                         <Text size="sm" c="dimmed">
                           Заполненных форм пока нет.
                         </Text>
@@ -321,7 +342,7 @@ export default function AdminFormsPage() {
         </Stack>
       )}
 
-      <Drawer
+      <AdminDrawer
         opened={!!selectedSubmissionId}
         onClose={() => setSelectedSubmissionId(null)}
         position="right"
@@ -338,9 +359,15 @@ export default function AdminFormsPage() {
                     {submissionDetail.template.name}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    Код: {submissionDetail.template.code} · Отправлено:{" "}
-                    {new Date(submissionDetail.submission.submitted_at).toLocaleString()} ·{" "}
-                    {submissionDetail.submission.submitted_by}
+                    Код: {submissionDetail.template.code} · Статус: {submissionDetail.submission.status} ·{" "}
+                    {submissionDetail.submission.submitted_at || submissionDetail.submission.signed_at
+                      ? new Date(
+                          submissionDetail.submission.submitted_at ??
+                            submissionDetail.submission.signed_at ??
+                            ""
+                        ).toLocaleString()
+                      : "—"}{" "}
+                    · {submissionDetail.submission.submitted_by}
                   </Text>
                 </Stack>
                 <Stack gap="xs">
@@ -387,9 +414,9 @@ export default function AdminFormsPage() {
             )}
           </Stack>
         )}
-      </Drawer>
+      </AdminDrawer>
 
-      <Drawer
+      <AdminDrawer
         opened={editorOpen}
         onClose={() => setEditorOpen(false)}
         position="right"
@@ -417,11 +444,16 @@ export default function AdminFormsPage() {
               onChange={(e) => setRequiresSignature(e.currentTarget.checked)}
             />
             <Switch
-              label="Активен"
-              checked={active}
-              onChange={(e) => setActive(e.currentTarget.checked)}
+              label="Обязательна для завершения визита"
+              checked={requiredForVisit}
+              onChange={(e) => setRequiredForVisit(e.currentTarget.checked)}
             />
           </Group>
+          <Switch
+            label="Активен"
+            checked={active}
+            onChange={(e) => setActive(e.currentTarget.checked)}
+          />
           <JsonInput
             label="Схема формы (JSON)"
             description="Список полей с id, label, type, required, options, sensitive"
@@ -439,7 +471,7 @@ export default function AdminFormsPage() {
             </Button>
           </Group>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

@@ -23,7 +23,6 @@ import {
   Alert,
   Badge,
   Button,
-  Drawer,
   Group,
   Loader,
   Paper,
@@ -35,8 +34,7 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { ContextBar } from "@/shared/ui/ContextBar";
-import { PageSkeleton } from "@/shared/ui/PageSkeleton";
+import { AdminDrawer, ContextBar, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useState } from "react";
 
@@ -138,7 +136,14 @@ function PostsTab({ clinicId }: { clinicId: string }) {
   };
 
   if (isLoading) return <><ContextBar title="Маркетинг" /><PageSkeleton variant="table" rows={5} /></>;
-  if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
+  if (isError) {
+    return (
+      <>
+        <ContextBar title="Маркетинг" />
+        <QueryErrorAlert error={error} />
+      </>
+    );
+  }
 
   const list = posts ?? [];
 
@@ -194,7 +199,7 @@ function PostsTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Drawer position="right" size="md" opened={opened} onClose={handleClose} title={editing ? "Изменить пост" : "Новый пост"}>
+      <AdminDrawer position="right" size="md" opened={opened} onClose={handleClose} title={editing ? "Изменить пост" : "Новый пост"}>
         <Stack>
           {saveError && (
             <Alert color="red" title="Ошибка" onClose={() => setSaveError(null)} withCloseButton>
@@ -210,7 +215,7 @@ function PostsTab({ clinicId }: { clinicId: string }) {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }
@@ -276,7 +281,7 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
   };
 
   if (isLoading) return <PageSkeleton variant="table" rows={4} />;
-  if (isError) return <Text c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>;
+  if (isError) return <QueryErrorAlert error={error} />;
 
   const list = stories ?? [];
 
@@ -327,7 +332,7 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
           </Table.Tbody>
         </Table>
       )}
-      <Drawer position="right" size="md" opened={opened} onClose={handleCloseStories} title={editing ? "Изменить сторис" : "Новый сторис"}>
+      <AdminDrawer position="right" size="md" opened={opened} onClose={handleCloseStories} title={editing ? "Изменить сторис" : "Новый сторис"}>
         <Stack>
           {saveError && (
             <Alert color="red" title="Ошибка" onClose={() => setSaveError(null)} withCloseButton>
@@ -346,7 +351,7 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
             {editing ? "Сохранить" : "Создать"}
           </Button>
         </Stack>
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }
@@ -405,9 +410,7 @@ function AttributionTab({ clinicId }: { clinicId: string }) {
       </Text>
       <Paper withBorder radius="md" p="sm">
         {isLoading && <PageSkeleton variant="table" rows={4} />}
-        {isError && (
-          <Text size="sm" c="red">{error instanceof Error ? error.message : "Ошибка"}</Text>
-        )}
+        {isError && <QueryErrorAlert error={error} />}
         {!isLoading && !isError && (
           <Table striped highlightOnHover withTableBorder withColumnBorders verticalSpacing="sm">
             <Table.Thead>
@@ -454,7 +457,7 @@ function AttributionTab({ clinicId }: { clinicId: string }) {
         )}
       </Paper>
 
-      <Drawer
+      <AdminDrawer
         opened={selectedRow !== null}
         onClose={() => setSelectedRow(null)}
         position="right"
@@ -509,7 +512,7 @@ function AttributionTab({ clinicId }: { clinicId: string }) {
             </Tabs>
           </Stack>
         )}
-      </Drawer>
+      </AdminDrawer>
     </Stack>
   );
 }

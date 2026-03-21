@@ -23,6 +23,12 @@ from src.domain.entities.clinic import Clinic
 from src.domain.entities.financial_transaction import FinancialTransaction
 from src.domain.entities.traffic_source import TrafficSource
 from src.domain.entities.visit_attribution import VisitAttribution
+from src.core.metrics import (  # no-op fallback when prometheus_client is absent
+    business_chain_crm_attribution_duration_seconds,
+    business_chain_crm_attribution_errors_total,
+    business_chain_crm_attribution_total,
+)
+from src.core.prometheus_labels import clinic_bucket_label
 
 
 class MarketingAttributionService:
@@ -53,6 +59,13 @@ class MarketingAttributionService:
 
         start_dt = datetime.combine(date_from, dtime.min)
         end_dt = datetime.combine(date_to, dtime.min) + timedelta(days=1)
+
+        # Business chain CRM+Attribution: attempt + timing
+        business_chain_crm_attribution_total.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id),
+            status="attempt",
+        ).inc()
+        started_at = datetime.combine(date.today(), dtime.min)
 
         # Join VisitAttribution with FinancialTransaction (income in period), Booking for completed count.
         va = VisitAttribution
@@ -115,7 +128,18 @@ class MarketingAttributionService:
 
         stmt = stmt.group_by(va.traffic_source_id, va.campaign_id)
 
-        result = await self.session.execute(stmt)
+        try:
+            result = await self.session.execute(stmt)
+        except Exception:
+            business_chain_crm_attribution_errors_total.labels(
+                clinic_bucket=clinic_bucket_label(clinic_id),
+                error_type="query_error",
+            ).inc()
+            business_chain_crm_attribution_duration_seconds.labels(
+                clinic_bucket=clinic_bucket_label(clinic_id),
+            ).observe((datetime.combine(date.today(), dtime.min) - started_at).total_seconds())
+            raise
+
         rows = result.all()
 
         items: list[MarketingChannelSummaryItem] = []
@@ -170,6 +194,14 @@ class MarketingAttributionService:
                     cac=cac,
                 )
             )
+
+        business_chain_crm_attribution_duration_seconds.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id),
+        ).observe((datetime.combine(date.today(), dtime.min) - started_at).total_seconds())
+        business_chain_crm_attribution_total.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id),
+            status="success",
+        ).inc()
 
         return MarketingAttributionSummary(
             clinic_id=clinic_id,

@@ -1,6 +1,6 @@
 import { useDeleteDoctor, useDoctors } from "@/hooks";
 import { ContextBar } from "@/shared/ui/ContextBar";
-import { EmptyState, PageSkeleton } from "@/shared/ui";
+import { EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { ActionIcon, Button, HoverCard, Menu, Stack, Table, Text } from "@mantine/core";
 import { IconDotsVertical, IconEdit, IconStethoscope, IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
@@ -26,7 +26,14 @@ export default function AdminDoctorsPage() {
   const openView = (d: Doctor) => setDoctorDrawer({ mode: "view", doctor: d });
 
   if (isLoading) return <PageSkeleton variant="table" rows={8} />;
-  if (isError) return <Stack><ContextBar title="Врачи" /><span style={{ color: 'red' }}>{error instanceof Error ? error.message : "Ошибка"}</span></Stack>;
+  if (isError) {
+    return (
+      <Stack>
+        <ContextBar title="Врачи" />
+        <QueryErrorAlert error={error} />
+      </Stack>
+    );
+  }
 
   return (
     <Stack>

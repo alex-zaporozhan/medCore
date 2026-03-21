@@ -1,7 +1,6 @@
 import type { Booking } from "@/api/types";
 import {
   Button,
-  Drawer,
   Group,
   HoverCard,
   Stack,
@@ -17,6 +16,7 @@ import { useServiceConsumables } from "@/hooks/useErpInventory";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useAdminLoyaltySummaryByContact } from "@/hooks/useLoyalty";
 import { useDoctors } from "@/hooks/useDoctors";
+import { AdminDrawer } from "@/shared/ui";
 
 export interface BookingEntityDrawerProps {
   opened: boolean;
@@ -88,7 +88,7 @@ export function BookingEntityDrawer({
     new Date(booking.appointment_date + "T" + timeStr + ":00") > new Date();
 
   return (
-    <Drawer
+    <AdminDrawer
       position="right"
       size="lg"
       opened={opened}
@@ -286,6 +286,6 @@ export function BookingEntityDrawer({
           </Text>
         </Tabs.Panel>
       </Tabs>
-    </Drawer>
+    </AdminDrawer>
   );
 }

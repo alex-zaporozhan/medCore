@@ -1,10 +1,8 @@
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { useClinics, useSetClinicPaymentGatewayCredentials } from "@/hooks";
-import { api } from "@/api/client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useClinics, useSetClinicPaymentGatewayCredentials, useUpdateClinicMutation } from "@/hooks";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import { Button, Paper, Select, Stack, Text, TextInput } from "@mantine/core";
-import { ContextBar } from "@/shared/ui/ContextBar";
+import { ContextBar, QueryErrorAlert } from "@/shared/ui";
 import { useState, useEffect } from "react";
 
 const GATEWAY_OPTIONS = [
@@ -20,7 +18,7 @@ const GATEWAY_OPTIONS = [
 export default function AdminPaymentGatewayPage() {
   const { currentClinicId } = useAdminClinic();
   const { data: clinicsData } = useClinics();
-  const queryClient = useQueryClient();
+  const updateClinic = useUpdateClinicMutation();
   const clinic = currentClinicId
     ? (clinicsData ?? []).find((c) => c.id === currentClinicId)
     : null;
@@ -43,6 +41,7 @@ export default function AdminPaymentGatewayPage() {
   const [customKey, setCustomKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [credentialsError, setCredentialsError] = useState<string | null>(null);
+  const [clinicUpdateError, setClinicUpdateError] = useState<unknown>(null);
   const setCredentialsMutation = useSetClinicPaymentGatewayCredentials(currentClinicId ?? null);
 
   useEffect(() => {
@@ -57,6 +56,7 @@ export default function AdminPaymentGatewayPage() {
     if (!currentClinicId) return;
     setSaving(true);
     setCredentialsError(null);
+    setClinicUpdateError(null);
     try {
       const body: Record<string, unknown> = {
         payment_gateway: gateway,
@@ -66,9 +66,13 @@ export default function AdminPaymentGatewayPage() {
         body.yookassa_shop_id = yookassaShopId.trim() || null;
         if (yookassaSecretKey.trim()) body.yookassa_secret_key = yookassaSecretKey.trim();
       }
-      await api.put(`/v1/clinics/${currentClinicId}`, body);
+      try {
+        await updateClinic.mutateAsync({ clinicId: currentClinicId, body });
+      } catch (e) {
+        setClinicUpdateError(e);
+        return;
+      }
       setYookassaSecretKey("");
-      queryClient.invalidateQueries({ queryKey: ["clinics"] });
 
       if (gateway !== "yookassa") {
         let credentialsObject: Record<string, string> | null = null;
@@ -141,10 +145,11 @@ export default function AdminPaymentGatewayPage() {
       <Text size="sm" c="dimmed">
         Выберите одну платёжную систему. Укажите данные из личного кабинета выбранного провайдера. Активна одна касса на клинику.
       </Text>
+      {clinicUpdateError != null ? (
+        <QueryErrorAlert error={clinicUpdateError} title="Не удалось сохранить настройки клиники" />
+      ) : null}
       {credentialsError && (
-        <Text size="sm" c="red">
-          {credentialsError}
-        </Text>
+        <QueryErrorAlert error={credentialsError} title="Не удалось сохранить ключи кассы" />
       )}
       <Paper p="md" withBorder>
         <Stack gap="md">

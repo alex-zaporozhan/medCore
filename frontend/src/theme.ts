@@ -1,29 +1,26 @@
 /**
- * Mantine theme: Smart Medical Gray-Blue palette (aligned with index.css).
- * Used in main.tsx via MantineProvider.
+ * Mantine theme: единый акцент **indigo** (согласован с активным пунктом тёмного сайдбара админки).
+ * Шрифт: Inter (подключается в `main.tsx` через `@fontsource/inter`).
  */
 
 import { createTheme } from "@mantine/core";
 
 export const appTheme = createTheme({
   fontFamily: "Inter, system-ui, -apple-system, sans-serif",
-  primaryColor: "brand",
-  colors: {
-    brand: [
-      "#f8fafb",
-      "#ebf1f4",
-      "#dde8ed",
-      "#c9dae3",
-      "#b5ccd9",
-      "#9cb4c4",
-      "#8aa3b5",
-      "#7a92a3",
-      "#6a8192",
-      "#5a7081",
-    ],
+  headings: {
+    fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+    fontWeight: "600",
   },
+  primaryColor: "indigo",
+  /** Чуть мягче дефолтного акцента (shade 6), без «вырви глаз» на больших CTA */
+  primaryShade: { light: 5, dark: 6 },
   defaultRadius: "md",
   components: {
+    Paper: {
+      defaultProps: {
+        shadow: "sm",
+      },
+    },
     Modal: {
       defaultProps: {
         overlayProps: {
@@ -34,7 +31,7 @@ export const appTheme = createTheme({
           content: {
             background: "rgba(255, 255, 255, 0.92)",
             backdropFilter: "blur(10px)",
-            boxShadow: "0 8px 32px rgba(62, 73, 84, 0.12)",
+            boxShadow: "0 12px 40px rgba(15, 23, 42, 0.14)",
           },
         },
       },
