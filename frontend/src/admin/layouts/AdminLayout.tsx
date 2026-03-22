@@ -72,6 +72,7 @@ import { useAiAgent } from "@/hooks/useAiAgent";
 import { useAiFeatures, getAiFeatureBadgeColor, getAiFeatureStatusText, getAiFeatureTooltip } from "@/shared/aiFeatures";
 import { logUiEvent } from "@/shared/uiEvents";
 import { ROUTE_PATHS } from "@/routePaths";
+import { SEMANTIC } from "@/shared/semanticUi";
 
 const ATTENTION_BAR_STORAGE_KEY = "admin_attention_bar_visible";
 const NAVBAR_COLLAPSED_KEY = "admin_navbar_collapsed";
@@ -148,6 +149,7 @@ function pickFirstAttentionItem(data: { follow_up: AttentionItem[]; retention_ga
 
 export default function AdminLayout() {
   const location = useLocation();
+  const omniChatFullWidth = location.pathname.startsWith(ROUTE_PATHS.admin.omniChat);
   const navigate = useNavigate();
   const {
     selectableClinics,
@@ -476,7 +478,7 @@ export default function AdminLayout() {
                         <>
                           <span style={{ flex: 1, textAlign: "left" }}>{linkItem.label}</span>
                           {showBadge && (
-                            <Badge size="sm" variant="filled" color="red" circle>
+                            <Badge size="xs" variant="dot" color="red">
                               {badgeValue > 99 ? "99+" : badgeValue}
                             </Badge>
                           )}
@@ -520,7 +522,7 @@ export default function AdminLayout() {
       </AppShell.Navbar>
 
       <AppShell.Main style={{ backgroundColor: "var(--bg-main)" }}>
-        <Container size="xl" py="md">
+        <Container fluid={omniChatFullWidth} size={omniChatFullWidth ? undefined : "xl"} py="md">
           {attentionBarVisible && firstAttentionItem && (
             <Box
               mb="md"
@@ -528,8 +530,8 @@ export default function AdminLayout() {
               px="md"
               style={{
                 borderRadius: 8,
-                backgroundColor: "var(--mantine-color-indigo-0)",
-                border: "1px solid var(--mantine-color-indigo-2)",
+                backgroundColor: "var(--mantine-color-orange-0)",
+                border: "1px solid var(--mantine-color-orange-2)",
               }}
             >
               <Group justify="space-between" wrap="nowrap">
@@ -558,10 +560,11 @@ export default function AdminLayout() {
             </Alert>
           ) : null}
           <Paper
-            radius="xl"
-            p="md"
+            radius="md"
+            p={omniChatFullWidth ? "sm" : "md"}
             withBorder
-            style={{ border: "1px solid var(--mantine-color-gray-2)" }}
+            shadow="none"
+            style={{ border: "1px solid var(--divider)" }}
           >
             <Outlet />
           </Paper>
@@ -604,6 +607,7 @@ export default function AdminLayout() {
           <Group justify="flex-end">
             <Button
               variant="subtle"
+              color={SEMANTIC.action.dismiss}
               onClick={() => {
                 setAskAiOpen(false);
                 setAiQuestion("");
@@ -612,6 +616,7 @@ export default function AdminLayout() {
               Отмена
             </Button>
             <Button
+              color={SEMANTIC.ai.accent}
               loading={aiAgent.isPending}
               onClick={() => {
                 if (!aiQuestion.trim()) return;

@@ -187,7 +187,7 @@ export default function AdminAiSettingsPage() {
             <QueryErrorAlert error={updateMutation.error} title="Не удалось сохранить настройки AI" />
           )}
           <Group justify="flex-end" mt="sm">
-            <Button onClick={handleSave} loading={updateMutation.isPending}>
+            <Button color="ai" onClick={handleSave} loading={updateMutation.isPending}>
               Сохранить настройки
             </Button>
           </Group>

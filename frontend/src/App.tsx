@@ -135,8 +135,8 @@ function LandingPage() {
         <Stack gap="xl">
           <Paper
             p="xl"
-            radius="lg"
-            shadow="sm"
+            radius="md"
+            shadow="none"
             style={{
               background: "var(--bg-card)",
               border: "1px solid var(--divider)",
@@ -161,7 +161,7 @@ function LandingPage() {
                       to={ROUTE_PATHS.patient.home}
                       size="lg"
                       variant="filled"
-                      color="indigo"
+                      color="teal"
                     >
                       Приложение пациента
                     </Button>
@@ -169,8 +169,8 @@ function LandingPage() {
                       component={Link}
                       to={ROUTE_PATHS.admin.dashboard}
                       size="md"
-                      variant="light"
-                      color="gray"
+                      variant="outline"
+                      color="dark"
                     >
                       Войти в Business OS (админка)
                     </Button>
@@ -201,8 +201,8 @@ function LandingPage() {
 
           <Paper
             p="xl"
-            radius="lg"
-            shadow="sm"
+            radius="md"
+            shadow="none"
             style={{
               background: "var(--bg-card)",
               border: "1px solid var(--divider)",

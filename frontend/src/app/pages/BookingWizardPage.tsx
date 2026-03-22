@@ -23,6 +23,7 @@ import {
   Alert,
 } from "@mantine/core";
 import dayjs from "dayjs";
+import { SEMANTIC } from "@/shared/semanticUi";
 import { useEffect, useMemo, useState } from "react";
 import type { ApiErrorWithCode } from "@/api/client";
 import { getBookingErrorMessage } from "@/shared/errors";
@@ -331,7 +332,13 @@ export default function BookingWizardPage() {
             {slots.map((s) => {
               const t = typeof s.start_time === "string" ? s.start_time.slice(0, 5) : s.start_time;
               return (
-                <Button key={t} variant={selectedSlot === t ? "filled" : "light"} size="xs" onClick={() => setSelectedSlot(t)}>
+                <Button
+                  key={t}
+                  variant={selectedSlot === t ? "filled" : "light"}
+                  color={SEMANTIC.action.send}
+                  size="xs"
+                  onClick={() => setSelectedSlot(t)}
+                >
                   {t}
                 </Button>
               );
@@ -356,6 +363,7 @@ export default function BookingWizardPage() {
                 {paymentOptions.map((opt) => (
                   <Button
                     key={opt.gateway_id}
+                    color={SEMANTIC.action.confirm}
                     onClick={() => handleConfirm(opt.gateway_id)}
                     loading={createBooking.isPending || createPayment.isPending}
                     disabled={!!nextDisabled}
@@ -366,6 +374,7 @@ export default function BookingWizardPage() {
               </Stack>
             ) : (
               <Button
+                color={SEMANTIC.action.confirm}
                 onClick={() => handleConfirm()}
                 loading={createBooking.isPending || createPayment.isPending}
                 disabled={!!nextDisabled}
@@ -398,17 +407,22 @@ export default function BookingWizardPage() {
       )}
       <Group>
         {step > 0 && (
-          <Button variant="light" onClick={() => setStep(step - 1)}>
+          <Button variant="light" color={SEMANTIC.action.dismiss} onClick={() => setStep(step - 1)}>
             Назад
           </Button>
         )}
         {step < lastStep && (
-          <Button onClick={() => setStep(step + 1)} disabled={!!nextDisabled}>
+          <Button color={SEMANTIC.action.send} onClick={() => setStep(step + 1)} disabled={!!nextDisabled}>
             Далее
           </Button>
         )}
         {!prepaymentEnabled && step === slotStep && (
-          <Button onClick={handleConfirmWithoutPayment} loading={createBooking.isPending} disabled={!!nextDisabled}>
+          <Button
+            color={SEMANTIC.action.confirm}
+            onClick={handleConfirmWithoutPayment}
+            loading={createBooking.isPending}
+            disabled={!!nextDisabled}
+          >
             Подтвердить запись
           </Button>
         )}

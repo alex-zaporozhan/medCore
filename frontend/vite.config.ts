@@ -22,7 +22,7 @@ export default defineConfig({
         scope: "/",
         display: "standalone",
         background_color: "#020617",
-        theme_color: "#3b82f6",
+        theme_color: "#f8fafc",
       },
       workbox: {
         navigateFallback: "/index.html",

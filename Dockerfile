@@ -1,4 +1,4 @@
-# public.ecr.aws mirrors Docker Official Images — обход сломанных registry-mirrors docker.io (напр. Beget → локальный прокси).
+# AWS Public ECR mirrors Docker Official Images; avoids broken docker.io registry-mirrors (e.g. Beget → 127.0.0.1:proxy).
 FROM public.ecr.aws/docker/library/python:3.11-slim AS builder
 
 WORKDIR /app
@@ -14,7 +14,7 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-interaction --no-ansi --no-root
 
 # Production stage
-FROM public.ecr.aws/docker/library/python:3.11-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 

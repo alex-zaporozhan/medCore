@@ -13,6 +13,7 @@ import {
 import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
 import { QueryErrorAlert } from "@/shared/ui";
+import { SEMANTIC } from "@/shared/semanticUi";
 
 export default function FeedPage() {
   const { data: clinics } = useClinics();
@@ -174,7 +175,7 @@ export default function FeedPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                       size="sm"
-                      c="indigo"
+                      c={SEMANTIC.action.link}
                       fw={500}
                     >
                       Подробнее
@@ -187,7 +188,7 @@ export default function FeedPage() {
         )}
       </Stack>
 
-      <Anchor component={Link} to={ROUTE_PATHS.patient.booking} size="sm" c="indigo" fw={500}>
+      <Anchor component={Link} to={ROUTE_PATHS.patient.booking} size="sm" c={SEMANTIC.action.confirm} fw={500}>
         Записаться на приём
       </Anchor>
     </Stack>

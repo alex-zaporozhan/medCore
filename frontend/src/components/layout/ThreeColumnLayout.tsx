@@ -18,6 +18,8 @@ interface ThreeColumnLayoutProps {
   center: ReactNode;
   right: ReactNode;
   preset?: ColumnWidthPreset;
+  /** Omni: узкая правая колонка под иконки (как свёрнутое левое меню). */
+  omniRightCollapsed?: boolean;
   fullHeight?: boolean;
 }
 
@@ -39,14 +41,20 @@ function ColumnCell({ children }: { children: ReactNode }) {
   );
 }
 
-function gridTemplateColumns(preset: ColumnWidthPreset): string {
+function gridTemplateColumns(preset: ColumnWidthPreset, omniRightCollapsed?: boolean): string {
   switch (preset) {
     case "narrow-left":
       return "260px minmax(0, 1.4fr) minmax(0, 1fr)";
     case "equal":
       return "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)";
-    case "omni-inspector":
-      return "260px minmax(0, 1fr) 360px";
+    case "omni-inspector": {
+      const leftAndCenter = "minmax(188px, min(22vw, 252px)) minmax(0, 1fr)";
+      if (omniRightCollapsed) {
+        return `${leftAndCenter} 56px`;
+      }
+      /** Узкий список диалогов (~−25% к прошлому cap), без «пустых» 300px+ полос. */
+      return `${leftAndCenter} minmax(272px, min(340px, 30vw))`;
+    }
     case "wide-center":
     default:
       return "280px minmax(0, 1fr) 360px";
@@ -58,6 +66,7 @@ export function ThreeColumnLayout({
   center,
   right,
   preset = "wide-center",
+  omniRightCollapsed = false,
   fullHeight = true,
 }: ThreeColumnLayoutProps) {
   const heightsStyle = fullHeight ? { minHeight: 0, height: "100%" as const } : { minHeight: 360 };
@@ -66,7 +75,7 @@ export function ThreeColumnLayout({
     <Box
       style={{
         display: "grid",
-        gridTemplateColumns: gridTemplateColumns(preset),
+        gridTemplateColumns: gridTemplateColumns(preset, omniRightCollapsed),
         gap: "var(--mantine-spacing-md)",
         alignItems: "stretch",
         ...heightsStyle,

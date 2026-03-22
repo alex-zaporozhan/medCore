@@ -16,6 +16,7 @@ import {
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
 import { QueryErrorAlert } from "@/shared/ui";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
+import { SEMANTIC } from "@/shared/semanticUi";
 import {
   Box,
   Button,
@@ -300,7 +301,7 @@ export default function AdminChatPage() {
                     onKeyDown={(e) => e.key === "Enter" && handleSend()}
                     style={{ flex: 1, minWidth: 180 }}
                   />
-                  <Button onClick={handleSend} loading={sendMessage.isPending}>
+                  <Button color={SEMANTIC.action.send} onClick={handleSend} loading={sendMessage.isPending}>
                     Отправить
                   </Button>
                 </Flex>

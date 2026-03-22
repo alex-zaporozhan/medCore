@@ -1,4 +1,4 @@
-# Тот же контент, что node:20-alpine; тянется не через docker.io (см. корневой Dockerfile).
+# Same base semantics as node:20-alpine; pull via public.ecr.aws to bypass flaky docker.io mirrors.
 FROM public.ecr.aws/docker/library/node:20-alpine AS build
 
 WORKDIR /app
@@ -11,7 +11,7 @@ COPY . .
 RUN chmod +x node_modules/.bin/* || true
 RUN npm run build
 
-FROM public.ecr.aws/docker/library/nginx:alpine
+FROM nginx:alpine
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

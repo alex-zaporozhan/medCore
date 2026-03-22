@@ -20,6 +20,18 @@ const mainNavWithHistory = [
   { to: ROUTE_PATHS.patient.history, label: "История" },
 ];
 
+/** Спокойный светлый chrome: без сплошной «плашки» primary — только тонкая линия бренда клиники и тень. */
+const patientChromeHeader = {
+  backgroundColor: "var(--mantine-color-white)",
+  borderBottom: "1px solid var(--divider)",
+  boxShadow: "var(--mantine-shadow-xs)",
+} as const;
+
+const patientChromeBottom = {
+  backgroundColor: "var(--mantine-color-white)",
+  boxShadow: "0 -1px 2px rgba(15, 23, 42, 0.06)",
+} as const;
+
 export default function AppLayout() {
   const { accessToken, logout, patientId } = usePatientAuth();
   const navigate = useNavigate();
@@ -41,10 +53,6 @@ export default function AppLayout() {
       document.body.classList.remove("app-pwa-body");
     };
   }, []);
-
-  /** Цвет шапки/нижней панели клиники — не перезаписываем глобальный `--primary` (кнопки остаются indigo из темы). */
-  const headerBarBg =
-    themeClinic?.theme_primary_color ?? "var(--mantine-color-indigo-6)";
 
   useEffect(() => {
     if (!themeClinic?.theme_font_family) return;
@@ -80,13 +88,15 @@ export default function AppLayout() {
     };
   }, []);
 
+  const brandAccent = themeClinic?.theme_primary_color ?? undefined;
+
   return (
     <MantineProvider theme={appTheme} forceColorScheme="light">
     <AppShell header={{ height: 56 }} padding="md" className="app-patient-root">
       <AppShell.Header
         style={{
-          backgroundColor: headerBarBg,
-          borderBottom: "1px solid rgba(255,255,255,0.12)",
+          ...patientChromeHeader,
+          ...(brandAccent ? { borderTop: `3px solid ${brandAccent}` } : {}),
         }}
       >
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
@@ -97,7 +107,7 @@ export default function AppLayout() {
               style={{ height: 32, maxWidth: 120, objectFit: "contain" }}
             />
           ) : (
-            <Text fw={700} c="var(--text-on-primary)" visibleFrom="xs">
+            <Text fw={700} c="gray.9" visibleFrom="xs">
               Dental Booking
             </Text>
           )}
@@ -105,19 +115,20 @@ export default function AppLayout() {
             {mainNavWithHistory.map((item) => {
               const isChat = item.to === ROUTE_PATHS.patient.chat;
               const showBadge = isChat && chatUnread > 0;
+              const active = location.pathname === item.to;
               return (
                 <Anchor
                   key={item.to}
                   component={Link}
                   to={item.to}
                   size="sm"
-                  fw={500}
-                  c="var(--text-on-primary)"
+                  fw={active ? 600 : 500}
+                  c={active ? "dark.9" : "gray.6"}
                   style={{ display: "flex", alignItems: "center", gap: 4 }}
                 >
                   {item.label}
                   {showBadge && (
-                    <Badge size="sm" variant="filled" color="red" circle>
+                    <Badge size="xs" variant="dot" color="red">
                       {chatUnread > 99 ? "99+" : chatUnread}
                     </Badge>
                   )}
@@ -127,11 +138,7 @@ export default function AppLayout() {
           </Group>
           <Group gap="xs">
             {accessToken && (
-              <Button
-                variant="subtle"
-                size="compact-sm"
-                style={{ color: "var(--text-on-primary)" }}
-                onClick={() => {
+              <Button variant="subtle" size="compact-sm" color="gray" onClick={() => {
                   logout();
                   navigate(ROUTE_PATHS.marketing.landing);
                 }}
@@ -139,7 +146,7 @@ export default function AppLayout() {
                 Выйти
               </Button>
             )}
-            <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="xs" c="var(--text-on-primary)">
+            <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="xs" c="dimmed">
               На главную
             </Anchor>
           </Group>
@@ -162,10 +169,9 @@ export default function AppLayout() {
         <Outlet />
       </AppShell.Main>
 
-      {/* PWA 2.0: Bottom Navigation (Главная, Запись, Чат, Профиль) + Safe Area */}
       <Box
         hiddenFrom="sm"
-        className="app-bottom-nav"
+        className="app-bottom-nav app-patient-bottom-nav"
         component="nav"
         style={{
           position: "fixed",
@@ -173,8 +179,7 @@ export default function AppLayout() {
           left: 0,
           right: 0,
           height: 56,
-          backgroundColor: headerBarBg,
-          borderTop: "1px solid rgba(255,255,255,0.12)",
+          ...patientChromeBottom,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-around",
@@ -191,8 +196,8 @@ export default function AppLayout() {
               component={Link}
               to={item.to}
               size="sm"
-              fw={500}
-              c={isActive ? "var(--text-on-primary)" : "rgba(255,255,255,0.85)"}
+              fw={isActive ? 600 : 500}
+              c={isActive ? "dark.9" : "gray.6"}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -204,7 +209,7 @@ export default function AppLayout() {
             >
               {item.label}
               {showBadge && (
-                <Badge size="xs" variant="filled" color="red" circle>
+                <Badge size="xs" variant="dot" color="red">
                   {chatUnread > 99 ? "99+" : chatUnread}
                 </Badge>
               )}

@@ -61,7 +61,8 @@ export function getAiFeatureStatusText(status: AiFeatureStatus): string {
 
 export function getAiFeatureBadgeColor(status: AiFeatureStatus): string {
   if (status === "prod") return "green";
-  if (status === "beta") return "blue";
+  /** Beta AI — палитра `ai` (Midnight канон) */
+  if (status === "beta") return "ai";
   return "gray";
 }
 

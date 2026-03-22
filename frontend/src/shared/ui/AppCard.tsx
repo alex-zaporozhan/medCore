@@ -10,14 +10,13 @@ type AppCardProps = PropsWithChildren<
 export function AppCard({ children, padded = true, ...props }: AppCardProps) {
   return (
     <Paper
-      radius="lg"
-      shadow="sm"
+      radius="md"
+      shadow="none"
       withBorder
       p={padded ? "md" : 0}
       style={{
         background: "var(--bg-card)",
         borderColor: "var(--divider)",
-        boxShadow: "var(--shadow-card)",
         ...props.style,
       }}
       {...props}
