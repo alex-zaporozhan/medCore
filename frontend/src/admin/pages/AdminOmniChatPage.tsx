@@ -46,7 +46,23 @@ import {
   Group,
   Divider,
   Tooltip,
+  SegmentedControl,
+  ActionIcon,
+  rem,
 } from "@mantine/core";
+import {
+  IconBriefcase,
+  IconCalendarEvent,
+  IconCalendarPlus,
+  IconChevronLeft,
+  IconChevronRight,
+  IconEyeOff,
+  IconFileDescription,
+  IconHistory,
+  IconListCheck,
+  IconRobot,
+  IconUser,
+} from "@tabler/icons-react";
 import { useHotkeys } from "@mantine/hooks";
 import { GlassModal } from "@/shared/ui/GlassModal";
 import { Textarea } from "@mantine/core";
@@ -56,6 +72,42 @@ import { useAiFeatures, getAiFeatureTooltip } from "@/shared/aiFeatures";
 import { useEffectiveAiFeatureGate } from "@/hooks/useEffectiveAiFeatureGate";
 import { logUiEvent } from "@/shared/uiEvents";
 import { useAvailableAiTools } from "@/hooks/useAvailableAiTools";
+import { SEMANTIC } from "@/shared/semanticUi";
+
+function omniChatListStatusColor(status: string): string {
+  const s = String(status).toUpperCase();
+  if (s === "OPEN") return "var(--mantine-color-green-6)";
+  if (s === "CLOSED") return "var(--mantine-color-gray-5)";
+  return "var(--mantine-color-blue-6)";
+}
+
+function omniChatListAiShort(ai_mode: string | null | undefined): string | null {
+  if (!ai_mode || ai_mode === "DISABLED") return null;
+  if (ai_mode === "AUTO_REPLY") return "AI авто";
+  return "AI подск.";
+}
+
+/** Подсказка к сырому статусу диалога из API (список слева). */
+function omniChatStatusTooltip(status: string): string {
+  const s = String(status).toUpperCase();
+  if (s === "OPEN") {
+    return "Диалог открыт: переписка активна, можно отправлять и получать сообщения.";
+  }
+  if (s === "CLOSED") {
+    return "Диалог закрыт: переписка завершена, новые сообщения обычно не ожидаются.";
+  }
+  if (s === "WAITING_FOR_OPERATOR") {
+    return "Ожидает оператора: нужен ответ сотрудника.";
+  }
+  if (s === "IN_PROGRESS") {
+    return "В работе у оператора.";
+  }
+  return `Статус диалога в системе: ${status}`;
+}
+
+type OmniInspectorTab = "client" | "forms" | "timeline" | "ai";
+
+const OMNI_INSPECTOR_COLLAPSED_KEY = "admin_omni_inspector_collapsed";
 
 export default function AdminOmniChatPage() {
   const { currentClinicId } = useAdminClinic();
@@ -89,6 +141,11 @@ export default function AdminOmniChatPage() {
   const [taskPriority, setTaskPriority] = useState<string | null>("medium");
   const [taskDueAt, setTaskDueAt] = useState("");
   const [taskAssignMe, setTaskAssignMe] = useState(true);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(OMNI_INSPECTOR_COLLAPSED_KEY) === "true";
+  });
+  const [inspectorTab, setInspectorTab] = useState<OmniInspectorTab>("client");
 
   const { data: chatsData, isLoading: chatsLoading, isError: chatsError, error: chatsErr } = useAdminOmniChats({
     status: showOnlyWaiting ? "WAITING_FOR_OPERATOR" : statusFilter,
@@ -163,6 +220,8 @@ export default function AdminOmniChatPage() {
     ["mod+J", () => { searchInputRef.current?.focus(); }],
     ["mod+Enter", () => { if (selectedChatId && messageText.trim()) handleSend(); }],
     ["Escape", () => { setFormDrawerOpen(false); setTaskDrawerOpen(false); }],
+    /** Правая панель «Рабочий центр»: свернуть/развернуть (как левое меню). Не срабатывает в полях ввода. */
+    ["mod+shift+l", () => { setInspectorCollapsed((c) => !c); }],
   ]);
 
   useEffect(() => {
@@ -171,6 +230,10 @@ export default function AdminOmniChatPage() {
     const base = leadId ? "Follow‑up по лиду из чата" : patientId ? "Follow‑up по пациенту из чата" : "Follow‑up по чату";
     setTaskTitle((prev) => prev || base);
   }, [taskDrawerOpen, leadId, patientId]);
+
+  useEffect(() => {
+    localStorage.setItem(OMNI_INSPECTOR_COLLAPSED_KEY, String(inspectorCollapsed));
+  }, [inspectorCollapsed]);
 
   const handleOpenTaskDrawer = () => {
     setTaskDrawerOpen(true);
@@ -267,24 +330,35 @@ export default function AdminOmniChatPage() {
               style={{ flex: 1, minWidth: 200 }}
             />
             <Group gap="xs" wrap="wrap">
-              <Button
-                variant={!showOnlyWaiting && !statusFilter ? "filled" : "light"}
+              <SegmentedControl
                 size="xs"
-                onClick={() => { setShowOnlyWaiting(false); setStatusFilter(undefined); }}
-              >
-                Все
-              </Button>
-              <Button
-                variant={showOnlyWaiting ? "filled" : "light"}
-                size="xs"
-                onClick={() => { setShowOnlyWaiting(true); setStatusFilter(undefined); }}
-              >
-                Неотвеченные
-              </Button>
-              <Button variant="light" size="xs" disabled title="Фильтр по VIP (при наличии API)">
+                value={showOnlyWaiting ? "waiting" : "all"}
+                onChange={(v) => {
+                  if (v === "waiting") {
+                    setShowOnlyWaiting(true);
+                    setStatusFilter(undefined);
+                  } else {
+                    setShowOnlyWaiting(false);
+                    setStatusFilter(undefined);
+                  }
+                }}
+                data={[
+                  { label: "Все", value: "all" },
+                  { label: "Неотвеченные", value: "waiting" },
+                ]}
+                styles={(theme) => ({
+                  root: {
+                    backgroundColor: theme.colors.dark[0],
+                    padding: 2,
+                    borderRadius: theme.radius.sm,
+                  },
+                  label: { fontWeight: 600, fontSize: theme.fontSizes.xs },
+                })}
+              />
+              <Button variant="subtle" size="xs" disabled title="Фильтр по VIP (при наличии API)">
                 От VIP
               </Button>
-              <Button variant="light" size="xs" disabled title="С ошибкой оплаты (при наличии API)">
+              <Button variant="subtle" size="xs" disabled title="С ошибкой оплаты (при наличии API)">
                 С ошибкой оплаты
               </Button>
             </Group>
@@ -325,59 +399,107 @@ export default function AdminOmniChatPage() {
             <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <ThreeColumnLayout
               preset="omni-inspector"
+              omniRightCollapsed={inspectorCollapsed}
               left={
-                <Stack gap={4} p="xs">
+                <Stack gap={4} p="xs" miw={0}>
                   {!chatsData?.items?.length ? (
                     <EmptyStateHint
                       title="Нет диалогов"
                       subtitle="Сообщения появятся из Telegram, веб‑чата и других каналов."
                     />
                   ) : (
-                    visibleChats.map((c) => (
+                    visibleChats.map((c) => {
+                      const aiShort = omniChatListAiShort(c.ai_mode);
+                      return (
                       <Box
                         key={c.chat_id}
                         p={6}
                         style={{
                           cursor: "pointer",
                           borderRadius: 6,
+                          minWidth: 0,
+                          width: "100%",
                           backgroundColor:
-                            selectedChatId === c.chat_id
-                              ? "var(--primary-light, rgba(59, 130, 246, 0.12))"
-                              : "transparent",
+                            selectedChatId === c.chat_id ? "rgba(15, 23, 42, 0.06)" : "transparent",
                           border:
                             selectedChatId === c.chat_id
-                              ? "1px solid var(--primary)"
+                              ? "1px solid var(--divider)"
                               : "1px solid transparent",
+                          boxShadow:
+                            selectedChatId === c.chat_id
+                              ? "inset 3px 0 0 var(--mantine-color-gray-5)"
+                              : undefined,
                         }}
                         onClick={() => setSelectedChatId(c.chat_id)}
                       >
-                        <Text fw={600} size="sm" truncate>
+                        <Text
+                          fw={600}
+                          size="sm"
+                          truncate="end"
+                          title={
+                            (c.contact_name || c.contact_primary_phone || "Без имени") as string
+                          }
+                          style={{ minWidth: 0 }}
+                        >
                           {c.contact_name || c.contact_primary_phone || "Без имени"}
                         </Text>
-                        <Text size="xs" c="dimmed">
+                        <Text size="xs" c="dimmed" truncate="end" lineClamp={1} style={{ minWidth: 0 }}>
                           {c.contact_primary_phone || "—"}
                         </Text>
-                        <Flex gap={4} align="center" wrap="wrap" mt={4}>
-                          <Badge size="xs" variant="light">
+                        <Text
+                          component="div"
+                          fz={9}
+                          lh={1.35}
+                          mt={4}
+                          lineClamp={1}
+                          style={{
+                            minWidth: 0,
+                            letterSpacing: rem(0.2),
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <Text
+                            component="span"
+                            fz={9}
+                            fw={500}
+                            tt="uppercase"
+                            style={{ color: omniChatListStatusColor(c.status) }}
+                            title={omniChatStatusTooltip(c.status)}
+                          >
                             {c.status}
-                          </Badge>
-                          {c.last_actor_type && (
-                            <Text size="xs" c="dimmed">
-                              {c.last_actor_type}
-                            </Text>
-                          )}
-                          {c.ai_mode && (
-                            <Badge size="xs" variant="outline" color="blue">
-                              {c.ai_mode === "DISABLED"
-                                ? "AI выкл."
-                                : c.ai_mode === "AUTO_REPLY"
-                                  ? "AI автоответ"
-                                  : "AI подсказки"}
-                            </Badge>
-                          )}
-                        </Flex>
+                          </Text>
+                          {c.last_actor_type ? (
+                            <>
+                              <Text component="span" c="dimmed" mx={3} fz={9}>
+                                ·
+                              </Text>
+                              <Text component="span" c="dimmed" fw={400} fz={9}>
+                                {c.last_actor_type}
+                              </Text>
+                            </>
+                          ) : null}
+                          {aiShort ? (
+                            <>
+                              <Text component="span" c="dimmed" mx={3} fz={9}>
+                                ·
+                              </Text>
+                              <Text
+                                component="span"
+                                fw={500}
+                                tt="uppercase"
+                                fz={9}
+                                style={{ color: "var(--mantine-color-ai-6)" }}
+                              >
+                                {aiShort}
+                              </Text>
+                            </>
+                          ) : null}
+                        </Text>
                       </Box>
-                    ))
+                    );
+                    })
                   )}
                 </Stack>
               }
@@ -392,10 +514,17 @@ export default function AdminOmniChatPage() {
                 ) : (
                   <Stack gap="md" p="xs" style={{ height: "100%" }}>
                     {(detailLoading || chatDetail) && (
-                      <Stack gap="xs">
-                        <Flex justify="space-between" align="center" wrap="wrap" gap="xs">
-                          <Stack gap={2}>
-                            <Text fw={700}>
+                      <Stack gap="md">
+                        <Group
+                          justify="space-between"
+                          align="flex-end"
+                          wrap="wrap"
+                          gap="md"
+                          pb="sm"
+                          style={{ borderBottom: `1px solid var(--divider)` }}
+                        >
+                          <Stack gap={4} miw={180}>
+                            <Text fw={700} size="lg" lh={1.25}>
                               {chatDetail?.contact_name ||
                                 chatDetail?.contact_primary_phone ||
                                 selectedItem?.contact_name ||
@@ -403,42 +532,65 @@ export default function AdminOmniChatPage() {
                                 "Контакт"}
                             </Text>
                             {chatDetail && (
-                              <Flex gap="xs" align="center" wrap="wrap">
-                                <Badge size="sm">{chatDetail.status}</Badge>
-                                {chatDetail.channel_type && (
-                                  <Text size="xs" c="dimmed">
-                                    {chatDetail.channel_type}
+                              <Group gap={6}>
+                                <Badge
+                                  size="sm"
+                                  variant="dot"
+                                  color={
+                                    String(chatDetail.status).toUpperCase() === "OPEN"
+                                      ? "green"
+                                      : String(chatDetail.status).toUpperCase() === "CLOSED"
+                                        ? "gray"
+                                        : "blue"
+                                  }
+                                  radius="xs"
+                                >
+                                  {chatDetail.status}
+                                </Badge>
+                                {chatDetail.channel_type ? (
+                                  <Text size="xs" c="dimmed" fw={600} tt="uppercase" style={{ letterSpacing: rem(0.5) }}>
+                                    {String(chatDetail.channel_type).replace(/_/g, " ")}
                                   </Text>
-                                )}
-                                <Select
-                                  size="xs"
-                                  style={{ width: 160 }}
-                                  label="Режим AI в этом чате"
-                                  data={OMNI_CHAT_AI_MODES.map((v) => ({
-                                    value: v,
-                                    label:
-                                      v === "DISABLED"
-                                        ? "Выкл"
-                                        : v === "AUTO_REPLY"
-                                          ? "Автоответ"
-                                          : "Подсказки",
-                                  }))}
-                                  value={chatDetail.ai_mode || "DISABLED"}
-                                  onChange={(v) => {
-                                    if (v && selectedChatId)
-                                      updateAiMode.mutate({
-                                        chatId: selectedChatId,
-                                        ai_mode: v,
-                                      });
-                                  }}
-                                  disabled={updateAiMode.isPending}
-                                />
-                              </Flex>
+                                ) : null}
+                              </Group>
                             )}
                           </Stack>
+                          {chatDetail ? (
+                            <Select
+                              size="xs"
+                              w={{ base: "100%", sm: 200 }}
+                              label={
+                                <Text component="span" size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: rem(0.5) }}>
+                                  Режим AI
+                                </Text>
+                              }
+                              leftSection={<IconRobot size={14} color="var(--mantine-color-ai-6)" />}
+                              data={OMNI_CHAT_AI_MODES.map((v) => ({
+                                value: v,
+                                label:
+                                  v === "DISABLED"
+                                    ? "Выкл"
+                                    : v === "AUTO_REPLY"
+                                      ? "Автоответ"
+                                      : "Подсказки",
+                              }))}
+                              value={chatDetail.ai_mode || "DISABLED"}
+                              onChange={(v) => {
+                                if (v && selectedChatId)
+                                  updateAiMode.mutate({
+                                    chatId: selectedChatId,
+                                    ai_mode: v,
+                                  });
+                              }}
+                              disabled={updateAiMode.isPending}
+                              styles={{
+                                input: { fontWeight: 600 },
+                              }}
+                            />
+                          ) : null}
+                        </Group>
+                        {chatDetail?.lead_id ? (
                           <Stack gap={6} align="flex-end">
-                            {chatDetail?.lead_id && (
-                              <Stack gap={4} align="flex-end">
                                 <Text size="xs" c="dimmed">
                                   CRM‑лид:
                                 </Text>
@@ -686,10 +838,8 @@ export default function AdminOmniChatPage() {
                                     </Box>
                                   )}
                                 </Stack>
-                              </Stack>
-                            )}
                           </Stack>
-                        </Flex>
+                        ) : null}
                       </Stack>
                     )}
                     <Box
@@ -701,64 +851,114 @@ export default function AdminOmniChatPage() {
                       {messagesLoading ? (
                         <DataSkeleton lines={3} />
                       ) : (
-                        <Stack gap="xs">
-                          {(messagesData?.items ?? []).map((m) => (
-                            <Box
-                              key={m.id}
-                              p="xs"
-                              style={{
-                                alignSelf:
-                                  m.direction === "OUTBOUND" && m.actor_type !== "CLIENT"
-                                    ? "flex-end"
-                                    : "flex-start",
-                                maxWidth: "80%",
-                                borderRadius: 8,
-                                backgroundColor: m.ui_hidden
-                                  ? "rgba(148,163,184,0.18)"
-                                  : m.direction === "OUTBOUND"
-                                    ? "var(--primary-light, rgba(59,130,246,0.12))"
-                                  : "var(--bg-card-soft, var(--bg-main))",
-                                opacity: m.ui_hidden ? 0.8 : 1,
-                              }}
-                            >
-                              <Text size="xs" c="dimmed">
-                                {m.actor_type}
-                                {m.channel_type
-                                  ? ` • ${m.channel_type}`
-                                  : chatDetail?.channel_type
-                                    ? ` • ${chatDetail.channel_type}`
-                                    : ""}
-                              </Text>
-                              {m.ui_hidden ? (
-                                <Text size="xs" c="dimmed">
-                                  Сообщение скрыто: {m.hidden_reason || "без указания причины"}
+                        <Stack gap="sm">
+                          {(messagesData?.items ?? []).map((m) => {
+                            const metaChannel =
+                              m.channel_type ||
+                              chatDetail?.channel_type ||
+                              "";
+                            const outbound =
+                              m.direction === "OUTBOUND" && m.actor_type !== "CLIENT";
+                            return (
+                              <Paper
+                                key={m.id}
+                                withBorder
+                                p="sm"
+                                radius="sm"
+                                style={{
+                                  alignSelf: outbound ? "flex-end" : "flex-start",
+                                  maxWidth: "min(85%, 520px)",
+                                  position: "relative",
+                                  backgroundColor: m.ui_hidden
+                                    ? "rgba(148, 163, 184, 0.14)"
+                                    : outbound
+                                      ? "var(--mantine-color-dark-0)"
+                                      : "var(--mantine-color-gray-0)",
+                                  opacity: m.ui_hidden ? 0.85 : 1,
+                                  borderColor: "var(--mantine-color-gray-3)",
+                                }}
+                              >
+                                <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs" mb={6}>
+                                  <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                                    <Text
+                                      fz={rem(10)}
+                                      fw={800}
+                                      c="dimmed"
+                                      tt="uppercase"
+                                      style={{ letterSpacing: rem(0.5) }}
+                                    >
+                                      {m.actor_type}
+                                    </Text>
+                                    {metaChannel ? (
+                                      <>
+                                        <Text fz={rem(10)} fw={800} c="gray.4" component="span">
+                                          •
+                                        </Text>
+                                        <Text
+                                          fz={rem(10)}
+                                          fw={800}
+                                          c="gray.4"
+                                          tt="uppercase"
+                                          style={{ letterSpacing: rem(0.5) }}
+                                          lineClamp={1}
+                                        >
+                                          {String(metaChannel).replace(/_/g, " ")}
+                                        </Text>
+                                      </>
+                                    ) : null}
+                                  </Group>
+                                  {!m.ui_hidden ? (
+                                    <Tooltip label="Скрыть сообщение" position="left" withArrow>
+                                      <ActionIcon
+                                        variant="subtle"
+                                        color="gray"
+                                        size="sm"
+                                        aria-label="Скрыть сообщение"
+                                        style={{ opacity: 0.4, flexShrink: 0 }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.opacity = "1";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.opacity = "0.4";
+                                        }}
+                                        onClick={() => handleOpenHideModal(m.id)}
+                                      >
+                                        <IconEyeOff size={14} stroke={1.5} />
+                                      </ActionIcon>
+                                    </Tooltip>
+                                  ) : null}
+                                </Group>
+                                {m.ui_hidden ? (
+                                  <Text size="xs" c="dimmed">
+                                    Сообщение скрыто: {m.hidden_reason || "без указания причины"}
+                                  </Text>
+                                ) : (
+                                  <Text size="sm" c="dark.8" lh={1.65} style={{ wordBreak: "break-word" }}>
+                                    {m.content}
+                                  </Text>
+                                )}
+                                <Text
+                                  fz={rem(10)}
+                                  c="dimmed"
+                                  mt={8}
+                                  ta="right"
+                                  ff="monospace"
+                                  style={{ fontVariantNumeric: "tabular-nums" }}
+                                >
+                                  {m.created_at ? new Date(m.created_at).toLocaleString() : ""}
                                 </Text>
-                              ) : (
-                                <Stack gap={4}>
-                                  <Text size="sm">{m.content}</Text>
-                                  <Button
-                                    size="xs"
-                                    variant="subtle"
-                                    color="red"
-                                    onClick={() => handleOpenHideModal(m.id)}
-                                  >
-                                    Скрыть сообщение
-                                  </Button>
-                                </Stack>
-                              )}
-                              <Text size="xs" c="dimmed">
-                                {m.created_at ? new Date(m.created_at).toLocaleString() : ""}
-                              </Text>
-                            </Box>
-                          ))}
+                              </Paper>
+                            );
+                          })}
                         </Stack>
                       )}
                     </Box>
                     <Stack gap="xs">
-                      <Flex gap="sm" wrap="wrap" align="center">
+                      <Group gap="xs" align="flex-start" wrap="nowrap">
                         <TextInput
                           placeholder="Сообщение... (⌘Enter — отправить)"
                           value={messageText}
+                          size="sm"
                           onChange={(e) => setMessageText(e.currentTarget.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey) {
@@ -767,29 +967,43 @@ export default function AdminOmniChatPage() {
                             }
                           }}
                           style={{ flex: 1, minWidth: 180 }}
+                          styles={{
+                            input: {
+                              border: `1px solid var(--mantine-color-gray-3)`,
+                            },
+                          }}
                         />
-                        <Button onClick={handleSend} loading={sendMessage.isPending}>
+                        <Button
+                          color={SEMANTIC.action.send}
+                          px="lg"
+                          onClick={handleSend}
+                          loading={sendMessage.isPending}
+                        >
                           Отправить
                         </Button>
-                        <Checkbox
-                          label="Показывать скрытые сообщения"
-                          checked={showHiddenMessages}
-                          onChange={(e) => setShowHiddenMessages(e.currentTarget.checked)}
-                        />
-                      </Flex>
-                      <Group gap="xs" wrap="wrap">
+                      </Group>
+                      <Checkbox
+                        size="xs"
+                        label="Показывать скрытые сообщения"
+                        checked={showHiddenMessages}
+                        onChange={(e) => setShowHiddenMessages(e.currentTarget.checked)}
+                        styles={{ label: { color: "var(--mantine-color-dimmed)" } }}
+                      />
+                      <Group gap="sm">
                         <Button
                           component={Link}
                           to={ROUTE_PATHS.admin.schedule}
                           size="xs"
-                          variant="light"
+                          variant="default"
+                          leftSection={<IconCalendarPlus size={14} stroke={1.5} />}
                           title="Создать запись (откроется расписание)"
                         >
                           Запись
                         </Button>
                         <Button
                           size="xs"
-                          variant="light"
+                          variant="default"
+                          leftSection={<IconFileDescription size={14} stroke={1.5} />}
                           onClick={() => setFormDrawerOpen(true)}
                           disabled={!patientId}
                           title={!patientId ? "Выберите чат с привязанным пациентом" : "Отправить анкету/форму"}
@@ -802,42 +1016,223 @@ export default function AdminOmniChatPage() {
                 )
               }
               right={
-                <Stack gap="sm" style={{ minWidth: 0 }}>
-                  <Paper p="sm" withBorder radius="md" bg="gray.0">
-                    <Stack gap="md">
+                inspectorCollapsed ? (
+                  <Paper
+                    p={4}
+                    radius="md"
+                    withBorder
+                    shadow="none"
+                    bg="var(--bg-card)"
+                    style={{ borderColor: "var(--divider)", height: "100%" }}
+                  >
+                    <Stack gap={6} align="center" py="xs" style={{ minWidth: 0 }}>
+                      <Tooltip
+                        label="Развернуть рабочий центр (Ctrl+Shift+L / ⌘⇧L)"
+                        position="left"
+                      >
+                        <ActionIcon
+                          variant="light"
+                          color="gray"
+                          size="md"
+                          onClick={() => setInspectorCollapsed(false)}
+                          aria-label="Развернуть рабочий центр"
+                        >
+                          <IconChevronLeft size={18} stroke={1.5} />
+                        </ActionIcon>
+                      </Tooltip>
                       {currentClinicId ? (
                         <>
-                          <Stack gap="xs">
-                            <Text size="xs" fw={600}>
-                              Рабочий центр
-                            </Text>
-                            <Text size="xs" c="dimmed">
-                              Быстрый переход: воронка, расписание, задачи.
-                            </Text>
-                            <Group gap="xs" wrap="wrap">
-                              <Button component={Link} to={ROUTE_PATHS.admin.sales} size="xs" variant="light">
-                                CRM
-                              </Button>
-                              <Button component={Link} to={ROUTE_PATHS.admin.schedule} size="xs" variant="light">
-                                Расписание
-                              </Button>
-                              <Button component={Link} to={ROUTE_PATHS.admin.tasks} size="xs" variant="light">
-                                Задачи
-                              </Button>
-                            </Group>
-                          </Stack>
-                          <Divider />
+                          <Divider w="100%" style={{ borderTopColor: "var(--divider)" }} />
+                          <Tooltip label="CRM" position="left">
+                            <ActionIcon
+                              component={Link}
+                              to={ROUTE_PATHS.admin.sales}
+                              variant="subtle"
+                              color="blue"
+                              size="md"
+                              aria-label="CRM"
+                            >
+                              <IconBriefcase size={18} stroke={1.5} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label="Расписание" position="left">
+                            <ActionIcon
+                              component={Link}
+                              to={ROUTE_PATHS.admin.schedule}
+                              variant="subtle"
+                              color={SEMANTIC.action.confirm}
+                              size="md"
+                              aria-label="Расписание"
+                            >
+                              <IconCalendarEvent size={18} stroke={1.5} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label="Задачи" position="left">
+                            <ActionIcon
+                              component={Link}
+                              to={ROUTE_PATHS.admin.tasks}
+                              variant="subtle"
+                              color="gray"
+                              size="md"
+                              aria-label="Задачи"
+                            >
+                              <IconListCheck size={18} stroke={1.5} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Divider w="100%" style={{ borderTopColor: "var(--divider)" }} />
+                        </>
+                      ) : null}
+                      <Tooltip label="Клиент" position="left">
+                        <ActionIcon
+                          variant={inspectorTab === "client" ? "light" : "subtle"}
+                          color="dark"
+                          size="md"
+                          aria-label="Вкладка Клиент"
+                          onClick={() => {
+                            setInspectorTab("client");
+                            setInspectorCollapsed(false);
+                          }}
+                        >
+                          <IconUser size={18} stroke={1.5} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label="Анкеты" position="left">
+                        <ActionIcon
+                          variant={inspectorTab === "forms" ? "light" : "subtle"}
+                          color="dark"
+                          size="md"
+                          aria-label="Вкладка Анкеты"
+                          onClick={() => {
+                            setInspectorTab("forms");
+                            setInspectorCollapsed(false);
+                          }}
+                        >
+                          <IconFileDescription size={18} stroke={1.5} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label="Таймлайн" position="left">
+                        <ActionIcon
+                          variant={inspectorTab === "timeline" ? "light" : "subtle"}
+                          color="dark"
+                          size="md"
+                          aria-label="Вкладка Таймлайн"
+                          onClick={() => {
+                            setInspectorTab("timeline");
+                            setInspectorCollapsed(false);
+                          }}
+                        >
+                          <IconHistory size={18} stroke={1.5} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label="AI" position="left">
+                        <ActionIcon
+                          variant={inspectorTab === "ai" ? "light" : "subtle"}
+                          color="dark"
+                          size="md"
+                          aria-label="Вкладка AI"
+                          onClick={() => {
+                            setInspectorTab("ai");
+                            setInspectorCollapsed(false);
+                          }}
+                        >
+                          <IconRobot size={18} stroke={1.5} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Stack>
+                  </Paper>
+                ) : (
+                <Stack gap="sm" style={{ minWidth: 0 }}>
+                  <Paper
+                    p="sm"
+                    radius="md"
+                    withBorder
+                    shadow="none"
+                    bg="var(--bg-card)"
+                    style={{ borderColor: "var(--divider)" }}
+                  >
+                    <Stack gap="sm">
+                      {currentClinicId ? (
+                        <>
+                          <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+                            <Stack gap={2} style={{ minWidth: 0 }}>
+                              <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: rem(0.4) }}>
+                                Рабочий центр
+                              </Text>
+                              <Text size="xs" c="dimmed" lineClamp={2}>
+                                Быстрые переходы: воронка, расписание, задачи.
+                              </Text>
+                            </Stack>
+                            <Tooltip
+                              label="Свернуть в иконки — больше места для чата (Ctrl+Shift+L / ⌘⇧L)"
+                              position="left"
+                            >
+                              <ActionIcon
+                                variant="subtle"
+                                color="gray"
+                                size="sm"
+                                onClick={() => setInspectorCollapsed(true)}
+                                aria-label="Свернуть рабочий центр"
+                              >
+                                <IconChevronRight size={18} stroke={1.5} />
+                              </ActionIcon>
+                            </Tooltip>
+                          </Group>
+                          <Group gap={6} wrap="wrap">
+                            <Button
+                              component={Link}
+                              to={ROUTE_PATHS.admin.sales}
+                              size="compact-xs"
+                              variant="subtle"
+                              color="blue"
+                              leftSection={<IconBriefcase size={14} stroke={1.5} />}
+                            >
+                              CRM
+                            </Button>
+                            <Button
+                              component={Link}
+                              to={ROUTE_PATHS.admin.schedule}
+                              size="compact-xs"
+                              variant="subtle"
+                              color={SEMANTIC.action.confirm}
+                              leftSection={<IconCalendarEvent size={14} stroke={1.5} />}
+                            >
+                              Расписание
+                            </Button>
+                            <Button
+                              component={Link}
+                              to={ROUTE_PATHS.admin.tasks}
+                              size="compact-xs"
+                              variant="subtle"
+                              color="gray"
+                              leftSection={<IconListCheck size={14} stroke={1.5} />}
+                            >
+                              Задачи
+                            </Button>
+                          </Group>
+                          <Divider style={{ borderTopColor: "var(--divider)" }} />
                         </>
                       ) : null}
                       <Tabs
-                        defaultValue="client"
+                        value={inspectorTab}
+                        onChange={(v) => v && setInspectorTab(v as OmniInspectorTab)}
+                        variant="pills"
+                        color="dark"
                         styles={{
                           list: {
                             width: "100%",
                             flexWrap: "nowrap",
+                            backgroundColor: "var(--bg-main)",
+                            border: "1px solid var(--divider)",
+                            padding: rem(3),
+                            borderRadius: "var(--mantine-radius-sm)",
+                            gap: rem(2),
+                          },
+                          tab: {
+                            fontSize: "var(--mantine-font-size-xs)",
+                            fontWeight: 600,
                           },
                           panel: {
-                            minHeight: 380,
+                            minHeight: 300,
                           },
                         }}
                       >
@@ -883,7 +1278,8 @@ export default function AdminOmniChatPage() {
                                           component={Link}
                                           to={ROUTE_PATHS.admin.schedule}
                                           size="xs"
-                                          variant="light"
+                                          variant="subtle"
+                                          color={SEMANTIC.action.confirm}
                                         >
                                           Создать запись
                                         </Button>
@@ -893,7 +1289,8 @@ export default function AdminOmniChatPage() {
                                             loyaltySummary.patient_id,
                                           )}`}
                                           size="xs"
-                                          variant="light"
+                                          variant="subtle"
+                                          color={SEMANTIC.action.confirm}
                                         >
                                           Открыть лояльность
                                         </Button>
@@ -913,7 +1310,8 @@ export default function AdminOmniChatPage() {
                                 <Group gap="xs" wrap="wrap">
                                   <Button
                                     size="xs"
-                                    variant="light"
+                                    variant="subtle"
+                                    color="gray"
                                     onClick={handleOpenTaskDrawer}
                                     disabled={createTaskFeature.status === "stub" || !canCreateAiTask}
                                     title={
@@ -930,7 +1328,8 @@ export default function AdminOmniChatPage() {
                                     component={Link}
                                     to={ROUTE_PATHS.admin.tasks}
                                     size="xs"
-                                    variant="light"
+                                    variant="subtle"
+                                    color="gray"
                                   >
                                     Открыть список задач
                                   </Button>
@@ -971,7 +1370,8 @@ export default function AdminOmniChatPage() {
                                   component={Link}
                                   to={`/admin/forms?patient_id=${encodeURIComponent(patientId)}`}
                                   size="xs"
-                                  variant="light"
+                                  variant="subtle"
+                                  color={SEMANTIC.action.send}
                                 >
                                   Открыть формы и согласия
                                 </Button>
@@ -994,7 +1394,13 @@ export default function AdminOmniChatPage() {
                                   История записей и форм недоступна в кратком виде. Откройте формы и
                                   историю, чтобы увидеть детали.
                                 </Text>
-                                <Button component={Link} to={`/admin/forms`} size="xs" variant="light">
+                                <Button
+                                  component={Link}
+                                  to={`/admin/forms`}
+                                  size="xs"
+                                  variant="subtle"
+                                  color={SEMANTIC.action.send}
+                                >
                                   Открыть формы и согласия
                                 </Button>
                               </Stack>
@@ -1056,7 +1462,7 @@ export default function AdminOmniChatPage() {
                     </Stack>
                   </Paper>
                 </Stack>
-              }
+              )}
             />
             </Box>
           )}
@@ -1082,7 +1488,8 @@ export default function AdminOmniChatPage() {
           />
           <Flex justify="flex-end" gap="sm">
             <Button
-              variant="default"
+              variant="subtle"
+              color={SEMANTIC.action.dismiss}
               size="sm"
               onClick={() => setHideModalOpen(false)}
               disabled={hideMessage.isPending}
@@ -1091,7 +1498,7 @@ export default function AdminOmniChatPage() {
             </Button>
             <Button
               size="sm"
-              color="red"
+              color={SEMANTIC.action.danger}
               onClick={handleConfirmHide}
               loading={hideMessage.isPending}
             >
@@ -1134,10 +1541,11 @@ export default function AdminOmniChatPage() {
                 onChange={(v) => setFormSendVia((v as "whatsapp" | "sms" | "copy_only") || "copy_only")}
               />
               <Group justify="flex-end">
-                <Button variant="default" onClick={() => setFormDrawerOpen(false)}>
+                <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setFormDrawerOpen(false)}>
                   Отмена
                 </Button>
                 <Button
+                  color={SEMANTIC.action.send}
                   onClick={handleSendFormLink}
                   loading={sendFormLink.isPending}
                   disabled={!formTemplateId}
@@ -1210,10 +1618,11 @@ export default function AdminOmniChatPage() {
             <QueryErrorAlert error={createTaskMutation.error} title="Не удалось создать задачу" />
           )}
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setTaskDrawerOpen(false)}>
+            <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setTaskDrawerOpen(false)}>
               Отмена
             </Button>
             <Button
+              color={SEMANTIC.action.confirm}
               onClick={handleCreateTask}
               loading={createTaskMutation.isPending}
               disabled={createTaskFeature.status === "stub" || !canCreateAiTask || !taskTitle.trim()}

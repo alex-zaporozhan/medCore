@@ -19,6 +19,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { getCurrentUtm } from "@/shared/utmTracking";
+import { SEMANTIC } from "@/shared/semanticUi";
 import { ROUTE_PATHS } from "@/routePaths";
 
 const oauthRedirectHome = encodeURIComponent(ROUTE_PATHS.patient.home);
@@ -150,6 +151,7 @@ export default function LoginPage() {
             <Button
               type="button"
               variant="outline"
+              color={SEMANTIC.action.send}
               size="xs"
               onClick={() => {
                 window.location.href = `/api/v1/auth/oauth/vk/start?redirect=${oauthRedirectHome}`;
@@ -160,6 +162,7 @@ export default function LoginPage() {
             <Button
               type="button"
               variant="outline"
+              color={SEMANTIC.action.send}
               size="xs"
               onClick={() => {
                 window.location.href = `/api/v1/auth/oauth/yandex/start?redirect=${oauthRedirectHome}`;
@@ -217,6 +220,7 @@ export default function LoginPage() {
               )}
               <Button
                 type="button"
+                color={SEMANTIC.action.confirm}
                 onClick={mode === "login" ? handleSendCodeLogin : handleSendCodeRegister}
                 loading={sendCode.isPending}
                 fullWidth
@@ -237,10 +241,22 @@ export default function LoginPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
               />
-              <Button type="button" onClick={handleVerify} loading={verifyCode.isPending} fullWidth>
+              <Button
+                type="button"
+                color={SEMANTIC.action.confirm}
+                onClick={handleVerify}
+                loading={verifyCode.isPending}
+                fullWidth
+              >
                 Войти
               </Button>
-              <Button type="button" variant="subtle" onClick={() => setStep("phone")} fullWidth>
+              <Button
+                type="button"
+                variant="subtle"
+                color={SEMANTIC.action.dismiss}
+                onClick={() => setStep("phone")}
+                fullWidth
+              >
                 Изменить номер
               </Button>
             </>

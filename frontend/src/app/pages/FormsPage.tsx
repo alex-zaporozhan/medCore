@@ -17,6 +17,7 @@ import {
 import type { DigitalFormFieldSchema, DigitalFormTemplate } from "@/api/types";
 import { SignatureCanvas, type SignaturePayload } from "@/shared/ui/SignatureCanvas";
 import { QueryErrorAlert } from "@/shared/ui";
+import { SEMANTIC } from "@/shared/semanticUi";
 
 type FormValues = Record<string, unknown>;
 
@@ -253,10 +254,11 @@ export default function FormsPage() {
         )}
       </Stack>
       <Group justify="flex-end" mt="md">
-        <Button variant="default" onClick={() => setSelectedTemplate(null)}>
+        <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setSelectedTemplate(null)}>
           Отмена
         </Button>
         <Button
+          color={SEMANTIC.action.confirm}
           onClick={handleSubmit}
           loading={submitForm.isPending}
           disabled={!canSubmit}

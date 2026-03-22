@@ -9,6 +9,7 @@ import { QueryErrorAlert } from "@/shared/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconRefresh } from "@tabler/icons-react";
 import { ROUTE_PATHS } from "@/routePaths";
+import { SEMANTIC } from "@/shared/semanticUi";
 
 const SELECTED_CLINIC_KEY = "app.selectedClinicId";
 
@@ -114,7 +115,7 @@ export default function HomePage() {
         </Title>
         <Button
           variant="subtle"
-          color="indigo"
+          color="dark"
           size="xs"
           leftSection={<IconRefresh size={14} />}
           loading={bookingsFetching}
@@ -131,7 +132,8 @@ export default function HomePage() {
           withBorder
           padding="md"
           radius="md"
-          style={{ boxShadow: "var(--shadow-card)", borderColor: "var(--divider)" }}
+          shadow="none"
+          style={{ borderColor: "var(--divider)" }}
         >
           <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb="xs" style={{ letterSpacing: "0.04em" }}>
             Ближайший визит
@@ -149,7 +151,7 @@ export default function HomePage() {
                   component={Link}
                   to={ROUTE_PATHS.patient.booking}
                   variant="light"
-                  color="indigo"
+                  color={SEMANTIC.action.send}
                   size="xs"
                 >
                   Перенести
@@ -158,12 +160,17 @@ export default function HomePage() {
                   component={Link}
                   to={ROUTE_PATHS.patient.history}
                   variant="light"
-                  color="indigo"
+                  color={SEMANTIC.action.send}
                   size="xs"
                 >
                   Отменить
                 </Button>
-                <Button component={Link} to={ROUTE_PATHS.patient.booking} color="indigo" size="xs">
+                <Button
+                  component={Link}
+                  to={ROUTE_PATHS.patient.booking}
+                  color={SEMANTIC.action.confirm}
+                  size="xs"
+                >
                   Добавить в календарь
                 </Button>
               </Group>
@@ -222,7 +229,7 @@ export default function HomePage() {
                   alignItems: "center",
                   justifyContent: "center",
                   cursor: "pointer",
-                  boxShadow: "var(--shadow-soft-sm)",
+                  boxShadow: "none",
                   borderColor: "var(--divider)",
                   background: "var(--bg-card-soft)",
                 }}
@@ -237,12 +244,12 @@ export default function HomePage() {
       </div>
 
       <Paper
-        radius="lg"
+        radius="md"
         p="xl"
         maw={520}
         w="100%"
+        shadow="none"
         style={{
-          boxShadow: "var(--shadow-card)",
           border: "1px solid var(--divider)",
           background: "var(--bg-card)",
         }}
@@ -254,10 +261,16 @@ export default function HomePage() {
           <Text size="sm" c="dimmed">
             Выберите удобное время приёма, не звоня в клинику.
           </Text>
-          <Button component={Link} to={ROUTE_PATHS.patient.booking} size="md" color="indigo">
+          <Button
+            component={Link}
+            to={ROUTE_PATHS.patient.booking}
+            size="md"
+            variant="outline"
+            color={SEMANTIC.action.confirm}
+          >
             Записаться на приём
           </Button>
-          <Anchor component={Link} to={ROUTE_PATHS.patient.history} c="indigo" fw={500}>
+          <Anchor component={Link} to={ROUTE_PATHS.patient.history} c={SEMANTIC.action.link} fw={500}>
             Смотреть историю посещений
           </Anchor>
           {isLoading && (
@@ -272,8 +285,9 @@ export default function HomePage() {
             <Card
               radius="md"
               withBorder
+              shadow="none"
               mt="md"
-              style={{ boxShadow: "var(--shadow-soft-sm)", borderColor: "var(--divider)" }}
+              style={{ borderColor: "var(--divider)" }}
             >
               <Stack gap={4}>
                 <Text fw={500}>Клиника</Text>
@@ -308,7 +322,7 @@ export default function HomePage() {
                 return (
                   <Card
                     key={c.id}
-                    shadow="xs"
+                    shadow="none"
                     radius="md"
                     withBorder
                     style={{

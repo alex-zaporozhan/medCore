@@ -13,10 +13,12 @@ import {
   Badge,
   Button,
   ScrollArea,
+  ThemeIcon,
 } from "@mantine/core";
 import { Link } from "react-router-dom";
 import { useState, useMemo } from "react";
 import { ROUTE_PATHS } from "@/routePaths";
+import { SEMANTIC } from "@/shared/semanticUi";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import type { AttentionItem } from "@/api/types";
@@ -44,9 +46,14 @@ const KIND_LABEL: Record<string, string> = {
   conflict: "Конфликт",
 };
 const KIND_COLOR: Record<string, string> = {
-  follow_up: "blue",
+  follow_up: "indigo",
   retention_gap: "yellow",
   conflict: "red",
+};
+
+const metricCardShell = {
+  bg: "white" as const,
+  styles: { root: { borderColor: "var(--mantine-color-gray-3)" } },
 };
 
 export default function AdminDashboardPage() {
@@ -171,14 +178,16 @@ export default function AdminDashboardPage() {
       {/* 4 метрики сверху */}
       <Grid>
         <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card padding="md" radius="md" shadow="sm" withBorder>
-            <Group gap="xs" mb={4}>
-              <IconCalendar size={18} style={{ opacity: 0.8 }} />
+          <Card padding="md" radius="md" shadow="sm" withBorder {...metricCardShell}>
+            <Group gap="xs" mb={4} wrap="nowrap">
+              <ThemeIcon variant="light" color={SEMANTIC.metrics.appointments} size="lg" radius="md">
+                <IconCalendar size={18} />
+              </ThemeIcon>
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
                 Записи сегодня
               </Text>
             </Group>
-            <Text fw={700} fz="xl">
+            <Text fw={700} fz="xl" c="gray.9">
               {totalBookings}
             </Text>
             {data && (
@@ -192,14 +201,16 @@ export default function AdminDashboardPage() {
           </Card>
         </Grid.Col>
         <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card padding="md" radius="md" shadow="sm" withBorder>
-            <Group gap="xs" mb={4}>
-              <IconCash size={18} style={{ opacity: 0.8 }} />
+          <Card padding="md" radius="md" shadow="sm" withBorder {...metricCardShell}>
+            <Group gap="xs" mb={4} wrap="nowrap">
+              <ThemeIcon variant="light" color={SEMANTIC.metrics.revenue} size="lg" radius="md">
+                <IconCash size={18} />
+              </ThemeIcon>
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
                 Выручка
               </Text>
             </Group>
-            <Text fw={700} fz="xl">
+            <Text fw={700} fz="xl" c="gray.9">
               {data?.revenue ?? "0"} ₽
             </Text>
             <Text size="xs" c="dimmed" mt="xs">
@@ -211,14 +222,16 @@ export default function AdminDashboardPage() {
           </Card>
         </Grid.Col>
         <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card padding="md" radius="md" shadow="sm" withBorder>
-            <Group gap="xs" mb={4}>
-              <IconUsers size={18} style={{ opacity: 0.8 }} />
+          <Card padding="md" radius="md" shadow="sm" withBorder {...metricCardShell}>
+            <Group gap="xs" mb={4} wrap="nowrap">
+              <ThemeIcon variant="light" color={SEMANTIC.metrics.patients} size="lg" radius="md">
+                <IconUsers size={18} />
+              </ThemeIcon>
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
                 Новые пациенты
               </Text>
             </Group>
-            <Text fw={700} fz="xl">
+            <Text fw={700} fz="xl" c="gray.9">
               {data?.new_patients ?? 0}
             </Text>
             <Text size="xs" c="dimmed" mt="xs">
@@ -230,14 +243,16 @@ export default function AdminDashboardPage() {
           </Card>
         </Grid.Col>
         <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card padding="md" radius="md" shadow="sm" withBorder>
-            <Group gap="xs" mb={4}>
-              <IconX size={18} style={{ opacity: 0.8 }} />
+          <Card padding="md" radius="md" shadow="sm" withBorder {...metricCardShell}>
+            <Group gap="xs" mb={4} wrap="nowrap">
+              <ThemeIcon variant="light" color={SEMANTIC.metrics.cancellations} size="lg" radius="md">
+                <IconX size={18} />
+              </ThemeIcon>
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
                 Отмены / неявки
               </Text>
             </Group>
-            <Text fw={700} fz="xl">
+            <Text fw={700} fz="xl" c="gray.9">
               {(data?.bookings_cancelled ?? 0) + (data?.bookings_no_show ?? 0)}
             </Text>
             <Text size="xs" c="dimmed" mt="xs">
@@ -252,9 +267,24 @@ export default function AdminDashboardPage() {
 
       {/* Виджет «Выручка, спасённая ИИ за ночь» — только при включённом Revenue Hunter (Фаза 5) */}
       {revenueHunter && isRevenueHunterEnabled(revenueHunter) && (
-        <Card padding="md" radius="md" shadow="sm" withBorder style={{ borderColor: "var(--mantine-color-teal-2)" }}>
-          <Group gap="xs" mb={4}>
-            <IconRobot size={18} style={{ opacity: 0.8 }} />
+        <Card
+          padding="md"
+          radius="md"
+          shadow="none"
+          withBorder
+          bg="white"
+          styles={{
+            root: {
+              borderColor: "var(--mantine-color-ai-3)",
+              background:
+                "linear-gradient(120deg, var(--mantine-color-ai-0) 0%, var(--mantine-color-white) 55%)",
+            },
+          }}
+        >
+          <Group gap="xs" mb={4} wrap="nowrap">
+            <ThemeIcon variant="light" color={SEMANTIC.ai.accent} size="lg" radius="md">
+              <IconRobot size={18} />
+            </ThemeIcon>
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
               Выручка, спасённая ИИ{" "}
               {revenueHunter.period === "night"
@@ -266,7 +296,7 @@ export default function AdminDashboardPage() {
                     : "за ночь"}
             </Text>
           </Group>
-          <Text fw={700} fz="xl" c="teal.7">
+          <Text fw={700} fz="xl" c="teal.8">
             {revenueHunter.amount} ₽
           </Text>
         </Card>
@@ -275,7 +305,7 @@ export default function AdminDashboardPage() {
       {/* Левая колонка ~60%: Attention Feed; правая ~40%: таймлайн на сегодня */}
       <Grid>
         <Grid.Col span={{ base: 12, md: 7 }}>
-          <Text size="sm" fw={600} mb="xs">
+          <Text size="sm" fw={600} mb="xs" c="gray.9">
             Лента внимания
           </Text>
           {attentionLoading ? (
@@ -293,7 +323,14 @@ export default function AdminDashboardPage() {
             <ScrollArea h={400} type="scroll">
               <Stack gap="xs">
                 {attentionItems.map((item) => (
-                  <Card key={`${item.kind}-${item.id}`} withBorder radius="md" padding="sm">
+                  <Card
+                    key={`${item.kind}-${item.id}`}
+                    withBorder
+                    radius="md"
+                    padding="sm"
+                    bg="white"
+                    styles={{ root: { borderColor: "var(--mantine-color-gray-3)" } }}
+                  >
                     <Group justify="space-between" align="flex-start">
                       <Stack gap={4}>
                         <Text fw={600} size="sm" truncate>
@@ -316,6 +353,7 @@ export default function AdminDashboardPage() {
                       <Button
                         size="xs"
                         variant="light"
+                        color="indigo"
                         component={Link}
                         to={
                           item.conversation_id
@@ -333,7 +371,7 @@ export default function AdminDashboardPage() {
           )}
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 5 }}>
-          <Text size="sm" fw={600} mb="xs">
+          <Text size="sm" fw={600} mb="xs" c="gray.9">
             Записи на сегодня
           </Text>
           {bookingsLoading ? (

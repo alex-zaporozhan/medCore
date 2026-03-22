@@ -11,12 +11,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useStickerSets } from "@/hooks/useStickers";
 import { DataSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
+import { SEMANTIC } from "@/shared/semanticUi";
 import {
+  ActionIcon,
   Box,
   Button,
   Group,
   Image,
   Modal,
+  Paper,
   Popover,
   ScrollArea,
   SimpleGrid,
@@ -130,34 +133,45 @@ export default function ChatPage() {
   };
 
   return (
-    <Stack gap="md">
-      <Group justify="space-between" wrap="wrap">
-        <Title order={3}>Чат с клиникой</Title>
-        <Group gap="xs">
-          <Button
+    <Stack gap="md" maw={720} w="100%" mx="auto">
+      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
+        <Title order={3} c="gray.9">
+          Чат с клиникой
+        </Title>
+        <Group gap={4} wrap="nowrap">
+          <ActionIcon
             variant="subtle"
-            size="xs"
             color="gray"
-            leftSection={<IconRefresh size={14} />}
+            size="sm"
             onClick={refreshChat}
             loading={msgLoading}
             aria-label="Обновить"
           >
-            Обновить
-          </Button>
+            <IconRefresh size={16} />
+          </ActionIcon>
           {items.some((m) => m.is_mine) && (
-            <Button
-              variant="subtle"
+            <Text
+              component="button"
+              type="button"
               size="xs"
-              color="gray"
+              c="dimmed"
+              style={{
+                cursor: "pointer",
+                border: "none",
+                background: "none",
+                padding: "4px 6px",
+                opacity: 0.65,
+                font: "inherit",
+                whiteSpace: "nowrap",
+              }}
               onClick={() => setClearModalOpen(true)}
             >
-              Очистить мои сообщения
-            </Button>
+              Очистить мои
+            </Text>
           )}
         </Group>
       </Group>
-      <Text size="xs" c="dimmed">
+      <Text size="xs" c="dimmed" lh={1.35} maw={560}>
         Удалённое сообщение исчезнет только у вас; у администратора история сохраняется.
       </Text>
       <Modal
@@ -170,62 +184,93 @@ export default function ChatPage() {
             Удалить все ваши сообщения из этого чата? У администратора история переписки сохранится.
           </Text>
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setClearModalOpen(false)}>
+            <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setClearModalOpen(false)}>
               Отмена
             </Button>
-            <Button color="red" onClick={handleClearMyMessages} loading={deleteMessage.isPending}>
+            <Button color={SEMANTIC.action.danger} onClick={handleClearMyMessages} loading={deleteMessage.isPending}>
               Удалить мои сообщения
             </Button>
           </Group>
         </Stack>
       </Modal>
-      <ScrollArea h={360} type="scroll">
-        {msgLoading ? (
-          <DataSkeleton lines={3} />
-        ) : items.length === 0 ? (
-          <EmptyStateHint title="Пока нет сообщений" subtitle="Напишите первым — администратор ответит." />
-        ) : (
-          <Stack gap="xs">
-            {items.map((m) => (
-              <Box
-                key={m.id}
-                p="xs"
-                style={{
-                  alignSelf: m.is_mine ? "flex-end" : "flex-start",
-                  maxWidth: "85%",
-                  borderRadius: 8,
-                  backgroundColor: m.is_mine
-                    ? "var(--primary-light, rgba(59,130,246,0.12))"
-                    : "var(--bg-main)",
-                }}
-              >
-                {m.message_type === "sticker" && m.sticker_key && stickerKeyToUrl[m.sticker_key] ? (
-                  <Image src={stickerKeyToUrl[m.sticker_key]} alt="" w={64} h={64} fit="contain" />
-                ) : (
-                  <Text size="sm">{m.body}</Text>
-                )}
-                <Group gap="xs" wrap="nowrap" justify="space-between">
-                  <Text size="xs" c="dimmed">
-                    {new Date(m.created_at).toLocaleString()}
-                  </Text>
-                  {m.is_mine && (
-                    <Button
-                      variant="subtle"
-                      size="compact-xs"
-                      color="red"
-                      onClick={() => handleDelete(m.id)}
-                      loading={deleteMessage.isPending}
-                    >
-                      Удалить
-                    </Button>
-                  )}
-                </Group>
-              </Box>
-            ))}
-            <div ref={scrollBottomRef} />
-          </Stack>
-        )}
-      </ScrollArea>
+      <Paper
+        radius="md"
+        withBorder
+        p="sm"
+        style={{ borderColor: "var(--mantine-color-gray-3)", boxShadow: "var(--mantine-shadow-xs)" }}
+      >
+        <ScrollArea h={360} type="scroll">
+          {msgLoading ? (
+            <DataSkeleton lines={3} />
+          ) : items.length === 0 ? (
+            <EmptyStateHint title="Пока нет сообщений" subtitle="Напишите первым — администратор ответит." />
+          ) : (
+            <Stack gap="sm">
+              {items.map((m) => (
+                <Box
+                  key={m.id}
+                  style={{
+                    alignSelf: m.is_mine ? "flex-end" : "flex-start",
+                    maxWidth: "min(85%, 420px)",
+                  }}
+                >
+                  <Paper
+                    radius="md"
+                    p="sm"
+                    withBorder
+                    style={{
+                      borderColor: "var(--mantine-color-gray-3)",
+                      boxShadow: "var(--mantine-shadow-xs)",
+                      backgroundColor: m.is_mine
+                        ? "var(--mantine-color-gray-0)"
+                        : "var(--mantine-color-white)",
+                      borderLeftWidth: 3,
+                      borderLeftStyle: "solid",
+                      borderLeftColor: m.is_mine
+                        ? "var(--mantine-color-dark-4)"
+                        : "var(--mantine-color-gray-4)",
+                    }}
+                  >
+                    {m.message_type === "sticker" && m.sticker_key && stickerKeyToUrl[m.sticker_key] ? (
+                      <Image src={stickerKeyToUrl[m.sticker_key]} alt="" w={64} h={64} fit="contain" />
+                    ) : (
+                      <Text size="sm" c="gray.9">
+                        {m.body}
+                      </Text>
+                    )}
+                    <Group gap="xs" wrap="nowrap" justify="space-between" mt={6}>
+                      <Text size="xs" c="dimmed">
+                        {new Date(m.created_at).toLocaleString()}
+                      </Text>
+                      {m.is_mine && (
+                        <Text
+                          component="button"
+                          type="button"
+                          size="xs"
+                          c="red.7"
+                          style={{
+                            cursor: "pointer",
+                            border: "none",
+                            background: "none",
+                            padding: 0,
+                            opacity: 0.85,
+                            font: "inherit",
+                          }}
+                          onClick={() => handleDelete(m.id)}
+                          disabled={deleteMessage.isPending}
+                        >
+                          Удалить
+                        </Text>
+                      )}
+                    </Group>
+                  </Paper>
+                </Box>
+              ))}
+              <div ref={scrollBottomRef} />
+            </Stack>
+          )}
+        </ScrollArea>
+      </Paper>
       <Stack gap="xs">
         <TextInput
           placeholder="Сообщение..."
@@ -234,13 +279,15 @@ export default function ChatPage() {
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
         />
         <Group gap="xs">
-          <Button color="indigo" onClick={handleSend} loading={sendMessage.isPending}>
+          <Button color={SEMANTIC.action.send} onClick={handleSend} loading={sendMessage.isPending}>
             Отправить
           </Button>
           {defaultStickers.length > 0 && (
             <Popover width={220} position="top-start" shadow="md">
               <Popover.Target>
-                <Button variant="light">Стикер</Button>
+                <Button variant="light" color={SEMANTIC.action.send}>
+                  Стикер
+                </Button>
               </Popover.Target>
               <Popover.Dropdown>
                 <SimpleGrid cols={3} spacing="xs">

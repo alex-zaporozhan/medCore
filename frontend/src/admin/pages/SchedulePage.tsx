@@ -31,6 +31,7 @@ import type { ComboboxItem } from "@mantine/core";
 import { IconCalendarEvent } from "@tabler/icons-react";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { ClinicSelector } from "@/admin/components/ClinicSelector";
+import { SEMANTIC } from "@/shared/semanticUi";
 
 interface ScheduleCreateBookingFormProps {
   date: string;
@@ -301,18 +302,25 @@ export default function SchedulePage() {
           <Button
             size="xs"
             variant="light"
+            color={SEMANTIC.dateNav.yesterday}
             onClick={() =>
               setDateStr(dayjs(dateStr).subtract(1, "day").format("YYYY-MM-DD"))
             }
           >
             Вчера
           </Button>
-          <Button size="xs" variant="light" onClick={() => setDateStr(dayjs().format("YYYY-MM-DD"))}>
+          <Button
+            size="xs"
+            variant="light"
+            color={SEMANTIC.dateNav.today}
+            onClick={() => setDateStr(dayjs().format("YYYY-MM-DD"))}
+          >
             Сегодня
           </Button>
           <Button
             size="xs"
             variant="light"
+            color={SEMANTIC.dateNav.tomorrow}
             onClick={() =>
               setDateStr(dayjs(dateStr).add(1, "day").format("YYYY-MM-DD"))
             }

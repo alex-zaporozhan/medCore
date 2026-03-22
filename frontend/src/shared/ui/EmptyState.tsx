@@ -1,5 +1,6 @@
 import { Button, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
+import { SEMANTIC } from "@/shared/semanticUi";
 
 export interface EmptyStateProps {
   title: string;
@@ -31,7 +32,7 @@ export function EmptyState({ title, description, subtitle, icon, action }: Empty
         </Text>
       )}
       {action && (
-        <Button variant="light" onClick={action.onClick}>
+        <Button variant="light" color={SEMANTIC.action.confirm} onClick={action.onClick}>
           {action.label}
         </Button>
       )}

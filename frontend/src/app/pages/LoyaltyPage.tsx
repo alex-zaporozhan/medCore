@@ -5,6 +5,7 @@ import { EmptyStateHint } from "@/shared/emptyStateHint";
 import type { PatientLoyaltyMeResponse, PatientLoyaltyHistoryResponse } from "@/api/types";
 import { Badge, Button, Card, Group, Loader, Progress, Stack, Table, Text, Title } from "@mantine/core";
 import { ROUTE_PATHS } from "@/routePaths";
+import { SEMANTIC } from "@/shared/semanticUi";
 import { QueryErrorAlert } from "@/shared/ui";
 
 export default function LoyaltyPage() {
@@ -152,7 +153,7 @@ export default function LoyaltyPage() {
                         <Button
                           size="sm"
                           variant="white"
-                          color="dark"
+                          color={SEMANTIC.action.confirm}
                           fullWidth
                           mt="xs"
                           onClick={() => handleUseSubscription(s.id)}
@@ -166,7 +167,12 @@ export default function LoyaltyPage() {
               )}
             </Stack>
             <Group justify="flex-end" mt="md">
-              <Button size="sm" variant="outline" onClick={handleBookVisit}>
+              <Button
+                size="sm"
+                variant="outline"
+                color={SEMANTIC.action.confirm}
+                onClick={handleBookVisit}
+              >
                 Записаться без пакета
               </Button>
             </Group>

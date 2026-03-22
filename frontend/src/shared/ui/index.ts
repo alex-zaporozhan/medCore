@@ -16,4 +16,5 @@ export { AppButton } from "./AppButton";
 export { SectionHeader } from "./SectionHeader";
 export { SignatureCanvas, type SignaturePayload } from "./SignatureCanvas";
 export { AiFeatureBadge, type AiFeatureBadgeProps } from "./AiFeatureBadge";
+export { SEMANTIC, type SemanticDateNavKey, type SemanticMetricKey } from "../semanticUi";
 export { OmniInspectorTabShell, OmniInspectorSection } from "./OmniInspectorShell";

@@ -9,6 +9,7 @@ import { Button, Card, Group, Stack, Text, Title } from "@mantine/core";
 import { IconGift, IconWallet, IconDoorExit } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
+import { SEMANTIC } from "@/shared/semanticUi";
 
 export default function ProfilePage() {
   const { accessToken, logout } = usePatientAuth();
@@ -50,7 +51,7 @@ export default function ProfilePage() {
             component={Link}
             to={ROUTE_PATHS.patient.loyalty}
             variant="light"
-            color="indigo"
+            color={SEMANTIC.action.confirm}
             size="sm"
             mt="sm"
           >
@@ -68,7 +69,7 @@ export default function ProfilePage() {
             component={Link}
             to={ROUTE_PATHS.patient.loyalty}
             variant="light"
-            color="indigo"
+            color={SEMANTIC.action.confirm}
             size="sm"
           >
             Перейти в раздел лояльности
@@ -85,14 +86,19 @@ export default function ProfilePage() {
         <Text size="sm" c="dimmed" mb="sm">
           Поделитесь ссылкой — друг получит бонус при записи.
         </Text>
-        <Button color="indigo" onClick={handleReferral} leftSection={<IconGift size={16} />}>
+        <Button
+          color={SEMANTIC.action.send}
+          variant="light"
+          onClick={handleReferral}
+          leftSection={<IconGift size={16} />}
+        >
           Поделиться ссылкой
         </Button>
       </Card>
 
       <Button
         variant="subtle"
-        color="red"
+        color={SEMANTIC.action.danger}
         leftSection={<IconDoorExit size={18} />}
         onClick={() => {
           logout();

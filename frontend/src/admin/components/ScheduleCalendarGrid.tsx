@@ -1,5 +1,6 @@
 import type { Booking, DoctorSlot } from "@/api/types";
-import { Box, Table, Text } from "@mantine/core";
+import type { CSSProperties } from "react";
+import { Badge, Box, Table, Text } from "@mantine/core";
 import {
   DndContext,
   PointerSensor,
@@ -33,6 +34,54 @@ export interface ScheduleCalendarGridProps {
 
 function timeStr(t: string): string {
   return String(t).slice(0, 5);
+}
+
+/** Слот с записью: фон + левая граница по статусу (Apple Calendar–подобный акцент). */
+function bookingSlotSurface(status: string): CSSProperties {
+  const s = status.toLowerCase();
+  if (s === "completed") {
+    return {
+      background: "var(--mantine-color-teal-0)",
+      borderRadius: 8,
+      padding: "6px 8px",
+      border: "1px solid var(--mantine-color-teal-3)",
+      borderLeft: "4px solid var(--mantine-color-teal-6)",
+    };
+  }
+  if (s === "cancelled" || s === "no_show") {
+    return {
+      background: "var(--mantine-color-red-0)",
+      borderRadius: 8,
+      padding: "6px 8px",
+      border: "1px solid var(--mantine-color-red-3)",
+      borderLeft: "4px solid var(--mantine-color-red-6)",
+    };
+  }
+  if (s === "pending") {
+    return {
+      background: "var(--mantine-color-orange-0)",
+      borderRadius: 8,
+      padding: "6px 8px",
+      border: "1px solid var(--mantine-color-orange-3)",
+      borderLeft: "4px solid var(--mantine-color-orange-6)",
+    };
+  }
+  return {
+    background: "var(--mantine-color-dark-0)",
+    borderRadius: 8,
+    padding: "6px 8px",
+    border: "1px solid var(--mantine-color-dark-2)",
+    borderLeft: "4px solid var(--mantine-color-dark-7)",
+  };
+}
+
+function statusBadge(status: string): { color: string; label: string } {
+  const s = status.toLowerCase();
+  if (s === "completed") return { color: "teal", label: "Завершено" };
+  if (s === "cancelled") return { color: "red", label: "Отмена" };
+  if (s === "no_show") return { color: "red", label: "Неявка" };
+  if (s === "pending") return { color: "orange", label: "Ожидает" };
+  return { color: "dark", label: "Занято" };
 }
 
 function findBooking(
@@ -76,7 +125,7 @@ function DroppableCell({
     <Table.Td
       ref={setNodeRef}
       style={{
-        background: isOver && canDrop ? "var(--primary-light, rgba(59,130,246,0.12))" : undefined,
+        background: isOver && canDrop ? "var(--mantine-color-dark-0)" : undefined,
         cursor: booking ? "grab" : onEmptyClick ? "pointer" : "default",
         minWidth: 100,
       }}
@@ -170,6 +219,7 @@ export function ScheduleCalendarGrid({
                     const booking = slot
                       ? findBooking(slot, doc.id, date, bookings)
                       : undefined;
+                    const sb = booking ? statusBadge(booking.status) : null;
                     return (
                       <DroppableCell
                         key={doc.id}
@@ -196,17 +246,14 @@ export function ScheduleCalendarGrid({
                           <DraggableBookingCard booking={booking}>
                             <Box
                               onClick={() => onBookingClick(booking)}
-                              style={{
-                                background: "var(--bg-card)",
-                                borderRadius: 8,
-                                padding: "4px 8px",
-                                border: "1px solid var(--divider)",
-                              }}
+                              style={bookingSlotSurface(booking.status)}
                             >
-                              <Text size="sm" fw={500}>
-                                Занято
-                              </Text>
-                              <Text size="xs" c="dimmed">
+                              {sb && (
+                                <Badge size="xs" variant="light" color={sb.color} mb={4}>
+                                  {sb.label}
+                                </Badge>
+                              )}
+                              <Text size="sm" fw={500} c="gray.9">
                                 {getPatientLabel(booking.patient_id)}
                               </Text>
                               <Text size="xs" c="dimmed">
