@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.dependencies import AdminContext, get_session, require_permissions
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.dto.prepayment_dto import (
     PrepaymentPolicyCreate,
@@ -24,6 +24,7 @@ async def list_policies(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -43,6 +44,7 @@ async def create_policy(
     body: PrepaymentPolicyCreate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -73,6 +75,7 @@ async def get_policy(
     policy_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -98,6 +101,7 @@ async def update_policy(
     body: PrepaymentPolicyUpdate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -128,6 +132,7 @@ async def delete_policy(
     policy_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)

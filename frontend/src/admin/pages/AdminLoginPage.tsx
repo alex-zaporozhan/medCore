@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { setAdminToken, setAdminId, setAdminClinicId } from "@/api/client";
+import { queryKeys } from "@/queryKeys";
 import { Alert, Button, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
 import { ROUTE_PATHS } from "@/routePaths";
 
@@ -9,6 +11,7 @@ const MIN_PASSWORD_LENGTH = 8;
 
 export default function AdminLoginPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +33,7 @@ export default function AdminLoginPage() {
       setAdminToken(res.access_token);
       if (res.admin_id) setAdminId(res.admin_id);
       if (res.clinic_id) setAdminClinicId(res.clinic_id);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.adminSession() });
       navigate(ROUTE_PATHS.admin.dashboard, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка входа");

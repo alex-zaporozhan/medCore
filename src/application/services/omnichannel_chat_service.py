@@ -25,6 +25,7 @@ from src.infrastructure.database.omnichannel_chat_repo_impl import (
     ContactRepositoryImpl,
     MessageRepositoryImpl,
 )
+from src.infrastructure.realtime.omni_pubsub import publish_omni_message_created
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +245,11 @@ class OmnichannelChatService:
                 "correlation_message_id": str(msg.id),
             },
         )
+        await publish_omni_message_created(
+            clinic_id=chat.business_account_id,
+            chat_id=chat.id,
+            message_id=msg.id,
+        )
         return msg
 
     async def append_outbound_message(
@@ -252,12 +258,14 @@ class OmnichannelChatService:
         actor_type: str,
         content: str,
         channel_id: UUID | None = None,
+        sender_admin_id: UUID | None = None,
     ) -> Message:
         """Create outbound message from HUMAN_ADMIN / AI / SYSTEM and update chat."""
         msg = Message(
             chat_id=chat.id,
             contact_id=None,
             channel_id=channel_id,
+            sender_admin_id=sender_admin_id if actor_type == "HUMAN_ADMIN" else None,
             direction="OUTBOUND",
             actor_type=actor_type,
             content_type="TEXT",
@@ -289,6 +297,11 @@ class OmnichannelChatService:
                 "correlation_chat_id": str(chat.id),
                 "correlation_message_id": str(msg.id),
             },
+        )
+        await publish_omni_message_created(
+            clinic_id=chat.business_account_id,
+            chat_id=chat.id,
+            message_id=msg.id,
         )
         return msg
 

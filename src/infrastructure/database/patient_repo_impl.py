@@ -1,11 +1,13 @@
 """Patient repository implementation."""
 
 import logging
+from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.patient import Patient
 from src.domain.interfaces.repositories.patient_repository import PatientRepository
 
@@ -57,6 +59,8 @@ class PatientRepositoryImpl(PatientRepository):
         clinic_id: UUID | None = None,
         phone: str | None = None,
         full_name: str | None = None,
+        visited_from: date | None = None,
+        visited_to: date | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> list[Patient]:
@@ -69,6 +73,24 @@ class PatientRepositoryImpl(PatientRepository):
             query = query.where(Patient.phone.ilike(f"%{phone}%"))
         if full_name:
             query = query.where(Patient.full_name.ilike(f"%{full_name}%"))
+
+        if visited_from is not None or visited_to is not None:
+            cancelled = (
+                BookingStatus.CANCELLED.value,
+                BookingStatus.CANCELED_BY_PATIENT.value,
+                BookingStatus.CANCELED_BY_CLINIC.value,
+            )
+            visit_parts = [
+                Booking.patient_id == Patient.id,
+                Booking.clinic_id == Patient.clinic_id,
+                Booking.deleted_at.is_(None),
+                Booking.status.notin_(cancelled),
+            ]
+            if visited_from is not None:
+                visit_parts.append(Booking.appointment_date >= visited_from)
+            if visited_to is not None:
+                visit_parts.append(Booking.appointment_date <= visited_to)
+            query = query.where(exists().where(and_(*visit_parts)))
 
         query = query.offset(skip).limit(limit).order_by(Patient.created_at.desc())
 

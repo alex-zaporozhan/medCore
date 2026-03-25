@@ -1,11 +1,14 @@
 """Application configuration from environment variables."""
 
 import os
+from pathlib import Path
 
 from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -66,6 +69,10 @@ class Settings(BaseSettings):
     rate_ai_heavy_clinic_limit: int = 5
     rate_ai_heavy_clinic_window_seconds: int = 3600
 
+    #: POST /admin/omni-chats/{id}/messages — per admin_id (P0-H / ARCH §5).
+    rate_admin_omni_send_per_admin_limit: int = 30
+    rate_admin_omni_send_window_seconds: int = 60
+
     # YooKassa
     yookassa_shop_id: str = ""
     yookassa_secret_key: str = ""
@@ -104,15 +111,26 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
 
+    # Staff chat attachments (local disk; clinic-scoped paths)
+    staff_chat_upload_root: str = "data/staff_chat_uploads"
+    staff_chat_max_attachment_bytes: int = 5 * 1024 * 1024
+
     # Logging
     log_level: str = "INFO"
     log_format: str = "json"
+    log_mask_pii: bool = True
 
     # AI provider (chat assistant)
     ai_provider_base_url: str = ""
     ai_provider_api_key: str = ""
     ai_timeout_seconds: int = 10
     ai_provider_model: str = "deepseek-chat"
+    # Omnichannel AI Telegram notifications (operator/suggestions). Disabled suggestions by
+    # default to avoid noisy messages on local/demo startup unless explicitly enabled.
+    omni_ai_notify_suggestion_telegram_enabled: bool = False
+    omni_ai_notify_operator_telegram_enabled: bool = True
+    omni_ai_notify_suggestion_dedup_seconds: int = 300
+    omni_ai_notify_operator_dedup_seconds: int = 120
 
     # Observability / metrics
     metrics_enabled: bool = True
@@ -159,6 +177,23 @@ class Settings(BaseSettings):
         if os.environ.get("TESTING") == "1":
             object.__setattr__(self, "rate_admin_login_ip_limit", 0)
             object.__setattr__(self, "rate_admin_login_email_limit", 0)
+        return self
+
+    @model_validator(mode="after")
+    def _resolve_staff_chat_upload_root(self) -> "Settings":
+        """
+        Make `staff_chat_upload_root` independent of backend working directory.
+
+        Previously this was a relative path (e.g. `data/staff_chat_uploads`),
+        which can break after restart when CWD changes, turning attachment
+        previews into download links (404/empty payload on blob fetch).
+        """
+        p = Path(self.staff_chat_upload_root)
+        if not p.is_absolute():
+            resolved = (_REPO_ROOT / p).resolve()
+            # Ensure base directory exists for subsequent writes.
+            resolved.mkdir(parents=True, exist_ok=True)
+            object.__setattr__(self, "staff_chat_upload_root", str(resolved))
         return self
 
     def erp_read_from_aggregate_for_kind(

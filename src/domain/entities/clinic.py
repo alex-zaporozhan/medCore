@@ -52,6 +52,9 @@ class Clinic(Base):
     allow_patient_disable_all_notifications: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
+    #: Внутренний чат персонала: `clinic_isolated` — только сотрудники этой клиники (строка clinics.id).
+    #: `network` зарезервировано под сеть салонов (см. docs/architecture/STAFF_CHAT_MULTITENANCY.md).
+    staff_chat_scope: Mapped[str] = mapped_column(String(32), nullable=False, server_default="clinic_isolated")
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )

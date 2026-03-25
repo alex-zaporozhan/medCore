@@ -16,6 +16,8 @@ export interface AdminTaskRow {
   status: string;
   priority: string;
   assignee_id: string | null;
+  /** Личные исполнители (junction); если пусто — смотрите assignee_id / role_assignee. */
+  assignee_ids?: string[];
   role_assignee: string | null;
   due_at: string | null;
   source?: string;
@@ -91,7 +93,8 @@ export function useCreateAdminTaskMutation() {
       title: string;
       description?: string | null;
       priority?: string;
-      assignee_id: string | null;
+      assignee_id?: string | null;
+      assignee_ids?: string[];
       due_at: string | null;
       role_assignee?: string | null;
       booking_id?: string | null;
@@ -145,6 +148,35 @@ export function useUpdateAdminTaskStatusMutation() {
     },
     onSettled: () => {
       invalidateAllAdminTaskLists(qc);
+    },
+  });
+}
+
+/** Комментарий / чат по задаче (GET /v1/admin/tasks/{id}/comments). */
+export interface TaskCommentRow {
+  id: string;
+  task_id: string;
+  author_id: string;
+  author_full_name: string | null;
+  text: string;
+  created_at: string;
+}
+
+export function useTaskComments(taskId: string | null) {
+  return useQuery({
+    queryKey: ["admin-tasks", "comments", taskId] as const,
+    queryFn: () => api.get<TaskCommentRow[]>(`/v1/admin/tasks/${taskId}/comments`),
+    enabled: !!taskId,
+  });
+}
+
+export function usePostTaskComment(taskId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (text: string) =>
+      api.post<TaskCommentRow>(`/v1/admin/tasks/${taskId}/comments`, { text }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin-tasks", "comments", taskId] as const });
     },
   });
 }

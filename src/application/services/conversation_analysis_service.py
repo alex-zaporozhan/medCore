@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date
-from typing import Iterable
 from uuid import UUID
 
-from sqlalchemy import Select, and_, func, select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -20,7 +19,7 @@ from src.domain.entities.chat_message import ChatMessage
 from src.domain.entities.conversation_ai_analysis import ConversationAiAnalysis
 from src.infrastructure.external_apis.safe_ai_client import SafeAiClient
 from src.infrastructure.external_apis.ai_client import AiClientError
-from src.application.services.ai_client_factory import build_safe_ai_client
+from src.application.services.ai_client_factory import SafeAiClientContext, build_safe_ai_client
 
 logger = logging.getLogger(__name__)
 

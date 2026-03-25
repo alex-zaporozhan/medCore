@@ -3,6 +3,9 @@ Pytest fixtures for Dental Booking API tests.
 
 Run from project root: poetry run pytest tests/
 
+Пошаговая настройка тестовой БД (ошибка database "dental_booking_test" does not exist):
+  docs/development/TEST_DATABASE.md
+
 Пароль и тестовая БД:
   Ошибка "password authentication failed for user postgres" значит: к Postgres подключаются с тем паролем,
   который указан в DATABASE_URL (или DATABASE_URL_TEST). Если пароль в .env другой — задайте точный URL для тестов.
@@ -16,17 +19,19 @@ Run from project root: poetry run pytest tests/
   в PowerShell не используйте плейсхолдер в угловых скобках — только реальное имя контейнера):
     docker exec dental_booking_postgres psql -U postgres -c "CREATE DATABASE dental_booking_test;"
 
-  Схема должна совпадать с Alembic head (иначе ORM запросы падают с UndefinedColumnError):
-    python scripts/upgrade_test_db.py
-  Скрипт подставляет DATABASE_URL_TEST в DATABASE_URL и выполняет `alembic upgrade head`.
+  Схема: при прогоне pytest `init_db` выполняет `alembic upgrade head` (тот же путь, что `scripts/upgrade_test_db.py`).
+  Вручную один раз: `python scripts/upgrade_test_db.py`.
   Если таблицы уже есть, но alembic_version пуста или рассинхронизирована — см. docs/MIGRATION_UPGRADE.md (stamp/upgrade).
 
 - If connection to the test DB fails, tests are SKIPPED with a hint.
 - TRUNCATE runs only when the DB name contains "test". Never point at production.
 """
 import os
+import subprocess
+import sys
 import uuid
 from datetime import date, time
+from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
@@ -76,20 +81,14 @@ if os.environ.get("REDIS_URL_TEST"):
 _skip_reason = None
 app = None  # Set in init_db (session-scoped) after engine init
 try:
-    from src.infrastructure.database.base import AsyncSessionLocal, Base, engine
+    from src.infrastructure.database.base import Base
     from src.domain.entities.admin_user import AdminUser
-    from src.domain.entities.booking import Booking
-    from src.domain.entities.chat_message import ChatMessage
     from src.domain.entities.clinic import Clinic
-    from src.domain.entities.conversation import Conversation
     from src.domain.entities.doctor import Doctor
     from src.domain.entities.doctor_working_hours import DoctorWorkingHours
-    from src.domain.entities.notification import Notification
     from src.domain.entities.patient import Patient
-    from src.domain.entities.payment import Payment
     from src.domain.entities.service import Service
     from src.domain.entities.service_doctor import ServiceDoctor
-    from src.domain.entities.csv_import_job import CsvImportJob
     from src.domain.entities.omnichannel_contact import Contact  # noqa: F401
     from src.domain.entities.omnichannel_channel import Channel  # noqa: F401
     from src.domain.entities.omnichannel_chat import Chat  # noqa: F401
@@ -105,10 +104,6 @@ try:
     from src.domain.entities.loyalty_campaign_settings import (  # noqa: F401
         LoyaltyCampaignSettings,
     )
-    from src.domain.entities.lead_pipeline import LeadPipeline  # noqa: F401
-    from src.domain.entities.lead_stage import LeadStage  # noqa: F401
-    from src.domain.entities.lead_card import LeadCard  # noqa: F401
-    from src.domain.entities.lead_note import LeadNote  # noqa: F401
 except Exception as e:
     _skip_reason = (
         "App/asyncpg not available (try Python 3.11 or 3.12). "
@@ -138,111 +133,34 @@ else:
 
     @pytest.fixture(scope="session")
     async def init_db():
-        """Create all tables in test database. Run once per test session.
-        Engine and app are inited in the session event loop (asyncio_default_fixture_loop_scope=session).
-        """
+        """Apply Alembic migrations to the test DB (single source of truth with prod). Session-scoped."""
         from src.infrastructure.database import base as db_base
         if getattr(db_base, "init_engine_for_testing", None):
             db_base.init_engine_for_testing()
         import tests.conftest as this_conftest
-        from src.main import app as _app
-        this_conftest.app = _app
+        repo_root = Path(__file__).resolve().parent.parent
         try:
-            # Keep tests lightweight: use create_all() for fresh DBs.
-            # Note: create_all() does not ALTER existing tables; for incremental
-            # schema updates in a persistent local test DB we apply a minimal set
-            # of idempotent DDL patches required by the suite.
-            from sqlalchemy import text
-
-            async with db_base.engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-
-                # Idempotent schema patches for Tasks&Attention migrations.
-                await conn.execute(
-                    text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attention_kind VARCHAR(64)")
-                )
-                await conn.execute(
-                    text("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attention_ref_id UUID")
-                )
-                await conn.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS idx_tasks_clinic_attention_ref "
-                        "ON tasks (clinic_id, attention_kind, attention_ref_id)"
-                    )
-                )
-                # Waitlist BKG-4 columns (idempotent for DBs created before migration)
-                for col, typ in (
-                    ("booking_id", "UUID"),
-                    ("preferred_service_id", "UUID"),
-                    ("source", "VARCHAR(32)"),
-                    ("notes", "TEXT"),
-                    ("created_by_id", "UUID"),
-                    ("updated_by_id", "UUID"),
-                ):
-                    await conn.execute(
-                        text(
-                            f"ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS {col} {typ}"
-                        )
-                    )
-                await conn.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS ix_waitlist_entries_status "
-                        "ON waitlist_entries (status)"
-                    )
-                )
-                # ERP payroll vitrine: NULL period flags + PK (migration n0o1p2q3r4s5; create_all does not ALTER).
-                reg = await conn.execute(
-                    text("SELECT to_regclass('public.erp_payroll_aggregate')::text")
-                )
-                if reg.scalar():
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE erp_payroll_aggregate ADD COLUMN IF NOT EXISTS "
-                            "period_start_is_null BOOLEAN NOT NULL DEFAULT false"
-                        )
-                    )
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE erp_payroll_aggregate ADD COLUMN IF NOT EXISTS "
-                            "period_end_is_null BOOLEAN NOT NULL DEFAULT false"
-                        )
-                    )
-                    await conn.execute(
-                        text(
-                            """
-                            UPDATE erp_payroll_aggregate SET
-                              period_start_is_null = (period_start_key = DATE '0001-01-01'),
-                              period_end_is_null = (period_end_key = DATE '9999-12-31')
-                            """
-                        )
-                    )
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE erp_payroll_aggregate "
-                            "DROP CONSTRAINT IF EXISTS erp_payroll_aggregate_pkey"
-                        )
-                    )
-                    try:
-                        await conn.execute(
-                            text(
-                                """
-                                ALTER TABLE erp_payroll_aggregate ADD PRIMARY KEY (
-                                  clinic_id, doctor_id, booking_bucket_id,
-                                  period_start_is_null, period_start_key,
-                                  period_end_is_null, period_end_key
-                                )
-                                """
-                            )
-                        )
-                    except Exception:
-                        pass
+            proc = subprocess.run(
+                [sys.executable, "-m", "alembic", "upgrade", "head"],
+                cwd=str(repo_root),
+                env=os.environ.copy(),
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode != 0:
+                raise RuntimeError(proc.stderr or proc.stdout or "alembic upgrade failed")
         except Exception as e:
-            if "InvalidPasswordError" in type(e).__name__ or "password" in str(e).lower():
+            err_s = str(e).lower()
+            if "invalidpassworderror" in type(e).__name__.lower() or "password" in err_s:
                 pytest.skip(
                     "Cannot connect to test DB (invalid password). "
                     "Set DATABASE_URL (or DATABASE_URL_TEST) to your test DB, e.g. same as .env but database=dental_booking_test."
                 )
-            msg = str(e).lower()
+            if "does not exist" in err_s and "database" in err_s:
+                pytest.skip(
+                    "Test database is missing. Create it (see docs/development/TEST_DATABASE.md), then re-run."
+                )
+            msg = err_s
             type_name = type(e).__name__.lower()
             # Windows локализует сообщения (может не содержать "refused"), поэтому
             # дополнительно смотрим на тип исключения.
@@ -254,9 +172,12 @@ else:
             ):
                 pytest.skip(
                     "Cannot connect to test DB (Postgres/Redis not reachable). "
-                    "Start: docker compose up -d postgres redis, then create DB: docker exec dental_booking_postgres psql -U postgres -c 'CREATE DATABASE dental_booking_test;'"
+                    "Start: docker compose up -d db redis, then create DB: docker exec dental_booking_postgres psql -U postgres -c 'CREATE DATABASE dental_booking_test;'"
                 )
             raise
+        from src.main import app as _app
+
+        this_conftest.app = _app
         yield
 
     def _test_db_name_ok():
@@ -296,6 +217,7 @@ else:
         service_id = uuid.uuid4()
         patient_id = uuid.uuid4()
         admin_id = uuid.uuid4()
+        doctor_admin_id = uuid.uuid4()
         tomorrow = date.today()
         weekday = tomorrow.weekday()
 
@@ -362,7 +284,7 @@ else:
             # RBAC: test admin as clinic owner with all permissions (forms, etc.)
             from sqlalchemy import select
 
-            from src.application.rbac_matrix import PERMISSIONS
+            from src.application.rbac_matrix import PERMISSIONS, ROLE_PERMISSIONS
             from src.domain.entities.permission import Permission
             from src.domain.entities.role import Role
             from src.domain.entities.role_permission import RolePermission
@@ -407,6 +329,39 @@ else:
                     clinic_id=clinic_id,
                 )
             )
+            doctor_role_id = uuid.uuid4()
+            session.add(
+                Role(
+                    id=doctor_role_id,
+                    clinic_id=clinic_id,
+                    code="doctor",
+                    name="Doctor",
+                    description="Test seed doctor (no patients.pii.read)",
+                )
+            )
+            await session.flush()
+            for pcode in ROLE_PERMISSIONS["doctor"]:
+                pr = await session.execute(select(Permission).where(Permission.code == pcode))
+                p = pr.scalar_one_or_none()
+                if p:
+                    session.add(RolePermission(role_id=doctor_role_id, permission_id=p.id))
+            session.add(
+                AdminUser(
+                    id=doctor_admin_id,
+                    clinic_id=clinic_id,
+                    email="doctor@test-clinic.local",
+                    password_hash=hash_password("password123"),
+                    full_name="Test Doctor",
+                )
+            )
+            session.add(
+                UserRole(
+                    id=uuid.uuid4(),
+                    user_id=doctor_admin_id,
+                    role_id=doctor_role_id,
+                    clinic_id=clinic_id,
+                )
+            )
             await session.commit()
 
         yield {
@@ -415,6 +370,7 @@ else:
             "service_id": service_id,
             "patient_id": patient_id,
             "admin_id": admin_id,
+            "doctor_admin_id": doctor_admin_id,
             "date": tomorrow,
         }
 
@@ -459,6 +415,21 @@ else:
         r = await client.post(
             "/api/v1/admin/auth/login",
             json={"email": "admin@test-clinic.local", "password": "password123"},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        return {
+            "access_token": data["access_token"],
+            "admin_id": data["admin_id"],
+            "clinic_id": data["clinic_id"],
+        }
+
+    @pytest.fixture
+    async def doctor_auth(client, seed_data):
+        """Clinic user with role `doctor` (no ``patients.pii.read``)."""
+        r = await client.post(
+            "/api/v1/admin/auth/login",
+            json={"email": "doctor@test-clinic.local", "password": "password123"},
         )
         assert r.status_code == 200, r.text
         data = r.json()

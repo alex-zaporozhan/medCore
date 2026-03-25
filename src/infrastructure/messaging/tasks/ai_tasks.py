@@ -153,7 +153,7 @@ async def _collect_daily_anomalies(session: AsyncSession) -> list[dict[str, Any]
             {
                 "type": "leads_without_movement",
                 "count": len(leads),
-                "lead_ids": [str(l.id) for l in leads],
+                "lead_ids": [str(lead.id) for lead in leads],
             }
         )
 

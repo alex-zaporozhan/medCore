@@ -21,9 +21,14 @@ interface ThreeColumnLayoutProps {
   /** Omni: узкая правая колонка под иконки (как свёрнутое левое меню). */
   omniRightCollapsed?: boolean;
   fullHeight?: boolean;
+  /**
+   * Если false — центр не оборачивается в ScrollArea (колонка сама задаёт внутренний скролл,
+   * например фиксированная шапка/подвал чата и прокрутка только ленты сообщений).
+   */
+  centerColumnScrollable?: boolean;
 }
 
-function ColumnCell({ children }: { children: ReactNode }) {
+function ColumnCell({ children, scrollable = true }: { children: ReactNode; scrollable?: boolean }) {
   return (
     <Box
       style={{
@@ -34,9 +39,15 @@ function ColumnCell({ children }: { children: ReactNode }) {
         flexDirection: "column",
       }}
     >
-      <ScrollArea type="scroll" scrollbarSize={6} style={{ flex: 1, minHeight: 0 }}>
-        {children}
-      </ScrollArea>
+      {scrollable ? (
+        <ScrollArea type="scroll" scrollbarSize={6} style={{ flex: 1, minHeight: 0 }}>
+          {children}
+        </ScrollArea>
+      ) : (
+        <Box style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          {children}
+        </Box>
+      )}
     </Box>
   );
 }
@@ -68,6 +79,7 @@ export function ThreeColumnLayout({
   preset = "wide-center",
   omniRightCollapsed = false,
   fullHeight = true,
+  centerColumnScrollable = true,
 }: ThreeColumnLayoutProps) {
   const heightsStyle = fullHeight ? { minHeight: 0, height: "100%" as const } : { minHeight: 360 };
 
@@ -82,7 +94,7 @@ export function ThreeColumnLayout({
       }}
     >
       <ColumnCell>{left}</ColumnCell>
-      <ColumnCell>{center}</ColumnCell>
+      <ColumnCell scrollable={centerColumnScrollable}>{center}</ColumnCell>
       <ColumnCell>{right}</ColumnCell>
     </Box>
   );

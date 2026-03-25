@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import {
@@ -24,16 +24,28 @@ import {
   TextInput,
 } from "@mantine/core";
 import { ContextBar, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
+import { isBoxEdition } from "@/config/edition";
 
 export default function AdminLoyaltyPage() {
   const { currentClinicId } = useAdminClinic();
   const clinicId = currentClinicId ?? null;
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isBox = isBoxEdition();
+  const mainTab =
+    !isBox && searchParams.get("tab") === "loyalty" ? "loyalty" : "subscriptions";
   const initialPatientId = searchParams.get("patient_id") ?? "";
   const [patientIdFilter, setPatientIdFilter] = useState<string>(initialPatientId);
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
 
   const { data: packages, isLoading: packagesLoading } = useLoyaltyPackages();
+  const packageNameById = useMemo(() => {
+    if (!packages?.length) return {} as Record<string, string>;
+    const m: Record<string, string> = {};
+    for (const p of packages) {
+      m[p.id] = p.name?.trim() ? p.name : (p.code ?? p.id);
+    }
+    return m;
+  }, [packages]);
   const { data: subs, isLoading: subsLoading } = useCustomerSubscriptions(
     patientIdFilter || null,
     false,
@@ -57,13 +69,21 @@ export default function AdminLoyaltyPage() {
     if (campaignSettings) setCampaignDraft(campaignSettings);
   }, [campaignSettings]);
 
+  useEffect(() => {
+    if (isBox && searchParams.get("tab") === "loyalty") {
+      const next = new URLSearchParams(searchParams);
+      next.set("tab", "subscriptions");
+      setSearchParams(next, { replace: true });
+    }
+  }, [isBox, searchParams, setSearchParams]);
+
   const loading =
     packagesLoading || subsLoading || walletsLoading || walletTxsLoading;
 
   if (!clinicId) {
     return (
       <Stack>
-        <ContextBar title="Лояльность" />
+        <ContextBar title="Абонементы и лояльность" />
         <Text size="sm" c="dimmed">
           Выберите клинику в шапке, чтобы работать с программами лояльности.
         </Text>
@@ -73,17 +93,31 @@ export default function AdminLoyaltyPage() {
 
   return (
     <Stack>
-      <ContextBar title="Лояльность" />
+      <ContextBar title="Абонементы и лояльность" />
 
       {loading && <PageSkeleton variant="table" rows={4} />}
 
-      <Tabs defaultValue="packages" keepMounted={false}>
+      <Tabs
+        value={mainTab}
+        onChange={(v) => {
+          if (!v) return;
+          const next = new URLSearchParams(searchParams);
+          next.set("tab", v);
+          setSearchParams(next);
+        }}
+        keepMounted={false}
+      >
         <Tabs.List>
-          <Tabs.Tab value="packages">Пакеты</Tabs.Tab>
           <Tabs.Tab value="subscriptions">Абонементы</Tabs.Tab>
-          <Tabs.Tab value="wallets">Кошельки</Tabs.Tab>
-          <Tabs.Tab value="campaigns">Кампании</Tabs.Tab>
+          {!isBox ? <Tabs.Tab value="loyalty">Лояльность</Tabs.Tab> : null}
         </Tabs.List>
+
+        <Tabs.Panel value="subscriptions" pt="md">
+          <Tabs defaultValue="packages" keepMounted={false}>
+            <Tabs.List>
+              <Tabs.Tab value="packages">Пакеты</Tabs.Tab>
+              <Tabs.Tab value="subscriptions">Абонементы пациента</Tabs.Tab>
+            </Tabs.List>
 
         <Tabs.Panel value="packages" pt="md">
           <Card shadow="sm" padding="md" withBorder>
@@ -161,7 +195,10 @@ export default function AdminLoyaltyPage() {
                     {subs.map((s) => (
                       <Table.Tr key={s.id}>
                         <Table.Td>{s.id.slice(0, 8)}…</Table.Td>
-                        <Table.Td>{s.subscription_package_id.slice(0, 8)}…</Table.Td>
+                        <Table.Td>
+                          {packageNameById[s.subscription_package_id] ??
+                            `${s.subscription_package_id.slice(0, 8)}…`}
+                        </Table.Td>
                         <Table.Td>{s.status}</Table.Td>
                         <Table.Td>{s.remaining_visits ?? "—"}</Table.Td>
                         <Table.Td>{s.remaining_amount ?? "—"}</Table.Td>
@@ -174,6 +211,17 @@ export default function AdminLoyaltyPage() {
             </Card>
           </Stack>
         </Tabs.Panel>
+
+        </Tabs>
+        </Tabs.Panel>
+
+        {!isBox ? (
+        <Tabs.Panel value="loyalty" pt="md">
+          <Tabs defaultValue="wallets" keepMounted={false}>
+            <Tabs.List>
+              <Tabs.Tab value="wallets">Кошельки</Tabs.Tab>
+              <Tabs.Tab value="campaigns">Кампании</Tabs.Tab>
+            </Tabs.List>
 
         <Tabs.Panel value="wallets" pt="md">
           <Stack>
@@ -453,6 +501,9 @@ export default function AdminLoyaltyPage() {
             )}
           </Card>
         </Tabs.Panel>
+          </Tabs>
+        </Tabs.Panel>
+        ) : null}
       </Tabs>
     </Stack>
   );

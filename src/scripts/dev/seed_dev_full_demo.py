@@ -160,7 +160,6 @@ async def seed_dev_full_demo() -> None:
             await session.flush()
 
         # 4) Past bookings + payments + financial_transactions
-        n_docs = len(doctors)
         n_pat = len(patients)
         n_svc = len(services)
         used_slots: set[tuple[uuid.UUID, date, time]] = set()

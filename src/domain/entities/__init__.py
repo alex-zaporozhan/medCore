@@ -7,7 +7,14 @@ from src.domain.entities.permission import Permission  # noqa: F401
 from src.domain.entities.role_permission import RolePermission  # noqa: F401
 from src.domain.entities.user_role import UserRole  # noqa: F401
 from src.domain.entities.task import Task  # noqa: F401
+from src.domain.entities.task_assignee import TaskAssignee  # noqa: F401
 from src.domain.entities.task_comment import TaskComment  # noqa: F401
+from src.domain.entities.staff_calendar_event_participant import (  # noqa: F401
+    StaffCalendarEventParticipant,
+)
+from src.domain.entities.staff_calendar_event_invitation import (  # noqa: F401
+    StaffCalendarEventInvitation,
+)
 from src.domain.entities.subscription_package import SubscriptionPackage  # noqa: F401
 from src.domain.entities.customer_subscription import CustomerSubscription  # noqa: F401
 from src.domain.entities.subscription_usage import SubscriptionUsage  # noqa: F401
@@ -40,3 +47,4 @@ from src.domain.entities.erp_manual_refresh_audit import ErpAggregateManualRefre
 from src.domain.entities.erp_aggregate_coverage_watermark import (  # noqa: F401
     ErpAggregateCoverageWatermark,
 )
+from src.domain.entities.omni_quick_reply import OmniQuickReply  # noqa: F401

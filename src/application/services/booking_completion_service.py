@@ -16,7 +16,7 @@ from src.application.dto.erp_finance_dto import (
     ErpVisitPayrollInput,
     ErpVisitInventoryItem,
 )
-from src.application.dto.loyalty_dto import LoyaltyWriteOffRequest, LoyaltyWriteOffResult
+from src.application.dto.loyalty_dto import LoyaltyWriteOffResult
 from src.application.services.booking_erp_service import (
     BookingErpService,
     ERPConfigurationError,
@@ -367,15 +367,6 @@ class BookingCompletionService:
                         used_visits = 1 if (candidate.remaining_visits or 0) > 0 else None
                         used_amount = None if used_visits else (candidate.remaining_amount or None)
                         if used_visits is not None or used_amount is not None:
-                            loyalty_request = LoyaltyWriteOffRequest(
-                                clinic_id=booking.clinic_id,
-                                patient_id=booking.patient_id,
-                                booking_id=booking.id,
-                                subscription_id=candidate.id,
-                                used_visits=used_visits,
-                                used_amount=used_amount,
-                                used_at=now,
-                            )
                             step_started = datetime.now()
                             await self.loyalty_service.use_subscription_for_booking(
                                 UseSubscriptionForBookingInput(

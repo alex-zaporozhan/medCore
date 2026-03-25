@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from datetime import date
 from decimal import Decimal
-from typing import Iterable
 from uuid import UUID
 
 from sqlalchemy import Select, case, func, select
@@ -22,7 +21,6 @@ from src.core.config import settings
 from src.core.datetime_utils import utc_now
 from src.core.metrics import omni_ai_provider_errors_total
 from src.domain.entities.booking import Booking
-from src.domain.entities.conversation import Conversation
 from src.domain.entities.patient import Patient
 from src.infrastructure.external_apis.ai_client import AiClientError
 from src.infrastructure.external_apis.safe_ai_client import SafeAiClient
@@ -156,7 +154,7 @@ class ChatAiService:
                 },
             )
             return _heuristic_summary()
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             # Any unexpected error from external AI: also fall back to heuristic summary.
             omni_ai_provider_errors_total.labels(
                 source="legacy_chat_ai_summary",
@@ -254,7 +252,7 @@ class ChatAiService:
 
         try:
             data = await self.ai_client.complete(payload)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             # Любая ошибка внешнего AI (включая сетевые/401 и т.п.) — локальный fallback без 5xx.
             omni_ai_provider_errors_total.labels(
                 source="legacy_chat_ai_suggest_reply",
@@ -375,7 +373,7 @@ class ChatAiService:
                 },
             )
             return _heuristic_insight()
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             # Any other unexpected error from external AI: also fall back to heuristic.
             omni_ai_provider_errors_total.labels(
                 source="legacy_chat_ai_analyze_patient",

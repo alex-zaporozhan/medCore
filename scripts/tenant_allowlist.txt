@@ -1,0 +1,17 @@
+# Таблицы без literal clinic_id/business_account_id — изоляция через FK или корень tenant.
+# См. docs/operations/TENANT_TABLE_INVENTORY.md
+permissions
+clinics
+client_reference
+doctor_absence
+doctor_working_hours
+form_audit_entries
+omni_ai_settings
+omni_messages
+package_family_links
+patient_communication_preferences
+prepayment_transactions
+role_permissions
+service_doctors
+task_comments
+waitlist_notifications

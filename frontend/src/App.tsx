@@ -11,7 +11,6 @@ import AdminDashboardPage from "@/admin/pages/AdminDashboardPage";
 import AdminDoctorsPage from "@/admin/pages/AdminDoctorsPage";
 import AdminPatientsPage from "@/admin/pages/AdminPatientsPage";
 import AdminReportsPage from "@/admin/pages/AdminReportsPage";
-import AdminAttentionFeedPage from "@/admin/pages/AdminAttentionFeedPage";
 import AdminClinicsPage from "@/admin/pages/AdminClinicsPage";
 import AdminServicesPage from "@/admin/pages/AdminServicesPage";
 import AdminPrepaymentPage from "@/admin/pages/AdminPrepaymentPage";
@@ -41,6 +40,10 @@ import AdminLoginPage from "@/admin/pages/AdminLoginPage";
 import AdminAdministratorsPage from "@/admin/pages/AdminAdministratorsPage";
 import AdminSalesPipelinePage from "@/admin/pages/AdminSalesPipelinePage";
 import AdminTasksPage from "@/admin/pages/AdminTasksPage";
+import AdminStaffChatPage from "@/admin/pages/AdminStaffChatPage";
+import AdminStaffCalendarPage from "@/admin/pages/AdminStaffCalendarPage";
+import AdminKnowledgePage from "@/admin/pages/AdminKnowledgePage";
+import AdminEmergencyNotificationsPage from "@/admin/pages/AdminEmergencyNotificationsPage";
 import AdminAuthGuard from "@/admin/AdminAuthGuard";
 import { AdminClinicProvider } from "@/contexts/AdminClinicContext";
 import SchedulePage from "@/admin/pages/SchedulePage";
@@ -62,17 +65,22 @@ import {
   type AdminShellSegment,
   type PatientAppSegment,
 } from "@/routePaths";
+import { isAdminSegmentBlockedInBox } from "@/config/edition";
 import { Box, Button, Container, Grid, Paper, Stack, Text, Title } from "@mantine/core";
 import { createElement, type ComponentType } from "react";
 import {
   createBrowserRouter,
   Link,
+  Navigate,
   RouterProvider,
   Route,
   createRoutesFromElements,
 } from "react-router-dom";
 
 const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
+  "staff-chat": AdminStaffChatPage,
+  calendar: AdminStaffCalendarPage,
+  knowledge: AdminKnowledgePage,
   clinics: AdminClinicsPage,
   services: AdminServicesPage,
   schedule: SchedulePage,
@@ -84,7 +92,7 @@ const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
   marketing: AdminMarketingPage,
   retention: AdminRetentionPage,
   sales: AdminSalesPipelinePage,
-  attention: AdminAttentionFeedPage,
+  attention: AdminEmergencyNotificationsPage,
   reports: AdminReportsPage,
   finance: AdminFinancePage,
   loyalty: AdminLoyaltyPage,
@@ -118,6 +126,14 @@ const PATIENT_APP_PAGE_BY_SEGMENT: Record<PatientAppSegment, ComponentType> = {
   chat: ChatPage,
   profile: ProfilePage,
 };
+
+function AdminShellSegmentPage({ seg }: { seg: AdminShellSegment }) {
+  if (isAdminSegmentBlockedInBox(seg)) {
+    return <Navigate to={ROUTE_PATHS.admin.dashboard} replace />;
+  }
+  const Page = ADMIN_SHELL_PAGE_BY_SEGMENT[seg];
+  return <Page />;
+}
 
 function LandingPage() {
   return (
@@ -291,7 +307,7 @@ const router = createBrowserRouter(
             <Route
               key={seg}
               path={seg}
-              element={createElement(ADMIN_SHELL_PAGE_BY_SEGMENT[seg])}
+              element={<AdminShellSegmentPage seg={seg} />}
             />
           ))}
         </Route>

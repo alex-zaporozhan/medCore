@@ -4,32 +4,36 @@ version = "0.1.0"
 description = "MVP системы записи клиентов в стоматологии"
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.11"
-fastapi = "^0.109.0"
-uvicorn = {extras = ["standard"], version = "^0.27.0"}
+fastapi = "^0.135.0"
+starlette = "^0.49.1"
+uvicorn = {version = "^0.34.0", extras = ["standard"]}
 sqlalchemy = "^2.0.25"
 asyncpg = "^0.29.0"
 alembic = "^1.13.1"
-pydantic = "^2.5.3"
+pydantic = "^2.9.0"
 pydantic-settings = "^2.1.0"
 email-validator = "^2.1.0"
 redis = "^5.0.1"
 aioredis = "^2.0.1"
 celery = {extras = ["redis"], version = "^5.3.4"}
-python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+cryptography = "^46.0.0"
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
-python-multipart = "^0.0.6"
+python-multipart = "^0.0.22"
 httpx = "^0.26.0"
 python-telegram-bot = "^20.7"
+pyjwt = "^2.12.0"
+pyasn1 = "^0.6.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2"
 pytest-asyncio = "^0.24.0"
 pytest-playwright = "^0.4.3"
-black = "^24.1.1"
-ruff = "^0.1.11"
+black = "^26.3.0"
+ruff = "^0.9.0"
 mypy = "^1.8.0"
 
 [tool.pip-audit]
@@ -55,7 +59,7 @@ markers = [
     "regression_payments: regression tests for payments and payment gateway",
     "regression_pd: regression tests for personal data isolation and access",
     "regression_chats: regression tests for chats and omnichannel",
-    "security: security-focused tests (kassa, PD, chats)",
+    "security: security-focused tests (kassa, PD, chats, tenant isolation)",
 ]
 
 [tool.mypy]

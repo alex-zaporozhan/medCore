@@ -4,7 +4,7 @@ FROM public.ecr.aws/docker/library/python:3.11-slim AS builder
 WORKDIR /app
 
 # Install Poetry
-RUN pip install --no-cache-dir poetry==1.7.1 && \
+RUN pip install --no-cache-dir "poetry>=1.8.0,<3" && \
     poetry config virtualenvs.create false
 
 # Copy dependency files

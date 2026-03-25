@@ -3,7 +3,6 @@ import json
 import pytest
 from uuid import uuid4
 
-from sqlalchemy import select
 
 from src.application.services.conversation_analysis_service import ConversationAnalysisService
 from src.application.services.ai_client_factory import SafeAiClientContext

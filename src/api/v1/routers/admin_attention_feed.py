@@ -18,7 +18,6 @@ from src.domain.entities.task import Task
 from src.domain.interfaces.repositories.task_repository import TaskRepository
 from src.infrastructure.database.task_repo_impl import TaskRepositoryImpl
 from src.domain.entities.admin_user import AdminUser
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -114,7 +113,11 @@ async def get_tasks_for_attention_item(
     )
     result = await session.execute(stmt)
     tasks = result.scalars().unique().all()
-    return [task_entity_to_response(t) for t in tasks]
+    if not tasks:
+        return []
+    repo = TaskRepositoryImpl(session)
+    amap = await repo.list_assignee_ids_for_task_ids([t.id for t in tasks])
+    return [task_entity_to_response(t, assignee_ids=amap.get(t.id, [])) for t in tasks]
 
 
 class CreateTaskFromAttentionBody(BaseModel):
@@ -150,6 +153,7 @@ async def create_task_from_attention_item(
             detail="item_type must be follow_up, retention_gap or conflict",
         )
     service = _get_task_service(session)
+    aids = [body.assignee_id] if body.assignee_id else None
     task = await service.create_task(
         clinic_id=clinic_id,
         title=body.title.strip(),
@@ -157,13 +161,16 @@ async def create_task_from_attention_item(
         priority=body.priority,
         creator_id=current_admin.id,
         assignee_id=body.assignee_id,
+        assignee_ids=aids,
         role_assignee=body.role_assignee,
         due_at=body.due_at,
         source="from_attention",
         attention_kind=item_type,
         attention_ref_id=item_id,
     )
-    return task_entity_to_response(task)
+    repo = TaskRepositoryImpl(session)
+    amap = await repo.list_assignee_ids_for_task_ids([task.id])
+    return task_entity_to_response(task, assignee_ids=amap.get(task.id, []))
 
 
 @router.post(

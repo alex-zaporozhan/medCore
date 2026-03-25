@@ -45,7 +45,10 @@ async def get_or_create_conversation(
         clinic_id = current_patient.clinic_id
         return await service.get_or_create_conversation_for_patient(clinic_id, current_patient.id)
     except IntegrityError as e:
-        logger.warning("Patient chat conversation create failed (patient/clinic)", extra={"patient_id": str(patient_id), "error": str(e)})
+        logger.warning(
+            "Patient chat conversation create failed (patient/clinic)",
+            extra={"patient_id": str(current_patient.id), "error": str(e)},
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Patient or clinic not found",
@@ -96,7 +99,10 @@ async def send_message(
             sticker_key=data.sticker_key,
         )
     except IntegrityError as e:
-        logger.warning("Patient chat send message failed", extra={"patient_id": str(patient_id), "error": str(e)})
+        logger.warning(
+            "Patient chat send message failed",
+            extra={"patient_id": str(current_patient.id), "error": str(e)},
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation or patient not found",

@@ -45,7 +45,6 @@ from src.application.booking_error_observability import record_booking_error_eve
 from src.application.services.task_service import TaskService
 from src.core.config import settings
 from src.core.context import RequestContext
-from src.core.ai_sanitizer import AiSanitizer
 from src.core.datetime_utils import utc_now
 from src.core.prometheus_labels import account_bucket_label
 from src.core.metrics import (
@@ -68,6 +67,7 @@ from src.infrastructure.database.task_repo_impl import TaskRepositoryImpl
 from src.infrastructure.external_apis.ai_client import AiClientError
 from src.infrastructure.external_apis.safe_ai_client import SafeAiClient
 from src.application.services.ai_client_factory import build_safe_ai_client
+from src.infrastructure.database.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -382,7 +382,7 @@ class OmnichannelAIOrchestrator:
                 tool_events=tool_events,
                 error="ai_client_error",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception(
                 "run_ai_agent: unexpected error on first call",
                 extra={"chat_id": str(chat.id)},
@@ -656,7 +656,7 @@ class OmnichannelAIOrchestrator:
             # After executing tools, ask LLM again without new tool calls (tool_choice="none")
             try:
                 _, tool_calls = await _call_llm(messages, with_tools=False, metrics_step="llm_followup")
-            except Exception as exc:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
                 logger.exception(
                     "run_ai_agent: error during follow-up LLM call",
                     extra={"chat_id": str(chat.id)},
@@ -737,6 +737,21 @@ class OmnichannelAIOrchestrator:
         )
         config_svc = OmnichannelIntegrationsConfigService(self.session)
         return await config_svc.get_telegram_admin_chat_id_for_clinic(chat.business_account_id)
+
+    async def _allow_notification_once(
+        self,
+        *,
+        key: str,
+        ttl_seconds: int,
+    ) -> bool:
+        """Deduplicate chat notifications via Redis NX+EX."""
+        try:
+            redis = await get_redis()
+            created = await redis.set(key, "1", nx=True, ex=ttl_seconds)
+            return bool(created)
+        except Exception:  # noqa: BLE001
+            # Fail-open: do not lose critical operational notification due to Redis issue.
+            return True
 
     async def handle_incoming_for_ai(
         self,
@@ -872,16 +887,22 @@ class OmnichannelAIOrchestrator:
             )
             try:
                 from src.application.services.notification_service import send_with_fallback
-                from src.core.config import settings
 
                 message_text = f"Клиент запросил живого оператора в чате {chat.id}."
                 admin_chat_id = await self._get_telegram_admin_chat_id(chat)
-                await send_with_fallback(
-                    message=message_text,
-                    template="omni_ai_suggestion",
-                    chat_id=admin_chat_id,
-                    preferred_channel="telegram",
-                )
+                if not settings.omni_ai_notify_operator_telegram_enabled:
+                    return
+                dedup_key = f"omni:notify:operator:{chat.id}"
+                if await self._allow_notification_once(
+                    key=dedup_key,
+                    ttl_seconds=max(30, int(settings.omni_ai_notify_operator_dedup_seconds)),
+                ):
+                    await send_with_fallback(
+                        message=message_text,
+                        template="omni_ai_suggestion",
+                        chat_id=admin_chat_id,
+                        preferred_channel="telegram",
+                    )
             except Exception:  # noqa: BLE001
                 logger.warning(
                     "OmnichannelAIOrchestrator: failed to notify admins about operator request",
@@ -1041,19 +1062,25 @@ class OmnichannelAIOrchestrator:
         # Notify admins (log + optional Telegram to admin chat)
         try:
             from src.application.services.notification_service import send_with_fallback
-            from src.core.config import settings
 
             message_text = (
                 f"Новый черновик ответа AI в омниканальном чате. Chat ID: {chat.id}. "
                 "Откройте раздел «Единый чат» в админке."
             )
             admin_chat_id = await self._get_telegram_admin_chat_id(chat)
-            await send_with_fallback(
-                message=message_text,
-                template="omni_ai_suggestion",
-                chat_id=admin_chat_id,
-                preferred_channel="telegram",
-            )
+            if not settings.omni_ai_notify_suggestion_telegram_enabled:
+                return
+            dedup_key = f"omni:notify:suggest:{chat.id}"
+            if await self._allow_notification_once(
+                key=dedup_key,
+                ttl_seconds=max(30, int(settings.omni_ai_notify_suggestion_dedup_seconds)),
+            ):
+                await send_with_fallback(
+                    message=message_text,
+                    template="omni_ai_suggestion",
+                    chat_id=admin_chat_id,
+                    preferred_channel="telegram",
+                )
         except Exception:  # noqa: BLE001
             logger.warning(
                 "OmnichannelAIOrchestrator: failed to notify admins about suggestion",

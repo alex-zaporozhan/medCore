@@ -3,10 +3,13 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, String, func
+from sqlalchemy import Date, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.database.base import Base
+
+EMPLOYMENT_ACTIVE = "active"
+EMPLOYMENT_TERMINATED = "terminated"
 
 
 class AdminUser(Base):
@@ -23,3 +26,7 @@ class AdminUser(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now(), nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    #: active | terminated — уволенный не может войти в админку (см. admin/auth/login).
+    employment_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'active'")
+    )

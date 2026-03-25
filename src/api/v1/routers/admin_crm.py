@@ -9,7 +9,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import AdminContext, get_request_context, get_session, require_permissions
+from src.api.v1.dependencies import (
+    AdminContext,
+    get_request_context,
+    get_session,
+    require_crm_enterprise_edition,
+    require_permissions,
+)
 from src.application.ai.tools_base import ToolContext, ToolError
 from src.application.ai.tools_crm import (
     CreateTaskForLeadTool,
@@ -79,7 +85,10 @@ def _raise_for_tool_error(err: ToolError) -> None:
 router = APIRouter(
     prefix="/admin/crm",
     tags=["admin-crm"],
-    dependencies=[Depends(require_permissions("view_crm"))],
+    dependencies=[
+        Depends(require_permissions("view_crm")),
+        Depends(require_crm_enterprise_edition),
+    ],
 )
 
 
@@ -303,7 +312,7 @@ async def list_leads(
                 ) from exc
             raise
         return LeadKanbanListResponse(
-            items=[LeadKanbanCardDto.model_validate(l) for l in leads],
+            items=[LeadKanbanCardDto.model_validate(lead) for lead in leads],
             total=total,
             next_cursor=next_cursor,
         )
@@ -326,10 +335,10 @@ async def list_leads(
 
     if kanban_projection:
         return LeadKanbanListResponse(
-            items=[LeadKanbanCardDto.model_validate(l) for l in leads],
+            items=[LeadKanbanCardDto.model_validate(lead) for lead in leads],
             total=total,
         )
-    return LeadListResponse(items=[LeadCardDto.model_validate(l) for l in leads], total=total)
+    return LeadListResponse(items=[LeadCardDto.model_validate(lead) for lead in leads], total=total)
 
 
 @router.get("/leads/{lead_id}", response_model=LeadDetailsResponse)
@@ -408,7 +417,6 @@ async def update_lead_estimated_value(
     clinic_id = context.clinic_id
     service = LeadService(session)
     lead_before = await service.repository.get_lead_by_id(clinic_id, lead_id)
-    old_estimated = lead_before.estimated_value if lead_before else None
     try:
         lead = await service.recalculate_estimated_value(
             clinic_id=clinic_id,

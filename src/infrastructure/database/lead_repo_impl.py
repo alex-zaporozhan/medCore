@@ -3,7 +3,6 @@
 import logging
 import uuid
 from datetime import datetime
-from typing import Iterable
 from uuid import UUID
 
 from sqlalchemy import and_, exists, func, or_, select

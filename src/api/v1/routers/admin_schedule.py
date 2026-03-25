@@ -45,7 +45,7 @@ async def get_admin_clinic_schedule(
         return await service.get_aggregated_schedule(
             doctor_ids=ids, day=date_param, clinic_id=clinic_id
         )
-    except EntityClinicMismatchError:
+    except EntityClinicMismatchError as exc:
         await record_admin_clinic_boundary_event(
             session,
             current_admin,

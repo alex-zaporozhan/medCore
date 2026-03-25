@@ -39,7 +39,6 @@ from src.application.services.loyalty_campaign_engine import (
 )
 from src.domain.entities.loyalty_campaign_settings import LoyaltyCampaignSettings
 from src.application.services.loyalty_service import LoyaltyService
-from src.application.services.wallet_service import WalletService
 from src.domain.entities.loyalty_policy import LoyaltyPolicy
 from src.domain.entities.wallet import Wallet
 from src.domain.entities.subscription_usage import SubscriptionUsage

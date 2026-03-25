@@ -35,10 +35,8 @@ from src.domain.entities.task_comment import TaskComment
 from src.domain.entities.financial_transaction import FinancialTransaction
 from src.domain.entities.cashbox import Cashbox
 from src.domain.entities.booking import Booking
-from src.domain.entities.payment import Payment  # FK financial_transactions.payment_id
 from src.domain.entities.patient import Patient
 from src.domain.entities.lead_card import LeadCard
-from src.domain.entities.product import Product  # FK tasks.inventory_product_id
 from src.application.rbac_matrix import PERMISSIONS, ROLE_PERMISSIONS
 
 DEMO_PASSWORD_HASH = pbkdf2_sha256.hash("admin12345")

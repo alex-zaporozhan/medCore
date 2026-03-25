@@ -5,6 +5,7 @@
 ## Checklist
 
 - [ ] Links above point to the **exact** TASK section or unified backlog row
+- [ ] **Backend:** green **Backend CI** (`ruff`, `pytest`, `pip-audit`, `gitleaks`) if `src/`, `tests/`, or `pyproject.toml` / `poetry.lock` changed
 - [ ] `pytest` / `vitest` run for **touched** areas (or full CI green)
 - [ ] New env vars documented in `.env.example` (+ `docs/MIGRATION_UPGRADE.md` if needed)
 - [ ] NFR / alerts / metrics updated if applicable (`docs/artifacts/NONFUNCTIONAL_AUDIT_NEXT.md`)

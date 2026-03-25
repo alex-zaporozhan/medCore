@@ -53,6 +53,7 @@ class ChatRepository(ABC):
         search: str | None,
         skip: int,
         limit: int,
+        assignee_admin_id: UUID | None = None,
     ) -> list[Chat]:
         ...
 

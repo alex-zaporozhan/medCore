@@ -9,7 +9,13 @@ export interface DashboardReport {
   bookings_cancelled: number;
   bookings_no_show: number;
   new_patients: number;
+  /** Approx. count of new CRM cards/leads (used as "Количество обращений" in UI). */
+  new_leads_count?: number;
+  /** Unique patients who wrote to admins today (chat_messages: sender_type='patient'). */
+  chat_writers_count?: number;
   revenue: string;
+  empty_slot_hours?: number;
+  day_pulse_score?: number;
 }
 
 export interface NoShowReport {

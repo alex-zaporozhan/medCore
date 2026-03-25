@@ -2,7 +2,6 @@ from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from src.api.v1.dependencies import AdminContext, get_request_context
 from src.core.context import RequestContext
@@ -58,7 +57,6 @@ def test_admin_context_is_subclass_of_request_context():
     async def me(context: AdminContext = pytest.skip("dependency not executed in unit test")):  # type: ignore[unused-ignore]
         return {"clinic_id": str(context.clinic_id) if context.clinic_id else None}
 
-    client = TestClient(app)
     # We don't actually call the endpoint here; the important part is that
     # AdminContext is available for FastAPI type usage and is a subclass.
     assert issubclass(AdminContext, RequestContext)

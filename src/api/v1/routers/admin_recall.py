@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.dependencies import AdminContext, get_session, require_permissions
 from src.application.dto.recall_dto import (
     RecallAutomationCreate,
     RecallAutomationRead,
@@ -48,7 +48,10 @@ router = APIRouter(prefix="/admin/clinics", tags=["admin-recall"])
 async def list_recall_segments(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallSegment).where(RecallSegment.clinic_id == clinic_id)
     )
@@ -74,7 +77,10 @@ async def create_recall_segment(
     clinic_id: UUID,
     body: RecallSegmentCreate,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return await create_segment(session, clinic_id, body)
 
 
@@ -86,7 +92,10 @@ async def get_recall_segment(
     clinic_id: UUID,
     segment_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallSegment).where(
             RecallSegment.id == segment_id,
@@ -112,7 +121,10 @@ async def update_recall_segment(
     segment_id: UUID,
     body: RecallSegmentUpdate,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallSegment).where(
             RecallSegment.id == segment_id,
@@ -139,7 +151,10 @@ async def delete_recall_segment(
     clinic_id: UUID,
     segment_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallSegment).where(
             RecallSegment.id == segment_id,
@@ -161,7 +176,10 @@ async def delete_recall_segment(
 async def list_recall_templates(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallTemplate).where(RecallTemplate.clinic_id == clinic_id)
     )
@@ -177,7 +195,10 @@ async def create_recall_template(
     clinic_id: UUID,
     body: RecallTemplateCreate,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return await create_template(session, clinic_id, body)
 
 
@@ -189,7 +210,10 @@ async def get_recall_template(
     clinic_id: UUID,
     template_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallTemplate).where(
             RecallTemplate.id == template_id,
@@ -211,7 +235,10 @@ async def update_recall_template(
     template_id: UUID,
     body: RecallTemplateUpdate,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallTemplate).where(
             RecallTemplate.id == template_id,
@@ -238,7 +265,10 @@ async def delete_recall_template(
     clinic_id: UUID,
     template_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallTemplate).where(
             RecallTemplate.id == template_id,
@@ -260,7 +290,10 @@ async def delete_recall_template(
 async def list_recall_campaigns(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallCampaign).where(RecallCampaign.clinic_id == clinic_id)
     )
@@ -276,7 +309,10 @@ async def create_recall_campaign(
     clinic_id: UUID,
     body: RecallCampaignCreate,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return await create_campaign(session, clinic_id, body)
 
 
@@ -288,7 +324,10 @@ async def get_recall_campaign(
     clinic_id: UUID,
     campaign_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallCampaign).where(
             RecallCampaign.id == campaign_id,
@@ -310,7 +349,10 @@ async def update_recall_campaign(
     campaign_id: UUID,
     body: RecallCampaignUpdate,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallCampaign).where(
             RecallCampaign.id == campaign_id,
@@ -337,7 +379,10 @@ async def delete_recall_campaign(
     clinic_id: UUID,
     campaign_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallCampaign).where(
             RecallCampaign.id == campaign_id,
@@ -359,7 +404,10 @@ async def run_recall_campaign(
     clinic_id: UUID,
     campaign_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     sent, failed = await run_campaign(session, clinic_id, campaign_id)
     return {"sent": sent, "failed": failed}
 
@@ -372,7 +420,10 @@ async def run_recall_campaign(
 async def list_recall_automations(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallAutomation).where(RecallAutomation.clinic_id == clinic_id)
     )
@@ -388,7 +439,10 @@ async def create_recall_automation(
     clinic_id: UUID,
     body: RecallAutomationCreate,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return await create_automation(session, clinic_id, body)
 
 
@@ -400,7 +454,10 @@ async def get_recall_automation(
     clinic_id: UUID,
     automation_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallAutomation).where(
             RecallAutomation.id == automation_id,
@@ -422,7 +479,10 @@ async def update_recall_automation(
     automation_id: UUID,
     body: RecallAutomationUpdate,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallAutomation).where(
             RecallAutomation.id == automation_id,
@@ -449,7 +509,10 @@ async def delete_recall_automation(
     clinic_id: UUID,
     automation_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
         select(RecallAutomation).where(
             RecallAutomation.id == automation_id,
@@ -472,7 +535,10 @@ async def list_recall_logs(
     clinic_id: UUID,
     campaign_id: UUID | None = None,
     session: AsyncSession = Depends(get_session),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
+    if clinic_id != _perm_ctx.clinic_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     stmt = select(RecallLog).where(RecallLog.clinic_id == clinic_id)
     if campaign_id is not None:
         stmt = stmt.where(RecallLog.campaign_id == campaign_id)

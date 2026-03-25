@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from src.application.ai.tokenization import make_booking_token, make_patient_token, parse_booking_token
+from src.application.ai.tokenization import make_patient_token, parse_booking_token
 from src.application.ai.tools_base import ToolContext
 from src.application.ai.tools_booking import (
     AvailableSlot,

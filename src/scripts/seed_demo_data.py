@@ -1,10 +1,14 @@
-"""Seed database with demo data for local testing.
+"""Seed database with demo data for local testing (legacy single-clinic demo).
 
 For the first (or only) clinic creates or supplements:
 - one clinic (if none),
 - 4 doctors with working hours (Mon–Fri 09:00–18:00),
 - 10 demo patients (phones +70000000001 … +70000000010),
 - 10 demo services.
+
+For buyer-facing presentation (3 clinics, realistic names): prefer
+`poetry run python -m src.scripts.seed_presentation_showcase`
+(see `docs/artifacts/QA_ARCH_PRESENTATION_SEED_PLAN.md`).
 
 Run: poetry run python -m src.scripts.seed_demo_data
 Or:  docker compose run --rm api python -m src.scripts.seed_demo_data

@@ -1,13 +1,12 @@
 """Integration-style tests for OmnichannelAIOrchestrator.run_ai_agent (function-calling agent)."""
 
 import json
-import uuid
 from datetime import datetime
 
 import pytest
 from sqlalchemy import select
 
-from src.application.dto.chat_ai_agent_dto import AgentResult, ChatMessage, ToolCall
+from src.application.dto.chat_ai_agent_dto import AgentResult, ToolCall
 from src.application.services.omnichannel_ai_orchestrator import (
     OmnichannelAIOrchestrator,
 )

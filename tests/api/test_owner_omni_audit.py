@@ -2,11 +2,8 @@
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
 
 from src.application.services.omnichannel_chat_service import OmnichannelChatService
-from src.domain.entities.omnichannel_audit_log import AuditLog as OmniAuditLog
-from src.domain.entities.omnichannel_message import Message as OmniMessage
 from src.infrastructure.database import base as db_base
 
 

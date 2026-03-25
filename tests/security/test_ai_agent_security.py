@@ -6,7 +6,6 @@ from datetime import datetime
 import pytest
 from sqlalchemy import select
 
-from src.application.services.ai_config_service import AiConfigService
 from src.application.services.omnichannel_ai_orchestrator import OmnichannelAIOrchestrator
 from src.core.context import RequestContext
 from src.domain.entities.clinic_ai_settings import ClinicAiSettings

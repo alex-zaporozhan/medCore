@@ -2,6 +2,13 @@
 # с compose-файлом и подставляет ${VAR} при разборе. Секреты (пароли БД и т.д.)
 # задаются только в .env; .env не коммитить (см. .gitignore).
 # Контейнеры приложения получают .env через env_file: - .env
+#
+# Образы приложения (по умолчанию — те же теги, что пушит CI в Docker Hub):
+#   BACKEND_IMAGE=moircreator/dental-booking-backend:latest
+#   FRONTEND_IMAGE=moircreator/dental-booking-frontend:latest
+# Локальные имена после `docker compose build` без привязки к Hub — в .env:
+#   BACKEND_IMAGE=dental-booking-backend:local
+#   FRONTEND_IMAGE=dental-booking-frontend:local
 
 services:
   db:
@@ -19,7 +26,9 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      # Первый старт с пустым volume может занять десятки секунд — не считать «unhealthy» раньше времени.
+      start_period: 60s
     restart: unless-stopped
 
   redis:
@@ -33,15 +42,17 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 15s
     restart: unless-stopped
 
   # Одноразовый job: upgrade head, затем контейнер завершается с кодом 0 — это норма (не «павший» сервис).
+  # Тот же Dockerfile и тег, что у backend (миграции и runtime должны совпадать).
   migrations:
-    image: moircreator/dental-booking-backend:latest
     build:
       context: .
       dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
     container_name: dental_booking_migrations
     command: sh -c "python -m alembic -c alembic.ini upgrade head && echo alembic_upgrade_ok"
     environment:
@@ -59,7 +70,7 @@ services:
     restart: "no"
 
   backend:
-    image: moircreator/dental-booking-backend:latest
+    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -74,6 +85,9 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
     env_file:
       - .env
+    volumes:
+      # Persist staff feed/chat attachments across container recreate/rebuild.
+      - staff_uploads:/app/data/staff_chat_uploads
     depends_on:
       migrations:
         condition: service_completed_successfully
@@ -89,7 +103,7 @@ services:
     restart: unless-stopped
 
   celery:
-    image: moircreator/dental-booking-backend:latest
+    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
     container_name: dental_booking_celery
     command: celery -A src.infrastructure.messaging.celery_app worker --loglevel=info
     healthcheck:
@@ -111,7 +125,7 @@ services:
     restart: unless-stopped
 
   celery-beat:
-    image: moircreator/dental-booking-backend:latest
+    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
     container_name: dental_booking_celery_beat
     command: celery -A src.infrastructure.messaging.celery_app beat --loglevel=info
     healthcheck:
@@ -133,7 +147,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: moircreator/dental-booking-frontend:latest
+    image: ${FRONTEND_IMAGE:-moircreator/dental-booking-frontend:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -148,3 +162,4 @@ services:
 
 volumes:
   redis_data:
+  staff_uploads:

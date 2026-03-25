@@ -8,6 +8,8 @@ export interface AdminUserRow {
   email: string;
   full_name: string | null;
   birth_date?: string | null;
+  /** active | terminated — уволенный не может войти */
+  employment_status: string;
 }
 
 export function useAdminAdmins() {
@@ -26,6 +28,19 @@ export function useCreateAdminMutation() {
       full_name?: string | null;
       birth_date?: string | null;
     }) => api.post<AdminUserRow>("/v1/admin/admins", body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.adminAdmins.list() });
+    },
+  });
+}
+
+export function usePatchAdminEmploymentMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { adminId: string; employment_status: "active" | "terminated" }) =>
+      api.patch<AdminUserRow>(`/v1/admin/admins/${args.adminId}`, {
+        employment_status: args.employment_status,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.adminAdmins.list() });
     },

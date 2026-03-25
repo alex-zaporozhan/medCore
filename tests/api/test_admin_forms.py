@@ -5,8 +5,6 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.patient import Patient
-from src.domain.entities.digital_form_template import DigitalFormTemplate
-from src.domain.entities.digital_form_submission import DigitalFormSubmission
 
 
 @pytest.mark.asyncio

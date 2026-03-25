@@ -6,7 +6,6 @@ from typing import Any
 import httpx
 
 from src.core.config import settings
-from src.domain.interfaces.notification_sender import NotificationSender
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,792 @@
+"""P1 Staff Core: internal feed, staff chat, calendar, knowledge base."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.v1.dependencies import AdminContext, get_request_context, get_session, require_permissions
+from src.application.dto.staff_collab_dto import (
+    StaffCalendarEventDetailsResponse,
+    StaffCalendarInvitationAckResponse,
+    KnowledgeDocumentCreate,
+    KnowledgeDocumentResponse,
+    KnowledgeDocumentUpdate,
+    StaffAttachmentBrief,
+    StaffCalendarEventCreate,
+    StaffCalendarEventResponse,
+    StaffCalendarEventUpdate,
+    StaffCalendarMonthGridResponse,
+    StaffChatMessageCreate,
+    StaffChatMessageResponse,
+    StaffChatRoomResponse,
+    StaffFeedCommentCreate,
+    StaffFeedCommentResponse,
+    StaffFeedPostCreate,
+    StaffFeedPostResponse,
+    StaffFeedPostLikeResponse,
+    StaffRoomCreateDm,
+    StaffRoomCreateGroup,
+    StaffRoomInviteCreate,
+)
+from src.application.services.staff_collaboration_service import StaffCollaborationService
+from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
+from src.domain.entities.staff_calendar_event import StaffCalendarEvent
+from src.domain.entities.staff_calendar_event_participant import StaffCalendarEventParticipant
+from src.domain.entities.task import Task
+
+router = APIRouter(prefix="/admin/staff", tags=["admin-staff-collab"])
+
+
+def _naive_utc(dt: datetime) -> datetime:
+    """DB stores naive timestamps; normalize query params from ISO with offset."""
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _svc(session: AsyncSession) -> StaffCollaborationService:
+    return StaffCollaborationService(session)
+
+
+def _clinic_id(ctx: AdminContext) -> UUID:
+    if ctx.clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется контекст клиники")
+    return ctx.clinic_id
+
+
+async def _admin_in_clinic(session: AsyncSession, clinic_id: UUID, admin_id: UUID) -> bool:
+    res = await session.execute(
+        select(AdminUser.id).where(
+            AdminUser.id == admin_id,
+            AdminUser.clinic_id == clinic_id,
+            AdminUser.deleted_at.is_(None),
+            AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+        )
+    )
+    return res.scalar_one_or_none() is not None
+
+
+@router.get(
+    "/chat/rooms",
+    response_model=list[StaffChatRoomResponse],
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def list_staff_chat_rooms(
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> list[StaffChatRoomResponse]:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    return await _svc(session).list_chat_rooms(cid, context.user_id)
+
+
+@router.get(
+    "/chat/rooms/{room_id}/messages",
+    response_model=list[StaffChatMessageResponse],
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def list_staff_chat_messages(
+    room_id: UUID,
+    limit: int = Query(50, ge=1, le=200),
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> list[StaffChatMessageResponse]:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    rows = await _svc(session).list_chat_messages(cid, room_id, context.user_id, limit=limit)
+    if rows is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Комната не найдена")
+    return rows
+
+
+@router.post(
+    "/chat/rooms/{room_id}/messages",
+    response_model=StaffChatMessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def post_staff_chat_message(
+    room_id: UUID,
+    data: StaffChatMessageCreate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffChatMessageResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    msg = await _svc(session).post_chat_message(cid, room_id, context.user_id, data)
+    if msg is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Комната не найдена")
+    return msg
+
+
+@router.post(
+    "/chat/rooms/dm",
+    response_model=StaffChatRoomResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def create_staff_dm_room(
+    data: StaffRoomCreateDm,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffChatRoomResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    if context.user_id == data.peer_admin_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Нельзя открыть DM с самим собой")
+    if not await _admin_in_clinic(session, cid, data.peer_admin_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Сотрудник не в этой клинике")
+    room = await _svc(session).get_or_create_dm_room(cid, context.user_id, data.peer_admin_id)
+    return StaffChatRoomResponse(
+        id=room.id, kind=room.kind, title=room.title, task_id=room.task_id
+    )
+
+
+@router.post(
+    "/chat/rooms/group",
+    response_model=StaffChatRoomResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def create_staff_group_room(
+    data: StaffRoomCreateGroup,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffChatRoomResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    for aid in data.member_admin_ids:
+        if not await _admin_in_clinic(session, cid, aid):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Сотрудник {aid} не в этой клинике",
+            )
+    room = await _svc(session).create_group_room(cid, context.user_id, data)
+    return StaffChatRoomResponse(
+        id=room.id, kind=room.kind, title=room.title, task_id=room.task_id
+    )
+
+
+@router.get(
+    "/chat/task-rooms/{task_id}",
+    response_model=StaffChatRoomResponse,
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def get_or_create_task_chat_room(
+    task_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffChatRoomResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    task = await session.get(Task, task_id)
+    if task is None or task.clinic_id != cid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Задача не найдена")
+    room = await _svc(session).ensure_task_room(cid, task_id, context.user_id)
+    if room is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Задача не найдена или нет доступа к комнате задачи",
+        )
+    return StaffChatRoomResponse(
+        id=room.id, kind=room.kind, title=room.title, task_id=room.task_id
+    )
+
+
+@router.post(
+    "/chat/rooms/{room_id}/members",
+    response_model=StaffChatRoomResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def invite_staff_chat_room_member(
+    room_id: UUID,
+    data: StaffRoomInviteCreate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffChatRoomResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    try:
+        room = await _svc(session).invite_to_room(cid, room_id, context.user_id, data)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "cannot_invite_self":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Нельзя пригласить себя") from exc
+        if code == "room_kind_not_invitable":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="В этот тип комнаты приглашения не поддерживаются",
+            ) from exc
+        if code == "invitee_not_in_clinic":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Сотрудник не в этой клинике",
+            ) from exc
+        raise
+    if room is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Комната не найдена")
+    return StaffChatRoomResponse(
+        id=room.id, kind=room.kind, title=room.title, task_id=room.task_id
+    )
+
+
+@router.post(
+    "/chat/messages/{message_id}/attachments",
+    response_model=StaffAttachmentBrief,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def upload_staff_chat_attachment(
+    message_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+    file: UploadFile = File(...),
+) -> StaffAttachmentBrief:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    raw = await file.read()
+    try:
+        att = await _svc(session).add_message_attachment(
+            cid,
+            message_id,
+            context.user_id,
+            file_name=file.filename or "file",
+            content_type=file.content_type or "application/octet-stream",
+            raw=raw,
+        )
+    except ValueError as exc:
+        if str(exc) == "file_too_large":
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Файл слишком большой",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if att is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сообщение не найдено")
+    return att
+
+
+@router.get(
+    "/attachments/{attachment_id}/file",
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def download_staff_chat_attachment(
+    attachment_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> Response:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    payload = await _svc(session).get_attachment_payload(cid, attachment_id, context.user_id)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вложение не найдено")
+    row, raw = payload
+    return Response(
+        content=raw,
+        media_type=row.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{row.file_name}"'},
+    )
+
+
+@router.get(
+    "/feed/posts",
+    response_model=list[StaffFeedPostResponse],
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def list_staff_feed_posts(
+    limit: int = Query(30, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> list[StaffFeedPostResponse]:
+    return await _svc(session).list_feed_posts(_clinic_id(context), limit=limit)
+
+
+@router.post(
+    "/feed/posts",
+    response_model=StaffFeedPostResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def create_staff_feed_post(
+    data: StaffFeedPostCreate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffFeedPostResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    return await _svc(session).create_feed_post(cid, context.user_id, data)
+
+
+@router.patch(
+    "/feed/posts/{post_id}",
+    response_model=StaffFeedPostResponse,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def update_staff_feed_post(
+    post_id: UUID,
+    title: str | None = Form(None),
+    body: str = Form(...),
+    file: UploadFile | None = File(None),
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffFeedPostResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+
+    raw = None
+    file_name = None
+    content_type = None
+    if file is not None:
+        raw = await file.read()
+        file_name = file.filename or "file"
+        content_type = file.content_type or "application/octet-stream"
+
+    try:
+        updated = await _svc(session).update_feed_post(
+            cid,
+            context.user_id,
+            post_id,
+            title=title,
+            body=body,
+            raw=raw,
+            file_name=file_name,
+            content_type=content_type,
+        )
+    except ValueError as exc:
+        if str(exc) == "file_too_large":
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Файл слишком большой",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
+    return updated
+
+
+@router.delete(
+    "/feed/posts/{post_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def delete_staff_feed_post(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> None:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    ok = await _svc(session).delete_feed_post(cid, post_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
+
+
+@router.post(
+    "/feed/posts/{post_id}/like",
+    response_model=StaffFeedPostLikeResponse,
+    dependencies=[Depends(require_permissions())],
+)
+async def toggle_staff_feed_post_like(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffFeedPostLikeResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    toggled = await _svc(session).toggle_feed_post_like(cid, post_id, context.user_id)
+    if toggled is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
+    liked, likes_count = toggled
+    return StaffFeedPostLikeResponse(liked=liked, likes_count=likes_count)
+
+
+@router.post(
+    "/feed/posts/{post_id}/attachments",
+    response_model=StaffAttachmentBrief,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def upload_staff_feed_post_attachment(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+    file: UploadFile = File(...),
+) -> StaffAttachmentBrief:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    raw = await file.read()
+    try:
+        att = await _svc(session).add_feed_post_attachment(
+            cid,
+            post_id,
+            context.user_id,
+            file_name=file.filename or "file",
+            content_type=file.content_type or "application/octet-stream",
+            raw=raw,
+        )
+    except ValueError as exc:
+        if str(exc) == "file_too_large":
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Файл слишком большой",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if att is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
+    return att
+
+
+@router.get(
+    "/feed/attachments/{attachment_id}/file",
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def download_staff_feed_post_attachment(
+    attachment_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> Response:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    payload = await _svc(session).get_feed_attachment_payload(cid, attachment_id, context.user_id)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вложение не найдено")
+    row, raw = payload
+    return Response(
+        content=raw,
+        media_type=row.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{row.file_name}"'},
+    )
+
+
+@router.get(
+    "/feed/posts/{post_id}/comments",
+    response_model=list[StaffFeedCommentResponse],
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def list_staff_feed_comments(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> list[StaffFeedCommentResponse]:
+    rows = await _svc(session).list_feed_comments(_clinic_id(context), post_id)
+    if rows is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
+    return rows
+
+
+@router.post(
+    "/feed/posts/{post_id}/comments",
+    response_model=StaffFeedCommentResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions())],
+)
+async def add_staff_feed_comment(
+    post_id: UUID,
+    data: StaffFeedCommentCreate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffFeedCommentResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    c = await _svc(session).add_feed_comment(cid, post_id, context.user_id, data)
+    if c is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
+    return c
+
+
+@router.get(
+    "/calendar/events",
+    response_model=list[StaffCalendarEventResponse],
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def list_staff_calendar_events(
+    from_ts: datetime = Query(..., alias="from"),
+    to_ts: datetime = Query(..., alias="to"),
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> list[StaffCalendarEventResponse]:
+    from_ts = _naive_utc(from_ts)
+    to_ts = _naive_utc(to_ts)
+    if from_ts >= to_ts:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Интервал некорректен")
+    full_scope = {"owner", "manager", "admin"}
+    doctor_only = bool(context.roles and not full_scope.intersection(context.roles))
+    filter_uid = context.user_id if doctor_only else None
+    return await _svc(session).list_calendar_events(
+        _clinic_id(context),
+        from_ts=from_ts,
+        to_ts=to_ts,
+        filter_doctor_user_id=filter_uid,
+    )
+
+
+@router.get(
+    "/calendar/month",
+    response_model=StaffCalendarMonthGridResponse,
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def get_staff_calendar_month_grid(
+    from_ts: datetime = Query(..., alias="from"),
+    to_ts: datetime = Query(..., alias="to"),
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffCalendarMonthGridResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    from_ts = _naive_utc(from_ts)
+    to_ts = _naive_utc(to_ts)
+    if from_ts >= to_ts:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Интервал некорректен")
+    return await _svc(session).list_calendar_month_grid(
+        cid,
+        from_ts=from_ts,
+        to_ts=to_ts,
+        current_admin_id=context.user_id,
+    )
+
+
+@router.get(
+    "/calendar/events/{event_id}",
+    response_model=StaffCalendarEventDetailsResponse,
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def get_staff_calendar_event_details(
+    event_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffCalendarEventDetailsResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+
+    ev_res = await session.execute(
+        select(StaffCalendarEvent).where(
+            StaffCalendarEvent.id == event_id,
+            StaffCalendarEvent.clinic_id == cid,
+        )
+    )
+    ev = ev_res.scalar_one_or_none()
+    if ev is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Событие не найдено")
+
+    uid = context.user_id
+    is_member = ev.created_by_admin_id == uid
+    if not is_member:
+        part_res = await session.execute(
+            select(StaffCalendarEventParticipant.event_id).where(
+                StaffCalendarEventParticipant.event_id == event_id,
+                StaffCalendarEventParticipant.admin_id == uid,
+            )
+        )
+        is_member = part_res.scalar_one_or_none() is not None
+
+    if not is_member:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к событию")
+
+    details = await _svc(session).get_calendar_event_details(
+        cid,
+        event_id=event_id,
+        current_admin_id=uid,
+    )
+    if details is None:
+        # Should not happen because we already validated membership + existence.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Событие не найдено")
+    return details
+
+
+@router.post(
+    "/calendar/events/{event_id}/invitations/ack",
+    response_model=StaffCalendarInvitationAckResponse,
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def ack_staff_calendar_invitation(
+    event_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffCalendarInvitationAckResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+
+    ev_res = await session.execute(
+        select(StaffCalendarEvent).where(
+            StaffCalendarEvent.id == event_id,
+            StaffCalendarEvent.clinic_id == cid,
+        )
+    )
+    ev = ev_res.scalar_one_or_none()
+    if ev is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Событие не найдено")
+
+    uid = context.user_id
+    is_member = ev.created_by_admin_id == uid
+    if not is_member:
+        part_res = await session.execute(
+            select(StaffCalendarEventParticipant.event_id).where(
+                StaffCalendarEventParticipant.event_id == event_id,
+                StaffCalendarEventParticipant.admin_id == uid,
+            )
+        )
+        is_member = part_res.scalar_one_or_none() is not None
+    if not is_member:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к событию")
+
+    ack = await _svc(session).ack_calendar_invitation(
+        cid,
+        event_id=event_id,
+        current_admin_id=uid,
+    )
+    if ack is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Приглашение не найдено")
+    return ack
+
+
+@router.post(
+    "/calendar/events",
+    response_model=StaffCalendarEventResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def create_staff_calendar_event(
+    data: StaffCalendarEventCreate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffCalendarEventResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    if data.ends_at <= data.starts_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Время окончания должно быть позже начала")
+    if len(data.participant_admin_ids) > 0 and "invite_staff_calendar_participants" not in context.permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Приглашение участников требует права invite_staff_calendar_participants",
+        )
+    try:
+        return await _svc(session).create_calendar_event(cid, context.user_id, data)
+    except ValueError as exc:
+        if str(exc) == "invalid_participants":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Некорректные участники (клиника или статус сотрудника)",
+            ) from exc
+        if str(exc) == "calendar_event_overlap":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Событие пересекается с другим событием",
+            ) from exc
+        raise
+
+
+@router.patch(
+    "/calendar/events/{event_id}",
+    response_model=StaffCalendarEventResponse,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def patch_staff_calendar_event(
+    event_id: UUID,
+    data: StaffCalendarEventUpdate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffCalendarEventResponse:
+    cid = _clinic_id(context)
+    if data.starts_at is not None and data.ends_at is not None and data.ends_at <= data.starts_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Время окончания должно быть позже начала")
+    if data.participant_admin_ids is not None and "invite_staff_calendar_participants" not in context.permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Изменение участников требует права invite_staff_calendar_participants",
+        )
+    try:
+        ev = await _svc(session).update_calendar_event(cid, event_id, data)
+    except ValueError as exc:
+        if str(exc) == "invalid_event_range":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Время окончания должно быть позже начала",
+            ) from exc
+        if str(exc) == "invalid_participants":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Некорректные участники (клиника или статус сотрудника)",
+            ) from exc
+        if str(exc) == "calendar_event_overlap":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Событие пересекается с другим событием",
+            ) from exc
+        raise
+    if ev is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Событие не найдено")
+    return ev
+
+
+@router.get(
+    "/knowledge/documents",
+    response_model=list[KnowledgeDocumentResponse],
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def list_knowledge_documents(
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> list[KnowledgeDocumentResponse]:
+    return await _svc(session).list_knowledge(_clinic_id(context), context.roles)
+
+
+@router.post(
+    "/knowledge/documents",
+    response_model=KnowledgeDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def create_knowledge_document(
+    data: KnowledgeDocumentCreate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> KnowledgeDocumentResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    return await _svc(session).create_knowledge(cid, context.user_id, data)
+
+
+@router.patch(
+    "/knowledge/documents/{doc_id}",
+    response_model=KnowledgeDocumentResponse,
+    dependencies=[Depends(require_permissions("manage_staff_collab"))],
+)
+async def update_knowledge_document(
+    doc_id: UUID,
+    data: KnowledgeDocumentUpdate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> KnowledgeDocumentResponse:
+    doc = await _svc(session).update_knowledge(_clinic_id(context), doc_id, data)
+    if doc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Документ не найден")
+    return doc

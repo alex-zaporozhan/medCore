@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.application.dto.booking_dto import (
     BookingCreateAdmin,
     BookingCreatePatient,
+    BookingPatchAdmin,
     BookingRead,
     BookingRescheduleRequest,
-    BookingCompletionResult,
 )
 from src.application.multitenancy import assert_entity_belongs_to_clinic
 from src.application.services.schedule_service import ScheduleService
@@ -22,6 +22,7 @@ from src.application.services.booking_status_service import (
     all_booking_status_values,
 )
 from src.domain.entities.booking import Booking, BookingStatus
+from src.domain.entities.patient import Patient
 from src.domain.entities.doctor import Doctor
 from src.domain.entities.service import Service
 from src.domain.entities.service_doctor import ServiceDoctor
@@ -383,7 +384,33 @@ class BookingService:
             skip=skip,
             limit=limit,
         )
-        return [BookingRead.model_validate(b) for b in bookings]
+        if not bookings:
+            return []
+        patient_ids = {b.patient_id for b in bookings}
+        doctor_ids = {b.doctor_id for b in bookings}
+        service_ids = {b.service_id for b in bookings}
+        pat_rows = await self.session.execute(select(Patient).where(Patient.id.in_(patient_ids)))
+        patient_names = {}
+        for p in pat_rows.scalars().all():
+            nm = (p.full_name or "").strip()
+            patient_names[p.id] = nm or p.phone or None
+        doc_rows = await self.session.execute(select(Doctor).where(Doctor.id.in_(doctor_ids)))
+        doctor_names = {d.id: d.full_name for d in doc_rows.scalars().all()}
+        svc_rows = await self.session.execute(select(Service).where(Service.id.in_(service_ids)))
+        service_names = {s.id: s.name for s in svc_rows.scalars().all()}
+        out: list[BookingRead] = []
+        for b in bookings:
+            base = BookingRead.model_validate(b)
+            out.append(
+                base.model_copy(
+                    update={
+                        "patient_name": patient_names.get(b.patient_id),
+                        "doctor_name": doctor_names.get(b.doctor_id),
+                        "service_name": service_names.get(b.service_id),
+                    }
+                )
+            )
+        return out
 
     async def cancel_booking(
         self,
@@ -581,6 +608,29 @@ class BookingService:
         logger.info(
             "Booking marked as no_show",
             extra={"booking_id": str(booking_id), "clinic_id": str(booking.clinic_id)},
+        )
+        return BookingRead.model_validate(booking)
+
+    async def patch_booking_admin(
+        self,
+        clinic_id: UUID,
+        booking_id: UUID,
+        data: BookingPatchAdmin,
+    ) -> BookingRead:
+        """Update booking fields allowed for admin (notes)."""
+        booking = await self.repository.get_by_id(booking_id)
+        if not booking:
+            raise LookupError(BOOKING_NOT_FOUND)
+        assert_entity_belongs_to_clinic(booking, clinic_id, entity_label="booking")
+
+        # P2-FU1: различаем «поле не передано» и «передан null» — очистка комментария.
+        patch = data.model_dump(exclude_unset=True)
+        if "notes" in patch:
+            booking.notes = patch["notes"]
+        booking = await self.repository.update(booking)
+        logger.info(
+            "Booking patched by admin",
+            extra={"booking_id": str(booking_id), "clinic_id": str(clinic_id)},
         )
         return BookingRead.model_validate(booking)
 

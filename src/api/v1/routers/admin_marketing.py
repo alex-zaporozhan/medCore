@@ -2,18 +2,13 @@
 
 import logging
 from uuid import UUID
-from datetime import datetime
-
-from src.core.datetime_utils import utc_now_naive
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.dependencies import AdminContext, get_session, require_permissions
 from src.api.v1.routers.admin_auth import get_current_admin
-
-logger = logging.getLogger(__name__)
 from src.application.dto.marketing_dto import (
     PromoPostCreate,
     PromoPostRead,
@@ -22,9 +17,12 @@ from src.application.dto.marketing_dto import (
     StoryRead,
     StoryUpdate,
 )
+from src.core.datetime_utils import utc_now_naive
 from src.domain.entities.admin_user import AdminUser
 from src.domain.entities.promo_post import PromoPost
 from src.domain.entities.story import Story
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/clinics", tags=["admin-marketing"])
 
@@ -34,6 +32,7 @@ async def list_promo_posts(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -53,6 +52,7 @@ async def create_promo_post(
     body: PromoPostCreate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -95,6 +95,7 @@ async def get_promo_post(
     post_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -120,6 +121,7 @@ async def update_promo_post(
     body: PromoPostUpdate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -153,6 +155,7 @@ async def delete_promo_post(
     post_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -175,6 +178,7 @@ async def list_stories(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -194,6 +198,7 @@ async def create_story(
     body: StoryCreate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -229,6 +234,7 @@ async def get_story(
     story_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -254,6 +260,7 @@ async def update_story(
     body: StoryUpdate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -285,6 +292,7 @@ async def delete_story(
     story_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)

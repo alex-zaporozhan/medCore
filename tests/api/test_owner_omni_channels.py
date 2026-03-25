@@ -7,6 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from src.domain.entities.clinic import Clinic
 from src.domain.entities.omnichannel_channel import Channel as OmniChannel
 from src.domain.entities.omnichannel_integration_config import (
     OmnichannelIntegrationConfig,
@@ -158,6 +159,8 @@ async def test_owner_cannot_access_foreign_channel(init_db, seed_data, client: A
     # Create channel for another clinic directly
     other_clinic_id = uuid.uuid4()
     async with db_base.AsyncSessionLocal() as session:
+        session.add(Clinic(id=other_clinic_id, name="Foreign Clinic", prepayment_amount=0))
+        await session.flush()
         channel = OmniChannel(
             business_account_id=other_clinic_id,
             type="TELEGRAM_BOT",

@@ -1,0 +1,2 @@
+# Тестовые фикстуры задают SECRET_KEY/JWT_SECRET только для pytest (не прод).
+tests/conftest.py

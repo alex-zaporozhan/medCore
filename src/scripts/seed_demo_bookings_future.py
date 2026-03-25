@@ -23,7 +23,6 @@ from src.domain.entities.clinic import Clinic
 from src.domain.entities.doctor import Doctor
 from src.domain.entities.doctor_working_hours import DoctorWorkingHours
 from src.domain.entities.patient import Patient
-from src.domain.entities.payment import Payment  # регистрация таблицы payments (FK bookings.payment_id)
 from src.domain.entities.service import Service
 
 # Демо-пациенты: телефоны +70000000001 … +70000000010

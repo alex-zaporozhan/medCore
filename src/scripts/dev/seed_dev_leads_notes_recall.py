@@ -10,7 +10,6 @@ Run:
 from __future__ import annotations
 
 import asyncio
-import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -20,7 +19,6 @@ from src.infrastructure.database.base import AsyncSessionLocal
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.admin_user import AdminUser
 from src.domain.entities.patient import Patient
-from src.domain.entities.booking import Booking
 from src.domain.entities.lead_pipeline import LeadPipeline
 from src.domain.entities.lead_stage import LeadStage
 from src.domain.entities.lead_card import LeadCard
@@ -29,8 +27,6 @@ from src.domain.entities.recall_segment import RecallSegment
 from src.domain.entities.recall_template import RecallTemplate
 from src.domain.entities.recall_campaign import RecallCampaign
 from src.domain.entities.recall_log import RecallLog
-from src.domain.entities.omnichannel_contact import Contact  # so Base has omni_contacts for LeadCard FK
-from src.domain.entities.recall_automation import RecallAutomation  # so Base has recall_automations for RecallLog FK
 
 
 DEMO_NOTES = [

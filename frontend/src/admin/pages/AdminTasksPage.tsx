@@ -6,19 +6,31 @@ import {
   Card,
   Group,
   HoverCard,
+  Loader,
   Menu,
+  ScrollArea,
   Stack,
   Table,
   Text,
   Textarea,
   TextInput,
   Select,
+  MultiSelect,
   SegmentedControl,
   Box,
   Paper,
 } from "@mantine/core";
-import { IconDotsVertical, IconRobot, IconMessageCircle, IconCalendarEvent, IconPhone, IconBrandWhatsapp } from "@tabler/icons-react";
+import {
+  IconDotsVertical,
+  IconRobot,
+  IconMessageCircle,
+  IconMessages,
+  IconCalendarEvent,
+  IconPhone,
+  IconBrandWhatsapp,
+} from "@tabler/icons-react";
 import { Link } from "react-router-dom";
+import { ROUTE_PATHS } from "@/routePaths";
 import { AdminDrawer } from "@/shared/ui";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { PageSkeleton } from "@/shared/ui/PageSkeleton";
@@ -34,8 +46,10 @@ import {
   useCreateAdminTaskMutation,
   useClaimAdminTaskMutation,
   useUpdateAdminTaskStatusMutation,
+  useTaskComments,
+  usePostTaskComment,
 } from "@/hooks";
-import type { AdminTaskRow } from "@/hooks";
+import type { AdminTaskRow, AdminUserRow } from "@/hooks";
 import { getAdminId } from "@/api/client";
 import {
   DndContext,
@@ -56,6 +70,24 @@ const STATUS_COLUMNS = [
 
 const TIME_BOMB_HOURS = 2;
 
+/** Имена личных исполнителей: assignee_ids или legacy assignee_id. */
+function taskAssigneeIdList(task: AdminTaskRow): string[] {
+  if (task.assignee_ids && task.assignee_ids.length > 0) return task.assignee_ids;
+  if (task.assignee_id) return [task.assignee_id];
+  return [];
+}
+
+function formatTaskAssigneeLine(task: AdminTaskRow, admins: AdminUserRow[]): string {
+  const ids = taskAssigneeIdList(task);
+  if (ids.length === 0) return "";
+  return ids
+    .map((id) => {
+      const a = admins.find((x) => x.id === id);
+      return a?.full_name || a?.email || id.slice(0, 8);
+    })
+    .join(", ");
+}
+
 function isTimeBomb(dueAt: string | null): boolean {
   if (!dueAt) return false;
   const due = dayjs(dueAt);
@@ -65,14 +97,18 @@ function isTimeBomb(dueAt: string | null): boolean {
 
 function TaskKanbanCard({
   task,
+  admins,
   isTimeBombActive,
   onClaim,
+  onTaskChat,
   isAi,
   patientPhone,
 }: {
   task: AdminTaskRow;
+  admins: AdminUserRow[];
   isTimeBombActive: boolean;
   onClaim?: (taskId: string) => void;
+  onTaskChat?: (taskId: string) => void;
   isAi?: boolean;
   patientPhone?: string | null;
 }) {
@@ -83,6 +119,7 @@ function TaskKanbanCard({
     transform: transform ? CSS.Translate.toString(transform) : undefined,
     opacity: isDragging ? 0.85 : 1,
   };
+  const assigneeLine = formatTaskAssigneeLine(task, admins);
   return (
     <Paper
       ref={setNodeRef}
@@ -114,63 +151,95 @@ function TaskKanbanCard({
             </Text>
           )}
         </Group>
-        {(task.patient_id || task.booking_id) && (
-          <Group gap={4} wrap="wrap">
-            {task.patient_id && (
-              <>
-                <Button
-                  component={Link}
-                  to={`/admin/omni-chat?patient_id=${task.patient_id}`}
-                  variant="subtle"
-                  size="compact-xs"
-                  onClick={(e) => e.stopPropagation()}
-                  leftSection={<IconMessageCircle size={10} />}
-                >
-                  Чат
-                </Button>
-                {patientPhone && (
-                  <>
-                    <Button
-                      component="a"
-                      href={`tel:${patientPhone.replace(/\s/g, "")}`}
-                      variant="subtle"
-                      size="compact-xs"
-                      onClick={(e) => e.stopPropagation()}
-                      leftSection={<IconPhone size={10} />}
-                      title="Позвонить"
-                    >
-                      Позвонить
-                    </Button>
-                    <Button
-                      component="a"
-                      href={`https://wa.me/${patientPhone.replace(/\D/g, "").replace(/^8/, "7")}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      variant="subtle"
-                      size="compact-xs"
-                      onClick={(e) => e.stopPropagation()}
-                      leftSection={<IconBrandWhatsapp size={10} />}
-                      title="Отправить ссылку в WhatsApp"
-                    >
-                      WhatsApp
-                    </Button>
-                  </>
-                )}
-              </>
-            )}
-            {task.booking_id && (
+        {assigneeLine ? (
+          <Text size="xs" c="dimmed" lineClamp={2}>
+            {assigneeLine}
+          </Text>
+        ) : task.role_assignee && taskAssigneeIdList(task).length === 0 ? (
+          <Text size="xs" c="dimmed">
+            Очередь роли: {task.role_assignee}
+          </Text>
+        ) : null}
+        <Group gap={4} wrap="wrap">
+          {task.patient_id && (
+            <>
               <Button
                 component={Link}
-                to={`/admin/schedule?booking_id=${task.booking_id}`}
+                to={`/admin/omni-chat?patient_id=${task.patient_id}`}
                 variant="subtle"
                 size="compact-xs"
                 onClick={(e) => e.stopPropagation()}
-                leftSection={<IconCalendarEvent size={10} />}
+                leftSection={<IconMessageCircle size={10} />}
               >
-                Запись
+                Чат
               </Button>
-            )}
-          </Group>
+              {patientPhone && (
+                <>
+                  <Button
+                    component="a"
+                    href={`tel:${patientPhone.replace(/\s/g, "")}`}
+                    variant="subtle"
+                    size="compact-xs"
+                    onClick={(e) => e.stopPropagation()}
+                    leftSection={<IconPhone size={10} />}
+                    title="Позвонить"
+                  >
+                    Позвонить
+                  </Button>
+                  <Button
+                    component="a"
+                    href={`https://wa.me/${patientPhone.replace(/\D/g, "").replace(/^8/, "7")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variant="subtle"
+                    size="compact-xs"
+                    onClick={(e) => e.stopPropagation()}
+                    leftSection={<IconBrandWhatsapp size={10} />}
+                    title="Отправить ссылку в WhatsApp"
+                  >
+                    WhatsApp
+                  </Button>
+                </>
+              )}
+            </>
+          )}
+          {task.booking_id && (
+            <Button
+              component={Link}
+              to={`/admin/schedule?booking_id=${task.booking_id}`}
+              variant="subtle"
+              size="compact-xs"
+              onClick={(e) => e.stopPropagation()}
+              leftSection={<IconCalendarEvent size={10} />}
+            >
+              Запись
+            </Button>
+          )}
+          <Button
+            component={Link}
+            to={`${ROUTE_PATHS.admin.staffCalendar}?task_id=${task.id}&open_create=1`}
+            variant="subtle"
+            size="compact-xs"
+            title="Добавить событие в календарь, привязав к задаче"
+            leftSection={<IconCalendarEvent size={10} />}
+            onClick={(e) => e.stopPropagation()}
+          >
+            В календарь
+          </Button>
+        </Group>
+        {onTaskChat && (
+          <Button
+            size="xs"
+            variant="light"
+            color="gray"
+            leftSection={<IconMessages size={12} />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTaskChat(task.id);
+            }}
+          >
+            Чат задачи
+          </Button>
         )}
         {isAi && onClaim && (
           <Button size="xs" variant="light" onClick={(e) => { e.stopPropagation(); onClaim(task.id); }}>
@@ -185,15 +254,23 @@ function TaskKanbanCard({
 export default function AdminTasksPage() {
   const { currentClinicId } = useAdminClinic();
   const [viewMode, setViewMode] = useState<"table" | "kanban">("table");
+  const [taskChatId, setTaskChatId] = useState<string | null>(null);
+  const [taskChatDraft, setTaskChatDraft] = useState("");
+  const { data: taskComments = [], isLoading: taskCommentsLoading } = useTaskComments(taskChatId);
+  const postTaskComment = usePostTaskComment(taskChatId);
   const [createOpened, setCreateOpened] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<string | null>("medium");
-  const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState("");
 
   const currentAdminId = getAdminId();
   const { data: tasks = [], isLoading } = useAdminTasksList();
+  const taskChatTitle = useMemo(() => {
+    if (!taskChatId) return "";
+    return tasks.find((t) => t.id === taskChatId)?.title ?? "";
+  }, [taskChatId, tasks]);
   const { data: myFocusTasks = [] } = useAdminTasksMyFocus(currentAdminId);
   const { data: aiTasks = [] } = useAdminTasksAi();
   const { data: admins = [] } = useAdminAdmins();
@@ -212,13 +289,13 @@ export default function AdminTasksPage() {
 
   const handleCreate = () => {
     if (!title.trim()) return;
-    if (!assigneeId || !dueDate) return;
+    if (assigneeIds.length === 0 || !dueDate) return;
     createTaskMutation.mutate(
       {
         title: title.trim(),
         description: description.trim() || null,
         priority: priority ?? "medium",
-        assignee_id: assigneeId,
+        assignee_ids: assigneeIds,
         due_at: dueDate ? new Date(dueDate).toISOString() : null,
       },
       {
@@ -227,7 +304,7 @@ export default function AdminTasksPage() {
           setTitle("");
           setDescription("");
           setPriority("medium");
-          setAssigneeId(null);
+          setAssigneeIds([]);
           setDueDate("");
         },
       }
@@ -318,8 +395,10 @@ export default function AdminTasksPage() {
                       <TaskKanbanCard
                         key={t.id}
                         task={t}
+                        admins={admins}
                         isTimeBombActive={isTimeBomb(t.due_at)}
                         onClaim={(t.source === "ai_suggested" || t.source === "ai_auto") ? (id) => claimMutation.mutate(id) : undefined}
+                        onTaskChat={setTaskChatId}
                         isAi={t.source === "ai_suggested" || t.source === "ai_auto"}
                         patientPhone={t.patient_id ? patientIdToPhone.get(t.patient_id) : null}
                       />
@@ -342,8 +421,10 @@ export default function AdminTasksPage() {
                   <TaskKanbanCard
                     key={t.id}
                     task={t}
+                    admins={admins}
                     isTimeBombActive={isTimeBomb(t.due_at)}
                     onClaim={(id) => claimMutation.mutate(id)}
+                    onTaskChat={setTaskChatId}
                     isAi
                     patientPhone={t.patient_id ? patientIdToPhone.get(t.patient_id) : null}
                   />
@@ -430,31 +511,32 @@ export default function AdminTasksPage() {
                           </Badge>
                         </Table.Td>
                         <Table.Td>
-                          {t.assignee_id ? (
-                            <HoverCard openDelay={300} width={220} shadow="md">
+                          {formatTaskAssigneeLine(t, admins) ? (
+                            <HoverCard openDelay={300} width={260} shadow="md">
                               <HoverCard.Target>
-                                <Text size="xs" span style={{ cursor: "default" }}>
-                                  {admins.find((a) => a.id === t.assignee_id)?.full_name ||
-                                    admins.find((a) => a.id === t.assignee_id)?.email ||
-                                    t.assignee_id.slice(0, 8)}
+                                <Text size="xs" span style={{ cursor: "default" }} lineClamp={2}>
+                                  {formatTaskAssigneeLine(t, admins)}
                                 </Text>
                               </HoverCard.Target>
                               <HoverCard.Dropdown>
                                 <Stack gap={4}>
-                                  <Text size="sm" fw={500}>
-                                    {admins.find((a) => a.id === t.assignee_id)?.full_name || "Исполнитель"}
-                                  </Text>
-                                  {admins.find((a) => a.id === t.assignee_id)?.email && (
-                                    <Text size="xs" c="dimmed">
-                                      {admins.find((a) => a.id === t.assignee_id)?.email}
+                                  {taskAssigneeIdList(t).map((id) => (
+                                    <Text key={id} size="sm" fw={500}>
+                                      {admins.find((a) => a.id === id)?.full_name ||
+                                        admins.find((a) => a.id === id)?.email ||
+                                        id.slice(0, 8)}
                                     </Text>
-                                  )}
+                                  ))}
                                   <Text size="xs" c="dimmed">
                                     Срок: {t.due_at ? dayjs(t.due_at).format("DD.MM.YYYY HH:mm") : "—"}
                                   </Text>
                                 </Stack>
                               </HoverCard.Dropdown>
                             </HoverCard>
+                          ) : t.role_assignee ? (
+                            <Badge size="xs" variant="outline" title="Очередь по роли (без личного исполнителя)">
+                              {t.role_assignee}
+                            </Badge>
                           ) : (
                             <Text size="xs">—</Text>
                           )}
@@ -469,6 +551,25 @@ export default function AdminTasksPage() {
                         </Table.Td>
                         <Table.Td>
                           <Group gap={4} wrap="nowrap">
+                            <Button
+                              variant="subtle"
+                              size="compact-xs"
+                              title="Чат задачи (команда)"
+                              leftSection={<IconMessages size={12} />}
+                              onClick={() => setTaskChatId(t.id)}
+                            >
+                              Чат задачи
+                            </Button>
+                            <Button
+                              component={Link}
+                              to={`${ROUTE_PATHS.admin.staffCalendar}?task_id=${t.id}&open_create=1`}
+                              variant="subtle"
+                              size="compact-xs"
+                              title="Создать событие в календаре, привязанное к задаче"
+                              leftSection={<IconCalendarEvent size={12} />}
+                            >
+                              Календарь
+                            </Button>
                             {t.patient_id && (
                               <Button
                                 component={Link}
@@ -561,8 +662,10 @@ export default function AdminTasksPage() {
                         id={droppableId}
                         title={col.label}
                         tasks={columnTasks}
+                        admins={admins}
                         isTimeBomb={isTimeBomb}
                         onClaim={(id) => claimMutation.mutate(id)}
+                        onTaskChat={setTaskChatId}
                         patientIdToPhone={patientIdToPhone}
                       />
                     );
@@ -607,14 +710,15 @@ export default function AdminTasksPage() {
             value={priority}
             onChange={setPriority}
           />
-          <Select
-            label="Исполнитель"
-            placeholder="Выберите исполнителя"
+          <MultiSelect
+            label="Исполнители"
+            placeholder="Выберите одного или нескольких"
             data={adminOptions}
-            value={assigneeId}
-            onChange={setAssigneeId}
+            value={assigneeIds}
+            onChange={setAssigneeIds}
             required
             searchable
+            hidePickedOptions
           />
           <TextInput
             label="Срок"
@@ -627,9 +731,80 @@ export default function AdminTasksPage() {
             <Button
               onClick={handleCreate}
               loading={createTaskMutation.isPending}
-              disabled={!title.trim() || !assigneeId || !dueDate}
+              disabled={!title.trim() || assigneeIds.length === 0 || !dueDate}
             >
               Создать
+            </Button>
+          </Group>
+        </Stack>
+      </AdminDrawer>
+
+      <AdminDrawer
+        position="right"
+        size="md"
+        opened={!!taskChatId}
+        onClose={() => {
+          setTaskChatId(null);
+          setTaskChatDraft("");
+        }}
+        title={taskChatTitle ? `Чат задачи: ${taskChatTitle}` : "Чат задачи"}
+      >
+        <Stack gap="sm" style={{ minHeight: 280 }}>
+          {taskCommentsLoading ? (
+            <Loader size="sm" />
+          ) : (
+            <ScrollArea h={320} offsetScrollbars>
+              <Stack gap="xs">
+                {taskComments.length === 0 ? (
+                  <Text size="sm" c="dimmed">
+                    Пока нет сообщений. Напишите коллегам в контексте этой задачи.
+                  </Text>
+                ) : (
+                  taskComments.map((c) => (
+                    <Paper key={c.id} p="xs" withBorder>
+                      <Text size="xs" c="dimmed" mb={4}>
+                        {c.author_full_name || "Сотрудник"} ·{" "}
+                        {dayjs(c.created_at).format("DD.MM.YYYY HH:mm")}
+                      </Text>
+                      <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                        {c.text}
+                      </Text>
+                    </Paper>
+                  ))
+                )}
+              </Stack>
+            </ScrollArea>
+          )}
+          {taskChatId ? (
+            <Button
+              component={Link}
+              to={`/admin/staff-chat?task=${taskChatId}`}
+              variant="light"
+              size="xs"
+            >
+              Открыть thread в мессенджере персонала
+            </Button>
+          ) : null}
+          <Textarea
+            label="Сообщение"
+            placeholder="Текст для команды…"
+            minRows={3}
+            value={taskChatDraft}
+            onChange={(e) => setTaskChatDraft(e.currentTarget.value)}
+          />
+          <Group justify="flex-end">
+            <Button
+              onClick={() => {
+                const text = taskChatDraft.trim();
+                if (!text || !taskChatId) return;
+                postTaskComment.mutate(text, {
+                  onSuccess: () => setTaskChatDraft(""),
+                });
+              }}
+              loading={postTaskComment.isPending}
+              disabled={!taskChatDraft.trim()}
+            >
+              Отправить
             </Button>
           </Group>
         </Stack>
@@ -642,15 +817,19 @@ function KanbanColumn({
   id,
   title,
   tasks,
+  admins,
   isTimeBomb,
   onClaim,
+  onTaskChat,
   patientIdToPhone,
 }: {
   id: string;
   title: string;
   tasks: AdminTaskRow[];
+  admins: AdminUserRow[];
   isTimeBomb: (due: string | null) => boolean;
   onClaim: (taskId: string) => void;
+  onTaskChat?: (taskId: string) => void;
   patientIdToPhone: Map<string, string>;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id });
@@ -680,8 +859,10 @@ function KanbanColumn({
           <TaskKanbanCard
             key={t.id}
             task={t}
+            admins={admins}
             isTimeBombActive={isTimeBomb(t.due_at)}
             onClaim={(t.source === "ai_suggested" || t.source === "ai_auto") ? onClaim : undefined}
+            onTaskChat={onTaskChat}
             isAi={t.source === "ai_suggested" || t.source === "ai_auto"}
             patientPhone={t.patient_id ? patientIdToPhone.get(t.patient_id) ?? null : null}
           />

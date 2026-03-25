@@ -48,6 +48,7 @@ celery_app = Celery(
         "src.infrastructure.messaging.tasks.backup_tasks",
         "src.infrastructure.messaging.tasks.erp_tasks",
         "src.infrastructure.messaging.tasks.crm_tasks",
+        "src.infrastructure.messaging.tasks.staff_collab_tasks",
     ],
 )
 
@@ -98,6 +99,10 @@ celery_app.conf.update(
         "run-erp-visit-revenue-parity-sample-daily": {
             "task": "erp_tasks.run_daily_visit_revenue_parity_sample",
             "schedule": crontab(hour=5, minute=15) if crontab else 5 * 3600 + 15 * 60,  # 05:15 UTC after nightly
+        },
+        "staff-calendar-reminders": {
+            "task": "staff_collab_tasks.send_calendar_reminders",
+            "schedule": 300.0,  # every 5 minutes
         },
     },
 )

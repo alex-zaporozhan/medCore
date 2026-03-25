@@ -20,7 +20,6 @@ from src.application.dto.service_dto import (
     ServiceDoctorLink,
     ServiceRead,
 )
-from src.application.services.pricing_service import PricingService
 from src.application.services.service_service import ServiceService
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.domain.entities.admin_user import AdminUser
@@ -77,7 +76,6 @@ async def get_clinic_services(
         limit=1000,
     )
     ids = [s.id for s in services]
-    pricing_svc = PricingService(session)
     # Для админского списка считаем только базовую цену: скидки можно добавить позднее при необходимости.
     # Здесь effective_price == base_price (price), чтобы не ломать текущие ожидания.
     doctors_map = await _get_service_doctors_map(session, ids)

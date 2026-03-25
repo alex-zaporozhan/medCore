@@ -1,15 +1,32 @@
 """Tests for admin omnichannel chat API (Phase 3)."""
 
+import asyncio
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
 from src.application.services.omnichannel_chat_service import OmnichannelChatService
 from src.domain.entities.omnichannel_ai_settings import AISettings as OmniAISettings
+from src.domain.entities.omnichannel_channel import Channel as OmniChannel
 from src.domain.entities.omnichannel_chat import Chat as OmniChat
-from src.domain.entities.omnichannel_contact import Contact as OmniContact
 from src.domain.entities.omnichannel_message import Message as OmniMessage
 from src.infrastructure.database import base as db_base
+
+
+async def _add_outbound_capable_channel(session, clinic_id: uuid.UUID) -> uuid.UUID:
+    """WEB_WIDGET supports admin outbound (OutboundPolicy + dispatcher)."""
+    ch = OmniChannel(
+        id=uuid.uuid4(),
+        business_account_id=clinic_id,
+        type="WEB_WIDGET",
+        display_name="Test Web Widget",
+        status="ACTIVE",
+    )
+    session.add(ch)
+    await session.flush()
+    return ch.id
 
 
 @pytest.mark.regression_chats
@@ -22,6 +39,7 @@ async def test_admin_list_omni_chats_and_messages(init_db, seed_data, client: As
     # Prepare one omnichannel chat + message directly via service
     async with db_base.AsyncSessionLocal() as session:
         service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
         contact = await service.create_contact(
             business_account_id=business_account_id,
             full_name="Omni Admin Test",
@@ -30,11 +48,13 @@ async def test_admin_list_omni_chats_and_messages(init_db, seed_data, client: As
         chat = await service.get_or_create_chat(
             business_account_id=business_account_id,
             contact=contact,
+            channel_id=channel_id,
         )
         await service.create_inbound_message(
             chat=chat,
             contact=contact,
             content="Hello from client (admin omni)",
+            channel_id=channel_id,
         )
         await session.commit()
 
@@ -89,6 +109,7 @@ async def test_admin_send_and_hide_omni_message(init_db, seed_data, client: Asyn
     # Prepare chat + inbound msg
     async with db_base.AsyncSessionLocal() as session:
         service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
         contact = await service.create_contact(
             business_account_id=business_account_id,
             full_name="Omni Hide Test",
@@ -97,11 +118,13 @@ async def test_admin_send_and_hide_omni_message(init_db, seed_data, client: Asyn
         chat = await service.get_or_create_chat(
             business_account_id=business_account_id,
             contact=contact,
+            channel_id=channel_id,
         )
         inbound = await service.create_inbound_message(
             chat=chat,
             contact=contact,
             content="Client message to hide via admin",
+            channel_id=channel_id,
         )
         await session.commit()
         chat_id = chat.id
@@ -119,6 +142,8 @@ async def test_admin_send_and_hide_omni_message(init_db, seed_data, client: Asyn
     sent = r.json()
     assert sent.get("direction") == "OUTBOUND"
     assert sent.get("actor_type") == "HUMAN_ADMIN"
+    assert sent.get("channel_id") == str(channel_id)
+    assert sent.get("sender_admin_id") == admin_auth["admin_id"]
 
     # Hide inbound message
     r2 = await client.post(
@@ -207,6 +232,7 @@ async def test_admin_omni_messages_exclude_hidden_by_default_include_hidden_para
 
     async with db_base.AsyncSessionLocal() as session:
         service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
         contact = await service.create_contact(
             business_account_id=business_account_id,
             full_name="Omni Hidden Test",
@@ -215,16 +241,19 @@ async def test_admin_omni_messages_exclude_hidden_by_default_include_hidden_para
         chat = await service.get_or_create_chat(
             business_account_id=business_account_id,
             contact=contact,
+            channel_id=channel_id,
         )
         visible = await service.create_inbound_message(
             chat=chat,
             contact=contact,
             content="Visible message",
+            channel_id=channel_id,
         )
         to_hide = await service.create_inbound_message(
             chat=chat,
             contact=contact,
             content="Message to soft-hide",
+            channel_id=channel_id,
         )
         await session.commit()
         chat_id = chat.id
@@ -263,4 +292,381 @@ async def test_admin_omni_messages_exclude_hidden_by_default_include_hidden_para
     hidden_msg = next(m for m in items_include if m["id"] == str(to_hide_id))
     assert hidden_msg["ui_hidden"] is True
     assert hidden_msg.get("hidden_reason") == "test filter"
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_outbound_uses_last_client_inbound_channel(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict
+):
+    """Two CLIENT inbounds with different channel_id — reply without reply_channel_id uses the latest."""
+    business_account_id = seed_data["clinic_id"]
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        ch_first = await _add_outbound_capable_channel(session, business_account_id)
+        ch_second = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="Two-channel test",
+            primary_phone="+79990007788",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=ch_first,
+        )
+        await service.create_inbound_message(
+            chat=chat,
+            contact=contact,
+            content="from first channel",
+            channel_id=ch_first,
+        )
+        await service.create_inbound_message(
+            chat=chat,
+            contact=contact,
+            content="from second channel",
+            channel_id=ch_second,
+        )
+        await session.commit()
+        chat_id = chat.id
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    r = await client.post(
+        f"/api/v1/admin/omni-chats/{chat_id}/messages",
+        json={"content": "operator reply"},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["channel_id"] == str(ch_second)
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_reply_channel_foreign_clinic_400(init_db, seed_data, client: AsyncClient, admin_auth: dict):
+    """reply_channel_id belonging to another clinic returns 400."""
+    from decimal import Decimal
+
+    from src.domain.entities.clinic import Clinic
+
+    business_account_id = seed_data["clinic_id"]
+    foreign_clinic_id = uuid.uuid4()
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        session.add(
+            Clinic(
+                id=foreign_clinic_id,
+                name="Foreign tenant omni",
+                prepayment_amount=Decimal("0"),
+            )
+        )
+        foreign_channel_id = await _add_outbound_capable_channel(session, foreign_clinic_id)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="Tenant isolation omni",
+            primary_phone="+79990008899",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=channel_id,
+        )
+        await service.create_inbound_message(
+            chat=chat,
+            contact=contact,
+            content="hello",
+            channel_id=channel_id,
+        )
+        await session.commit()
+        chat_id = chat.id
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    r = await client.post(
+        f"/api/v1/admin/omni-chats/{chat_id}/messages",
+        json={"content": "nope", "reply_channel_id": str(foreign_channel_id)},
+        headers=headers,
+    )
+    assert r.status_code == 400, r.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_reply_channel_unresolved_409(init_db, seed_data, client: AsyncClient, admin_auth: dict):
+    """No inbound channel and no usable primary channel — 409 OMNI_REPLY_CHANNEL_UNRESOLVED."""
+    business_account_id = seed_data["clinic_id"]
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="Unresolved channel test",
+            primary_phone="+79990009900",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=None,
+        )
+        await session.commit()
+        chat_id = chat.id
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    r = await client.post(
+        f"/api/v1/admin/omni-chats/{chat_id}/messages",
+        json={"content": "cannot send"},
+        headers=headers,
+    )
+    assert r.status_code == 409, r.text
+    detail = r.json().get("detail")
+    if isinstance(detail, dict):
+        assert detail.get("code") == "OMNI_REPLY_CHANNEL_UNRESOLVED"
+    else:
+        assert "OMNI_REPLY_CHANNEL_UNRESOLVED" in r.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_send_rate_limit_429(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict, monkeypatch: pytest.MonkeyPatch
+):
+    """POST omni messages beyond per-admin limit returns 429 (Redis rate limiter)."""
+    from src.core.config import settings
+
+    monkeypatch.setattr(settings, "rate_admin_omni_send_per_admin_limit", 2)
+    monkeypatch.setattr(settings, "rate_admin_omni_send_window_seconds", 60)
+
+    business_account_id = seed_data["clinic_id"]
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="Omni rate limit",
+            primary_phone="+79990003344",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=channel_id,
+        )
+        await service.create_inbound_message(
+            chat=chat,
+            contact=contact,
+            content="seed for rate",
+            channel_id=channel_id,
+        )
+        await session.commit()
+        chat_id = chat.id
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    for i in range(2):
+        r = await client.post(
+            f"/api/v1/admin/omni-chats/{chat_id}/messages",
+            json={"content": f"msg {i}"},
+            headers=headers,
+        )
+        assert r.status_code == 201, r.text
+
+    r3 = await client.post(
+        f"/api/v1/admin/omni-chats/{chat_id}/messages",
+        json={"content": "over limit"},
+        headers=headers,
+    )
+    assert r3.status_code == 429, r3.text
+    detail = r3.json().get("detail")
+    if isinstance(detail, dict):
+        assert detail.get("code") == "OMNI_SEND_RATE_LIMITED"
+    else:
+        assert "OMNI_SEND_RATE_LIMITED" in r3.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_patch_omni_assignee_and_filter_me(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict
+):
+    """PATCH assignee (P1-B); list with assignee=me returns only assigned chats; clear assignee."""
+    business_account_id = seed_data["clinic_id"]
+    raw_aid = admin_auth["admin_id"]
+    admin_id = raw_aid if isinstance(raw_aid, uuid.UUID) else uuid.UUID(str(raw_aid))
+
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="Assignee patch test",
+            primary_phone="+79990001001",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=channel_id,
+        )
+        await session.commit()
+        chat_id = chat.id
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+
+    r_patch = await client.patch(
+        f"/api/v1/admin/omni-chats/{chat_id}",
+        json={"assignee_admin_id": str(admin_id)},
+        headers=headers,
+    )
+    assert r_patch.status_code == 200, r_patch.text
+    patched = r_patch.json()
+    assert patched.get("assignee_admin_id") == str(admin_id)
+    assert patched.get("assignee_name")
+
+    r_me = await client.get(
+        "/api/v1/admin/omni-chats",
+        params={"assignee": "me", "page_size": 100},
+        headers=headers,
+    )
+    assert r_me.status_code == 200, r_me.text
+    me_ids = {c["chat_id"] for c in r_me.json()["items"]}
+    assert str(chat_id) in me_ids
+
+    r_clear = await client.patch(
+        f"/api/v1/admin/omni-chats/{chat_id}",
+        json={"assignee_admin_id": None},
+        headers=headers,
+    )
+    assert r_clear.status_code == 200, r_clear.text
+    cleared = r_clear.json()
+    assert cleared.get("assignee_admin_id") in (None, "")
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_quick_replies_crud(init_db, seed_data, client: AsyncClient, admin_auth: dict):
+    """Quick-replies CRUD (omni.inbox.manage)."""
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+
+    r_create = await client.post(
+        "/api/v1/admin/omni-chats/quick-replies",
+        json={"title": "QR title", "body": "QR body line", "sort_order": 1},
+        headers=headers,
+    )
+    assert r_create.status_code == 201, r_create.text
+    qid = r_create.json()["id"]
+
+    r_list = await client.get("/api/v1/admin/omni-chats/quick-replies", headers=headers)
+    assert r_list.status_code == 200, r_list.text
+    ids = [x["id"] for x in r_list.json()["items"]]
+    assert qid in ids
+
+    r_up = await client.patch(
+        f"/api/v1/admin/omni-chats/quick-replies/{qid}",
+        json={"title": "QR title updated"},
+        headers=headers,
+    )
+    assert r_up.status_code == 200, r_up.text
+    assert r_up.json()["title"] == "QR title updated"
+
+    r_del = await client.delete(f"/api/v1/admin/omni-chats/quick-replies/{qid}", headers=headers)
+    assert r_del.status_code == 204, r_del.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_patch_omni_chat_status_rejects_unknown(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict
+):
+    """PATCH status validates enum-like values and rejects arbitrary strings."""
+    business_account_id = seed_data["clinic_id"]
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="Status validation test",
+            primary_phone="+79990001002",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=channel_id,
+        )
+        await session.commit()
+        chat_id = chat.id
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    r = await client.patch(
+        f"/api/v1/admin/omni-chats/{chat_id}",
+        json={"status": "NOT_A_REAL_STATUS"},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_quick_replies_reject_empty_after_trim(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict
+):
+    """Quick replies reject blank title/body after trim."""
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+
+    r_create = await client.post(
+        "/api/v1/admin/omni-chats/quick-replies",
+        json={"title": "   ", "body": "ok"},
+        headers=headers,
+    )
+    assert r_create.status_code == 422, r_create.text
+
+    r_create2 = await client.post(
+        "/api/v1/admin/omni-chats/quick-replies",
+        json={"title": "ok", "body": "   "},
+        headers=headers,
+    )
+    assert r_create2.status_code == 422, r_create2.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_quick_replies_manage_requires_permission(
+    init_db, seed_data, client: AsyncClient, doctor_auth: dict
+):
+    """Users without omni.inbox.manage cannot mutate quick replies."""
+    headers = {"Authorization": f"Bearer {doctor_auth['access_token']}"}
+    r = await client.post(
+        "/api/v1/admin/omni-chats/quick-replies",
+        json={"title": "Nope", "body": "Forbidden for this role"},
+        headers=headers,
+    )
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_sse_requires_auth(init_db, seed_data, client: AsyncClient):
+    """SSE endpoint returns 401 without token."""
+    r = await client.get("/api/v1/admin/omni-chats/events")
+    assert r.status_code == 401, r.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_sse_connected_event_with_auth(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict
+):
+    """SSE endpoint streams initial connected comment for valid admin token."""
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    async with client.stream("GET", "/api/v1/admin/omni-chats/events", headers=headers) as resp:
+        assert resp.status_code == 200, await resp.aread()
+        assert resp.headers.get("content-type", "").startswith("text/event-stream")
+        first_line = await asyncio.wait_for(resp.aiter_lines().__anext__(), timeout=3.0)
+        assert first_line.startswith(": connected")
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_list_assignee_param_rejects_invalid(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict
+):
+    """Only assignee=me is accepted; any other value returns 422."""
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    r = await client.get("/api/v1/admin/omni-chats", params={"assignee": "all"}, headers=headers)
+    assert r.status_code == 422, r.text
 

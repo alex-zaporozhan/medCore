@@ -16,7 +16,6 @@ from src.domain.entities.customer_subscription import CustomerSubscription
 from src.domain.entities.notification import Notification
 from src.domain.entities.patient import Patient
 from src.domain.entities.subscription_package import SubscriptionPackage
-from src.infrastructure.database.base import AsyncSessionLocal
 from src.infrastructure.messaging.celery_app import celery_app
 
 logger = logging.getLogger(__name__)

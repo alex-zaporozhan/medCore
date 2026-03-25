@@ -14,12 +14,13 @@ export {
   useDeleteAbsence,
 } from "./useDoctorScheduleConfig";
 export { useServices, useService } from "./useServices";
-export { usePatients } from "./usePatients";
+export { usePatients, usePatient } from "./usePatients";
 export {
   useCheckoutInfo,
   useAdminBookings,
   useRescheduleBookingAdmin,
   useCreateAdminBooking,
+  usePatchBookingAdmin,
   useCancelBookingAdmin,
   useCompleteBookingAdmin,
 } from "./useAdminBookings";
@@ -58,8 +59,14 @@ export {
   useUpdateClinicMutation,
   useCreateClinicMutation,
 } from "./useClinics";
-export { useAdminAdmins, useCreateAdminMutation } from "./useAdminAdmins";
+export {
+  useAdminAdmins,
+  useCreateAdminMutation,
+  usePatchAdminEmploymentMutation,
+} from "./useAdminAdmins";
 export type { AdminUserRow } from "./useAdminAdmins";
+export { useAdminSession } from "./useAdminSession";
+export type { AdminSessionPayload } from "./useAdminSession";
 export {
   useAdminTasksList,
   useAdminTasksMyFocus,
@@ -68,8 +75,10 @@ export {
   useCreateAdminTaskMutation,
   useClaimAdminTaskMutation,
   useUpdateAdminTaskStatusMutation,
+  useTaskComments,
+  usePostTaskComment,
 } from "./useAdminTasks";
-export type { AdminTaskRow, AdminTaskOpenRow } from "./useAdminTasks";
+export type { AdminTaskRow, AdminTaskOpenRow, TaskCommentRow } from "./useAdminTasks";
 export {
   useAdminDiscounts,
   useCreateAdminDiscountMutation,
@@ -221,6 +230,10 @@ export {
   useAdminOmniChats,
   useAdminOmniChatDetail,
   useAdminOmniChatMessages,
+  useAdminOmniChatMessagesInfinite,
+  useOmniChatSse,
+  useOmniQuickReplies,
+  usePatchOmniChat,
   useSendAdminOmniMessage,
   useHideAdminOmniMessage,
   useUpdateOmniChatAiMode,
@@ -291,6 +304,8 @@ export {
   useAdminWaitlist,
   useCancelWaitlistEntry,
 } from "./useAdminWaitlist";
+
+export * from "./useStaffCollab";
 
 /** Публичные типы доменных хуков — импорт из `@/hooks` рядом с хуками (без глубоких `@/hooks/use*` для типов). */
 export type { RevenueHunterSavedResponse } from "./useRevenueHunter";

@@ -286,6 +286,13 @@ function normalizeErrorMessage(raw: string, status: number, statusText: string) 
   return message;
 }
 
+/** POST /v1/patients без JWT (default clinic); остальные /v1/patients* — с админским токеном (P2-FU2). */
+function isPatientsPublicCreatePost(path: string, method: string): boolean {
+  const m = (method || "GET").toUpperCase();
+  const base = path.split("?")[0];
+  return m === "POST" && base === "/v1/patients";
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -301,8 +308,11 @@ async function request<T>(
   if (!hasRequestId) {
     headers["X-Request-Id"] = newOutboundRequestId();
   }
+  const method = options.method || "GET";
   const needsAdminToken =
-    (path.startsWith("/v1/admin") && !path.includes("/v1/admin/auth/login")) || path.startsWith("/v1/owner/");
+    (path.startsWith("/v1/admin") && !path.includes("/v1/admin/auth/login")) ||
+    path.startsWith("/v1/owner/") ||
+    (path.startsWith("/v1/patients") && !isPatientsPublicCreatePost(path, method));
   const resolvedToken = token ?? (needsAdminToken ? getAdminToken() : null);
   if (resolvedToken) {
     headers["Authorization"] = `Bearer ${resolvedToken}`;
@@ -317,7 +327,9 @@ async function request<T>(
   const res = await fetch(url, { ...options, headers: headers as HeadersInit });
   const bodyText = await res.text();
   const isAdminOrOwnerUnauthorized =
-    (path.includes("/v1/admin") && !path.includes("/v1/admin/auth/login")) || path.startsWith("/v1/owner/");
+    (path.includes("/v1/admin") && !path.includes("/v1/admin/auth/login")) ||
+    path.startsWith("/v1/owner/") ||
+    (path.startsWith("/v1/patients") && !isPatientsPublicCreatePost(path, method));
   if (res.status === 401 && isAdminOrOwnerUnauthorized) {
     clearAdminToken();
     if (typeof window !== "undefined") {
@@ -348,6 +360,106 @@ async function request<T>(
   return JSON.parse(bodyText) as T;
 }
 
+/** POST multipart (без выставления Content-Type — boundary задаёт браузер). Ответ — JSON. */
+async function requestFormJson<T>(
+  path: string,
+  formData: FormData,
+  token?: string | null,
+  method: "POST" | "PATCH" = "POST"
+): Promise<T> {
+  const url = path.startsWith("http") ? path : `${BASE}${path}`;
+  const headers: Record<string, string> = {
+    "X-Request-Id": newOutboundRequestId(),
+  };
+  const needsAdminToken =
+    (path.startsWith("/v1/admin") && !path.includes("/v1/admin/auth/login")) ||
+    path.startsWith("/v1/owner/");
+  const resolvedToken = token ?? (needsAdminToken ? getAdminToken() : null);
+  if (resolvedToken) {
+    headers["Authorization"] = `Bearer ${resolvedToken}`;
+  }
+  const res = await fetch(url, { method, body: formData, headers });
+  const bodyText = await res.text();
+  const isAdminOrOwnerUnauthorized =
+    (path.includes("/v1/admin") && !path.includes("/v1/admin/auth/login")) ||
+    path.startsWith("/v1/owner/");
+  if (res.status === 401 && isAdminOrOwnerUnauthorized) {
+    clearAdminToken();
+    if (typeof window !== "undefined") {
+      window.location.href = ROUTE_PATHS.admin.login;
+    }
+    throw new Error("Требуется авторизация");
+  }
+  if (res.status === 401 && shouldClearPatientSessionOn401(path, resolvedToken)) {
+    clearPatientAuth();
+    const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
+    const normalized = normalizeErrorMessage(
+      rawMessage.trim() || "Unauthorized",
+      res.status,
+      res.statusText
+    );
+    throw new ApiErrorWithCode(normalized, code, traceId, details);
+  }
+  if (!res.ok) {
+    const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
+    const normalized = normalizeErrorMessage(
+      rawMessage.trim() || res.statusText || bodyText,
+      res.status,
+      res.statusText
+    );
+    throw new ApiErrorWithCode(normalized, code, traceId, details);
+  }
+  if (res.status === 204 || !bodyText.trim()) return undefined as T;
+  return JSON.parse(bodyText) as T;
+}
+
+/** GET бинарного ответа (вложения и т.п.). */
+async function requestBlob(path: string, token?: string | null): Promise<Blob> {
+  const url = path.startsWith("http") ? path : `${BASE}${path}`;
+  const headers: Record<string, string> = {
+    "X-Request-Id": newOutboundRequestId(),
+  };
+  const needsAdminToken =
+    (path.startsWith("/v1/admin") && !path.includes("/v1/admin/auth/login")) ||
+    path.startsWith("/v1/owner/");
+  const resolvedToken = token ?? (needsAdminToken ? getAdminToken() : null);
+  if (resolvedToken) {
+    headers["Authorization"] = `Bearer ${resolvedToken}`;
+  }
+  const res = await fetch(url, { method: "GET", headers });
+  const isAdminOrOwnerUnauthorized =
+    (path.includes("/v1/admin") && !path.includes("/v1/admin/auth/login")) ||
+    path.startsWith("/v1/owner/");
+  if (res.status === 401 && isAdminOrOwnerUnauthorized) {
+    clearAdminToken();
+    if (typeof window !== "undefined") {
+      window.location.href = ROUTE_PATHS.admin.login;
+    }
+    throw new Error("Требуется авторизация");
+  }
+  if (!res.ok) {
+    const bodyText = await res.text();
+    if (res.status === 401 && shouldClearPatientSessionOn401(path, resolvedToken)) {
+      clearPatientAuth();
+      const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
+      const normalized = normalizeErrorMessage(
+        rawMessage.trim() || "Unauthorized",
+        res.status,
+        res.statusText
+      );
+      throw new ApiErrorWithCode(normalized, code, traceId, details);
+    }
+    const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
+    const normalized = normalizeErrorMessage(
+      rawMessage.trim() || res.statusText || bodyText,
+      res.status,
+      res.statusText
+    );
+    throw new ApiErrorWithCode(normalized, code, traceId, details);
+  }
+  return res.blob();
+}
+
 export const api = {
   get: <T>(path: string, token?: string | null) =>
     request<T>(path, { method: "GET" }, token),
@@ -357,6 +469,11 @@ export const api = {
       { method: "POST", body: body ? JSON.stringify(body) : undefined },
       token
     ),
+  postFormData: <T>(path: string, formData: FormData, token?: string | null) =>
+    requestFormJson<T>(path, formData, token),
+  patchFormData: <T>(path: string, formData: FormData, token?: string | null) =>
+    requestFormJson<T>(path, formData, token, "PATCH"),
+  getBlob: (path: string, token?: string | null) => requestBlob(path, token),
   put: <T>(path: string, body?: object, token?: string | null) =>
     request<T>(
       path,
@@ -377,6 +494,9 @@ export function authApi(token: string | null) {
   return {
     get: <T>(path: string) => api.get<T>(path, token),
     post: <T>(path: string, body?: object) => api.post<T>(path, body, token),
+    postFormData: <T>(path: string, formData: FormData) =>
+      api.postFormData<T>(path, formData, token),
+    getBlob: (path: string) => api.getBlob(path, token),
     put: <T>(path: string, body?: object) => api.put<T>(path, body, token),
     delete: <T>(path: string) => api.delete<T>(path, token),
     patch: <T>(path: string, body?: object) => api.patch<T>(path, body, token),

@@ -3,7 +3,6 @@
 We stub LLMClient to avoid real external calls.
 """
 
-import uuid
 
 import pytest
 from sqlalchemy import select
@@ -17,9 +16,6 @@ from src.application.services.omnichannel_ai_settings_service import (
     OmnichannelAISettingsService,
 )
 from src.application.services.omnichannel_chat_service import OmnichannelChatService
-from src.domain.entities.omnichannel_ai_settings import AISettings as OmniAISettings
-from src.domain.entities.omnichannel_chat import Chat as OmniChat
-from src.domain.entities.omnichannel_contact import Contact as OmniContact
 from src.domain.entities.omnichannel_message import Message as OmniMessage
 from src.infrastructure.database import base as db_base
 
@@ -99,15 +95,16 @@ async def test_ai_orchestrator_auto_reply_creates_outbound(init_db, seed_data):
             content="Когда вы работаете?",
         )
 
-        # AISettings: AUTO_REPLY with low threshold
+        # Force deterministic BUSINESS settings even if seed already created a row.
         settings_svc = OmnichannelAISettingsService(session)
-        ai_settings = OmniAISettings(
+        await settings_svc.upsert_settings(
             scope="BUSINESS",
             scope_id=business_account_id,
-            ai_mode="AUTO_REPLY",
-            confidence_thresholds={"auto_reply": 0.3},
+            data={
+                "ai_mode": "AUTO_REPLY",
+                "confidence_thresholds": {"auto_reply": 0.3},
+            },
         )
-        session.add(ai_settings)
 
         stub_reply = LLMReply(text="Мы работаем ежедневно с 9 до 21.", confidence=0.9, meta={})
         orchestrator = OmnichannelAIOrchestrator(session, llm_client=StubLLMClient(stub_reply))
@@ -150,14 +147,24 @@ async def test_ai_orchestrator_suggest_only_creates_template(init_db, seed_data)
             content="Подскажите стоимость консультации.",
         )
 
-        # AISettings: SUGGEST_ONLY on chat level
-        ai_settings = OmniAISettings(
+        # Force deterministic mode: business disabled + chat suggest-only override.
+        settings_svc = OmnichannelAISettingsService(session)
+        await settings_svc.upsert_settings(
+            scope="BUSINESS",
+            scope_id=business_account_id,
+            data={
+                "ai_mode": "DISABLED",
+                "confidence_thresholds": {"auto_reply": 0.9},
+            },
+        )
+        await settings_svc.upsert_settings(
             scope="CHAT",
             scope_id=chat.id,
-            ai_mode="SUGGEST_ONLY",
-            confidence_thresholds={"auto_reply": 0.8},
+            data={
+                "ai_mode": "SUGGEST_ONLY",
+                "confidence_thresholds": {"auto_reply": 0.8},
+            },
         )
-        session.add(ai_settings)
 
         stub_reply = LLMReply(
             text="Предложите клиенту уточнить услугу и сообщите базовую стоимость консультации.",
@@ -203,20 +210,29 @@ async def test_legacy_orchestrator_uses_factory_for_safe_client(init_db, seed_da
             content="Подскажите расписание работы.",
         )
 
-        ai_settings = OmniAISettings(
+        settings_svc = OmnichannelAISettingsService(session)
+        await settings_svc.upsert_settings(
+            scope="BUSINESS",
+            scope_id=business_account_id,
+            data={"ai_mode": "DISABLED"},
+        )
+        await settings_svc.upsert_settings(
             scope="CHAT",
             scope_id=chat.id,
-            ai_mode="SUGGEST_ONLY",
-            confidence_thresholds={"auto_reply": 0.5},
+            data={
+                "ai_mode": "SUGGEST_ONLY",
+                "confidence_thresholds": {"auto_reply": 0.5},
+            },
         )
-        session.add(ai_settings)
 
         # Force use_agent=False so that legacy branch is used.
         from src.application.services import ai_config_service as ai_config_module
 
+        original_get_clinic_ai_config = ai_config_module.AiConfigService.get_clinic_ai_config
+
         async def fake_get_clinic_ai_config(self, clinic_id):  # type: ignore[unused-argument]
-            # Return default strict config so that run_ai_agent is not used.
-            return await ai_config_module.AiConfigService(None).get_clinic_ai_config(clinic_id)
+            # Delegate to original implementation; keep monkeypatch deterministic and recursion-safe.
+            return await original_get_clinic_ai_config(self, clinic_id)
 
         monkeypatch.setattr(
             ai_config_module.AiConfigService,
@@ -246,8 +262,8 @@ async def test_legacy_orchestrator_uses_factory_for_safe_client(init_db, seed_da
                     ]
                 }
 
-        async def fake_build_safe_ai_client(clinic_id, session_arg):
-            captured_calls.append((clinic_id, session_arg))
+        async def fake_build_safe_ai_client(*, clinic_id, session):
+            captured_calls.append((clinic_id, session))
             return StubSafeAiClient(), SafeAiClientContext(
                 clinic_id=clinic_id,
                 provider_type="ru_compliant",

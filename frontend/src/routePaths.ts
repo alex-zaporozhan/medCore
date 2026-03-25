@@ -10,6 +10,10 @@ export const ROUTE_PATHS = {
   admin: {
     login: "/admin/login",
     dashboard: "/admin",
+    /** Внутренний staff/collab чат клиники (не омниканальный инбокс пациентов). */
+    staffChat: "/admin/staff-chat",
+    staffCalendar: "/admin/calendar",
+    knowledge: "/admin/knowledge",
     clinics: "/admin/clinics",
     services: "/admin/services",
     schedule: "/admin/schedule",
@@ -29,6 +33,7 @@ export const ROUTE_PATHS = {
     doctors: "/admin/doctors",
     doctorSchedule: "/admin/doctor-schedule",
     patients: "/admin/patients",
+    /** Единый омниканальный инбокс с пациентами (внешние каналы). Не путать с `staffChat` — внутренний чат персонала. */
     omniChat: "/admin/omni-chat",
     omniChannels: "/admin/omni-channels",
     omniAiSettings: "/admin/omni-ai-settings",
@@ -67,6 +72,9 @@ export const ROUTE_PATHS = {
  * Должны совпадать с ключами `ADMIN_SHELL_PAGE_BY_SEGMENT` в `App.tsx`.
  */
 export const ADMIN_SHELL_ROUTE_SEGMENTS = [
+  "staff-chat",
+  "calendar",
+  "knowledge",
   "clinics",
   "services",
   "schedule",

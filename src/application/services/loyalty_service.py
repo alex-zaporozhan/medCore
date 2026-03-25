@@ -578,7 +578,7 @@ class LoyaltyService:
                 source="system",
                 source_event_id=subscription.id,
             )
-        except Exception as exc:
+        except Exception:
             logger.exception(
                 "Unexpected error during ERP loyalty obligation creation for subscription sale",
                 extra={

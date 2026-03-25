@@ -8,6 +8,7 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from src.domain.entities.clinic import Clinic
 from src.domain.entities.omnichannel_channel import Channel as OmniChannel
 from src.infrastructure.database import base as db_base
 
@@ -28,6 +29,9 @@ async def test_sec_c1_admin_omni_chats_only_own_clinic(
     async with db_base.AsyncSessionLocal() as session:
         from src.domain.entities.omnichannel_contact import Contact as OmniContact
         from src.domain.entities.omnichannel_chat import Chat as OmniChat
+
+        session.add(Clinic(id=other_clinic_id, name="Other Clinic", prepayment_amount=0))
+        await session.flush()
         contact = OmniContact(
             business_account_id=other_clinic_id,
             full_name="Other Contact",
@@ -63,7 +67,6 @@ async def test_sec_c2_admin_cannot_get_other_clinic_conversation_messages(
     admin_auth: dict,
 ):
     """SEC-C2 (admin path): Admin of clinic A cannot GET messages for conversation belonging to clinic B."""
-    from src.domain.entities.clinic import Clinic
     from src.domain.entities.patient import Patient
     other_clinic_id = uuid.uuid4()
     other_patient_id = uuid.uuid4()
@@ -104,6 +107,8 @@ async def test_sec_c3_owner_cannot_access_foreign_channel(
     headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
     other_clinic_id = uuid.uuid4()
     async with db_base.AsyncSessionLocal() as session:
+        session.add(Clinic(id=other_clinic_id, name="Foreign Clinic", prepayment_amount=0))
+        await session.flush()
         ch = OmniChannel(
             business_account_id=other_clinic_id,
             type="TELEGRAM_BOT",

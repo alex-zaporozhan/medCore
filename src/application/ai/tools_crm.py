@@ -389,7 +389,7 @@ class UpdateLeadStageTool(Tool):
                 error_message=str(exc),
                 trace_id=args.trace_id or ctx.trace_id,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             return UpdateLeadStageResult(
                 success=False,
                 lead=None,
@@ -472,7 +472,7 @@ class CreateTaskForLeadTool(Tool):
                 task_id=task.id,
                 trace_id=args.trace_id or ctx.trace_id,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception(
                 "crm_ai_tool_call_failed",
                 extra={

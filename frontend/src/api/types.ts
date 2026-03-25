@@ -201,6 +201,10 @@ export interface Booking {
   prepayment_amount: string;
   payment_id: string | null;
   notes: string | null;
+  /** Заполняется в GET /v1/admin/bookings для отображения ФИО/названий */
+  patient_name?: string | null;
+  doctor_name?: string | null;
+  service_name?: string | null;
 }
 
 // ERP finance
