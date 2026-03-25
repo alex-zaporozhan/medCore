@@ -20,9 +20,7 @@ from src.application.services.payroll_service import (
     SalaryCalculationContext,
 )
 from src.core.datetime_utils import utc_now
-from src.domain.entities.cashbox import Cashbox
 from src.domain.entities.financial_transaction import FinancialTransaction
-from src.domain.entities.inventory_transaction import InventoryTransaction
 from src.domain.entities.payroll_policy import PayrollPolicy
 from src.domain.entities.product import Product
 from src.domain.entities.salary_transaction import SalaryTransaction

@@ -71,15 +71,50 @@ async def _send_owner_morning_brief_async(
             logger.warning("owner_integrations: failed to get dashboard report", extra={"error": str(e)})
             return
 
+        total_bookings = (
+            int(dashboard.bookings_pending)
+            + int(dashboard.bookings_confirmed)
+            + int(dashboard.bookings_completed)
+            + int(dashboard.bookings_cancelled)
+            + int(dashboard.bookings_no_show)
+        )
+        served_bookings = int(dashboard.bookings_completed)
+        completion_rate = (served_bookings / total_bookings * 100.0) if total_bookings > 0 else 0.0
+        no_show_rate = (int(dashboard.bookings_no_show) / total_bookings * 100.0) if total_bookings > 0 else 0.0
+
+        risks: list[str] = []
+        if int(dashboard.bookings_no_show) > 0:
+            risks.append(f"no-show: {dashboard.bookings_no_show}")
+        if int(dashboard.bookings_cancelled) > 0:
+            risks.append(f"отмены: {dashboard.bookings_cancelled}")
+        if float(dashboard.day_pulse_score) < 40:
+            risks.append(f"низкий пульс дня: {dashboard.day_pulse_score}/100")
+        risk_line = ", ".join(risks) if risks else "существенных рисков не выявлено"
+
         lines = [
             "📊 Утренний бриф",
             f"Дата: {yesterday}",
             "",
-            "Вчера:",
-            f"  Записей: подтверждено {dashboard.bookings_confirmed}, завершено {dashboard.bookings_completed}, отменено {dashboard.bookings_cancelled}",
-            f"  Новых пациентов: {dashboard.new_patients}",
-            f"  Выручка: {dashboard.revenue}",
+            "Сводка за вчера:",
+            (
+                "  Записи: "
+                f"всего {total_bookings}, подтверждено {dashboard.bookings_confirmed}, "
+                f"завершено {dashboard.bookings_completed}, отменено {dashboard.bookings_cancelled}, "
+                f"no-show {dashboard.bookings_no_show}"
+            ),
+            f"  Конверсия в визит: {completion_rate:.1f}%",
+            f"  No-show rate: {no_show_rate:.1f}%",
+            f"  Новые пациенты: {dashboard.new_patients}",
             f"  Лиды: {dashboard.new_leads_count}",
+            f"  Писали в чат: {dashboard.chat_writers_count}",
+            f"  Пульс дня: {dashboard.day_pulse_score}/100",
+            f"  Выручка: {dashboard.revenue}",
+            "",
+            f"Риски: {risk_line}",
+            "Фокус на сегодня:",
+            "  1) закрыть no-show / отмены с прозвоном;",
+            "  2) подтвердить ближайшие записи;",
+            "  3) догреть лиды и вернуть незавершённые диалоги.",
         ]
         text = "\n".join(lines)
 

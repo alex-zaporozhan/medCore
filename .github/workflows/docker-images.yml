@@ -35,6 +35,9 @@ jobs:
           --health-retries 15
 
     env:
+      TESTING: "1"
+      SECRET_KEY: test-secret-key-ci
+      JWT_SECRET_KEY: test-jwt-secret-key-ci
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
       REDIS_URL: redis://localhost:6379/0
       CELERY_BROKER_URL: redis://localhost:6379/1
@@ -52,7 +55,7 @@ jobs:
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: "1.7.1"
+          version: "1.8.3"
 
       - name: Install backend dependencies
         run: |
@@ -60,7 +63,18 @@ jobs:
           poetry install --no-interaction --no-ansi --with dev --no-root
 
       - name: Ruff (lint)
-        run: poetry run ruff check .
+        run: poetry run ruff check src tests
+
+      - name: Tenant ORM audit
+        run: poetry run python scripts/audit_tenant_columns.py
+
+      - name: Mypy (JWT module)
+        run: poetry run mypy src/core/security.py --ignore-missing-imports --follow-imports=skip
+
+      - name: pip-audit
+        run: |
+          poetry run pip install pip-audit
+          poetry run pip-audit
 
       - name: Pytest (full suite)
         run: poetry run pytest -v tests/
@@ -219,6 +233,7 @@ jobs:
               - "pyproject.toml"
               - "poetry.lock"
               - "src/**"
+              - "scripts/**"
               - "alembic/**"
             frontend:
               - "frontend/**"

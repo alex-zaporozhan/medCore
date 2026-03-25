@@ -25,7 +25,8 @@ import {
 } from "@mantine/core";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { useDisclosure } from "@mantine/hooks";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { GlassModal } from "@/shared/ui/GlassModal";
 
 const WEEKDAY_LABELS: Record<number, string> = {
@@ -44,10 +45,18 @@ function timeStr(t: string): string {
 
 export default function AdminDoctorSchedulePage() {
   const { currentClinicId } = useAdminClinic();
+  const [searchParams] = useSearchParams();
   const { data: doctors, isLoading: doctorsLoading } = useDoctors({
     clinic_id: currentClinicId ?? undefined,
   });
   const [doctorId, setDoctorId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("doctor_id");
+    if (fromUrl && doctors?.some((d) => d.id === fromUrl)) {
+      setDoctorId(fromUrl);
+    }
+  }, [searchParams, doctors]);
 
   const { data: workingHours, isLoading: whLoading } = useWorkingHours(doctorId);
   const { data: absences, isLoading: absLoading } = useAbsence(doctorId);

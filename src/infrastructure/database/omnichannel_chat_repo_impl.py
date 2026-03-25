@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.omnichannel_chat import Chat
@@ -107,10 +107,13 @@ class ChatRepositoryImpl(ChatRepository):
         search: str | None,
         skip: int,
         limit: int,
+        assignee_admin_id: UUID | None = None,
     ) -> list[Chat]:
         stmt: Select[tuple[Chat]] = select(Chat).where(
             Chat.business_account_id == business_account_id
         )
+        if assignee_admin_id is not None:
+            stmt = stmt.where(Chat.assignee_admin_id == assignee_admin_id)
         if status:
             stmt = stmt.where(Chat.status == status)
         if search:
@@ -186,7 +189,7 @@ class MessageRepositoryImpl(MessageRepository):
     ) -> list[Message]:
         base = select(Message).where(Message.chat_id == chat_id)
         if not include_hidden:
-            base = base.where(Message.ui_hidden == False)
+            base = base.where(Message.ui_hidden.is_(False))
         stmt: Select[tuple[Message]] = (
             base.order_by(Message.created_at.desc()).limit(limit)
         )
@@ -207,7 +210,7 @@ class MessageRepositoryImpl(MessageRepository):
         limit = max(1, min(limit, 200))
         base = select(Message).where(Message.chat_id == chat_id)
         if not include_hidden:
-            base = base.where(Message.ui_hidden == False)
+            base = base.where(Message.ui_hidden.is_(False))
 
         if after_id is not None:
             sub = (

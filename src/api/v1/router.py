@@ -56,6 +56,7 @@ from src.api.v1.routers import (
     admin_inventory,
     admin_crm,
     admin_tasks,
+    admin_staff_collab,
     admin_loyalty,
     patient_loyalty,
     admin_forms,
@@ -111,6 +112,7 @@ api_router.include_router(admin_payroll.router)
 api_router.include_router(admin_inventory.router)
 api_router.include_router(admin_crm.router)
 api_router.include_router(admin_tasks.router)
+api_router.include_router(admin_staff_collab.router)
 api_router.include_router(patient_chat.router)
 api_router.include_router(patient_notification_settings.router)
 api_router.include_router(public_services.router)

@@ -20,10 +20,24 @@ class DashboardReport(BaseModel):
     new_patients: int
     revenue: Decimal
     new_leads_count: int = 0
+    chat_writers_count: int = Field(
+        default=0,
+        description="Unique patients who wrote to admins today (chat_messages: sender_type='patient').",
+    )
     cancellations_count: int = 0
     nps_avg: float | None = Field(
         default=None,
         description="Optional NPS average; null until reviews module exists; frontend hides NPS widget when null.",
+    )
+    empty_slot_hours: float = Field(
+        default=0.0,
+        description="Approx. sum of free schedule slot hours for the day (day scope); 0 when period≠day or unavailable.",
+    )
+    day_pulse_score: int = Field(
+        default=50,
+        ge=0,
+        le=100,
+        description="0–100 «как прошёл день» по коэффициенту занятых часов к пустым слотам (occupancy).",
     )
 
 

@@ -6,7 +6,9 @@ import re
 from src.application.ai.tokenization import extract_token_strings
 
 
-PHONE_RE = re.compile(r"(?:\+7|8)?\s*[\d\-\s()]{7,}")
+# Phone regex must not match arbitrary digit-hyphen sequences (e.g. inside
+# PATIENT#<uuid> tokens). Require an explicit +7 or 8 prefix.
+PHONE_RE = re.compile(r"(?:\+7|8)\s*[\d\-\s()]{7,}")
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 # Placeholders for future name/address masking (SEC roadmap).

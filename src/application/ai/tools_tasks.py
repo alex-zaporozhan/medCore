@@ -17,7 +17,6 @@ from pydantic import BaseModel, Field
 
 from src.application.ai.tools_base import Tool, ToolContext, ToolError
 from src.application.ai.tokenization import (
-    make_booking_token,
     make_birthdate_token,
     make_lead_token,
     make_patient_token,
@@ -235,7 +234,7 @@ class AnalyzeAttentionForTasksTool(Tool):
                 error_message=str(exc),
                 trace_id=trace_id,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             ai_tool_calls_total.labels(tool_id=self.name, source=ctx.source, status="unexpected_error").inc()
             logger.exception("analyze_attention_for_tasks unexpected_error", extra={"clinic_id": str(clinic_id)})
             return AnalyzeAttentionForTasksResult(
@@ -262,7 +261,7 @@ class AnalyzeAttentionForTasksTool(Tool):
         try:
             parsed_json = json.loads(content)
             llm = _LlmResponse.model_validate(parsed_json)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             ai_tool_calls_total.labels(tool_id=self.name, source=ctx.source, status="invalid_json").inc()
             return AnalyzeAttentionForTasksResult(
                 success=False,

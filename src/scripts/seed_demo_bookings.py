@@ -19,7 +19,6 @@ from src.domain.entities.clinic import Clinic
 from src.domain.entities.doctor import Doctor
 from src.domain.entities.doctor_working_hours import DoctorWorkingHours
 from src.domain.entities.patient import Patient
-from src.domain.entities.payment import Payment  # для регистрации таблицы в metadata (FK bookings.payment_id)
 from src.domain.entities.service import Service
 
 # Слоты по 30 минут с 09:00 до 18:00 (последний старт 17:30)

@@ -1,0 +1,34 @@
+# SME §2.3: скан уязвимостей в зависимостях (Trivy filesystem). Образы: см. README / registry scan @LEAD.
+name: Security (Trivy FS)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "pyproject.toml"
+      - "poetry.lock"
+      - "Dockerfile"
+      - ".github/workflows/security-trivy.yml"
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "poetry.lock"
+      - "Dockerfile"
+      - ".github/workflows/security-trivy.yml"
+
+jobs:
+  trivy-fs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: "."
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          # Python/Box focus: не сканируем дерево npm (отдельный контур frontend-ci / registry).
+          skip-dirs: "frontend/node_modules,.venv"

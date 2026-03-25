@@ -146,6 +146,17 @@ export function useCreateAdminBooking() {
   });
 }
 
+export function usePatchBookingAdmin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, notes }: { id: string; notes: string | null }) =>
+      api.patch<Booking>(`/v1/admin/bookings/${id}`, { notes }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
+    },
+  });
+}
+
 export function useCancelBookingAdmin() {
   const queryClient = useQueryClient();
   return useMutation({

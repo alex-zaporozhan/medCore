@@ -1,6 +1,7 @@
 """Patient service."""
 
 import logging
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,12 +53,28 @@ class PatientService:
         clinic_id: UUID | None = None,
         phone: str | None = None,
         full_name: str | None = None,
+        visited_from: date | None = None,
+        visited_to: date | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> list[PatientRead]:
         """Get all patients with optional filters."""
+        if (visited_from is not None or visited_to is not None) and clinic_id is None:
+            raise ValueError("clinic_id is required when filtering by visit dates")
+        if (
+            visited_from is not None
+            and visited_to is not None
+            and visited_from > visited_to
+        ):
+            raise ValueError("visited_from must be on or before visited_to")
         patients = await self.repository.get_all(
-            clinic_id=clinic_id, phone=phone, full_name=full_name, skip=skip, limit=limit
+            clinic_id=clinic_id,
+            phone=phone,
+            full_name=full_name,
+            visited_from=visited_from,
+            visited_to=visited_to,
+            skip=skip,
+            limit=limit,
         )
         return [PatientRead.model_validate(patient) for patient in patients]
 

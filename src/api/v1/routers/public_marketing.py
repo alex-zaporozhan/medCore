@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +13,6 @@ from src.application.dto.marketing_attribution_dto import (
 )
 from src.application.services.lead_service import LeadService
 from src.core.datetime_utils import to_iso8601_utc, utc_now_naive
-from src.domain.entities.lead_card import LeadCard
 from src.domain.entities.promo_post import PromoPost
 from src.domain.entities.story import Story
 from src.domain.entities.visit_attribution import VisitAttribution

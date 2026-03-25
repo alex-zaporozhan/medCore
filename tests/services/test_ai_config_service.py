@@ -29,7 +29,7 @@ class _FakeResult:
     def __init__(self, row: object | None) -> None:
         self._row = row
 
-    def scalars(self) -> "._FakeResult":  # type: ignore[name-match]
+    def scalars(self) -> "_FakeResult":
         return self
 
     def first(self) -> object | None:

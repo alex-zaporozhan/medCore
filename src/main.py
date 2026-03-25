@@ -4,7 +4,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -147,6 +147,41 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     if trace_id:
         body["trace_id"] = trace_id
     return JSONResponse(status_code=500, content=body)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Unify HTTPException into {detail, code, trace_id?} envelope.
+
+    Many clients (front/TanStack) can consume `code` when present, but they
+    can also fall back to string `detail`.
+    """
+    trace_id = getattr(request.state, "trace_id", None)
+
+    detail = exc.detail
+    detail_code: str | None = None
+    if isinstance(detail, dict):
+        raw = detail.get("code")
+        if isinstance(raw, str) and raw.strip():
+            detail_code = raw.strip()
+
+    status_code_to_code: dict[int, str] = {
+        401: "unauthorized",
+        403: "forbidden",
+        404: "not_found",
+        409: "conflict",
+        422: "validation_error",
+        429: "rate_limited",
+    }
+    code = detail_code or status_code_to_code.get(exc.status_code) or "http_error"
+
+    body: dict = {
+        "detail": detail,
+        "code": code,
+    }
+    if trace_id:
+        body["trace_id"] = trace_id
+    return JSONResponse(status_code=exc.status_code, content=body)
 
 # Include API router
 app.include_router(api_router, prefix=settings.api_v1_prefix)

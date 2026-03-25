@@ -18,6 +18,7 @@ from src.api.v1.dependencies import (
 from src.application.dto.booking_dto import (
     BookingCreateAdmin,
     BookingCreatePatient,
+    BookingPatchAdmin,
     BookingRead,
     BookingRescheduleRequest,
     CheckoutInfoResponse,
@@ -591,6 +592,38 @@ async def mark_no_show_admin(
         error = _booking_error_from_value_error(exc, context)
         await _emit_booking_api_error(
             status.HTTP_400_BAD_REQUEST,
+            error,
+            current_admin.clinic_id,
+        )
+    return booking
+
+
+@router.patch(
+    "/admin/bookings/{booking_id}",
+    response_model=BookingRead,
+    responses={400: BOOKING_ERROR_OPENAPI[400], 404: BOOKING_ERROR_OPENAPI[404]},
+)
+async def patch_booking_admin(
+    booking_id: UUID,
+    data: BookingPatchAdmin,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+    context: RequestContext = Depends(get_request_context),
+):
+    """P2: частичное обновление записи (комментарий администратора)."""
+    service = BookingService(session)
+    try:
+        booking = await service.patch_booking_admin(current_admin.clinic_id, booking_id, data)
+    except ClinicForbiddenError as exc:
+        await record_multitenancy_mismatch_for_admin(session, current_admin, exc)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=clinic_forbidden_admin_detail(exc, context),
+        ) from exc
+    except LookupError:
+        error = _booking_not_found_error(context)
+        await _emit_booking_api_error(
+            status.HTTP_404_NOT_FOUND,
             error,
             current_admin.clinic_id,
         )

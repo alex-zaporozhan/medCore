@@ -28,6 +28,7 @@ import {
   useMarketingAttributionDrillDown,
   type MarketingChannelSummaryItem,
 } from "@/hooks/useMarketingAttribution";
+import { isBoxEdition } from "@/config/edition";
 
 const EMPTY_DB_HINT =
   "Если ошибка из-за отсутствия данных в базе — добавьте клинику, врачей или пациентов в соответствующих разделах.";
@@ -35,6 +36,7 @@ const EMPTY_DB_HINT =
 export default function AdminReportsPage() {
   const { currentClinicId } = useAdminClinic();
   const clinicId = currentClinicId ?? null;
+  const showEnterpriseMarketingAnalytics = !isBoxEdition();
 
   const [dateFrom, setDateFrom] = useState(dayjs().subtract(7, "day").format("YYYY-MM-DD"));
   const [dateTo, setDateTo] = useState(dayjs().format("YYYY-MM-DD"));
@@ -141,30 +143,32 @@ export default function AdminReportsPage() {
         value={dateTo}
         onChange={(e) => setDateTo(e.target.value)}
       />
-      <Grid>
-        <Grid.Col span={{ base: 12, sm: 6 }}>
-          <Select
-            label="Источник трафика"
-            placeholder="Все источники"
-            data={trafficSourceOptions}
-            value={selectedTrafficSourceId}
-            onChange={setSelectedTrafficSourceId}
-            clearable
-            searchable
-          />
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6 }}>
-          <Select
-            label="Кампания"
-            placeholder="Все кампании"
-            data={campaignOptions}
-            value={selectedCampaignId}
-            onChange={setSelectedCampaignId}
-            clearable
-            searchable
-          />
-        </Grid.Col>
-      </Grid>
+      {showEnterpriseMarketingAnalytics && (
+        <Grid>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <Select
+              label="Источник трафика"
+              placeholder="Все источники"
+              data={trafficSourceOptions}
+              value={selectedTrafficSourceId}
+              onChange={setSelectedTrafficSourceId}
+              clearable
+              searchable
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <Select
+              label="Кампания"
+              placeholder="Все кампании"
+              data={campaignOptions}
+              value={selectedCampaignId}
+              onChange={setSelectedCampaignId}
+              clearable
+              searchable
+            />
+          </Grid.Col>
+        </Grid>
+      )}
 
       {anyError && (
         <>
@@ -179,7 +183,7 @@ export default function AdminReportsPage() {
 
       {loading && <PageSkeleton variant="cards" cardsCount={4} />}
 
-      {attribution?.items && attribution.items.length > 0 && (
+      {showEnterpriseMarketingAnalytics && attribution?.items && attribution.items.length > 0 && (
         <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md" mb="md">
           <Card shadow="sm" padding="md" withBorder>
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
@@ -226,7 +230,7 @@ export default function AdminReportsPage() {
         </SimpleGrid>
       )}
 
-      {attribution?.items && attribution.items.length > 0 && (
+      {showEnterpriseMarketingAnalytics && attribution?.items && attribution.items.length > 0 && (
         <Card shadow="sm" padding="md" withBorder mb="md">
           <Text size="sm" fw={500} c="dimmed" mb="xs">
             Воронка конверсий
@@ -276,7 +280,7 @@ export default function AdminReportsPage() {
         </Card>
       )}
 
-      {insightsData && (insightsData.insights?.length > 0 || true) && (
+      {showEnterpriseMarketingAnalytics && insightsData && (insightsData.insights?.length > 0 || true) && (
         <Card shadow="sm" padding="md" withBorder mb="md">
           <Text size="sm" fw={500} c="dimmed" mb="xs">
             AI Marketing Advisor
@@ -361,7 +365,7 @@ export default function AdminReportsPage() {
         </Card>
       )}
 
-      {attribution && attribution.items.length > 0 && (
+      {showEnterpriseMarketingAnalytics && attribution && attribution.items.length > 0 && (
         <Card shadow="sm" padding="md" withBorder>
           <Text size="sm" fw={500} c="dimmed" mb="xs">
             Маркетинг и атрибуция (клик по строке — drill-down)
@@ -410,39 +414,41 @@ export default function AdminReportsPage() {
         </Card>
       )}
 
-      <AdminDrawer
-        position="right"
-        size="md"
-        opened={!!drillDownRow}
-        onClose={() => setDrillDownRow(null)}
-        title={drillDownRow ? `По источнику: ${drillDownRow.campaign_name || drillDownRow.traffic_source_name || "—"}` : ""}
-      >
-        {drillDownRow && (
-          <Stack gap="sm">
-            <Text size="sm" c="dimmed">
-              Лиды и записи по выбранному каналу за период.
-            </Text>
-            {drillDownData?.items && drillDownData.items.length > 0 ? (
-              <Stack gap="xs">
-                {drillDownData.items.slice(0, 50).map((item) => (
-                  <Text key={item.id} size="sm">
-                    {item.display_label ?? item.id} — {item.type}
-                  </Text>
-                ))}
-                {drillDownData.total > 50 && (
-                  <Text size="xs" c="dimmed">
-                    Показано 50 из {drillDownData.total}
-                  </Text>
-                )}
-              </Stack>
-            ) : (
+      {showEnterpriseMarketingAnalytics && (
+        <AdminDrawer
+          position="right"
+          size="md"
+          opened={!!drillDownRow}
+          onClose={() => setDrillDownRow(null)}
+          title={drillDownRow ? `По источнику: ${drillDownRow.campaign_name || drillDownRow.traffic_source_name || "—"}` : ""}
+        >
+          {drillDownRow && (
+            <Stack gap="sm">
               <Text size="sm" c="dimmed">
-                Нет данных для выбранного источника.
+                Лиды и записи по выбранному каналу за период.
               </Text>
-            )}
-          </Stack>
-        )}
-      </AdminDrawer>
+              {drillDownData?.items && drillDownData.items.length > 0 ? (
+                <Stack gap="xs">
+                  {drillDownData.items.slice(0, 50).map((item) => (
+                    <Text key={item.id} size="sm">
+                      {item.display_label ?? item.id} — {item.type}
+                    </Text>
+                  ))}
+                  {drillDownData.total > 50 && (
+                    <Text size="xs" c="dimmed">
+                      Показано 50 из {drillDownData.total}
+                    </Text>
+                  )}
+                </Stack>
+              ) : (
+                <Text size="sm" c="dimmed">
+                  Нет данных для выбранного источника.
+                </Text>
+              )}
+            </Stack>
+          )}
+        </AdminDrawer>
+      )}
 
       {!dashboard && !noShow && !revenue && !ownerDashboard && !anyError && !loading && (
         <EmptyStateHint title="Нет данных за выбранный период" />

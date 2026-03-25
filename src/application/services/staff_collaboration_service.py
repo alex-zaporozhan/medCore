@@ -1,0 +1,1641 @@
+"""P1 Staff Core: feed, staff chat, calendar, knowledge (separate from patient/omni chat)."""
+
+from __future__ import annotations
+
+import os
+import re
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from uuid import UUID
+
+from sqlalchemy import delete, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.application.dto.staff_collab_dto import (
+    CalendarDayCell,
+    CalendarEventChip,
+    CalendarMonthRange,
+    StaffCalendarCreatorAckSummary,
+    StaffCalendarEventDetailsResponse,
+    KnowledgeDocumentCreate,
+    KnowledgeDocumentResponse,
+    KnowledgeDocumentUpdate,
+    NamedAdminBrief,
+    StaffAttachmentBrief,
+    StaffCalendarEventCreate,
+    StaffCalendarEventResponse,
+    StaffCalendarEventUpdate,
+    StaffCalendarInvitationAckResponse,
+    StaffCalendarMonthGridResponse,
+    StaffCalendarNotificationSignals,
+    StaffCalendarReminderInfo,
+    StaffChatMessageCreate,
+    StaffChatMessageResponse,
+    StaffChatRoomResponse,
+    StaffFeedCommentCreate,
+    StaffFeedCommentResponse,
+    StaffFeedPostCreate,
+    StaffFeedPostResponse,
+    StaffRoomCreateGroup,
+    StaffRoomInviteCreate,
+)
+from src.core.datetime_utils import utc_now_naive
+from src.core.config import settings
+from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
+from src.domain.entities.knowledge_document import KnowledgeDocument
+from src.domain.entities.staff_calendar_event import StaffCalendarEvent
+from src.domain.entities.staff_calendar_event_participant import StaffCalendarEventParticipant
+from src.domain.entities.staff_calendar_event_invitation import StaffCalendarEventInvitation
+from src.domain.entities.staff_calendar_reminder_delivery import StaffCalendarReminderDelivery
+from src.domain.entities.staff_chat_message import StaffChatMessage
+from src.domain.entities.staff_chat_message_attachment import StaffChatMessageAttachment
+from src.domain.entities.staff_chat_room import StaffChatRoom
+from src.domain.entities.staff_chat_room_member import StaffChatRoomMember
+from src.domain.entities.staff_feed_comment import StaffFeedComment
+from src.domain.entities.staff_feed_post import StaffFeedPost
+from src.domain.entities.staff_feed_post_attachment import StaffFeedPostAttachment
+from src.domain.entities.staff_feed_post_like import StaffFeedPostLike
+from src.domain.entities.task import Task
+from src.domain.entities.task_assignee import TaskAssignee
+
+GENERAL_ROOM_KIND = "GENERAL"
+DM_KIND = "DM"
+GROUP_KIND = "GROUP"
+TASK_KIND = "TASK"
+
+MEMBERSHIP_TASK_CORE = "task_core"
+MEMBERSHIP_INVITE = "invite"
+MEMBERSHIP_GENERAL = "general"
+MEMBERSHIP_GROUP = "group"
+MEMBERSHIP_DM = "dm"
+
+
+def _sanitize_filename(name: str) -> str:
+    base = os.path.basename(name or "file")
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", base)[:200] or "file"
+
+
+def _as_utc_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _dt_naive_utc(dt: datetime) -> datetime:
+    """Persist calendar timestamps as naive UTC (columns are TIMESTAMP WITHOUT TIME ZONE)."""
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _knowledge_visible(user_roles: set[str], visible_roles: list[str] | None) -> bool:
+    if not visible_roles:
+        return True
+    return bool(user_roles.intersection(set(visible_roles)))
+
+
+class StaffCollaborationService:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def _ensure_calendar_event_invitations(
+        self,
+        *,
+        clinic_id: UUID,
+        event_id: UUID,
+        invitee_admin_ids: list[UUID],
+    ) -> None:
+        """Create invitation rows for invitees that don't have an invitation yet."""
+        if not invitee_admin_ids:
+            return
+        existing_res = await self._session.execute(
+            select(StaffCalendarEventInvitation.invitee_admin_id).where(
+                StaffCalendarEventInvitation.event_id == event_id,
+                StaffCalendarEventInvitation.invitee_admin_id.in_(list(invitee_admin_ids)),
+            )
+        )
+        existing = set(existing_res.scalars().all())
+        for aid in invitee_admin_ids:
+            if aid in existing:
+                continue
+            self._session.add(
+                StaffCalendarEventInvitation(
+                    id=uuid.uuid4(),
+                    clinic_id=clinic_id,
+                    event_id=event_id,
+                    invitee_admin_id=aid,
+                    acknowledged_at=None,
+                )
+            )
+        await self._session.flush()
+
+    async def _delete_calendar_event_invitations(
+        self,
+        *,
+        event_id: UUID,
+        invitee_admin_ids: list[UUID],
+    ) -> None:
+        if not invitee_admin_ids:
+            return
+        await self._session.execute(
+            delete(StaffCalendarEventInvitation).where(
+                StaffCalendarEventInvitation.event_id == event_id,
+                StaffCalendarEventInvitation.invitee_admin_id.in_(list(invitee_admin_ids)),
+            )
+        )
+        await self._session.flush()
+
+    async def revoke_staff_chat_memberships_for_admin(self, admin_id: UUID) -> None:
+        """Удалить участие во всех комнатах (при увольнении)."""
+        await self._session.execute(delete(StaffChatRoomMember).where(StaffChatRoomMember.admin_id == admin_id))
+
+    async def _is_room_member(self, room_id: UUID, admin_id: UUID) -> bool:
+        res = await self._session.execute(
+            select(StaffChatRoomMember.admin_id).where(
+                StaffChatRoomMember.room_id == room_id,
+                StaffChatRoomMember.admin_id == admin_id,
+            )
+        )
+        return res.scalar_one_or_none() is not None
+
+    async def _sync_general_room_members(self, clinic_id: UUID, room_id: UUID) -> None:
+        res = await self._session.execute(
+            select(AdminUser.id).where(
+                AdminUser.clinic_id == clinic_id,
+                AdminUser.deleted_at.is_(None),
+                AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+            )
+        )
+        for aid in res.scalars().all():
+            if await self._is_room_member(room_id, aid):
+                continue
+            self._session.add(
+                StaffChatRoomMember(
+                    room_id=room_id,
+                    admin_id=aid,
+                    membership_kind=MEMBERSHIP_GENERAL,
+                )
+            )
+
+    async def sync_task_room_members_for_task(self, clinic_id: UUID, task_id: UUID) -> None:
+        """Вызывать после смены исполнителя/постановщика задачи: синхронизировать TASK-комнату."""
+        task = await self._session.get(Task, task_id)
+        if task is None or task.clinic_id != clinic_id:
+            return
+        res = await self._session.execute(
+            select(StaffChatRoom).where(
+                StaffChatRoom.task_id == task_id,
+                StaffChatRoom.clinic_id == clinic_id,
+            )
+        )
+        room = res.scalar_one_or_none()
+        if room is None:
+            return
+        await self._sync_task_room_members(room.id, task)
+
+    async def _task_core_admin_ids(self, task: Task) -> set[UUID]:
+        desired: set[UUID] = {x for x in (task.creator_id, task.assignee_id) if x is not None}
+        res = await self._session.execute(
+            select(TaskAssignee.admin_id).where(TaskAssignee.task_id == task.id)
+        )
+        for aid in res.scalars().all():
+            desired.add(aid)
+        return desired
+
+    async def _sync_task_room_members(self, room_id: UUID, task: Task) -> None:
+        """Постановщик/исполнитель как task_core; при смене — удаление старого task_core. Приглашённые (invite) не трогаем."""
+        res = await self._session.execute(select(StaffChatRoom).where(StaffChatRoom.id == room_id))
+        room = res.scalar_one_or_none()
+        if room is None or room.kind != TASK_KIND:
+            return
+        desired = await self._task_core_admin_ids(task)
+        stmt = delete(StaffChatRoomMember).where(
+            StaffChatRoomMember.room_id == room_id,
+            StaffChatRoomMember.membership_kind == MEMBERSHIP_TASK_CORE,
+        )
+        if desired:
+            stmt = stmt.where(~StaffChatRoomMember.admin_id.in_(list(desired)))
+        await self._session.execute(stmt)
+        for aid in desired:
+            ex = await self._session.execute(
+                select(StaffChatRoomMember).where(
+                    StaffChatRoomMember.room_id == room_id,
+                    StaffChatRoomMember.admin_id == aid,
+                )
+            )
+            row = ex.scalar_one_or_none()
+            if row is None:
+                self._session.add(
+                    StaffChatRoomMember(
+                        room_id=room_id,
+                        admin_id=aid,
+                        membership_kind=MEMBERSHIP_TASK_CORE,
+                    )
+                )
+            else:
+                row.membership_kind = MEMBERSHIP_TASK_CORE
+
+    async def _admin_brief(self, admin_id: UUID) -> NamedAdminBrief:
+        res = await self._session.execute(select(AdminUser).where(AdminUser.id == admin_id))
+        u = res.scalar_one_or_none()
+        if u is None:
+            return NamedAdminBrief(id=admin_id, full_name=None)
+        return NamedAdminBrief(id=u.id, full_name=u.full_name)
+
+    async def ensure_general_room(self, clinic_id: UUID) -> StaffChatRoom:
+        res = await self._session.execute(
+            select(StaffChatRoom).where(
+                StaffChatRoom.clinic_id == clinic_id,
+                StaffChatRoom.kind == GENERAL_ROOM_KIND,
+            )
+        )
+        room = res.scalar_one_or_none()
+        if room:
+            return room
+        room = StaffChatRoom(
+            id=uuid.uuid4(),
+            clinic_id=clinic_id,
+            kind=GENERAL_ROOM_KIND,
+            title="Общий чат",
+        )
+        self._session.add(room)
+        await self._session.flush()
+        return room
+
+    async def list_chat_rooms(self, clinic_id: UUID, admin_id: UUID) -> list[StaffChatRoomResponse]:
+        general = await self.ensure_general_room(clinic_id)
+        await self._sync_general_room_members(clinic_id, general.id)
+        await self._session.flush()
+        res = await self._session.execute(
+            select(StaffChatRoom)
+            .join(StaffChatRoomMember, StaffChatRoomMember.room_id == StaffChatRoom.id)
+            .where(
+                StaffChatRoom.clinic_id == clinic_id,
+                StaffChatRoomMember.admin_id == admin_id,
+            )
+            .order_by(StaffChatRoom.created_at)
+        )
+        rooms = res.scalars().all()
+        return [
+            StaffChatRoomResponse(id=r.id, kind=r.kind, title=r.title, task_id=r.task_id)
+            for r in rooms
+        ]
+
+    async def list_chat_messages(
+        self,
+        clinic_id: UUID,
+        room_id: UUID,
+        admin_id: UUID,
+        *,
+        limit: int = 50,
+    ) -> list[StaffChatMessageResponse] | None:
+        chk = await self._session.execute(
+            select(StaffChatRoom).where(
+                StaffChatRoom.id == room_id,
+                StaffChatRoom.clinic_id == clinic_id,
+            )
+        )
+        if chk.scalar_one_or_none() is None:
+            return None
+        if not await self._is_room_member(room_id, admin_id):
+            return None
+        res = await self._session.execute(
+            select(StaffChatMessage).where(
+                StaffChatMessage.clinic_id == clinic_id,
+                StaffChatMessage.room_id == room_id,
+            ).order_by(StaffChatMessage.created_at.desc()).limit(limit)
+        )
+        rows = list(reversed(res.scalars().all()))
+        out: list[StaffChatMessageResponse] = []
+        for m in rows:
+            author = await self._admin_brief(m.author_admin_id)
+            att_res = await self._session.execute(
+                select(StaffChatMessageAttachment).where(
+                    StaffChatMessageAttachment.message_id == m.id
+                )
+            )
+            atts = [
+                StaffAttachmentBrief(
+                    id=a.id,
+                    file_name=a.file_name,
+                    content_type=a.content_type,
+                    size_bytes=a.size_bytes,
+                )
+                for a in att_res.scalars().all()
+            ]
+            out.append(
+                StaffChatMessageResponse(
+                    id=m.id,
+                    body=m.body,
+                    author=author,
+                    created_at=m.created_at,
+                    attachments=atts,
+                )
+            )
+        return out
+
+    async def post_chat_message(
+        self,
+        clinic_id: UUID,
+        room_id: UUID,
+        author_admin_id: UUID,
+        data: StaffChatMessageCreate,
+    ) -> StaffChatMessageResponse | None:
+        chk = await self._session.execute(
+            select(StaffChatRoom).where(
+                StaffChatRoom.id == room_id,
+                StaffChatRoom.clinic_id == clinic_id,
+            )
+        )
+        if chk.scalar_one_or_none() is None:
+            return None
+        if not await self._is_room_member(room_id, author_admin_id):
+            return None
+        msg = StaffChatMessage(
+            id=uuid.uuid4(),
+            clinic_id=clinic_id,
+            room_id=room_id,
+            author_admin_id=author_admin_id,
+            body=data.body.strip(),
+        )
+        self._session.add(msg)
+        await self._session.flush()
+        author = await self._admin_brief(author_admin_id)
+        return StaffChatMessageResponse(
+            id=msg.id,
+            body=msg.body,
+            author=author,
+            created_at=msg.created_at,
+            attachments=[],
+        )
+
+    async def invite_to_room(
+        self,
+        clinic_id: UUID,
+        room_id: UUID,
+        inviter_admin_id: UUID,
+        data: StaffRoomInviteCreate,
+    ) -> StaffChatRoom | None:
+        invitee = data.invitee_admin_id
+        if inviter_admin_id == invitee:
+            raise ValueError("cannot_invite_self")
+        res = await self._session.execute(
+            select(StaffChatRoom).where(
+                StaffChatRoom.id == room_id,
+                StaffChatRoom.clinic_id == clinic_id,
+            )
+        )
+        room = res.scalar_one_or_none()
+        if room is None:
+            return None
+        if room.kind in (GENERAL_ROOM_KIND, DM_KIND):
+            raise ValueError("room_kind_not_invitable")
+        if not await self._is_room_member(room_id, inviter_admin_id):
+            return None
+        peer = await self._session.execute(
+            select(AdminUser.id).where(
+                AdminUser.id == invitee,
+                AdminUser.clinic_id == clinic_id,
+                AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+            )
+        )
+        if peer.scalar_one_or_none() is None:
+            raise ValueError("invitee_not_in_clinic")
+        if await self._is_room_member(room_id, invitee):
+            return room
+        self._session.add(
+            StaffChatRoomMember(
+                room_id=room_id,
+                admin_id=invitee,
+                membership_kind=MEMBERSHIP_INVITE,
+            )
+        )
+        await self._session.flush()
+        return room
+
+    async def list_feed_posts(self, clinic_id: UUID, *, limit: int = 30) -> list[StaffFeedPostResponse]:
+        res = await self._session.execute(
+            select(StaffFeedPost)
+            .where(
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+            .order_by(StaffFeedPost.created_at.desc())
+            .limit(limit)
+        )
+        posts = list(res.scalars().all())
+        out: list[StaffFeedPostResponse] = []
+        for post in posts:
+            cnt_res = await self._session.execute(
+                select(func.count())
+                .select_from(StaffFeedComment)
+                .where(StaffFeedComment.post_id == post.id)
+            )
+            cc = int(cnt_res.scalar_one() or 0)
+
+            like_cnt_res = await self._session.execute(
+                select(func.count())
+                .select_from(StaffFeedPostLike)
+                .where(StaffFeedPostLike.post_id == post.id)
+            )
+            lc = int(like_cnt_res.scalar_one() or 0)
+
+            author = await self._admin_brief(post.author_admin_id)
+            att_res = await self._session.execute(
+                select(StaffFeedPostAttachment).where(StaffFeedPostAttachment.post_id == post.id)
+            )
+            raw_atts = list(att_res.scalars().all())
+            atts = [
+                StaffAttachmentBrief(
+                    id=a.id,
+                    file_name=a.file_name,
+                    content_type=a.content_type,
+                    size_bytes=a.size_bytes,
+                )
+                for a in raw_atts
+                if (Path(settings.staff_chat_upload_root) / a.storage_path.replace("/", os.sep)).is_file()
+            ]
+            out.append(
+                StaffFeedPostResponse(
+                    id=post.id,
+                    title=post.title,
+                    body=post.body,
+                    author=author,
+                    created_at=post.created_at,
+                    comments_count=cc,
+                    likes_count=lc,
+                    attachments=atts,
+                )
+            )
+        return out
+
+    async def create_feed_post(
+        self,
+        clinic_id: UUID,
+        author_admin_id: UUID,
+        data: StaffFeedPostCreate,
+    ) -> StaffFeedPostResponse:
+        title = data.title.strip() if data.title else None
+        if title == "":
+            title = None
+        post = StaffFeedPost(
+            id=uuid.uuid4(),
+            clinic_id=clinic_id,
+            author_admin_id=author_admin_id,
+            title=title,
+            body=data.body.strip(),
+        )
+        self._session.add(post)
+        await self._session.flush()
+        author = await self._admin_brief(author_admin_id)
+        return StaffFeedPostResponse(
+            id=post.id,
+            title=post.title,
+            body=post.body,
+            author=author,
+            created_at=post.created_at,
+            comments_count=0,
+            attachments=[],
+        )
+
+    async def list_feed_comments(
+        self, clinic_id: UUID, post_id: UUID
+    ) -> list[StaffFeedCommentResponse] | None:
+        chk = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        if chk.scalar_one_or_none() is None:
+            return None
+        res = await self._session.execute(
+            select(StaffFeedComment)
+            .where(StaffFeedComment.post_id == post_id)
+            .order_by(StaffFeedComment.created_at)
+        )
+        out: list[StaffFeedCommentResponse] = []
+        for c in res.scalars().all():
+            author = await self._admin_brief(c.author_admin_id)
+            out.append(
+                StaffFeedCommentResponse(
+                    id=c.id,
+                    body=c.body,
+                    author=author,
+                    created_at=c.created_at,
+                )
+            )
+        return out
+
+    async def add_feed_comment(
+        self,
+        clinic_id: UUID,
+        post_id: UUID,
+        author_admin_id: UUID,
+        data: StaffFeedCommentCreate,
+    ) -> StaffFeedCommentResponse | None:
+        chk = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        if chk.scalar_one_or_none() is None:
+            return None
+        c = StaffFeedComment(
+            id=uuid.uuid4(),
+            post_id=post_id,
+            author_admin_id=author_admin_id,
+            body=data.body.strip(),
+        )
+        self._session.add(c)
+        await self._session.flush()
+        author = await self._admin_brief(author_admin_id)
+        return StaffFeedCommentResponse(
+            id=c.id,
+            body=c.body,
+            author=author,
+            created_at=c.created_at,
+        )
+
+    async def toggle_feed_post_like(
+        self,
+        clinic_id: UUID,
+        post_id: UUID,
+        admin_id: UUID,
+    ) -> tuple[bool, int] | None:
+        """Toggle post like for current admin."""
+        chk = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        post = chk.scalar_one_or_none()
+        if post is None:
+            return None
+
+        like_chk = await self._session.execute(
+            select(StaffFeedPostLike).where(
+                StaffFeedPostLike.post_id == post_id,
+                StaffFeedPostLike.author_admin_id == admin_id,
+            )
+        )
+        like_row = like_chk.scalar_one_or_none()
+        liked: bool
+        if like_row is not None:
+            await self._session.execute(
+                delete(StaffFeedPostLike).where(StaffFeedPostLike.id == like_row.id)
+            )
+            liked = False
+        else:
+            self._session.add(
+                StaffFeedPostLike(
+                    id=uuid.uuid4(),
+                    clinic_id=clinic_id,
+                    post_id=post_id,
+                    author_admin_id=admin_id,
+                )
+            )
+            liked = True
+
+        await self._session.flush()
+
+        like_cnt_res = await self._session.execute(
+            select(func.count())
+            .select_from(StaffFeedPostLike)
+            .where(StaffFeedPostLike.post_id == post_id)
+        )
+        lc = int(like_cnt_res.scalar_one() or 0)
+        return liked, lc
+
+    async def update_feed_post(
+        self,
+        clinic_id: UUID,
+        editor_admin_id: UUID,
+        post_id: UUID,
+        *,
+        title: str | None,
+        body: str,
+        raw: bytes | None,
+        file_name: str | None,
+        content_type: str | None,
+    ) -> StaffFeedPostResponse | None:
+        """Update feed post: title/body and optionally replace its attachments with a new file."""
+        chk = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        post = chk.scalar_one_or_none()
+        if post is None:
+            return None
+
+        # Title can be null (no title).
+        if title is not None:
+            t = title.strip()
+            post.title = t if t else None
+        post.body = body.strip()
+
+        if raw is not None:
+            if file_name is None or content_type is None:
+                raise ValueError("file_name/content_type required with raw")
+            if len(raw) > settings.staff_chat_max_attachment_bytes:
+                raise ValueError("file_too_large")
+
+            # Delete old attachments (DB + best-effort file system cleanup).
+            old_atts = (
+                await self._session.execute(
+                    select(StaffFeedPostAttachment).where(StaffFeedPostAttachment.post_id == post_id)
+                )
+            ).scalars().all()
+            for a in old_atts:
+                try:
+                    path = Path(settings.staff_chat_upload_root) / a.storage_path.replace("/", os.sep)
+                    if path.is_file():
+                        path.unlink()
+                except OSError:
+                    # Best-effort: attachment DB row will be removed; file cleanup shouldn't break UX.
+                    pass
+            await self._session.execute(
+                delete(StaffFeedPostAttachment).where(StaffFeedPostAttachment.post_id == post_id)
+            )
+
+            att_id = uuid.uuid4()
+            safe = _sanitize_filename(file_name)
+            rel = f"feed_posts/{clinic_id}/{att_id}_{safe}"
+            path = Path(settings.staff_chat_upload_root) / rel.replace("/", os.sep)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(raw)
+            self._session.add(
+                StaffFeedPostAttachment(
+                    id=att_id,
+                    clinic_id=clinic_id,
+                    post_id=post_id,
+                    file_name=file_name[:500],
+                    content_type=content_type[:128],
+                    size_bytes=len(raw),
+                    storage_path=rel.replace("\\", "/"),
+                )
+            )
+
+        await self._session.flush()
+
+        # Build response (keep logic consistent with list_feed_posts).
+        cnt_res = await self._session.execute(
+            select(func.count()).select_from(StaffFeedComment).where(StaffFeedComment.post_id == post_id)
+        )
+        cc = int(cnt_res.scalar_one() or 0)
+        like_cnt_res = await self._session.execute(
+            select(func.count())
+            .select_from(StaffFeedPostLike)
+            .where(StaffFeedPostLike.post_id == post_id)
+        )
+        lc = int(like_cnt_res.scalar_one() or 0)
+
+        author = await self._admin_brief(post.author_admin_id)
+        att_res = await self._session.execute(
+            select(StaffFeedPostAttachment).where(StaffFeedPostAttachment.post_id == post_id)
+        )
+        atts = [
+            StaffAttachmentBrief(
+                id=a.id,
+                file_name=a.file_name,
+                content_type=a.content_type,
+                size_bytes=a.size_bytes,
+            )
+            for a in att_res.scalars().all()
+        ]
+
+        return StaffFeedPostResponse(
+            id=post.id,
+            title=post.title,
+            body=post.body,
+            author=author,
+            created_at=post.created_at,
+            comments_count=cc,
+            likes_count=lc,
+            attachments=atts,
+        )
+
+    async def delete_feed_post(self, clinic_id: UUID, post_id: UUID) -> bool:
+        """Hard-delete side tables and attachments, and soft-delete the post."""
+        chk = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        post = chk.scalar_one_or_none()
+        if post is None:
+            return False
+
+        # Clean attachments + best-effort files.
+        old_atts = (
+            await self._session.execute(
+                select(StaffFeedPostAttachment).where(StaffFeedPostAttachment.post_id == post_id)
+            )
+        ).scalars().all()
+        for a in old_atts:
+            try:
+                path = Path(settings.staff_chat_upload_root) / a.storage_path.replace("/", os.sep)
+                if path.is_file():
+                    path.unlink()
+            except OSError:
+                pass
+        await self._session.execute(
+            delete(StaffFeedPostAttachment).where(StaffFeedPostAttachment.post_id == post_id)
+        )
+        await self._session.execute(delete(StaffFeedPostLike).where(StaffFeedPostLike.post_id == post_id))
+        await self._session.execute(delete(StaffFeedComment).where(StaffFeedComment.post_id == post_id))
+
+        post.deleted_at = utc_now_naive()
+        await self._session.flush()
+        return True
+
+    async def list_calendar_events(
+        self,
+        clinic_id: UUID,
+        *,
+        from_ts: datetime,
+        to_ts: datetime,
+        filter_doctor_user_id: UUID | None = None,
+    ) -> list[StaffCalendarEventResponse]:
+        stmt = (
+            select(StaffCalendarEvent)
+            .where(
+                StaffCalendarEvent.clinic_id == clinic_id,
+                StaffCalendarEvent.starts_at < to_ts,
+                StaffCalendarEvent.ends_at > from_ts,
+            )
+            .order_by(StaffCalendarEvent.starts_at)
+        )
+        if filter_doctor_user_id is not None:
+            stmt = stmt.where(
+                or_(
+                    StaffCalendarEvent.created_by_admin_id == filter_doctor_user_id,
+                    StaffCalendarEvent.id.in_(
+                        select(StaffCalendarEventParticipant.event_id).where(
+                            StaffCalendarEventParticipant.admin_id == filter_doctor_user_id
+                        )
+                    ),
+                )
+            )
+        res = await self._session.execute(stmt)
+        out: list[StaffCalendarEventResponse] = []
+        for ev in res.scalars().all():
+            out.append(await self._calendar_event_to_response(ev))
+        return out
+
+    async def list_calendar_month_grid(
+        self,
+        clinic_id: UUID,
+        *,
+        from_ts: datetime,
+        to_ts: datetime,
+        current_admin_id: UUID,
+    ) -> StaffCalendarMonthGridResponse:
+        """
+        Month-grid summary for staff calendar.
+
+        Enterprise range: include events overlapping [from_ts, to_ts)
+        (starts_at < to_ts && ends_at > from_ts).
+        """
+
+        month_first_date = from_ts.date()
+        month_last_date = to_ts.date()
+
+        # Monday-based calendar grid (7 columns).
+        grid_start = month_first_date - timedelta(days=month_first_date.weekday())
+        grid_end = month_last_date + timedelta(days=(6 - month_last_date.weekday()))
+
+        grid_start_dt = datetime(grid_start.year, grid_start.month, grid_start.day)
+        grid_end_exclusive_dt = datetime(grid_end.year, grid_end.month, grid_end.day) + timedelta(days=1)
+
+        event_stmt = (
+            select(StaffCalendarEvent)
+            .where(
+                StaffCalendarEvent.clinic_id == clinic_id,
+                # Load events for the full visible calendar grid, not only [from_ts, to_ts].
+                # Otherwise leading/trailing days (e.g. Feb days in March grid) appear empty.
+                StaffCalendarEvent.starts_at < grid_end_exclusive_dt,
+                StaffCalendarEvent.ends_at > grid_start_dt,
+            )
+            .order_by(StaffCalendarEvent.starts_at)
+        )
+        ev_res = await self._session.execute(event_stmt)
+        events = list(ev_res.scalars().all())
+
+        if not events:
+            empty_days: list[CalendarDayCell] = []
+            d = grid_start
+            while d <= grid_end:
+                empty_days.append(
+                    CalendarDayCell(
+                        date=d,
+                        is_in_current_month=(d.month == month_first_date.month),
+                        events=[],
+                        reminder_event_ids=[],
+                        unseen_invite_event_ids=[],
+                        unseen_invite_count=0,
+                    )
+                )
+                d += timedelta(days=1)
+            return StaffCalendarMonthGridResponse(
+                month=CalendarMonthRange(from_=from_ts, to=to_ts),
+                days=empty_days,
+                notification_signals=StaffCalendarNotificationSignals(
+                    unseen_invites_count=0,
+                    reminders_due_now_count=0,
+                ),
+            )
+
+        event_ids = [e.id for e in events]
+
+        # Participants for fetched events (one query, then map in-memory).
+        parts_res = await self._session.execute(
+            select(StaffCalendarEventParticipant.event_id, StaffCalendarEventParticipant.admin_id).where(
+                StaffCalendarEventParticipant.event_id.in_(event_ids)
+            )
+        )
+        participants_by_event: dict[UUID, set[UUID]] = {}
+        for eid, aid in parts_res.all():
+            participants_by_event.setdefault(eid, set()).add(aid)
+
+        # Invitation ack for the current admin (one query).
+        inv_res = await self._session.execute(
+            select(StaffCalendarEventInvitation.event_id, StaffCalendarEventInvitation.acknowledged_at).where(
+                StaffCalendarEventInvitation.event_id.in_(event_ids),
+                StaffCalendarEventInvitation.invitee_admin_id == current_admin_id,
+            )
+        )
+        ack_by_event: dict[UUID, datetime | None] = {}
+        for eid, ack_at in inv_res.all():
+            ack_by_event[eid] = ack_at
+
+        unseen_invite_event_ids = {eid for eid, ack_at in ack_by_event.items() if ack_at is None}
+        participant_event_ids = {eid for eid, aids in participants_by_event.items() if current_admin_id in aids}
+
+        # Reminder deliveries for events where current admin participates.
+        now = datetime.now(timezone.utc)
+        remind_window_start = now - timedelta(minutes=15)
+        remind_window_end = now + timedelta(minutes=15)
+
+        rem_res = await self._session.execute(
+            select(
+                StaffCalendarReminderDelivery.event_id,
+                StaffCalendarReminderDelivery.fire_at,
+                StaffCalendarReminderDelivery.sent_at,
+            ).where(
+                StaffCalendarReminderDelivery.event_id.in_(list(participant_event_ids) or [uuid.uuid4()]),
+                StaffCalendarReminderDelivery.sent_at.is_(None),
+            )
+        )
+
+        reminders_by_date: dict[date, list[UUID]] = {}
+        reminders_due_now_count = 0
+        for eid, fire_at, _sent_at in rem_res.all():
+            # Defensive: treat naive datetimes as UTC for window checks.
+            fire_aware = fire_at if fire_at.tzinfo is not None else fire_at.replace(tzinfo=timezone.utc)
+            reminders_due_now_count += 1 if remind_window_start <= fire_aware <= remind_window_end else 0
+            reminders_by_date.setdefault(fire_at.date(), []).append(eid)
+
+        event_chip_by_id: dict[UUID, CalendarEventChip] = {
+            e.id: CalendarEventChip(
+                id=e.id,
+                title=e.title,
+                starts_at=e.starts_at,
+                ends_at=e.ends_at,
+                all_day=e.all_day,
+                task_id=e.task_id,
+                created_by_admin_id=e.created_by_admin_id,
+            )
+            for e in events
+        }
+
+        # Build day cells with event overlap + markers.
+        days: list[CalendarDayCell] = []
+        d = grid_start
+        while d <= grid_end:
+            day_start = datetime(d.year, d.month, d.day)
+            day_end = day_start + timedelta(days=1)
+
+            overlapping_event_ids: list[UUID] = []
+            for e in events:
+                ev_start = e.starts_at.replace(tzinfo=None) if getattr(e.starts_at, "tzinfo", None) is not None else e.starts_at
+                ev_end = e.ends_at.replace(tzinfo=None) if getattr(e.ends_at, "tzinfo", None) is not None else e.ends_at
+                if ev_start < day_end and ev_end > day_start:
+                    overlapping_event_ids.append(e.id)
+            overlapping_ids_set = set(overlapping_event_ids)
+
+            unseen_ids = sorted(list(overlapping_ids_set.intersection(unseen_invite_event_ids)))
+            reminder_ids = sorted(set(reminders_by_date.get(d, [])))
+
+            events_for_day = [event_chip_by_id[eid] for eid in overlapping_event_ids]
+
+            days.append(
+                CalendarDayCell(
+                    date=d,
+                    is_in_current_month=(d.month == month_first_date.month),
+                    events=events_for_day,
+                    reminder_event_ids=reminder_ids,
+                    unseen_invite_event_ids=unseen_ids,
+                    unseen_invite_count=len(unseen_ids),
+                )
+            )
+            d += timedelta(days=1)
+
+        return StaffCalendarMonthGridResponse(
+            month=CalendarMonthRange(from_=from_ts, to=to_ts),
+            days=days,
+            notification_signals=StaffCalendarNotificationSignals(
+                unseen_invites_count=len(unseen_invite_event_ids),
+                reminders_due_now_count=reminders_due_now_count,
+            ),
+        )
+
+    async def get_calendar_event_details(
+        self,
+        clinic_id: UUID,
+        *,
+        event_id: UUID,
+        current_admin_id: UUID,
+    ) -> StaffCalendarEventDetailsResponse | None:
+        ev = await self._session.get(StaffCalendarEvent, event_id)
+        if ev is None or ev.clinic_id != clinic_id:
+            return None
+
+        event_resp = await self._calendar_event_to_response(ev)
+
+        # Reminder delivery details (optional).
+        rem = await self._session.execute(
+            select(StaffCalendarReminderDelivery).where(
+                StaffCalendarReminderDelivery.event_id == event_id,
+                StaffCalendarReminderDelivery.clinic_id == clinic_id,
+            )
+        )
+        rem_row = rem.scalar_one_or_none()
+        reminder = StaffCalendarReminderInfo(
+            reminder_minutes_before=ev.reminder_minutes_before,
+            fire_at=rem_row.fire_at if rem_row else None,
+            sent_at=rem_row.sent_at if rem_row else None,
+        )
+
+        # Current admin invitation ack status (optional).
+        inv = await self._session.execute(
+            select(StaffCalendarEventInvitation.acknowledged_at).where(
+                StaffCalendarEventInvitation.event_id == event_id,
+                StaffCalendarEventInvitation.invitee_admin_id == current_admin_id,
+            )
+        )
+        invitation_ack_at = inv.scalar_one_or_none()
+
+        creator_summary: StaffCalendarCreatorAckSummary | None = None
+        if ev.created_by_admin_id == current_admin_id:
+            # Count ack'ed among OTHER participants (creator sees "who confirmed").
+            other_participants = [p.id for p in event_resp.participants if p.id != current_admin_id]
+            if other_participants:
+                inv2 = await self._session.execute(
+                    select(StaffCalendarEventInvitation.acknowledged_at).where(
+                        StaffCalendarEventInvitation.event_id == event_id,
+                        StaffCalendarEventInvitation.invitee_admin_id.in_(list(other_participants)),
+                    )
+                )
+                ack_rows = inv2.scalars().all()
+                acknowledged_cnt = sum(1 for a in ack_rows if a is not None)
+                creator_summary = StaffCalendarCreatorAckSummary(
+                    total_participants=len(other_participants),
+                    acknowledged_participants=acknowledged_cnt,
+                )
+            else:
+                creator_summary = StaffCalendarCreatorAckSummary(
+                    total_participants=0,
+                    acknowledged_participants=0,
+                )
+
+        return StaffCalendarEventDetailsResponse(
+            event=event_resp,
+            reminder=reminder,
+            invitation_acknowledged_at=invitation_ack_at,
+            creator_ack_summary=creator_summary,
+        )
+
+    async def ack_calendar_invitation(
+        self,
+        clinic_id: UUID,
+        *,
+        event_id: UUID,
+        current_admin_id: UUID,
+    ) -> StaffCalendarInvitationAckResponse | None:
+        inv = await self._session.execute(
+            select(StaffCalendarEventInvitation).where(
+                StaffCalendarEventInvitation.clinic_id == clinic_id,
+                StaffCalendarEventInvitation.event_id == event_id,
+                StaffCalendarEventInvitation.invitee_admin_id == current_admin_id,
+            )
+        )
+        inv_row = inv.scalar_one_or_none()
+        if inv_row is None:
+            return None
+
+        if inv_row.acknowledged_at is None:
+            inv_row.acknowledged_at = utc_now_naive()
+            await self._session.flush()
+
+        # For a single event ack, unseen count after ack is always 0.
+        return StaffCalendarInvitationAckResponse(
+            event_id=event_id,
+            acknowledged_at=inv_row.acknowledged_at,
+            unseen_invite_count=0,
+        )
+
+    async def _calendar_event_to_response(self, ev: StaffCalendarEvent) -> StaffCalendarEventResponse:
+        author = await self._admin_brief(ev.created_by_admin_id)
+        pres = await self._session.execute(
+            select(StaffCalendarEventParticipant.admin_id).where(
+                StaffCalendarEventParticipant.event_id == ev.id
+            )
+        )
+        participants: list[NamedAdminBrief] = []
+        for pid in pres.scalars().all():
+            participants.append(await self._admin_brief(pid))
+        return StaffCalendarEventResponse(
+            id=ev.id,
+            title=ev.title,
+            description=ev.description,
+            starts_at=ev.starts_at,
+            ends_at=ev.ends_at,
+            all_day=ev.all_day,
+            task_id=ev.task_id,
+            reminder_minutes_before=ev.reminder_minutes_before,
+            created_by=author,
+            participants=participants,
+        )
+
+    async def _validate_participant_admins(self, clinic_id: UUID, admin_ids: list[UUID]) -> None:
+        if not admin_ids:
+            return
+        res = await self._session.execute(
+            select(AdminUser.id).where(
+                AdminUser.clinic_id == clinic_id,
+                AdminUser.id.in_(admin_ids),
+                AdminUser.deleted_at.is_(None),
+                AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+            )
+        )
+        found = {r for r in res.scalars().all()}
+        if found != set(admin_ids):
+            raise ValueError("invalid_participants")
+
+    async def _replace_calendar_participants(self, event_id: UUID, admin_ids: list[UUID]) -> None:
+        await self._session.execute(
+            delete(StaffCalendarEventParticipant).where(
+                StaffCalendarEventParticipant.event_id == event_id
+            )
+        )
+        for aid in admin_ids:
+            self._session.add(StaffCalendarEventParticipant(event_id=event_id, admin_id=aid))
+        await self._session.flush()
+
+    async def _assert_calendar_event_no_overlap(
+        self,
+        *,
+        clinic_id: UUID,
+        starts_at: datetime,
+        ends_at: datetime,
+        exclude_event_id: UUID | None = None,
+    ) -> None:
+        """
+        Calendars in the same clinic must not overlap.
+
+        Overlap condition (half-open interval):
+        new_starts < existing_ends AND new_ends > existing_starts
+        """
+        # Ensure DB/SQLAlchemy parameter types match:
+        # we bind naive UTC datetimes to avoid asyncpg "offset-naive vs offset-aware" errors.
+        starts_at = _dt_naive_utc(starts_at)
+        ends_at = _dt_naive_utc(ends_at)
+
+        if ends_at <= starts_at:
+            raise ValueError("invalid_event_range")
+
+        q = (
+            select(func.count())
+            .select_from(StaffCalendarEvent)
+            .where(
+                StaffCalendarEvent.clinic_id == clinic_id,
+                StaffCalendarEvent.starts_at < ends_at,
+                StaffCalendarEvent.ends_at > starts_at,
+            )
+        )
+        if exclude_event_id is not None:
+            q = q.where(StaffCalendarEvent.id != exclude_event_id)
+
+        res = await self._session.execute(q)
+        cnt = res.scalar_one()
+        if cnt > 0:
+            raise ValueError("calendar_event_overlap")
+
+    async def create_calendar_event(
+        self,
+        clinic_id: UUID,
+        created_by: UUID,
+        data: StaffCalendarEventCreate,
+    ) -> StaffCalendarEventResponse:
+        rem = data.reminder_minutes_before
+        if rem is not None and rem <= 0:
+            rem = None
+        ev = StaffCalendarEvent(
+            id=uuid.uuid4(),
+            clinic_id=clinic_id,
+            title=data.title.strip(),
+            description=data.description.strip() if data.description else None,
+            starts_at=_dt_naive_utc(data.starts_at),
+            ends_at=_dt_naive_utc(data.ends_at),
+            all_day=data.all_day,
+            created_by_admin_id=created_by,
+            task_id=data.task_id,
+            reminder_minutes_before=rem,
+        )
+
+        # Ensure we never create conflicting calendar intervals.
+        await self._assert_calendar_event_no_overlap(
+            clinic_id=clinic_id,
+            starts_at=ev.starts_at,
+            ends_at=ev.ends_at,
+        )
+
+        self._session.add(ev)
+        await self._session.flush()
+        raw_ids = list(dict.fromkeys(data.participant_admin_ids))
+        if created_by not in raw_ids:
+            raw_ids.insert(0, created_by)
+        await self._validate_participant_admins(clinic_id, raw_ids)
+        await self._replace_calendar_participants(ev.id, raw_ids)
+        await self._ensure_calendar_event_invitations(
+            clinic_id=clinic_id,
+            event_id=ev.id,
+            invitee_admin_ids=raw_ids,
+        )
+        await self._sync_calendar_reminder(ev)
+        await self._session.flush()
+        return await self._calendar_event_to_response(ev)
+
+    async def update_calendar_event(
+        self,
+        clinic_id: UUID,
+        event_id: UUID,
+        data: StaffCalendarEventUpdate,
+    ) -> StaffCalendarEventResponse | None:
+        res = await self._session.execute(
+            select(StaffCalendarEvent).where(
+                StaffCalendarEvent.id == event_id,
+                StaffCalendarEvent.clinic_id == clinic_id,
+            )
+        )
+        ev = res.scalar_one_or_none()
+        if ev is None:
+            return None
+        if data.title is not None:
+            ev.title = data.title.strip()
+        if data.description is not None:
+            ev.description = data.description.strip() if data.description else None
+        if data.starts_at is not None:
+            ev.starts_at = _dt_naive_utc(data.starts_at)
+        if data.ends_at is not None:
+            ev.ends_at = _dt_naive_utc(data.ends_at)
+        if data.all_day is not None:
+            ev.all_day = data.all_day
+        if data.reminder_minutes_before is not None:
+            r = data.reminder_minutes_before
+            ev.reminder_minutes_before = None if r <= 0 else r
+        upd = data.model_dump(exclude_unset=True)
+        if "task_id" in upd:
+            ev.task_id = upd["task_id"]
+        await self._session.flush()
+        if ev.ends_at <= ev.starts_at:
+            raise ValueError("invalid_event_range")
+
+        # Ensure we never create conflicting calendar intervals.
+        await self._assert_calendar_event_no_overlap(
+            clinic_id=clinic_id,
+            starts_at=ev.starts_at,
+            ends_at=ev.ends_at,
+            exclude_event_id=ev.id,
+        )
+
+        if data.participant_admin_ids is not None:
+            merged = list(dict.fromkeys(data.participant_admin_ids))
+            if ev.created_by_admin_id not in merged:
+                merged.insert(0, ev.created_by_admin_id)
+            old_res = await self._session.execute(
+                select(StaffCalendarEventParticipant.admin_id).where(
+                    StaffCalendarEventParticipant.event_id == ev.id
+                )
+            )
+            old_ids = set(old_res.scalars().all())
+            # Be robust: creator should always be invitee, even if a bad row state exists.
+            old_ids.add(ev.created_by_admin_id)
+
+            new_ids = set(merged)
+            removed = sorted(old_ids - new_ids)
+            added = sorted(new_ids - old_ids)
+
+            await self._validate_participant_admins(clinic_id, merged)
+            await self._replace_calendar_participants(ev.id, merged)
+            await self._delete_calendar_event_invitations(event_id=ev.id, invitee_admin_ids=removed)
+            await self._ensure_calendar_event_invitations(
+                clinic_id=clinic_id,
+                event_id=ev.id,
+                invitee_admin_ids=added,
+            )
+        await self._sync_calendar_reminder(ev)
+        await self._session.flush()
+        return await self._calendar_event_to_response(ev)
+
+    async def _sync_calendar_reminder(self, ev: StaffCalendarEvent) -> None:
+        await self._session.execute(
+            delete(StaffCalendarReminderDelivery).where(
+                StaffCalendarReminderDelivery.event_id == ev.id
+            )
+        )
+        mins = ev.reminder_minutes_before
+        if mins is None or mins <= 0:
+            return
+        # DB stores calendar timestamps as naive UTC (TIMESTAMP WITHOUT TIME ZONE).
+        # Keep `fire_at` naive to avoid asyncpg "offset-naive and offset-aware" errors.
+        start_naive = ev.starts_at.replace(tzinfo=None) if getattr(ev.starts_at, "tzinfo", None) is not None else ev.starts_at
+        fire_at = start_naive - timedelta(minutes=int(mins))
+        now = utc_now_naive()
+        if fire_at <= now:
+            return
+        row = StaffCalendarReminderDelivery(
+            id=uuid.uuid4(),
+            event_id=ev.id,
+            clinic_id=ev.clinic_id,
+            fire_at=fire_at,
+            sent_at=None,
+        )
+        self._session.add(row)
+
+    async def get_or_create_dm_room(
+        self,
+        clinic_id: UUID,
+        admin_a: UUID,
+        admin_b: UUID,
+    ) -> StaffChatRoom:
+        if admin_a == admin_b:
+            raise ValueError("DM peer must differ from self")
+        sa, sb = sorted([str(admin_a), str(admin_b)])
+        key = f"{sa}:{sb}"
+        res = await self._session.execute(
+            select(StaffChatRoom).where(
+                StaffChatRoom.clinic_id == clinic_id,
+                StaffChatRoom.dm_pair_key == key,
+            )
+        )
+        existing = res.scalar_one_or_none()
+        if existing:
+            return existing
+        room = StaffChatRoom(
+            id=uuid.uuid4(),
+            clinic_id=clinic_id,
+            kind=DM_KIND,
+            title="Личные сообщения",
+            dm_pair_key=key,
+            created_by_admin_id=admin_a,
+        )
+        self._session.add(room)
+        await self._session.flush()
+        for aid in (UUID(sa), UUID(sb)):
+            self._session.add(
+                StaffChatRoomMember(
+                    room_id=room.id,
+                    admin_id=aid,
+                    membership_kind=MEMBERSHIP_DM,
+                )
+            )
+        return room
+
+    async def create_group_room(
+        self,
+        clinic_id: UUID,
+        creator_admin_id: UUID,
+        data: StaffRoomCreateGroup,
+    ) -> StaffChatRoom:
+        member_ids = list({creator_admin_id, *data.member_admin_ids})
+        room = StaffChatRoom(
+            id=uuid.uuid4(),
+            clinic_id=clinic_id,
+            kind=GROUP_KIND,
+            title=data.title.strip(),
+            created_by_admin_id=creator_admin_id,
+        )
+        self._session.add(room)
+        await self._session.flush()
+        for aid in member_ids:
+            self._session.add(
+                StaffChatRoomMember(
+                    room_id=room.id,
+                    admin_id=aid,
+                    membership_kind=MEMBERSHIP_GROUP,
+                )
+            )
+        return room
+
+    async def ensure_task_room(
+        self,
+        clinic_id: UUID,
+        task_id: UUID,
+        actor_admin_id: UUID,
+    ) -> StaffChatRoom | None:
+        task = await self._session.get(Task, task_id)
+        if task is None or task.clinic_id != clinic_id:
+            return None
+        res = await self._session.execute(
+            select(StaffChatRoom).where(
+                StaffChatRoom.task_id == task_id,
+                StaffChatRoom.clinic_id == clinic_id,
+            )
+        )
+        existing = res.scalar_one_or_none()
+        if existing:
+            await self._ensure_task_room_members(existing.id, task)
+            await self._session.flush()
+            if not await self._is_room_member(existing.id, actor_admin_id):
+                return None
+            return existing
+        if actor_admin_id not in (task.creator_id, task.assignee_id):
+            return None
+        room = StaffChatRoom(
+            id=uuid.uuid4(),
+            clinic_id=clinic_id,
+            kind=TASK_KIND,
+            title=f"Задача: {task.title[:200]}",
+            task_id=task_id,
+            created_by_admin_id=actor_admin_id,
+        )
+        self._session.add(room)
+        await self._session.flush()
+        await self._ensure_task_room_members(room.id, task)
+        await self._session.flush()
+        return room
+
+    async def add_message_attachment(
+        self,
+        clinic_id: UUID,
+        message_id: UUID,
+        admin_id: UUID,
+        *,
+        file_name: str,
+        content_type: str,
+        raw: bytes,
+    ) -> StaffAttachmentBrief | None:
+        if len(raw) > settings.staff_chat_max_attachment_bytes:
+            raise ValueError("file_too_large")
+        msg_row = await self._session.execute(
+            select(StaffChatMessage).where(
+                StaffChatMessage.id == message_id,
+                StaffChatMessage.clinic_id == clinic_id,
+            )
+        )
+        msg = msg_row.scalar_one_or_none()
+        if msg is None or msg.author_admin_id != admin_id:
+            return None
+        if not await self._is_room_member(msg.room_id, admin_id):
+            return None
+        att_id = uuid.uuid4()
+        safe = _sanitize_filename(file_name)
+        subdir = Path(settings.staff_chat_upload_root) / str(clinic_id)
+        subdir.mkdir(parents=True, exist_ok=True)
+        rel = f"{clinic_id}/{att_id}_{safe}"
+        path = Path(settings.staff_chat_upload_root) / rel
+        path.write_bytes(raw)
+        row = StaffChatMessageAttachment(
+            id=att_id,
+            clinic_id=clinic_id,
+            message_id=message_id,
+            file_name=file_name[:500],
+            content_type=content_type[:128],
+            size_bytes=len(raw),
+            storage_path=rel.replace("\\", "/"),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return StaffAttachmentBrief(
+            id=row.id,
+            file_name=row.file_name,
+            content_type=row.content_type,
+            size_bytes=row.size_bytes,
+        )
+
+    async def get_attachment_payload(
+        self,
+        clinic_id: UUID,
+        attachment_id: UUID,
+        viewer_admin_id: UUID,
+    ) -> tuple[StaffChatMessageAttachment, bytes] | None:
+        res = await self._session.execute(
+            select(StaffChatMessageAttachment).where(
+                StaffChatMessageAttachment.id == attachment_id,
+                StaffChatMessageAttachment.clinic_id == clinic_id,
+            )
+        )
+        row = res.scalar_one_or_none()
+        if row is None:
+            return None
+        msg_row = await self._session.execute(
+            select(StaffChatMessage).where(
+                StaffChatMessage.id == row.message_id,
+                StaffChatMessage.clinic_id == clinic_id,
+            )
+        )
+        msg = msg_row.scalar_one_or_none()
+        if msg is None:
+            return None
+        if not await self._is_room_member(msg.room_id, viewer_admin_id):
+            return None
+        path = Path(settings.staff_chat_upload_root) / row.storage_path.replace("/", os.sep)
+        if not path.is_file():
+            return None
+        return row, path.read_bytes()
+
+    async def add_feed_post_attachment(
+        self,
+        clinic_id: UUID,
+        post_id: UUID,
+        admin_id: UUID,
+        *,
+        file_name: str,
+        content_type: str,
+        raw: bytes,
+    ) -> StaffAttachmentBrief | None:
+        if len(raw) > settings.staff_chat_max_attachment_bytes:
+            raise ValueError("file_too_large")
+        post_row = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        post = post_row.scalar_one_or_none()
+        if post is None or post.author_admin_id != admin_id:
+            return None
+        att_id = uuid.uuid4()
+        safe = _sanitize_filename(file_name)
+        rel = f"feed_posts/{clinic_id}/{att_id}_{safe}"
+        path = Path(settings.staff_chat_upload_root) / rel.replace("/", os.sep)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+        row = StaffFeedPostAttachment(
+            id=att_id,
+            clinic_id=clinic_id,
+            post_id=post_id,
+            file_name=file_name[:500],
+            content_type=content_type[:128],
+            size_bytes=len(raw),
+            storage_path=rel.replace("\\", "/"),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return StaffAttachmentBrief(
+            id=row.id,
+            file_name=row.file_name,
+            content_type=row.content_type,
+            size_bytes=row.size_bytes,
+        )
+
+    async def get_feed_attachment_payload(
+        self,
+        clinic_id: UUID,
+        attachment_id: UUID,
+        viewer_admin_id: UUID,
+    ) -> tuple[StaffFeedPostAttachment, bytes] | None:
+        res = await self._session.execute(
+            select(StaffFeedPostAttachment).where(
+                StaffFeedPostAttachment.id == attachment_id,
+                StaffFeedPostAttachment.clinic_id == clinic_id,
+            )
+        )
+        row = res.scalar_one_or_none()
+        if row is None:
+            return None
+        ures = await self._session.execute(
+            select(AdminUser.id).where(
+                AdminUser.id == viewer_admin_id,
+                AdminUser.clinic_id == clinic_id,
+                AdminUser.deleted_at.is_(None),
+            )
+        )
+        if ures.scalar_one_or_none() is None:
+            return None
+        path = Path(settings.staff_chat_upload_root) / row.storage_path.replace("/", os.sep)
+        if not path.is_file():
+            return None
+        return row, path.read_bytes()
+
+    async def list_knowledge(
+        self,
+        clinic_id: UUID,
+        user_roles: set[str],
+    ) -> list[KnowledgeDocumentResponse]:
+        res = await self._session.execute(
+            select(KnowledgeDocument)
+            .where(KnowledgeDocument.clinic_id == clinic_id)
+            .order_by(KnowledgeDocument.folder_key, KnowledgeDocument.sort_order, KnowledgeDocument.title)
+        )
+        out: list[KnowledgeDocumentResponse] = []
+        for doc in res.scalars().all():
+            vr = doc.visible_roles if isinstance(doc.visible_roles, list) else []
+            if not _knowledge_visible(user_roles, [str(x) for x in vr]):
+                continue
+            author = await self._admin_brief(doc.created_by_admin_id)
+            out.append(
+                KnowledgeDocumentResponse(
+                    id=doc.id,
+                    folder_key=doc.folder_key,
+                    title=doc.title,
+                    body_md=doc.body_md,
+                    visible_roles=[str(x) for x in vr],
+                    sort_order=doc.sort_order,
+                    created_by=author,
+                    updated_at=doc.updated_at,
+                )
+            )
+        return out
+
+    async def create_knowledge(
+        self,
+        clinic_id: UUID,
+        created_by: UUID,
+        data: KnowledgeDocumentCreate,
+    ) -> KnowledgeDocumentResponse:
+        doc = KnowledgeDocument(
+            id=uuid.uuid4(),
+            clinic_id=clinic_id,
+            folder_key=data.folder_key.strip() or "general",
+            title=data.title.strip(),
+            body_md=data.body_md.strip(),
+            visible_roles=list(data.visible_roles),
+            sort_order=data.sort_order,
+            created_by_admin_id=created_by,
+        )
+        self._session.add(doc)
+        await self._session.flush()
+        author = await self._admin_brief(created_by)
+        return KnowledgeDocumentResponse(
+            id=doc.id,
+            folder_key=doc.folder_key,
+            title=doc.title,
+            body_md=doc.body_md,
+            visible_roles=[str(x) for x in doc.visible_roles],
+            sort_order=doc.sort_order,
+            created_by=author,
+            updated_at=doc.updated_at,
+        )
+
+    async def update_knowledge(
+        self,
+        clinic_id: UUID,
+        doc_id: UUID,
+        data: KnowledgeDocumentUpdate,
+    ) -> KnowledgeDocumentResponse | None:
+        res = await self._session.execute(
+            select(KnowledgeDocument).where(
+                KnowledgeDocument.id == doc_id,
+                KnowledgeDocument.clinic_id == clinic_id,
+            )
+        )
+        doc = res.scalar_one_or_none()
+        if doc is None:
+            return None
+        if data.folder_key is not None:
+            doc.folder_key = data.folder_key.strip() or "general"
+        if data.title is not None:
+            doc.title = data.title.strip()
+        if data.body_md is not None:
+            doc.body_md = data.body_md.strip()
+        if data.visible_roles is not None:
+            doc.visible_roles = list(data.visible_roles)
+        if data.sort_order is not None:
+            doc.sort_order = data.sort_order
+        await self._session.flush()
+        author = await self._admin_brief(doc.created_by_admin_id)
+        return KnowledgeDocumentResponse(
+            id=doc.id,
+            folder_key=doc.folder_key,
+            title=doc.title,
+            body_md=doc.body_md,
+            visible_roles=[str(x) for x in (doc.visible_roles or [])],
+            sort_order=doc.sort_order,
+            created_by=author,
+            updated_at=doc.updated_at,
+        )

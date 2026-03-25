@@ -7,7 +7,6 @@ import time
 from collections import defaultdict
 from uuid import UUID
 
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field

@@ -23,6 +23,10 @@ class BookingRead(BaseModel):
     prepayment_amount: Decimal
     payment_id: UUID | None = None
     notes: str | None = None
+    # Заполняются в search_admin_bookings для списков в админке (ФИО / название вместо сырых UUID).
+    patient_name: str | None = None
+    doctor_name: str | None = None
+    service_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,6 +63,12 @@ class BookingRescheduleRequest(BaseModel):
     appointment_date: date
     appointment_time: time
     to_doctor_id: UUID | None = None
+
+
+class BookingPatchAdmin(BaseModel):
+    """Partial admin update (P2: комментарий к записи)."""
+
+    notes: str | None = Field(None, max_length=2000)
 
 
 class EligibleSubscriptionItem(BaseModel):

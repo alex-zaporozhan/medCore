@@ -131,7 +131,6 @@ async def test_web_app_dispatcher_admin_reply_to_pwa(
     from src.domain.entities.conversation import Conversation
     from src.domain.entities.chat_message import ChatMessage as PwaChatMessage
     from src.infrastructure.database.conversation_repo_impl import ConversationRepositoryImpl
-    from src.infrastructure.database.chat_message_repo_impl import ChatMessageRepositoryImpl
 
     clinic_id = seed_data["clinic_id"]
     patient_id = seed_data["patient_id"]
@@ -173,7 +172,6 @@ async def test_web_app_dispatcher_admin_reply_to_pwa(
 
     async with db_base.AsyncSessionLocal() as session:
         conv_repo = ConversationRepositoryImpl(session)
-        msg_repo = ChatMessageRepositoryImpl(session)
         conv = await conv_repo.get_by_clinic_patient(clinic_id, patient_id)
         assert conv is not None
         assert conv.last_message_sender_type == "admin"

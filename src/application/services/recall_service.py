@@ -1,6 +1,6 @@
 """Recall service: segments, campaigns, automations, run campaign."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from src.core.datetime_utils import utc_now_naive
 from uuid import UUID

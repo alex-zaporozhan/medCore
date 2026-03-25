@@ -105,9 +105,10 @@ async def test_reports_revenue(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_patients_list(client: AsyncClient):
-    """Admin patients: GET patients (no filters = all)."""
-    r = await client.get("/api/v1/patients")
+async def test_patients_list(client: AsyncClient, admin_auth: dict):
+    """Admin patients: GET patients требует JWT админа (P2-FU2)."""
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    r = await client.get("/api/v1/patients", headers=headers)
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 

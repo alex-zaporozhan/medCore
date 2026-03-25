@@ -1,7 +1,6 @@
 """Tests for patient OAuth authentication (VK and Yandex)."""
 
 import json
-from uuid import UUID
 
 import pytest
 from httpx import AsyncClient

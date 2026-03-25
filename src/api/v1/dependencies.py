@@ -2,10 +2,12 @@
 
 from uuid import UUID
 
+import jwt
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.edition import is_box_edition
 from src.core.security import parse_access_token
 from src.core.user_messages import EMPTY_DB_NO_CLINIC
 from src.domain.entities.clinic import Clinic
@@ -62,7 +64,7 @@ async def get_current_patient(
     token = authorization[7:].strip()
     try:
         payload = parse_access_token(token)
-    except Exception:
+    except jwt.exceptions.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Недействительный или истёкший токен",
@@ -85,7 +87,9 @@ async def get_current_patient(
 
 
 async def get_request_context(
-    request: Request,
+    # Keep FastAPI's special injection for Request by keeping annotation as `Request`,
+    # but allow direct test calls without passing `request`.
+    request: Request = None,
     authorization: str | None = Header(None),
     session: AsyncSession = Depends(get_session),
 ) -> RequestContext:
@@ -110,7 +114,7 @@ async def get_request_context(
             from src.core.security import parse_access_token
 
             payload = parse_access_token(token)
-        except Exception:
+        except jwt.exceptions.InvalidTokenError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Недействительный или истёкший токен",
@@ -143,7 +147,7 @@ async def get_request_context(
             clinic_id=admin.clinic_id,
             user_id=admin.id,
             user_type="admin",
-            trace_id=getattr(request.state, "trace_id", None),
+            trace_id=getattr(getattr(request, "state", None), "trace_id", None),
             roles=set(rbac_info.roles),
             permissions=set(rbac_info.permissions),
         )
@@ -153,7 +157,7 @@ async def get_request_context(
             clinic_id=None,
             user_id=patient.id,
             user_type="patient",
-            trace_id=getattr(request.state, "trace_id", None),
+            trace_id=getattr(getattr(request, "state", None), "trace_id", None),
             roles=set(),
             permissions=set(),
         )
@@ -163,7 +167,7 @@ async def get_request_context(
         clinic_id=None,
         user_id=None,
         user_type="system",
-        trace_id=getattr(request.state, "trace_id", None),
+        trace_id=getattr(getattr(request, "state", None), "trace_id", None),
         roles=set(),
         permissions=set(),
     )
@@ -201,4 +205,16 @@ def require_permissions(*permission_codes: str):
         return admin_context
 
     return dependency
+
+
+async def require_crm_enterprise_edition() -> None:
+    """CRM / sales pipeline недоступны в редакции коробки (`EDITION=box|basic`)."""
+    if is_box_edition():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "box_forbidden",
+                "message": "CRM / Sales pipeline is available only in Enterprise edition.",
+            },
+        )
 

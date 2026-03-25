@@ -153,6 +153,15 @@ class OmnichannelOutboundDispatcher:
                         extra={"message_id": str(message.id), "description": data.get("description")},
                     )
                     return
+                # Persist provider ack in metadata so admin UI can show delivery status.
+                meta = dict(message.source_metadata or {})
+                meta["delivery_status"] = "DELIVERED"
+                meta["delivery_channel"] = "TELEGRAM_BOT"
+                provider_payload = data.get("result") if isinstance(data.get("result"), dict) else None
+                if provider_payload and provider_payload.get("message_id") is not None:
+                    meta["provider_message_id"] = str(provider_payload.get("message_id"))
+                message.source_metadata = meta
+                await self.session.flush()
                 break
             except (httpx.HTTPStatusError, httpx.RequestError, OSError) as e:
                 last_error = e
@@ -252,6 +261,11 @@ class OmnichannelOutboundDispatcher:
         conv.last_message_sender_type = "admin"
         conv.unread_by_patient_count = (conv.unread_by_patient_count or 0) + 1
         await conv_repo.update(conv)
+        meta = dict(message.source_metadata or {})
+        meta["delivery_status"] = "DELIVERED"
+        meta["delivery_channel"] = "WEB_APP"
+        message.source_metadata = meta
+        await self.session.flush()
         logger.info(
             "OmnichannelOutboundDispatcher: WEB_APP reply written to PWA",
             extra={
@@ -275,6 +289,11 @@ class OmnichannelOutboundDispatcher:
             created_at=message.created_at,
             actor_type=message.actor_type or "SYSTEM",
         )
+        meta = dict(message.source_metadata or {})
+        meta["delivery_status"] = "DELIVERED"
+        meta["delivery_channel"] = "WEB_WIDGET"
+        message.source_metadata = meta
+        await self.session.flush()
         logger.info(
             "OmnichannelOutboundDispatcher: Webchat push notified",
             extra={

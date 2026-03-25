@@ -1,7 +1,6 @@
 """Task service: high-level operations for creating and managing tasks."""
 
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 from src.domain.entities.task import Task
@@ -25,6 +24,7 @@ class TaskService:
         priority: str = "medium",
         creator_id: UUID | None = None,
         assignee_id: UUID | None = None,
+        assignee_ids: list[UUID] | None = None,
         role_assignee: str | None = None,
         due_at: datetime | None = None,
         booking_id: UUID | None = None,
@@ -37,6 +37,10 @@ class TaskService:
         attention_ref_id: UUID | None = None,
         trace_id: str | None = None,
     ) -> Task:
+        ids: list[UUID] = list(assignee_ids) if assignee_ids else []
+        if not ids and assignee_id is not None:
+            ids = [assignee_id]
+        primary = ids[0] if ids else None
         task = Task(
             clinic_id=clinic_id,
             title=title,
@@ -44,8 +48,8 @@ class TaskService:
             status=status,
             priority=priority,
             creator_id=creator_id,
-            assignee_id=assignee_id,
-            role_assignee=role_assignee,
+            assignee_id=primary,
+            role_assignee=role_assignee if not ids else None,
             due_at=due_at,
             booking_id=booking_id,
             patient_id=patient_id,
@@ -58,6 +62,8 @@ class TaskService:
             trace_id=trace_id,
         )
         created = await self._repo.create_task(task)
+        if ids:
+            await self._repo.replace_task_assignees(created.id, ids)
         tasks_created_total.labels(
             clinic_bucket=clinic_bucket_label(created.clinic_id),
             source=created.source,
@@ -97,7 +103,21 @@ class TaskService:
         task = await self._require_task(task_id)
         task.assignee_id = assignee_id
         task.role_assignee = role_assignee
-        return await self._repo.save_task(task)
+        saved = await self._repo.save_task(task)
+        if assignee_id is not None:
+            await self._repo.replace_task_assignees(task_id, [assignee_id])
+        else:
+            await self._repo.replace_task_assignees(task_id, [])
+        return saved
+
+    async def set_task_assignees(self, task_id: UUID, admin_ids: list[UUID]) -> Task:
+        """Полная замена списка исполнителей; первый в списке — primary assignee_id."""
+        task = await self._require_task(task_id)
+        task.assignee_id = admin_ids[0] if admin_ids else None
+        task.role_assignee = None if admin_ids else task.role_assignee
+        await self._repo.save_task(task)
+        await self._repo.replace_task_assignees(task_id, admin_ids)
+        return await self._require_task(task_id)
 
     async def add_comment(
         self,
@@ -113,6 +133,10 @@ class TaskService:
             text=text,
         )
         return await self._repo.add_comment(comment)
+
+    async def list_comments_for_task(self, task_id: UUID) -> list[TaskComment]:
+        await self._require_task(task_id)
+        return await self._repo.list_comments_for_task(task_id)
 
     async def get_task_details(self, task_id: UUID) -> Task:
         return await self._require_task(task_id)

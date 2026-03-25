@@ -20,8 +20,10 @@ from src.application.dto.reports_dto import (
     RevenuePoint,
     RevenueReport,
 )
+from src.application.services.schedule_service import ScheduleService
 from src.domain.entities.booking import Booking
 from src.domain.entities.clinic import Clinic
+from src.domain.entities.doctor import Doctor
 from src.domain.entities.patient import Patient
 from src.domain.entities.lead_card import LeadCard
 from src.domain.entities.lead_stage import LeadStage
@@ -31,6 +33,7 @@ from src.domain.entities.recall_campaign import RecallCampaign
 from src.domain.entities.waitlist_entry import WaitlistEntry
 from src.domain.entities.customer_subscription import CustomerSubscription
 from src.domain.entities.subscription_usage import SubscriptionUsage
+from src.domain.entities.chat_message import ChatMessage
 from src.domain.entities.wallet_transaction import WalletTransaction
 
 DashboardPeriod = str  # "day" | "week" | "month"
@@ -42,6 +45,93 @@ class ReportsService:
     def __init__(self, session: AsyncSession) -> None:
         """Initialize service with database session."""
         self.session = session
+
+    @staticmethod
+    def _day_pulse_score(
+        completed: int,
+        cancelled: int,
+        no_show: int,
+        empty_hours: float,
+    ) -> int:
+        """Heuristic mood score without money (0–100)."""
+        base = 42
+        base += min(completed * 3, 38)
+        base -= min((cancelled + no_show) * 5, 45)
+        base += min(float(empty_hours) * 2.0, 28)
+        return int(max(0, min(100, base)))
+
+    @staticmethod
+    def _day_pulse_score_by_capacity(occupied_hours: float, empty_hours: float) -> int:
+        """Mood score based on schedule occupancy.
+
+        Based on coefficient "occupied hours / empty slots" (converted into 0–100 scale).
+        """
+        empty = max(0.0, float(empty_hours))
+        occupied = max(0.0, float(occupied_hours))
+        denom = occupied + empty
+        if denom <= 0:
+            return 50
+        score = (occupied / denom) * 100.0
+        return int(max(0, min(100, round(score))))
+
+    async def _slot_hours_for_day(
+        self,
+        day: date,
+        clinic_ids: list[UUID] | None,
+    ) -> tuple[float, float]:
+        """Sum schedule slot lengths (hours) for one calendar day.
+
+        Returns `(empty_hours, occupied_hours)` summed across doctors.
+        """
+        sched = ScheduleService(self.session)
+        q = select(Doctor.id, Doctor.clinic_id).where(Doctor.deleted_at.is_(None))
+        if clinic_ids:
+            q = q.where(Doctor.clinic_id.in_(clinic_ids))
+        res = await self.session.execute(q)
+        rows = res.all()
+        empty_total = 0.0
+        occupied_total = 0.0
+        for doctor_id, cid in rows:
+            daily = await sched.get_daily_schedule(doctor_id=doctor_id, day=day, clinic_id=cid)
+            for slot in daily.slots:
+                start = datetime.combine(day, slot.start_time)
+                end = datetime.combine(day, slot.end_time)
+                hours = (end - start).total_seconds() / 3600.0
+                if slot.is_available:
+                    empty_total += hours
+                else:
+                    occupied_total += hours
+        return empty_total, occupied_total
+
+    async def _count_chat_writers_for_range(
+        self,
+        date_from: date,
+        date_to: date,
+        clinic_ids: list[UUID] | None,
+    ) -> int:
+        """Count unique patients who sent at least one chat message to admins.
+
+        Uses `chat_messages`:
+        - sender_type='patient'
+        - created_at within [date_from, date_to] (naive day boundaries)
+        - deleted_at is null
+        - optional clinic filter
+        """
+        start_dt = datetime.combine(date_from, dtime.min)
+        end_dt = datetime.combine(date_to, dtime.min) + timedelta(days=1)
+
+        stmt = select(func.count(func.distinct(ChatMessage.patient_id))).where(
+            ChatMessage.sender_type == "patient",
+            ChatMessage.created_at >= start_dt,
+            ChatMessage.created_at < end_dt,
+            ChatMessage.deleted_at.is_(None),
+            ChatMessage.patient_id.is_not(None),
+        )
+        if clinic_ids:
+            stmt = stmt.where(ChatMessage.clinic_id.in_(clinic_ids))
+
+        result = await self.session.execute(stmt)
+        return int(result.scalar() or 0)
 
     async def _get_default_clinic(self) -> Clinic:
         """Get default clinic (single-clinic instance)."""
@@ -122,18 +212,26 @@ class ReportsService:
 
         cancellations = int(counts.get("cancelled", 0))
         new_leads = await self._count_new_leads(day, day, clinic_ids=[clinic.id])
+        completed = int(counts.get("completed", 0))
+        no_show = int(counts.get("no_show", 0))
+        chat_writers = await self._count_chat_writers_for_range(day, day, clinic_ids=[clinic.id])
+        empty_h, occupied_h = await self._slot_hours_for_day(day, [clinic.id])
+        pulse = self._day_pulse_score_by_capacity(occupied_h, empty_h)
         return DashboardReport(
             date=day,
             bookings_pending=int(counts.get("pending", 0)),
             bookings_confirmed=int(counts.get("confirmed", 0)),
-            bookings_completed=int(counts.get("completed", 0)),
+            bookings_completed=completed,
             bookings_cancelled=cancellations,
-            bookings_no_show=int(counts.get("no_show", 0)),
+            bookings_no_show=no_show,
             new_patients=new_patients,
             revenue=revenue,
             new_leads_count=new_leads,
+            chat_writers_count=chat_writers,
             cancellations_count=cancellations,
             nps_avg=None,
+            empty_slot_hours=empty_h,
+            day_pulse_score=pulse,
         )
 
     async def get_dashboard_report_all_clinics(self, day: date) -> DashboardReport:
@@ -205,18 +303,26 @@ class ReportsService:
 
         cancellations = int(counts.get("cancelled", 0))
         new_leads = await self._count_new_leads(day, day, clinic_ids=clinic_ids)
+        completed = int(counts.get("completed", 0))
+        no_show = int(counts.get("no_show", 0))
+        chat_writers = await self._count_chat_writers_for_range(day, day, clinic_ids=clinic_ids)
+        empty_h, occupied_h = await self._slot_hours_for_day(day, clinic_ids)
+        pulse = self._day_pulse_score_by_capacity(occupied_h, empty_h)
         return DashboardReport(
             date=day,
             bookings_pending=int(counts.get("pending", 0)),
             bookings_confirmed=int(counts.get("confirmed", 0)),
-            bookings_completed=int(counts.get("completed", 0)),
+            bookings_completed=completed,
             bookings_cancelled=cancellations,
-            bookings_no_show=int(counts.get("no_show", 0)),
+            bookings_no_show=no_show,
             new_patients=new_patients,
             revenue=revenue,
             new_leads_count=new_leads,
+            chat_writers_count=chat_writers,
             cancellations_count=cancellations,
             nps_avg=None,
+            empty_slot_hours=empty_h,
+            day_pulse_score=pulse,
         )
 
     async def _count_new_leads(
@@ -317,18 +423,23 @@ class ReportsService:
 
         cancellations = int(counts.get("cancelled", 0))
         new_leads = await self._count_new_leads(date_from, date_to, clinic_ids=[clinic.id])
+        completed = int(counts.get("completed", 0))
+        no_show = int(counts.get("no_show", 0))
+        pulse = self._day_pulse_score(completed, cancellations, no_show, 0.0)
         return DashboardReport(
             date=date_from,
             bookings_pending=int(counts.get("pending", 0)),
             bookings_confirmed=int(counts.get("confirmed", 0)),
-            bookings_completed=int(counts.get("completed", 0)),
+            bookings_completed=completed,
             bookings_cancelled=cancellations,
-            bookings_no_show=int(counts.get("no_show", 0)),
+            bookings_no_show=no_show,
             new_patients=new_patients,
             revenue=revenue,
             new_leads_count=new_leads,
             cancellations_count=cancellations,
             nps_avg=None,
+            empty_slot_hours=0.0,
+            day_pulse_score=pulse,
         )
 
     async def get_dashboard_report_period_all_clinics(
@@ -386,18 +497,23 @@ class ReportsService:
 
         cancellations = int(counts.get("cancelled", 0))
         new_leads = await self._count_new_leads(date_from, date_to, clinic_ids=None)
+        completed = int(counts.get("completed", 0))
+        no_show = int(counts.get("no_show", 0))
+        pulse = self._day_pulse_score(completed, cancellations, no_show, 0.0)
         return DashboardReport(
             date=date_from,
             bookings_pending=int(counts.get("pending", 0)),
             bookings_confirmed=int(counts.get("confirmed", 0)),
-            bookings_completed=int(counts.get("completed", 0)),
+            bookings_completed=completed,
             bookings_cancelled=cancellations,
-            bookings_no_show=int(counts.get("no_show", 0)),
+            bookings_no_show=no_show,
             new_patients=new_patients,
             revenue=revenue,
             new_leads_count=new_leads,
             cancellations_count=cancellations,
             nps_avg=None,
+            empty_slot_hours=0.0,
+            day_pulse_score=pulse,
         )
 
     async def get_dashboard_report_period_by_clinic_ids(
@@ -477,18 +593,23 @@ class ReportsService:
 
         cancellations = int(counts.get("cancelled", 0))
         new_leads = await self._count_new_leads(date_from, date_to, clinic_ids=clinic_ids)
+        completed = int(counts.get("completed", 0))
+        no_show = int(counts.get("no_show", 0))
+        pulse = self._day_pulse_score(completed, cancellations, no_show, 0.0)
         return DashboardReport(
             date=date_from,
             bookings_pending=int(counts.get("pending", 0)),
             bookings_confirmed=int(counts.get("confirmed", 0)),
-            bookings_completed=int(counts.get("completed", 0)),
+            bookings_completed=completed,
             bookings_cancelled=cancellations,
-            bookings_no_show=int(counts.get("no_show", 0)),
+            bookings_no_show=no_show,
             new_patients=new_patients,
             revenue=revenue,
             new_leads_count=new_leads,
             cancellations_count=cancellations,
             nps_avg=None,
+            empty_slot_hours=0.0,
+            day_pulse_score=pulse,
         )
 
     async def get_no_show_report(
@@ -630,7 +751,7 @@ class ReportsService:
         date_to: date,
     ) -> OwnerDashboardReport:
         """Aggregated owner dashboard: dashboard, no_show rate, revenue, prepay/waitlist/recall counts."""
-        clinic = await self._get_clinic(clinic_id)
+        await self._get_clinic(clinic_id)
         dashboard = await self.get_dashboard_report(day, clinic_id=clinic_id)
         no_show = await self.get_no_show_report(date_from, date_to, clinic_id=clinic_id)
         revenue_report = await self.get_revenue_report(date_from, date_to, clinic_id=clinic_id)

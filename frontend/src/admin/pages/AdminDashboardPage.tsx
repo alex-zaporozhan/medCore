@@ -1,8 +1,21 @@
 import { useAdminReportsDashboardByClinics } from "@/hooks/useAdminReports";
 import { useAttentionFeed } from "@/hooks/useAttentionFeed";
-import { useAdminBookings } from "@/hooks/useAdminBookings";
-import { useRevenueHunterSaved, isRevenueHunterEnabled } from "@/hooks";
-import { AdminDrawer, PageSkeleton, EmptyState, ContextBar, QueryErrorAlert } from "@/shared/ui";
+import {
+  useCreateStaffFeedPost,
+  useStaffFeedPosts,
+  useToggleStaffFeedPostLike,
+  useUpdateStaffFeedPost,
+  useDeleteStaffFeedPost,
+  downloadStaffFeedPostAttachmentFile,
+  useStaffFeedComments,
+  useAddStaffFeedComment,
+} from "@/hooks/useStaffCollab";
+import type { StaffAttachmentBrief, StaffFeedPostResponse } from "@/hooks/useStaffCollab";
+import { api } from "@/api/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/queryKeys";
+import { useRevenueHunterSaved, isRevenueHunterEnabled, useAdminSession } from "@/hooks";
+import { PageSkeleton, EmptyState, ContextBar, QueryErrorAlert, GlassModal } from "@/shared/ui";
 import {
   Card,
   Grid,
@@ -10,57 +23,254 @@ import {
   MultiSelect,
   Stack,
   Text,
-  Badge,
   Button,
-  ScrollArea,
   ThemeIcon,
+  Textarea,
+  TextInput,
+  Progress,
+  Anchor,
+  ActionIcon,
+  Divider,
 } from "@mantine/core";
 import { Link } from "react-router-dom";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { ROUTE_PATHS } from "@/routePaths";
 import { SEMANTIC } from "@/shared/semanticUi";
+import type { AttentionFeed, AttentionItem } from "@/api/types";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import type { AttentionItem } from "@/api/types";
-import type { Booking } from "@/api/types";
-import { IconCalendar, IconCash, IconUsers, IconX, IconRobot } from "@tabler/icons-react";
+import {
+  IconUsers,
+  IconX,
+  IconRobot,
+  IconMail,
+  IconSun,
+  IconCalendarStats,
+  IconClock,
+  IconAlertTriangle,
+  IconPaperclip,
+  IconPhoto,
+  IconMicrophone,
+} from "@tabler/icons-react";
 
 const BACKEND_HINT =
   "Если данные не загружаются, проверьте, что бэкенд запущен на порту 8000 (см. docs/RUN_SERVICES.md).";
 
 function flattenAttentionFeed(
-  data: { follow_up: AttentionItem[]; retention_gap: AttentionItem[]; conflicts: AttentionItem[] } | undefined
+  data: AttentionFeed | undefined,
 ): AttentionItem[] {
   if (!data) return [];
-  const all = [
-    ...data.follow_up.map((i) => ({ ...i, kind: "follow_up" as const })),
-    ...data.retention_gap.map((i) => ({ ...i, kind: "retention_gap" as const })),
-    ...data.conflicts.map((i) => ({ ...i, kind: "conflict" as const })),
-  ];
-  return all.sort((a, b) => a.priority - b.priority);
+  return [...data.follow_up, ...data.retention_gap, ...data.conflicts];
 }
-
-const KIND_LABEL: Record<string, string> = {
-  follow_up: "Перезвонить",
-  retention_gap: "Давно не был",
-  conflict: "Конфликт",
-};
-const KIND_COLOR: Record<string, string> = {
-  follow_up: "indigo",
-  retention_gap: "yellow",
-  conflict: "red",
-};
 
 const metricCardShell = {
   bg: "white" as const,
-  styles: { root: { borderColor: "var(--mantine-color-gray-3)" } },
+  h: 95,
+  styles: {
+    root: {
+      borderColor: "var(--mantine-color-gray-3)",
+      height: 95,
+      display: "flex" as const,
+      flexDirection: "column" as const,
+      justifyContent: "space-between" as const,
+    },
+  },
 };
 
+function parseHours(v: string | number | undefined): number {
+  if (v === undefined || v === null) return 0;
+  const n = typeof v === "number" ? v : Number.parseFloat(String(v));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function StaffFeedAttachmentPreview({ attachment }: { attachment: StaffAttachmentBrief }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setLoadFailed(false);
+    async function run() {
+      try {
+        const blob = await api.getBlob(
+          `/v1/admin/staff/feed/attachments/${attachment.id}/file`
+        );
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      } catch (e) {
+        console.error("staff feed attachment preview failed", e);
+        if (!cancelled) setLoadFailed(true);
+      }
+    }
+    void run();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment.id]);
+
+  const ct = (attachment.content_type || "").toLowerCase();
+
+  if (url && ct.startsWith("image/")) {
+    return (
+      <img
+        src={url}
+        alt={attachment.file_name}
+        style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 8 }}
+      />
+    );
+  }
+
+  if (url && ct.startsWith("audio/")) {
+    return <audio controls src={url} style={{ width: "100%" }} />;
+  }
+
+  if (url && ct.startsWith("video/")) {
+    return (
+      <video
+        controls
+        src={url}
+        style={{ width: "100%", maxHeight: 360, objectFit: "contain", borderRadius: 8 }}
+      />
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <Text size="xs" c="dimmed">
+        Вложение недоступно
+      </Text>
+    );
+  }
+
+  return (
+    <Anchor
+      component="button"
+      type="button"
+      size="sm"
+      onClick={() => void downloadStaffFeedPostAttachmentFile(attachment.id, attachment.file_name)}
+      style={{ textAlign: "left", cursor: "pointer" }}
+    >
+      {attachment.file_name}
+    </Anchor>
+  );
+}
+
+function StaffFeedPostComments({
+  postId,
+  isOpen,
+}: {
+  postId: string;
+  isOpen: boolean;
+}) {
+  const [body, setBody] = useState("");
+  const { data: comments, isLoading } = useStaffFeedComments(isOpen ? postId : null);
+  const addComment = useAddStaffFeedComment(postId);
+
+  useEffect(() => {
+    if (!isOpen) setBody("");
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <Stack gap="xs" mt="sm">
+      <Text size="xs" fw={700} c="gray.9">
+        Комментарии
+      </Text>
+      {isLoading ? (
+        <Text size="xs" c="dimmed">
+          Загрузка...
+        </Text>
+      ) : comments && comments.length ? (
+        <Stack gap="xs">
+          {comments.map((c) => (
+            <Card key={c.id} padding="sm" radius="md" withBorder bg="white">
+              <Text size="xs" c="dimmed">
+                {c.author.full_name?.trim() || "Сотрудник"} · {new Date(c.created_at).toLocaleString()}
+              </Text>
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }} mt={4}>
+                {c.body}
+              </Text>
+            </Card>
+          ))}
+        </Stack>
+      ) : (
+        <Text size="xs" c="dimmed">
+          Пока комментариев нет
+        </Text>
+      )}
+
+      <Textarea
+        value={body}
+        onChange={(e) => setBody(e.currentTarget.value)}
+        minRows={2}
+        placeholder="Ваш комментарий..."
+      />
+      <Group justify="flex-end">
+        <Button
+          size="xs"
+          onClick={() => addComment.mutate(body)}
+          disabled={!body.trim() || addComment.isPending}
+          loading={addComment.isPending}
+        >
+          Отправить
+        </Button>
+      </Group>
+    </Stack>
+  );
+}
+
 export default function AdminDashboardPage() {
+  const queryClient = useQueryClient();
   const { clinics, currentClinicId } = useAdminClinic();
   const [selectedClinicIds, setSelectedClinicIds] = useState<string[]>([]);
-  const [timelineBooking, setTimelineBooking] = useState<Booking | null>(null);
+  const [feedTitle, setFeedTitle] = useState("");
+  const [feedBody, setFeedBody] = useState("");
+  const [feedFiles, setFeedFiles] = useState<File[]>([]);
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const feedFileRef = useRef<HTMLInputElement>(null);
+  const toggleLike = useToggleStaffFeedPostLike();
+  const updatePost = useUpdateStaffFeedPost();
+  const deletePost = useDeleteStaffFeedPost();
+
+  const [editingPost, setEditingPost] = useState<StaffFeedPostResponse | null>(null);
+  const [editTitle, setEditTitle] = useState<string>("");
+  const [editBody, setEditBody] = useState<string>("");
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [editFilePreviewUrl, setEditFilePreviewUrl] = useState<string | null>(null);
+  const editFileRef = useRef<HTMLInputElement>(null);
+
+  const [openCommentsByPostId, setOpenCommentsByPostId] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!editingPost) return;
+    setEditTitle(editingPost.title ?? "");
+    setEditBody(editingPost.body ?? "");
+    setEditFile(null);
+    setEditFilePreviewUrl(null);
+  }, [editingPost?.id]);
+
+  useEffect(() => {
+    if (!editFile) {
+      setEditFilePreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(editFile);
+    setEditFilePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [editFile]);
   const today = dayjs().format("YYYY-MM-DD");
+  const dashboardClinicFilterInitialized = useRef(false);
+
+  useEffect(() => {
+    if (dashboardClinicFilterInitialized.current || !currentClinicId) return;
+    dashboardClinicFilterInitialized.current = true;
+    setSelectedClinicIds([currentClinicId]);
+  }, [currentClinicId]);
 
   const clinicOptions = clinics.map((c) => ({ value: c.id, label: c.name }));
 
@@ -71,19 +281,63 @@ export default function AdminDashboardPage() {
       selectedClinicIds.length > 0 ? selectedClinicIds : null
     );
 
-  const { data: attentionData, isLoading: attentionLoading } = useAttentionFeed(currentClinicId ?? null);
-  const { data: todayBookings, isLoading: bookingsLoading } = useAdminBookings({ date: today });
+  const { data: attentionData } = useAttentionFeed(currentClinicId ?? null);
+  const { data: staffPosts, isLoading: staffPostsLoading } = useStaffFeedPosts(20);
+  const createPost = useCreateStaffFeedPost();
   const { data: revenueHunter } = useRevenueHunterSaved(currentClinicId ?? null);
+  const { data: adminSession, isLoading: sessionLoading } = useAdminSession();
+  const canPostToStaffFeed = adminSession?.permissions?.includes("manage_staff_collab") ?? false;
+  /** Выручка на ленте: владелец или связка маркетинг+финансы (не линейный admin без finance). */
+  const canViewRevenueDashboard =
+    (adminSession?.roles?.includes("owner") ?? false) ||
+    ((adminSession?.permissions?.includes("view_marketing_analytics") ?? false) &&
+      (adminSession?.permissions?.includes("view_finance") ?? false));
 
   const attentionItems = useMemo(() => flattenAttentionFeed(attentionData), [attentionData]);
+  const unreadAttentionCount = useMemo(
+    () => attentionItems.filter((i) => i.status === "new").length,
+    [attentionItems]
+  );
+  const hasUnreadAttention = unreadAttentionCount > 0;
+
   const isLoading = reportLoading;
   const isError = reportError;
   const error = reportErr;
 
+  const publishPost = () => {
+    const body = feedBody.trim();
+    if (!body) return;
+    const filesToUpload = [...feedFiles];
+    createPost.mutate(
+      { title: feedTitle.trim() || null, body },
+      {
+        onSuccess: async (post) => {
+          setFeedTitle("");
+          setFeedBody("");
+          setFeedFiles([]);
+          for (const f of filesToUpload) {
+            try {
+              const fd = new FormData();
+              fd.append("file", f);
+              await api.postFormData<unknown>(
+                `/v1/admin/staff/feed/posts/${post.id}/attachments`,
+                fd
+              );
+            } catch (e) {
+              console.error("feed attachment upload", e);
+            }
+          }
+          void queryClient.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
+          setIsComposerOpen(false);
+        },
+      }
+    );
+  };
+
   if (isLoading) {
     return (
       <Stack gap="lg">
-        <ContextBar title="Дашборд" />
+        <ContextBar title="Лента" />
         {clinics.length > 0 && (
           <MultiSelect
             label="Клиники"
@@ -99,16 +353,13 @@ export default function AdminDashboardPage() {
           {BACKEND_HINT}
         </Text>
         <Grid>
-          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <PageSkeleton variant="cards" cardsCount={1} />
           </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <PageSkeleton variant="cards" cardsCount={1} />
           </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-            <PageSkeleton variant="cards" cardsCount={1} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <PageSkeleton variant="cards" cardsCount={1} />
           </Grid.Col>
         </Grid>
@@ -127,7 +378,7 @@ export default function AdminDashboardPage() {
   if (isError) {
     return (
       <Stack gap="lg">
-        <ContextBar title="Дашборд" />
+        <ContextBar title="Лента" />
         {clinics.length > 0 && (
           <MultiSelect
             label="Клиники"
@@ -148,14 +399,28 @@ export default function AdminDashboardPage() {
   }
 
   const data = reportData;
-  const totalBookings =
-    data != null
-      ? data.bookings_pending + data.bookings_confirmed + data.bookings_completed
-      : 0;
+  const emptyH = parseHours(data?.empty_slot_hours);
+  const pulse = data?.day_pulse_score ?? 50;
+  const requestsCount = data?.chat_writers_count ?? 0;
 
   return (
-    <Stack gap="lg">
-      <ContextBar title="Дашборд" />
+    <Stack gap="md">
+      <ContextBar title="Лента" />
+
+      <Group justify="space-between" align="center" wrap="wrap">
+        <Button
+          component={Link}
+          to={ROUTE_PATHS.admin.attention}
+          variant={hasUnreadAttention ? "filled" : "light"}
+          color={hasUnreadAttention ? "orange" : "teal"}
+          leftSection={<IconAlertTriangle size={18} />}
+          className={hasUnreadAttention ? "admin-emergency-blink" : undefined}
+        >
+          Приоритетные сообщения
+          {unreadAttentionCount > 0 ? ` (${unreadAttentionCount})` : ""}
+        </Button>
+      </Group>
+
       {clinics.length > 0 && (
         <MultiSelect
           label="Клиники"
@@ -167,106 +432,122 @@ export default function AdminDashboardPage() {
           clearable
         />
       )}
-      {data && (
-        <Text size="sm" c="dimmed">
-          {selectedClinicIds.length === 0
-            ? `Сводка по всем клиникам за ${dayjs(data.date).format("DD.MM.YYYY")}`
-            : `Сводка по выбранным клиникам (${selectedClinicIds.length}) за ${dayjs(data.date).format("DD.MM.YYYY")}`}
-        </Text>
-      )}
 
-      {/* 4 метрики сверху */}
       <Grid>
-        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card padding="md" radius="md" shadow="sm" withBorder {...metricCardShell}>
-            <Group gap="xs" mb={4} wrap="nowrap">
-              <ThemeIcon variant="light" color={SEMANTIC.metrics.appointments} size="lg" radius="md">
-                <IconCalendar size={18} />
+        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
+            <Group gap="xs" mb={2} wrap="nowrap">
+              <ThemeIcon variant="light" color="teal" size="md" radius="md">
+                <IconCalendarStats size={18} />
               </ThemeIcon>
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                Записи сегодня
+                Всего посещений
               </Text>
             </Group>
-            <Text fw={700} fz="xl" c="gray.9">
-              {totalBookings}
+            <Text fw={700} fz="lg" c="gray.9">
+              {data?.bookings_completed ?? 0}
             </Text>
-            {data && (
-              <Text size="xs" c="dimmed" mt="xs">
-                ожид. {data.bookings_pending} · подтв. {data.bookings_confirmed} · оказано {data.bookings_completed}
-              </Text>
-            )}
-            <Text size="xs" c="dimmed" mt={2}>
-              к вчера: —
+            <Text size="xs" c="dimmed" mt={0}>
+              завершённые записи
             </Text>
           </Card>
         </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card padding="md" radius="md" shadow="sm" withBorder {...metricCardShell}>
-            <Group gap="xs" mb={4} wrap="nowrap">
-              <ThemeIcon variant="light" color={SEMANTIC.metrics.revenue} size="lg" radius="md">
-                <IconCash size={18} />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                Выручка
-              </Text>
-            </Group>
-            <Text fw={700} fz="xl" c="gray.9">
-              {data?.revenue ?? "0"} ₽
-            </Text>
-            <Text size="xs" c="dimmed" mt="xs">
-              за день
-            </Text>
-            <Text size="xs" c="dimmed" mt={2}>
-              к вчера: —
-            </Text>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card padding="md" radius="md" shadow="sm" withBorder {...metricCardShell}>
-            <Group gap="xs" mb={4} wrap="nowrap">
-              <ThemeIcon variant="light" color={SEMANTIC.metrics.patients} size="lg" radius="md">
+        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
+            <Group gap="xs" mb={2} wrap="nowrap">
+              <ThemeIcon variant="light" color={SEMANTIC.metrics.patients} size="md" radius="md">
                 <IconUsers size={18} />
               </ThemeIcon>
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
                 Новые пациенты
               </Text>
             </Group>
-            <Text fw={700} fz="xl" c="gray.9">
+            <Text fw={700} fz="lg" c="gray.9">
               {data?.new_patients ?? 0}
             </Text>
-            <Text size="xs" c="dimmed" mt="xs">
+            <Text size="xs" c="dimmed" mt={0}>
               за день
-            </Text>
-            <Text size="xs" c="dimmed" mt={2}>
-              к вчера: —
             </Text>
           </Card>
         </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-          <Card padding="md" radius="md" shadow="sm" withBorder {...metricCardShell}>
-            <Group gap="xs" mb={4} wrap="nowrap">
-              <ThemeIcon variant="light" color={SEMANTIC.metrics.cancellations} size="lg" radius="md">
+        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
+            <Group gap="xs" mb={2} wrap="nowrap">
+              <ThemeIcon variant="light" color={SEMANTIC.metrics.cancellations} size="md" radius="md">
                 <IconX size={18} />
               </ThemeIcon>
               <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
                 Отмены / неявки
               </Text>
             </Group>
-            <Text fw={700} fz="xl" c="gray.9">
+            <Text fw={700} fz="lg" c="gray.9">
               {(data?.bookings_cancelled ?? 0) + (data?.bookings_no_show ?? 0)}
             </Text>
-            <Text size="xs" c="dimmed" mt="xs">
-              отменено {data?.bookings_cancelled ?? 0} · неявки {data?.bookings_no_show ?? 0}
+            <Text size="xs" c="dimmed" mt={0}>
+              отмены {data?.bookings_cancelled ?? 0} · неявки {data?.bookings_no_show ?? 0}
             </Text>
-            <Text size="xs" c="dimmed" mt={2}>
-              к вчера: —
+          </Card>
+        </Grid.Col>
+        {canViewRevenueDashboard ? (
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+            <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
+              <Group gap="xs" mb={2} wrap="nowrap">
+                <ThemeIcon variant="light" color={SEMANTIC.metrics.appointments} size="md" radius="md">
+                  <IconMail size={18} />
+                </ThemeIcon>
+                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+                  Количество обращений
+                </Text>
+              </Group>
+              <Text fw={700} fz="lg" c="gray.9">
+                {requestsCount}
+              </Text>
+              <Text size="xs" c="dimmed" mt={0}>
+                уникальные пациенты в чате
+              </Text>
+            </Card>
+          </Grid.Col>
+        ) : null}
+        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
+            <Group gap="xs" mb={2} wrap="nowrap">
+              <ThemeIcon variant="light" color="grape" size="md" radius="md">
+                <IconSun size={18} />
+              </ThemeIcon>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+                Настроение дня
+              </Text>
+            </Group>
+            <Progress value={pulse} size="sm" radius="md" color="grape" mb={4} />
+            <Text fw={600} fz="lg" c="gray.9">
+              {pulse} / 100
+            </Text>
+            <Text size="xs" c="dimmed" mt={0}>
+              коэф. занятые / пустые
+            </Text>
+          </Card>
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
+            <Group gap="xs" mb={2} wrap="nowrap">
+              <ThemeIcon variant="light" color="gray" size="md" radius="md">
+                <IconClock size={18} />
+              </ThemeIcon>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+                Пустые окна
+              </Text>
+            </Group>
+            <Text fw={700} fz="lg" c="gray.9">
+              {emptyH.toFixed(1)} ч
+            </Text>
+            <Text size="xs" c="dimmed" mt={0}>
+              свободные слоты
             </Text>
           </Card>
         </Grid.Col>
       </Grid>
 
-      {/* Виджет «Выручка, спасённая ИИ за ночь» — только при включённом Revenue Hunter (Фаза 5) */}
-      {revenueHunter && isRevenueHunterEnabled(revenueHunter) && (
+      {revenueHunter && isRevenueHunterEnabled(revenueHunter) && canViewRevenueDashboard ? (
         <Card
           padding="md"
           radius="md"
@@ -300,176 +581,332 @@ export default function AdminDashboardPage() {
             {revenueHunter.amount} ₽
           </Text>
         </Card>
-      )}
+      ) : null}
 
-      {/* Левая колонка ~60%: Attention Feed; правая ~40%: таймлайн на сегодня */}
-      <Grid>
-        <Grid.Col span={{ base: 12, md: 7 }}>
-          <Text size="sm" fw={600} mb="xs" c="gray.9">
-            Лента внимания
-          </Text>
-          {attentionLoading ? (
-            <PageSkeleton variant="table" rows={3} />
-          ) : attentionItems.length === 0 ? (
-            <EmptyState
-              title="Пока всё спокойно"
-              description="Нет срочных событий для реакции. Новые элементы появятся из чатов, конфликтов и напоминаний."
-              action={{
-                label: "Открыть чат",
-                onClick: () => window.location.assign(ROUTE_PATHS.admin.omniChat),
+      <Divider my="xs" />
+
+      <div id="clinic-wall">
+        <Stack
+          gap="sm"
+          mt="xs"
+          bg="var(--mantine-color-gray-0)"
+          p="sm"
+          style={{ borderRadius: 8 }}
+        >
+          <Group justify="flex-start" align="center" wrap="wrap">
+            <Button
+              variant="light"
+              disabled={!canPostToStaffFeed || sessionLoading}
+              onClick={() => {
+                if (!canPostToStaffFeed) return;
+                setIsComposerOpen((v) => !v);
               }}
+            >
+              Добавить пост
+            </Button>
+          </Group>
+
+          {!sessionLoading && !canPostToStaffFeed ? (
+            <Text size="xs" c="dimmed" maw={480}>
+              Публикация постов только при праве manage_staff_collab.
+            </Text>
+          ) : null}
+
+          {canPostToStaffFeed && isComposerOpen ? (
+            <Card withBorder radius="md" padding="md" bg="var(--mantine-color-gray-0)">
+              <Stack gap="sm">
+                <Text size="xs" c="dimmed" fw={600}>
+                  Добавить пост
+                </Text>
+                <TextInput
+                  label="Тема"
+                  placeholder="Например: С праздником 8 Марта!"
+                  value={feedTitle}
+                  onChange={(e) => setFeedTitle(e.currentTarget.value)}
+                />
+                <Textarea
+                  label="Текст"
+                  placeholder="Текст новости для персонала…"
+                  minRows={5}
+                  value={feedBody}
+                  onChange={(e) => setFeedBody(e.currentTarget.value)}
+                />
+                <Group gap="xs">
+                  <input
+                    ref={feedFileRef}
+                    type="file"
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const list = e.target.files;
+                      if (!list?.length) return;
+                      setFeedFiles(Array.from(list));
+                    }}
+                  />
+                  <ActionIcon
+                    variant="light"
+                    size="lg"
+                    aria-label="Прикрепить файлы"
+                    onClick={() => feedFileRef.current?.click()}
+                  >
+                    <IconPaperclip size={20} />
+                  </ActionIcon>
+                  <ActionIcon
+                    variant="light"
+                    size="lg"
+                    aria-label="Изображение"
+                    onClick={() => feedFileRef.current?.click()}
+                  >
+                    <IconPhoto size={20} />
+                  </ActionIcon>
+                  <ActionIcon
+                    variant="light"
+                    size="lg"
+                    color="gray"
+                    aria-label="Аудио (в разработке)"
+                    title="Аудио: единый контур для админки и чатов — в плане"
+                    disabled
+                  >
+                    <IconMicrophone size={20} />
+                  </ActionIcon>
+                  {feedFiles.length > 0 ? (
+                    <Text size="xs" c="dimmed">
+                      Файлов: {feedFiles.length} (загрузятся после публикации)
+                    </Text>
+                  ) : null}
+                </Group>
+                <Group justify="flex-end">
+                  <Button
+                    onClick={() => void publishPost()}
+                    loading={createPost.isPending}
+                    disabled={!feedBody.trim()}
+                  >
+                    Опубликовать
+                  </Button>
+                </Group>
+              </Stack>
+            </Card>
+          ) : null}
+
+          {staffPostsLoading ? (
+            <PageSkeleton variant="table" rows={2} />
+          ) : !staffPosts?.length ? (
+            <EmptyState
+              title="Пока нет постов"
+              description="Делитесь новостями клиники — посты видят все сотрудники с доступом к ленте."
             />
           ) : (
-            <ScrollArea h={400} type="scroll">
-              <Stack gap="xs">
-                {attentionItems.map((item) => (
+            <Stack gap="sm">
+              {staffPosts
+                .slice()
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                .map((p) => (
                   <Card
-                    key={`${item.kind}-${item.id}`}
+                    key={p.id}
                     withBorder
                     radius="md"
-                    padding="sm"
+                    padding="md"
                     bg="white"
                     styles={{ root: { borderColor: "var(--mantine-color-gray-3)" } }}
                   >
                     <Group justify="space-between" align="flex-start">
                       <Stack gap={4}>
-                        <Text fw={600} size="sm" truncate>
-                          {item.patient_full_name || item.patient_phone || item.title}
-                        </Text>
+                        {p.title ? (
+                          <Text size="sm" fw={600}>
+                            {p.title}
+                          </Text>
+                        ) : null}
                         <Text size="xs" c="dimmed">
-                          {item.description}
+                          {p.author.full_name?.trim() || "Сотрудник"} · {new Date(p.created_at).toLocaleString()}
                         </Text>
-                        <Group gap="xs">
-                          <Badge size="xs" color={KIND_COLOR[item.kind] ?? "gray"}>
-                            {KIND_LABEL[item.kind] ?? item.kind}
-                          </Badge>
-                          {item.due_at && (
-                            <Text size="xs" c="dimmed">
-                              Срок: {new Date(item.due_at).toLocaleString()}
-                            </Text>
-                          )}
+                        <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                          {p.body}
+                        </Text>
+                        {(p.attachments ?? []).length > 0 ? (
+                          <Stack gap="xs" mt={4}>
+                            {(p.attachments ?? []).map((att) => (
+                              <StaffFeedAttachmentPreview key={att.id} attachment={att} />
+                            ))}
+                          </Stack>
+                        ) : null}
+                        <Group justify="space-between" align="center" mt={8}>
+                          <Group gap="xs">
+                            <Button
+                              size="xs"
+                              variant="light"
+                              loading={toggleLike.isPending}
+                              onClick={() => toggleLike.mutate(p.id)}
+                            >
+                              Лайк{p.likes_count ? ` (${p.likes_count})` : ""}
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="light"
+                              onClick={() =>
+                                setOpenCommentsByPostId((prev) => ({
+                                  ...prev,
+                                  [p.id]: !prev[p.id],
+                                }))
+                              }
+                            >
+                              Комментарии{p.comments_count ? ` (${p.comments_count})` : ""}
+                            </Button>
+                          </Group>
+
+                          {canPostToStaffFeed ? (
+                            <Group gap="xs">
+                              <Button
+                                size="xs"
+                                variant="light"
+                                onClick={() => {
+                                  setEditingPost(p);
+                                }}
+                              >
+                                Редактировать
+                              </Button>
+                              <Button
+                                size="xs"
+                                color="red"
+                                variant="light"
+                                loading={deletePost.isPending}
+                                onClick={() => {
+                                  const ok = window.confirm("Удалить пост?");
+                                  if (!ok) return;
+                                  void deletePost.mutateAsync(p.id).then(() => {
+                                    setEditingPost(null);
+                                  });
+                                }}
+                              >
+                                Удалить
+                              </Button>
+                            </Group>
+                          ) : null}
                         </Group>
+
+                        <StaffFeedPostComments postId={p.id} isOpen={Boolean(openCommentsByPostId[p.id])} />
                       </Stack>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        color="indigo"
-                        component={Link}
-                        to={
-                          item.conversation_id
-                            ? `${ROUTE_PATHS.admin.omniChat}?conversation=${item.conversation_id}`
-                            : ROUTE_PATHS.admin.attention
-                        }
-                      >
-                        Взять в работу
-                      </Button>
                     </Group>
                   </Card>
                 ))}
-              </Stack>
-            </ScrollArea>
+            </Stack>
           )}
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 5 }}>
-          <Text size="sm" fw={600} mb="xs" c="gray.9">
-            Записи на сегодня
-          </Text>
-          {bookingsLoading ? (
-            <PageSkeleton variant="table" rows={5} />
-          ) : !todayBookings?.length ? (
-            <EmptyState
-              title="Нет записей на эту дату"
-              description="Записи на сегодня появятся в календаре."
-              action={{
-                label: "Расписание",
-                onClick: () => window.location.assign(ROUTE_PATHS.admin.schedule),
+        </Stack>
+      </div>
+
+      <GlassModal
+        opened={!!editingPost}
+        onClose={() => setEditingPost(null)}
+        title="Редактировать пост"
+      >
+        {editingPost ? (
+          <Stack gap="sm">
+            <TextInput
+              label="Заголовок"
+              placeholder="Необязательно"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.currentTarget.value)}
+            />
+            <Textarea
+              label="Текст"
+              value={editBody}
+              onChange={(e) => setEditBody(e.currentTarget.value)}
+              minRows={5}
+            />
+
+            <Text size="sm" fw={700} c="gray.9">
+              Изображение / вложение
+            </Text>
+            {editingPost.attachments?.length ? (
+              <Stack gap="xs">
+                {editingPost.attachments.slice(0, 3).map((att) => (
+                  <StaffFeedAttachmentPreview key={att.id} attachment={att} />
+                ))}
+              </Stack>
+            ) : (
+              <Text size="xs" c="dimmed">
+                Пока вложений нет
+              </Text>
+            )}
+
+            <input
+              ref={editFileRef}
+              type="file"
+              accept="image/*,audio/*,video/*"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                setEditFile(f);
               }}
             />
-          ) : (
-            <ScrollArea h={400} type="scroll">
-              <Stack gap="xs">
-                {todayBookings
-                  .filter((b) => b.status !== "cancelled")
-                  .sort((a, b) => {
-                    const tA = String(a.appointment_time).slice(0, 5);
-                    const tB = String(b.appointment_time).slice(0, 5);
-                    return tA.localeCompare(tB);
-                  })
-                  .slice(0, 20)
-                  .map((b) => (
-                    <Card
-                      key={b.id}
-                      withBorder
-                      radius="md"
-                      padding="sm"
-                      style={{ cursor: "pointer", textDecoration: "none", color: "inherit" }}
-                      onClick={() => setTimelineBooking(b)}
-                    >
-                      <Group justify="space-between">
-                        <Text size="sm" fw={500}>
-                          {String(b.appointment_time).slice(0, 5)}
-                        </Text>
-                        <Badge size="xs" variant="light">
-                          {b.status}
-                        </Badge>
-                      </Group>
-                      <Text size="xs" c="dimmed">
-                        Пациент: {b.patient_id}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        Врач: {b.doctor_id} · Услуга: {b.service_id}
-                      </Text>
-                    </Card>
-                  ))}
-              </Stack>
-            </ScrollArea>
-          )}
-        </Grid.Col>
-      </Grid>
+            <Group justify="space-between" align="center">
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() => editFileRef.current?.click()}
+                disabled={updatePost.isPending}
+              >
+                Выбрать файл
+              </Button>
+              {editFile ? (
+                <Text size="xs" c="dimmed">
+                  {editFile.name}
+                </Text>
+              ) : null}
+            </Group>
 
-      <AdminDrawer
-        opened={timelineBooking !== null}
-        onClose={() => setTimelineBooking(null)}
-        position="right"
-        size="md"
-        title="Запись на сегодня"
-      >
-        {timelineBooking && (
-          <Stack gap="sm">
-            <Text size="sm" c="dimmed">
-              Время
-            </Text>
-            <Text size="md">
-              {String(timelineBooking.appointment_time).slice(0, 5)}
-            </Text>
-            <Text size="sm" c="dimmed" mt="xs">
-              Пациент
-            </Text>
-            <Text size="md">{timelineBooking.patient_id}</Text>
-            <Text size="sm" c="dimmed" mt="xs">
-              Врач · Услуга
-            </Text>
-            <Text size="md">
-              {timelineBooking.doctor_id} · {timelineBooking.service_id}
-            </Text>
-            <Text size="sm" c="dimmed" mt="xs">
-              Статус
-            </Text>
-            <Badge size="sm" variant="light">
-              {timelineBooking.status}
-            </Badge>
-            <Button
-              component={Link}
-              to={ROUTE_PATHS.admin.schedule}
-              variant="light"
-              mt="md"
-              onClick={() => setTimelineBooking(null)}
-            >
-              Открыть в расписании
-            </Button>
+            {editFilePreviewUrl && (editFile?.type || "").toLowerCase().startsWith("image/") ? (
+              <img
+                src={editFilePreviewUrl}
+                alt="preview"
+                style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 8 }}
+              />
+            ) : null}
+            {editFilePreviewUrl && (editFile?.type || "").toLowerCase().startsWith("audio/") ? (
+              <audio controls src={editFilePreviewUrl} style={{ width: "100%" }} />
+            ) : null}
+            {editFilePreviewUrl && (editFile?.type || "").toLowerCase().startsWith("video/") ? (
+              <video
+                controls
+                src={editFilePreviewUrl}
+                style={{ width: "100%", maxHeight: 360, objectFit: "contain", borderRadius: 8 }}
+              />
+            ) : null}
+
+            <Group justify="flex-end" mt="xs">
+              <Button variant="light" onClick={() => setEditingPost(null)} disabled={updatePost.isPending}>
+                Отмена
+              </Button>
+              <Button
+                loading={updatePost.isPending}
+                onClick={() => {
+                  const title = editTitle.trim() ? editTitle : null;
+                  updatePost.mutate(
+                    { postId: editingPost.id, title, body: editBody, file: editFile },
+                    {
+                      onSuccess: () => {
+                        setEditingPost(null);
+                      },
+                    }
+                  );
+                }}
+                disabled={!editBody.trim()}
+              >
+                Сохранить
+              </Button>
+            </Group>
           </Stack>
-        )}
-      </AdminDrawer>
+        ) : null}
+      </GlassModal>
+
+      <style>{`
+        @keyframes admin-emergency-blink {
+          0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(250, 140, 0, 0.4); }
+          50% { opacity: 0.92; box-shadow: 0 0 0 6px rgba(250, 140, 0, 0.15); }
+        }
+        .admin-emergency-blink {
+          animation: admin-emergency-blink 1.2s ease-in-out infinite;
+        }
+      `}</style>
     </Stack>
   );
 }

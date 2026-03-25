@@ -83,7 +83,6 @@ async def test_create_obligation_from_sale_balance_based(db_session: AsyncSessio
 async def test_register_write_off_for_visit_full_and_partial(db_session: AsyncSession) -> None:
     clinic_id = uuid4()
     patient_id = uuid4()
-    subscription_id = uuid4()
     booking_id = uuid4()
     usage_id = uuid4()
     now = datetime.now(timezone.utc)
@@ -163,7 +162,6 @@ async def test_register_write_off_for_visit_overspend_clamped_with_warning(
 ) -> None:
     clinic_id = uuid4()
     patient_id = uuid4()
-    subscription_id = uuid4()
     booking_id = uuid4()
     usage_id = uuid4()
     now = datetime.now(timezone.utc)

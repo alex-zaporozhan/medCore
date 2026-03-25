@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 from typing import Dict
 
-from src.application.ai.tools_base import Tool, ToolContext, AiTool, AiToolContext
+from src.application.ai.tools_base import AiTool, AiToolContext
 from src.application.ai.tools_booking import (
     CancelBookingTool,
     CreateBookingTool,

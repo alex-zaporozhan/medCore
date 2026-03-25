@@ -1,5 +1,6 @@
 import type { Booking } from "@/api/types";
 import {
+  Anchor,
   Button,
   Group,
   HoverCard,
@@ -7,18 +8,27 @@ import {
   Tabs,
   Text,
   TextInput,
+  Textarea,
   Select,
   Table,
   Skeleton,
+  ScrollArea,
 } from "@mantine/core";
 import type { ComboboxItem } from "@mantine/core";
+import { useClipboard } from "@mantine/hooks";
+import { Link } from "react-router-dom";
+import { ROUTE_PATHS } from "@/routePaths";
 import { useServiceConsumables } from "@/hooks/useErpInventory";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useAdminLoyaltySummaryByContact } from "@/hooks/useLoyalty";
 import { useDoctors } from "@/hooks/useDoctors";
-import { AdminDrawer } from "@/shared/ui";
+import { usePatchBookingAdmin } from "@/hooks";
+import { AdminDrawer, GlassModal } from "@/shared/ui";
+import { useEffect, useState } from "react";
 
 export interface BookingEntityDrawerProps {
+  /** По умолчанию центрированное модальное окно (единый стандарт админки). */
+  presentation?: "modal" | "drawer";
   opened: boolean;
   onClose: () => void;
   booking: Booking | null;
@@ -41,9 +51,14 @@ export interface BookingEntityDrawerProps {
   onEditDateChange?: (v: string) => void;
   onEditTimeChange?: (v: string) => void;
   onEditDoctorIdChange?: (v: string) => void;
+  /** P2: полная ссылка на слот в расписании (для копирования) */
+  scheduleShareUrl?: string | null;
+  /** После сохранения комментария — обновить выбранную запись в родителе (P2-FU4) */
+  onBookingNotesSaved?: (booking: Booking) => void;
 }
 
 export function BookingEntityDrawer({
+  presentation = "modal",
   opened,
   onClose,
   booking,
@@ -64,8 +79,13 @@ export function BookingEntityDrawer({
   onEditDateChange,
   onEditTimeChange,
   onEditDoctorIdChange,
+  scheduleShareUrl,
+  onBookingNotesSaved,
 }: BookingEntityDrawerProps) {
   const { currentClinicId } = useAdminClinic();
+  const patchNotes = usePatchBookingAdmin();
+  const clipboard = useClipboard({ timeout: 2500 });
+  const [notesDraft, setNotesDraft] = useState("");
   const timeStr = booking ? String(booking.appointment_time).slice(0, 5) : "";
   const { data: consumables } = useServiceConsumables(
     currentClinicId,
@@ -80,22 +100,25 @@ export function BookingEntityDrawer({
   });
   const doctor = booking ? doctors?.find((d) => d.id === booking.doctor_id) : null;
 
+  useEffect(() => {
+    if (booking) setNotesDraft(booking.notes ?? "");
+  }, [booking?.id, booking?.notes]);
+
   if (!booking) return null;
+
+  const shellProps = {
+    opened,
+    onClose,
+    title: "Запись",
+    styles: { body: { paddingTop: 0 } } as const,
+  };
 
   const canCancel =
     booking.status !== "cancelled" &&
     booking.status !== "completed" &&
     new Date(booking.appointment_date + "T" + timeStr + ":00") > new Date();
 
-  return (
-    <AdminDrawer
-      position="right"
-      size="lg"
-      opened={opened}
-      onClose={onClose}
-      title="Запись"
-      styles={{ body: { paddingTop: 0 } }}
-    >
+  const tabs = (
       <Tabs defaultValue="details">
         <Tabs.List>
           <Tabs.Tab value="details">Детали</Tabs.Tab>
@@ -159,12 +182,61 @@ export function BookingEntityDrawer({
                 <Text>{serviceName ?? booking.service_id}</Text>
                 <Text size="sm" c="dimmed">Статус</Text>
                 <Text>{booking.status}</Text>
-                {booking.notes && (
-                  <>
-                    <Text size="sm" c="dimmed">Комментарий</Text>
-                    <Text size="sm">{booking.notes}</Text>
-                  </>
-                )}
+                <Group gap="md" mt="xs">
+                  <Anchor component={Link} to={`${ROUTE_PATHS.admin.patients}?patient_id=${booking.patient_id}`} size="sm">
+                    Карточка пациента
+                  </Anchor>
+                  <Anchor
+                    component={Link}
+                    to={`${ROUTE_PATHS.admin.doctorSchedule}?doctor_id=${booking.doctor_id}`}
+                    size="sm"
+                  >
+                    График врача
+                  </Anchor>
+                </Group>
+                {scheduleShareUrl ? (
+                  <Button
+                    size="xs"
+                    variant="light"
+                    onClick={() => clipboard.copy(scheduleShareUrl)}
+                  >
+                    {clipboard.copied ? "Ссылка скопирована" : "Ссылка на это окно"}
+                  </Button>
+                ) : null}
+                <Textarea
+                  label="Комментарий администратора"
+                  placeholder="Краткая заметка для смены; в сетке виден значок"
+                  minRows={2}
+                  mt="sm"
+                  value={notesDraft}
+                  onChange={(e) => setNotesDraft(e.currentTarget.value)}
+                  disabled={Boolean(editing)}
+                />
+                <Group gap="sm" mb="xs">
+                  <Button
+                    size="xs"
+                    loading={patchNotes.isPending}
+                    disabled={
+                      Boolean(editing) ||
+                      notesDraft === (booking.notes ?? "")
+                    }
+                    onClick={() =>
+                      patchNotes.mutate(
+                        {
+                          id: booking.id,
+                          notes: notesDraft.trim() ? notesDraft : null,
+                        },
+                        {
+                          onSuccess: (updated) => {
+                            onBookingNotesSaved?.(updated);
+                          },
+                        },
+                      )
+                    }
+                  >
+                    Сохранить комментарий
+                  </Button>
+                </Group>
                 <Group mt="md" gap="sm">
                   {onStartEdit && (
                     <Button variant="light" onClick={onStartEdit}>
@@ -286,6 +358,19 @@ export function BookingEntityDrawer({
           </Text>
         </Tabs.Panel>
       </Tabs>
-    </AdminDrawer>
+  );
+
+  if (presentation === "drawer") {
+    return (
+      <AdminDrawer position="right" size="lg" {...shellProps}>
+        {tabs}
+      </AdminDrawer>
+    );
+  }
+
+  return (
+    <GlassModal size="xl" centered scrollAreaComponent={ScrollArea} {...shellProps}>
+      {tabs}
+    </GlassModal>
   );
 }

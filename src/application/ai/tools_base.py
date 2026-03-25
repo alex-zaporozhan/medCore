@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Iterable, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
 from pydantic import BaseModel

@@ -7,6 +7,7 @@ from typing import Any
 
 from src.core.config import settings
 from src.core.datetime_utils import to_iso8601_utc, utc_now
+from src.core.pii_mask import mask_pii_value, mask_phones_in_text
 
 
 class JSONFormatter(logging.Formatter):
@@ -14,22 +15,42 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
+        msg = record.getMessage()
+        if settings.log_mask_pii:
+            msg = mask_phones_in_text(msg)
+
         log_data: dict[str, Any] = {
             "timestamp": to_iso8601_utc(utc_now()),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": msg,
         }
 
         # Add exception info if present
         if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
+            exc_text = self.formatException(record.exc_info)
+            if settings.log_mask_pii:
+                exc_text = mask_phones_in_text(exc_text)
+            log_data["exception"] = exc_text
 
         # Add extra fields
         if hasattr(record, "extra"):
-            log_data.update(record.extra)
+            extra = record.extra
+            if settings.log_mask_pii:
+                extra = mask_pii_value(extra)
+            log_data.update(extra)
 
         return json.dumps(log_data, ensure_ascii=False)
+
+
+class _PiiPlainFormatter(logging.Formatter):
+    """Plain formatter with optional phone masking in the message."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        s = super().format(record)
+        if settings.log_mask_pii:
+            return mask_phones_in_text(s)
+        return s
 
 
 def setup_logging() -> None:
@@ -49,9 +70,9 @@ def setup_logging() -> None:
 
     # Set formatter
     if settings.log_format == "json":
-        formatter = JSONFormatter()
+        formatter: logging.Formatter = JSONFormatter()
     else:
-        formatter = logging.Formatter(
+        formatter = _PiiPlainFormatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
 

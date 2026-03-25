@@ -4,7 +4,7 @@ import logging
 import os
 import random
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from uuid import UUID
 
 from redis.asyncio import Redis

@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Iterable
 from uuid import UUID
 
 from src.domain.entities.lead_pipeline import LeadPipeline

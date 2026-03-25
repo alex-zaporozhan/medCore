@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.dependencies import AdminContext, get_session, require_permissions
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.dto.waitlist_dto import (
     QueuePolicyRead,
@@ -35,6 +35,7 @@ async def list_waitlist(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
     include_inactive: bool = Query(
         default=False,
         description="Include cancelled and expired entries",
@@ -64,6 +65,7 @@ async def create_waitlist_entry(
     body: WaitlistEntryCreate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -89,6 +91,7 @@ async def get_waitlist_entry(
     entry_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -108,6 +111,7 @@ async def update_waitlist_entry(
     body: WaitlistEntryUpdate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -137,6 +141,7 @@ async def delete_waitlist_entry(
     entry_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     """Soft-cancel: entry remains in DB with status cancelled."""
     if clinic_id != current_admin.clinic_id:
@@ -160,6 +165,7 @@ async def get_queue_policy(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -181,6 +187,7 @@ async def upsert_queue_policy(
     body: QueuePolicyUpdate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ):
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)

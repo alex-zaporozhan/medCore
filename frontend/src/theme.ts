@@ -122,6 +122,9 @@ export const appTheme = createTheme({
     },
     Modal: {
       defaultProps: {
+        centered: true,
+        // Чтобы модалки не "уезжали" сбоку, используем нейтральную анимацию.
+        transition: "fade",
         overlayProps: {
           backgroundOpacity: 0.08,
           blur: 10,

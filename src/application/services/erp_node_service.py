@@ -168,12 +168,58 @@ class ErpVisitNodeService:
                     error_code=exc.code,
                     error_message=str(exc),
                 )
-
-            loyalty_summary = await self._build_loyalty_summary(
-                clinic_id=request.clinic_id,
-                booking_id=request.booking_id,
-                session=session,
-            )
+            except Exception as exc:
+                logger.exception(
+                    "[ERP_NODE] legacy ERP flow crashed during process_booking_completed",
+                    extra={
+                        "booking_id": str(request.booking_id),
+                        "clinic_id": str(request.clinic_id),
+                        "chain": "booking_to_erp",
+                        "step": "erp",
+                        "status": "error",
+                        "error_type": "unexpected",
+                    },
+                )
+                return ErpVisitNodeResult(
+                    success=False,
+                    finance_ids=[],
+                    payroll_ids=[],
+                    inventory_ids=[],
+                    warnings=[],
+                    error_code="unexpected_error",
+                    error_message=str(exc),
+                    loyalty_summary=None,
+                )
+            try:
+                loyalty_summary = await self._build_loyalty_summary(
+                    clinic_id=request.clinic_id,
+                    booking_id=request.booking_id,
+                    session=session,
+                )
+            except Exception as exc:
+                # Legacy path should never crash node-level contract; convert to
+                # stable node result for caller and tests.
+                logger.exception(
+                    "[ERP_NODE] legacy loyalty summary build failed",
+                    extra={
+                        "booking_id": str(request.booking_id),
+                        "clinic_id": str(request.clinic_id),
+                        "chain": "booking_to_erp",
+                        "step": "erp",
+                        "status": "error",
+                        "error_type": "unexpected",
+                    },
+                )
+                return ErpVisitNodeResult(
+                    success=False,
+                    finance_ids=[],
+                    payroll_ids=[],
+                    inventory_ids=[],
+                    warnings=[],
+                    error_code="unexpected_error",
+                    error_message=str(exc),
+                    loyalty_summary=None,
+                )
 
             logger.info(
                 "[ERP_NODE] visit completion processed successfully (legacy ERP flow)",

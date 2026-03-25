@@ -15,7 +15,6 @@ from src.domain.entities.notification import Notification
 from src.domain.entities.patient import Patient
 from src.infrastructure.database.base import AsyncSessionLocal
 from src.infrastructure.messaging.celery_app import celery_app
-from src.core.tracing import extract_trace_id_from_payload
 
 logger = logging.getLogger(__name__)
 

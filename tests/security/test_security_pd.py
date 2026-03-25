@@ -8,7 +8,6 @@ from datetime import date
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
 
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.patient import Patient

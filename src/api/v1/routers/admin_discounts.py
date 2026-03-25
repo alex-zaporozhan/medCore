@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.dependencies import AdminContext, get_session, require_permissions
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.dto.discount_dto import DiscountCreate, DiscountRead, DiscountUpdate
 from src.application.services.discount_service import DiscountService
@@ -19,6 +19,7 @@ async def list_discounts(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ) -> list[DiscountRead]:
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
@@ -37,6 +38,7 @@ async def create_discount(
     data: DiscountCreate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ) -> DiscountRead:
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
@@ -57,6 +59,7 @@ async def get_discount(
     discount_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ) -> DiscountRead:
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount not found")
@@ -74,6 +77,7 @@ async def update_discount(
     data: DiscountUpdate,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ) -> DiscountRead:
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount not found")
@@ -91,6 +95,7 @@ async def delete_discount(
     discount_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ) -> None:
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Discount not found")

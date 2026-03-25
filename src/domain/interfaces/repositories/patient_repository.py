@@ -1,6 +1,7 @@
 """Patient repository interface."""
 
 from abc import ABC, abstractmethod
+from datetime import date
 from uuid import UUID
 
 from src.domain.entities.patient import Patient
@@ -30,6 +31,8 @@ class PatientRepository(ABC):
         clinic_id: UUID | None = None,
         phone: str | None = None,
         full_name: str | None = None,
+        visited_from: date | None = None,
+        visited_to: date | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> list[Patient]:

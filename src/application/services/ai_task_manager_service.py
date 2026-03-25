@@ -15,9 +15,10 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import Select, and_, func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.application.ai.tools_base import ToolError
 from src.application.dto.ai_task_manager_dto import (
     AnalysisContext,
     CreatedTaskResult,
@@ -243,11 +244,8 @@ class AiTaskAnalyzer:
         clinic_id = context.clinic_id
 
         no_show_min_count = int(thresholds.get("no_show_min_count", 2))
-        no_show_window_days = int(thresholds.get("no_show_window_days", 30))
         erp_error_min_count = int(thresholds.get("erp_error_min_count", 3))
-        erp_error_window_days = int(thresholds.get("erp_error_window_days", 1))
         stale_leads_min_count = int(thresholds.get("stale_leads_min_count", 10))
-        stale_leads_days = int(thresholds.get("stale_leads_days", 7))
 
         allowed = set(settings.allowed_task_classes or [])
         allow_all = not allowed

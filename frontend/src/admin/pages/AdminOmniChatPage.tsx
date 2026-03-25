@@ -1,9 +1,13 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import { useAdminTasksOpen, useCreateAdminTaskMutation } from "@/hooks";
+import { useAdminTasksOpen, useCreateAdminTaskMutation, useCreateAdminBooking } from "@/hooks";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useAdminOmniChats,
   useAdminOmniChatDetail,
-  useAdminOmniChatMessages,
+  useAdminOmniChatMessagesInfinite,
+  useOmniChatSse,
+  useOmniQuickReplies,
+  usePatchOmniChat,
   useSendAdminOmniMessage,
   useUpdateOmniChatAiMode,
   useHideAdminOmniMessage,
@@ -31,6 +35,8 @@ import {
   useAiSuggestNextStage,
   useAiUpdateLeadStage,
 } from "@/hooks/useCrmLeads";
+import { useDoctors } from "@/hooks/useDoctors";
+import { useServices } from "@/hooks/useServices";
 import {
   Box,
   Flex,
@@ -44,11 +50,13 @@ import {
   Checkbox,
   Tabs,
   Group,
+  Menu,
   Divider,
   Tooltip,
   SegmentedControl,
   ActionIcon,
   rem,
+  ScrollArea,
 } from "@mantine/core";
 import {
   IconBriefcase,
@@ -60,6 +68,7 @@ import {
   IconFileDescription,
   IconHistory,
   IconListCheck,
+  IconRefresh,
   IconRobot,
   IconUser,
 } from "@tabler/icons-react";
@@ -85,6 +94,32 @@ function omniChatListAiShort(ai_mode: string | null | undefined): string | null 
   if (!ai_mode || ai_mode === "DISABLED") return null;
   if (ai_mode === "AUTO_REPLY") return "AI авто";
   return "AI подск.";
+}
+
+function omniMessageDeliveryLabel(
+  deliveryStatus: string | null | undefined,
+  readStatus: string | null | undefined
+): { label: string; color: string; tooltip: string } | null {
+  const read = String(readStatus || "").toUpperCase();
+  const delivery = String(deliveryStatus || "").toUpperCase();
+  if (read === "READ") {
+    return { label: "Прочитано", color: "var(--mantine-color-teal-7)", tooltip: "Клиент открыл сообщение." };
+  }
+  if (delivery === "DELIVERED") {
+    return { label: "Доставлено", color: "var(--mantine-color-green-7)", tooltip: "Канал подтвердил доставку." };
+  }
+  if (delivery) {
+    return { label: delivery, color: "var(--mantine-color-gray-6)", tooltip: "Технический статус доставки." };
+  }
+  return null;
+}
+
+function omniOutboundChannelLabel(t: string | null | undefined): string {
+  const u = String(t || "").toUpperCase();
+  if (u === "TELEGRAM_BOT") return "Telegram";
+  if (u === "WEB_WIDGET") return "Виджет сайта";
+  if (u === "WEB_APP") return "Приложение";
+  return t ? String(t) : "Канал";
 }
 
 /** Подсказка к сырому статусу диалога из API (список слева). */
@@ -126,6 +161,8 @@ export default function AdminOmniChatPage() {
   const [search, setSearch] = useState("");
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [messageText, setMessageText] = useState("");
+  /** Явный выбор канала при нескольких каналах в треде (сбрасывается при смене чата). */
+  const [replyChannelPick, setReplyChannelPick] = useState<string | null>(null);
   const [showOnlyWaiting, setShowOnlyWaiting] = useState(false);
   const [showHiddenMessages, setShowHiddenMessages] = useState(false);
   const [aiFilter, setAiFilter] = useState<string>("ALL");
@@ -141,38 +178,141 @@ export default function AdminOmniChatPage() {
   const [taskPriority, setTaskPriority] = useState<string | null>("medium");
   const [taskDueAt, setTaskDueAt] = useState("");
   const [taskAssignMe, setTaskAssignMe] = useState(true);
+  const [bookingModalOpen, setBookingModalOpen] = useState(false);
+  const [bookingDoctorId, setBookingDoctorId] = useState<string | null>(null);
+  const [bookingServiceId, setBookingServiceId] = useState<string | null>(null);
+  const [bookingDate, setBookingDate] = useState("");
+  const [bookingTime, setBookingTime] = useState("");
+  const [bookingNotes, setBookingNotes] = useState("");
   const [inspectorCollapsed, setInspectorCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(OMNI_INSPECTOR_COLLAPSED_KEY) === "true";
   });
   const [inspectorTab, setInspectorTab] = useState<OmniInspectorTab>("client");
+  /** P1-B: фильтр «мои диалоги» (assignee=me). */
+  const [assigneeMineOnly, setAssigneeMineOnly] = useState(false);
 
+  const queryClient = useQueryClient();
   const { data: chatsData, isLoading: chatsLoading, isError: chatsError, error: chatsErr } = useAdminOmniChats({
     status: showOnlyWaiting ? "WAITING_FOR_OPERATOR" : statusFilter,
     search: search || undefined,
     page: 1,
     page_size: 100,
+    assignee: assigneeMineOnly ? "me" : undefined,
   });
 
-  const { data: chatDetail, isLoading: detailLoading } = useAdminOmniChatDetail(selectedChatId);
-  const { data: messagesData, isLoading: messagesLoading } = useAdminOmniChatMessages(
-    selectedChatId,
-    {
-      limit: 100,
-      include_hidden: showHiddenMessages,
+  const { sseBroken } = useOmniChatSse(true, selectedChatId);
+  const { data: quickRepliesData } = useOmniQuickReplies(true);
+  const patchOmniChat = usePatchOmniChat();
+
+  const handleRefreshOmniThread = useCallback(() => {
+    if (!selectedChatId) return;
+    void queryClient.invalidateQueries({ queryKey: ["admin-omni-chat-messages", selectedChatId] });
+    void queryClient.invalidateQueries({ queryKey: ["admin-omni-chat-detail", selectedChatId] });
+    void queryClient.invalidateQueries({ queryKey: ["admin-omni-chats"] });
+  }, [queryClient, selectedChatId]);
+
+  const handleAssignOmniToMe = useCallback(() => {
+    const adminId = getAdminId();
+    if (!selectedChatId || !adminId) return;
+    patchOmniChat.mutate({ chatId: selectedChatId, assignee_admin_id: adminId });
+  }, [selectedChatId, patchOmniChat]);
+
+  const visibleChats = useMemo(() => {
+    let items = chatsData?.items ?? [];
+    if (aiFilter === "AI_ONLY") {
+      items = items.filter(
+        (c) => c.ai_mode && c.ai_mode !== "DISABLED"
+      );
     }
-  );
+    return items;
+  }, [aiFilter, chatsData?.items]);
+
+  const { data: chatDetail, isLoading: detailLoading } = useAdminOmniChatDetail(selectedChatId);
+  const {
+    mergedMessages,
+    isPending: messagesInitialLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useAdminOmniChatMessagesInfinite(selectedChatId, {
+    limit: 100,
+    include_hidden: showHiddenMessages,
+  });
+
+  const omniMessagesViewportRef = useRef<HTMLDivElement>(null);
+
+  const handleLoadOlderMessages = useCallback(async () => {
+    const el = omniMessagesViewportRef.current;
+    const prevH = el?.scrollHeight ?? 0;
+    const prevTop = el?.scrollTop ?? 0;
+    await fetchNextPage();
+    requestAnimationFrame(() => {
+      const node = omniMessagesViewportRef.current;
+      if (!node) return;
+      node.scrollTop = prevTop + (node.scrollHeight - prevH);
+    });
+  }, [fetchNextPage]);
+
+  const replyChannelOptions = useMemo(() => {
+    const items = mergedMessages;
+    const seen = new Set<string>();
+    const out: { value: string; label: string }[] = [];
+    for (const m of items) {
+      if (m.direction !== "INBOUND" || m.actor_type !== "CLIENT" || !m.channel_id) continue;
+      if (seen.has(m.channel_id)) continue;
+      seen.add(m.channel_id);
+      out.push({ value: m.channel_id, label: omniOutboundChannelLabel(m.channel_type) });
+    }
+    if (out.length === 0 && chatDetail?.channel_id) {
+      out.push({
+        value: chatDetail.channel_id,
+        label: omniOutboundChannelLabel(chatDetail.channel_type),
+      });
+    }
+    return out;
+  }, [mergedMessages, chatDetail?.channel_id, chatDetail?.channel_type]);
+
+  const defaultReplyChannelId = useMemo(() => {
+    const items = mergedMessages;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const m = items[i];
+      if (m.direction === "INBOUND" && m.actor_type === "CLIENT" && m.channel_id) {
+        return m.channel_id;
+      }
+    }
+    return chatDetail?.channel_id ?? null;
+  }, [mergedMessages, chatDetail?.channel_id]);
+
+  const effectiveReplyChannelId = replyChannelPick ?? defaultReplyChannelId;
+  const effectiveReplyLabel =
+    replyChannelOptions.find((o) => o.value === effectiveReplyChannelId)?.label ??
+    omniOutboundChannelLabel(
+      mergedMessages.find((m) => m.channel_id === effectiveReplyChannelId)?.channel_type
+    );
 
   const sendMessage = useSendAdminOmniMessage();
   const updateAiMode = useUpdateOmniChatAiMode();
   const hideMessage = useHideAdminOmniMessage();
 
+  useEffect(() => {
+    setReplyChannelPick(null);
+  }, [selectedChatId]);
+
   const handleSend = () => {
     if (!selectedChatId || !messageText.trim()) return;
-    sendMessage.mutate(
-      { chatId: selectedChatId, content: messageText.trim() },
-      { onSuccess: () => setMessageText("") }
-    );
+    const payload: {
+      chatId: string;
+      content: string;
+      reply_channel_id?: string | null;
+    } = {
+      chatId: selectedChatId,
+      content: messageText.trim(),
+    };
+    if (replyChannelOptions.length > 1 && effectiveReplyChannelId) {
+      payload.reply_channel_id = effectiveReplyChannelId;
+    }
+    sendMessage.mutate(payload, { onSuccess: () => setMessageText("") });
   };
 
   const selectedItem = chatsData?.items?.find((c) => c.chat_id === selectedChatId) ?? null;
@@ -195,6 +335,15 @@ export default function AdminOmniChatPage() {
 
   const { data: formTemplates } = useAdminFormTemplates();
   const sendFormLink = useSendFormLink();
+  const createBooking = useCreateAdminBooking();
+  const { data: doctors } = useDoctors({
+    clinic_id: currentClinicId ?? undefined,
+    is_active: true,
+    enabled: Boolean(currentClinicId),
+  });
+  const { data: services } = useServices({
+    clinic_id: currentClinicId ?? undefined,
+  });
 
   const handleSendFormLink = useCallback(() => {
     if (!patientId || !formTemplateId) return;
@@ -220,6 +369,7 @@ export default function AdminOmniChatPage() {
     ["mod+J", () => { searchInputRef.current?.focus(); }],
     ["mod+Enter", () => { if (selectedChatId && messageText.trim()) handleSend(); }],
     ["Escape", () => { setFormDrawerOpen(false); setTaskDrawerOpen(false); }],
+    ["mod+b", () => { if (selectedChatId && patientId && currentClinicId) handleOpenBookingModal(); }],
     /** Правая панель «Рабочий центр»: свернуть/развернуть (как левое меню). Не срабатывает в полях ввода. */
     ["mod+shift+l", () => { setInspectorCollapsed((c) => !c); }],
   ]);
@@ -245,6 +395,51 @@ export default function AdminOmniChatPage() {
       meta: { lead_id: leadId, patient_id: patientId, contact_id: contactId },
     });
   };
+
+  const handleOpenBookingModal = useCallback(() => {
+    setBookingModalOpen(true);
+    setBookingDoctorId(null);
+    setBookingServiceId(null);
+    setBookingDate("");
+    setBookingTime("");
+    setBookingNotes("");
+  }, []);
+
+  const handleCreateBooking = useCallback(() => {
+    if (!currentClinicId || !patientId || !bookingDoctorId || !bookingServiceId || !bookingDate || !bookingTime) {
+      return;
+    }
+    createBooking.mutate(
+      {
+        clinic_id: currentClinicId,
+        patient_id: patientId,
+        doctor_id: bookingDoctorId,
+        service_id: bookingServiceId,
+        appointment_date: bookingDate,
+        appointment_time: bookingTime.length === 5 ? `${bookingTime}:00` : bookingTime,
+        notes: bookingNotes.trim() ? bookingNotes.trim() : undefined,
+      },
+      {
+        onSuccess: () => {
+          setBookingModalOpen(false);
+          setBookingDoctorId(null);
+          setBookingServiceId(null);
+          setBookingDate("");
+          setBookingTime("");
+          setBookingNotes("");
+        },
+      }
+    );
+  }, [
+    bookingDate,
+    bookingDoctorId,
+    bookingNotes,
+    bookingServiceId,
+    bookingTime,
+    createBooking,
+    currentClinicId,
+    patientId,
+  ]);
 
   const handleCreateTask = () => {
     if (createTaskFeature.status === "stub") return;
@@ -282,15 +477,15 @@ export default function AdminOmniChatPage() {
     );
   };
 
-  const visibleChats = useMemo(() => {
-    let items = chatsData?.items ?? [];
-    if (aiFilter === "AI_ONLY") {
-      items = items.filter(
-        (c) => c.ai_mode && c.ai_mode !== "DISABLED"
-      );
+  useEffect(() => {
+    if (!selectedChatId && visibleChats.length > 0) {
+      setSelectedChatId(visibleChats[0].chat_id);
+      return;
     }
-    return items;
-  }, [aiFilter, chatsData?.items]);
+    if (selectedChatId && !visibleChats.some((c) => c.chat_id === selectedChatId)) {
+      setSelectedChatId(visibleChats[0]?.chat_id ?? null);
+    }
+  }, [selectedChatId, visibleChats]);
 
   const handleOpenHideModal = (messageId: string) => {
     setHideMessageId(messageId);
@@ -317,10 +512,18 @@ export default function AdminOmniChatPage() {
   };
 
   return (
-    <Stack gap="md">
+    <Stack gap="md" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <ContextBar title="Chat & AI — единый чат с пациентами" />
-      <AppCard>
-        <Stack gap="md" style={{ height: 520, minHeight: 0 }}>
+      <AppCard
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        <Stack gap="md" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <Flex gap="sm" wrap="wrap" align="center">
             <TextInput
               ref={searchInputRef}
@@ -389,6 +592,28 @@ export default function AdminOmniChatPage() {
               ]}
               style={{ width: 220 }}
             />
+            <Tooltip label="Показать только диалоги, назначенные на вас">
+              <Checkbox
+                size="xs"
+                label="Только мои"
+                checked={assigneeMineOnly}
+                onChange={(e) => setAssigneeMineOnly(e.currentTarget.checked)}
+                styles={{ label: { whiteSpace: "nowrap" } }}
+              />
+            </Tooltip>
+            {sseBroken ? (
+              <Tooltip label="Realtime недоступен: работает fallback polling (12с) и авто-переподключение SSE.">
+                <Badge size="sm" color="yellow" variant="light">
+                  Realtime degraded
+                </Badge>
+              </Tooltip>
+            ) : (
+              <Tooltip label="Realtime через SSE активен.">
+                <Badge size="sm" color="teal" variant="light">
+                  Realtime live
+                </Badge>
+              </Tooltip>
+            )}
           </Flex>
 
           {chatsLoading ? (
@@ -400,6 +625,7 @@ export default function AdminOmniChatPage() {
             <ThreeColumnLayout
               preset="omni-inspector"
               omniRightCollapsed={inspectorCollapsed}
+              centerColumnScrollable={false}
               left={
                 <Stack gap={4} p="xs" miw={0}>
                   {!chatsData?.items?.length ? (
@@ -446,6 +672,11 @@ export default function AdminOmniChatPage() {
                         <Text size="xs" c="dimmed" truncate="end" lineClamp={1} style={{ minWidth: 0 }}>
                           {c.contact_primary_phone || "—"}
                         </Text>
+                        {c.assignee_name ? (
+                          <Badge size="xs" variant="light" color="blue" radius="xs" mt={2} style={{ alignSelf: "flex-start" }}>
+                            {c.assignee_name}
+                          </Badge>
+                        ) : null}
                         <Text
                           component="div"
                           fz={9}
@@ -512,16 +743,31 @@ export default function AdminOmniChatPage() {
                     />
                   </Stack>
                 ) : (
-                  <Stack gap="md" p="xs" style={{ height: "100%" }}>
-                    {(detailLoading || chatDetail) && (
-                      <Stack gap="md">
+                  <Box
+                    p="xs"
+                    style={{
+                      height: "100%",
+                      minHeight: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <Box
+                      style={{
+                        flexShrink: 0,
+                        paddingBottom: "var(--mantine-spacing-sm)",
+                        borderBottom: "1px solid var(--divider)",
+                      }}
+                    >
+                      {detailLoading ? (
+                        <DataSkeleton lines={2} />
+                      ) : (
                         <Group
                           justify="space-between"
                           align="flex-end"
                           wrap="wrap"
                           gap="md"
-                          pb="sm"
-                          style={{ borderBottom: `1px solid var(--divider)` }}
                         >
                           <Stack gap={4} miw={180}>
                             <Text fw={700} size="lg" lh={1.25}>
@@ -552,43 +798,85 @@ export default function AdminOmniChatPage() {
                                     {String(chatDetail.channel_type).replace(/_/g, " ")}
                                   </Text>
                                 ) : null}
+                                {chatDetail.assignee_name ? (
+                                  <Badge size="sm" variant="light" color="blue" radius="xs">
+                                    {chatDetail.assignee_name}
+                                  </Badge>
+                                ) : (
+                                  <Text size="xs" c="dimmed">
+                                    Без ответственного
+                                  </Text>
+                                )}
                               </Group>
                             )}
                           </Stack>
                           {chatDetail ? (
-                            <Select
-                              size="xs"
-                              w={{ base: "100%", sm: 200 }}
-                              label={
-                                <Text component="span" size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: rem(0.5) }}>
-                                  Режим AI
-                                </Text>
-                              }
-                              leftSection={<IconRobot size={14} color="var(--mantine-color-ai-6)" />}
-                              data={OMNI_CHAT_AI_MODES.map((v) => ({
-                                value: v,
-                                label:
-                                  v === "DISABLED"
-                                    ? "Выкл"
-                                    : v === "AUTO_REPLY"
-                                      ? "Автоответ"
-                                      : "Подсказки",
-                              }))}
-                              value={chatDetail.ai_mode || "DISABLED"}
-                              onChange={(v) => {
-                                if (v && selectedChatId)
-                                  updateAiMode.mutate({
-                                    chatId: selectedChatId,
-                                    ai_mode: v,
-                                  });
-                              }}
-                              disabled={updateAiMode.isPending}
-                              styles={{
-                                input: { fontWeight: 600 },
-                              }}
-                            />
+                            <Stack gap={6} align="flex-end">
+                              <Select
+                                size="xs"
+                                w={{ base: "100%", sm: 200 }}
+                                label={
+                                  <Text component="span" size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: rem(0.5) }}>
+                                    Режим AI
+                                  </Text>
+                                }
+                                leftSection={<IconRobot size={14} color="var(--mantine-color-ai-6)" />}
+                                data={OMNI_CHAT_AI_MODES.map((v) => ({
+                                  value: v,
+                                  label:
+                                    v === "DISABLED"
+                                      ? "Выкл"
+                                      : v === "AUTO_REPLY"
+                                        ? "Автоответ"
+                                        : "Подсказки",
+                                }))}
+                                value={chatDetail.ai_mode || "DISABLED"}
+                                onChange={(v) => {
+                                  if (v && selectedChatId)
+                                    updateAiMode.mutate({
+                                      chatId: selectedChatId,
+                                      ai_mode: v,
+                                    });
+                                }}
+                                disabled={updateAiMode.isPending}
+                                styles={{
+                                  input: { fontWeight: 600 },
+                                }}
+                              />
+                              <Button
+                                size="xs"
+                                variant="light"
+                                onClick={handleAssignOmniToMe}
+                                loading={patchOmniChat.isPending}
+                              >
+                                Взять в работу
+                              </Button>
+                            </Stack>
                           ) : null}
                         </Group>
+                      )}
+                    </Box>
+                    <ScrollArea
+                      type="scroll"
+                      scrollbarSize={6}
+                      offsetScrollbars
+                      viewportRef={omniMessagesViewportRef}
+                      style={{ flex: 1, minHeight: 0 }}
+                    >
+                      <Stack gap="md" pb="xs">
+                        {hasNextPage ? (
+                          <Button
+                            size="xs"
+                            variant="light"
+                            fullWidth
+                            leftSection={<IconHistory size={14} stroke={1.5} />}
+                            onClick={() => void handleLoadOlderMessages()}
+                            loading={isFetchingNextPage}
+                            disabled={messagesInitialLoading}
+                          >
+                            Ранее
+                          </Button>
+                        ) : null}
                         {chatDetail?.lead_id ? (
                           <Stack gap={6} align="flex-end">
                                 <Text size="xs" c="dimmed">
@@ -840,35 +1128,41 @@ export default function AdminOmniChatPage() {
                                 </Stack>
                           </Stack>
                         ) : null}
-                      </Stack>
-                    )}
-                    <Box
-                      style={{
-                        flex: 1,
-                        minHeight: 0,
-                      }}
-                    >
-                      {messagesLoading ? (
+                      {messagesInitialLoading ? (
                         <DataSkeleton lines={3} />
                       ) : (
-                        <Stack gap="sm">
-                          {(messagesData?.items ?? []).map((m) => {
+                        <Stack gap={6} align="stretch">
+                          {mergedMessages.map((m) => {
                             const metaChannel =
                               m.channel_type ||
                               chatDetail?.channel_type ||
                               "";
                             const outbound =
                               m.direction === "OUTBOUND" && m.actor_type !== "CLIENT";
+                            const deliveryInfo = omniMessageDeliveryLabel(m.delivery_status, m.read_status);
+                            const timeLabel = m.created_at
+                              ? new Date(m.created_at).toLocaleString()
+                              : "";
                             return (
-                              <Paper
+                              <Tooltip
                                 key={m.id}
+                                label={timeLabel || "Время неизвестно"}
+                                disabled={!timeLabel}
+                                position="top"
+                                withArrow
+                                openDelay={350}
+                                withinPortal
+                              >
+                              <Paper
                                 withBorder
-                                p="sm"
+                                p="xs"
                                 radius="sm"
+                                aria-label={timeLabel ? `Сообщение, время: ${timeLabel}` : undefined}
                                 style={{
                                   alignSelf: outbound ? "flex-end" : "flex-start",
                                   maxWidth: "min(85%, 520px)",
                                   position: "relative",
+                                  cursor: timeLabel ? "default" : undefined,
                                   backgroundColor: m.ui_hidden
                                     ? "rgba(148, 163, 184, 0.14)"
                                     : outbound
@@ -906,6 +1200,40 @@ export default function AdminOmniChatPage() {
                                         </Text>
                                       </>
                                     ) : null}
+                                    {m.actor_type === "AI" ? (
+                                      <>
+                                        <Text fz={rem(10)} fw={800} c="gray.4" component="span">
+                                          •
+                                        </Text>
+                                        <Tooltip label="Сообщение сгенерировано AI">
+                                          <Text
+                                            fz={rem(10)}
+                                            fw={800}
+                                            tt="uppercase"
+                                            style={{ color: "var(--mantine-color-ai-7)", letterSpacing: rem(0.5) }}
+                                          >
+                                            AI
+                                          </Text>
+                                        </Tooltip>
+                                      </>
+                                    ) : null}
+                                    {outbound && deliveryInfo ? (
+                                      <>
+                                        <Text fz={rem(10)} fw={800} c="gray.4" component="span">
+                                          •
+                                        </Text>
+                                        <Tooltip label={deliveryInfo.tooltip}>
+                                          <Text
+                                            fz={rem(10)}
+                                            fw={800}
+                                            tt="uppercase"
+                                            style={{ color: deliveryInfo.color, letterSpacing: rem(0.5) }}
+                                          >
+                                            {deliveryInfo.label}
+                                          </Text>
+                                        </Tooltip>
+                                      </>
+                                    ) : null}
                                   </Group>
                                   {!m.ui_hidden ? (
                                     <Tooltip label="Скрыть сообщение" position="left" withArrow>
@@ -933,27 +1261,88 @@ export default function AdminOmniChatPage() {
                                     Сообщение скрыто: {m.hidden_reason || "без указания причины"}
                                   </Text>
                                 ) : (
-                                  <Text size="sm" c="dark.8" lh={1.65} style={{ wordBreak: "break-word" }}>
+                                  <Text size="sm" c="dark.8" lh={1.55} style={{ wordBreak: "break-word" }}>
                                     {m.content}
                                   </Text>
                                 )}
-                                <Text
-                                  fz={rem(10)}
-                                  c="dimmed"
-                                  mt={8}
-                                  ta="right"
-                                  ff="monospace"
-                                  style={{ fontVariantNumeric: "tabular-nums" }}
-                                >
-                                  {m.created_at ? new Date(m.created_at).toLocaleString() : ""}
-                                </Text>
                               </Paper>
+                              </Tooltip>
                             );
                           })}
                         </Stack>
                       )}
-                    </Box>
+                    </Stack>
+                    </ScrollArea>
+                    <Box
+                      style={{
+                        flexShrink: 0,
+                        marginTop: "var(--mantine-spacing-sm)",
+                        paddingTop: "var(--mantine-spacing-sm)",
+                        borderTop: "1px solid var(--divider)",
+                      }}
+                    >
                     <Stack gap="xs">
+                      {selectedChatId && effectiveReplyChannelId ? (
+                        replyChannelOptions.length > 1 ? (
+                          <Select
+                            size="xs"
+                            label="Ответ в канал"
+                            data={replyChannelOptions}
+                            value={effectiveReplyChannelId}
+                            onChange={(v) => setReplyChannelPick(v)}
+                          />
+                        ) : (
+                          <Text size="xs" c="dimmed">
+                            Ответ в: {effectiveReplyLabel || "—"}
+                          </Text>
+                        )
+                      ) : null}
+                      <Group gap="xs" wrap="wrap" align="center">
+                        <Menu shadow="md" width={280} position="top-start">
+                          <Menu.Target>
+                            <Button size="xs" variant="light" disabled={!(quickRepliesData?.items?.length)}>
+                              Быстрые ответы
+                            </Button>
+                          </Menu.Target>
+                          <Menu.Dropdown>
+                            {(quickRepliesData?.items ?? []).map((qr) => (
+                              <Menu.Item
+                                key={qr.id}
+                                onClick={() => {
+                                  setMessageText((prev) => (prev ? `${prev}\n${qr.body}` : qr.body));
+                                }}
+                              >
+                                <Stack gap={2}>
+                                  <Text size="sm" fw={600}>
+                                    {qr.title}
+                                  </Text>
+                                  <Text size="xs" c="dimmed" lineClamp={2}>
+                                    {qr.body}
+                                  </Text>
+                                </Stack>
+                              </Menu.Item>
+                            ))}
+                          </Menu.Dropdown>
+                        </Menu>
+                        <Button
+                          size="xs"
+                          variant="default"
+                          leftSection={<IconRefresh size={14} stroke={1.5} />}
+                          onClick={handleRefreshOmniThread}
+                          disabled={!selectedChatId}
+                        >
+                          Обновить
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="default"
+                          onClick={handleAssignOmniToMe}
+                          disabled={!selectedChatId}
+                          loading={patchOmniChat.isPending}
+                        >
+                          Взять в работу
+                        </Button>
+                      </Group>
                       <Group gap="xs" align="flex-start" wrap="nowrap">
                         <TextInput
                           placeholder="Сообщение... (⌘Enter — отправить)"
@@ -991,12 +1380,12 @@ export default function AdminOmniChatPage() {
                       />
                       <Group gap="sm">
                         <Button
-                          component={Link}
-                          to={ROUTE_PATHS.admin.schedule}
                           size="xs"
                           variant="default"
                           leftSection={<IconCalendarPlus size={14} stroke={1.5} />}
-                          title="Создать запись (откроется расписание)"
+                          title={!patientId ? "Выберите чат с привязанным пациентом" : "Создать запись без перехода в расписание (⌘B / Ctrl+B)"}
+                          onClick={handleOpenBookingModal}
+                          disabled={!patientId || !currentClinicId}
                         >
                           Запись
                         </Button>
@@ -1012,7 +1401,8 @@ export default function AdminOmniChatPage() {
                         </Button>
                       </Group>
                     </Stack>
-                  </Stack>
+                  </Box>
+                  </Box>
                 )
               }
               right={
@@ -1508,6 +1898,77 @@ export default function AdminOmniChatPage() {
         </Stack>
       </GlassModal>
 
+      <GlassModal
+        opened={bookingModalOpen}
+        onClose={() => setBookingModalOpen(false)}
+        title="Быстрая запись из чата"
+        centered
+      >
+        <Stack gap="md">
+          {!patientId ? (
+            <Text size="sm" c="dimmed">
+              Выберите чат с привязанным пациентом.
+            </Text>
+          ) : (
+            <>
+              <Select
+                label="Врач"
+                placeholder="Выберите врача"
+                data={(doctors ?? []).map((d) => ({ value: d.id, label: d.full_name }))}
+                value={bookingDoctorId}
+                onChange={setBookingDoctorId}
+                searchable
+              />
+              <Select
+                label="Услуга"
+                placeholder="Выберите услугу"
+                data={(services ?? []).map((s) => ({ value: s.id, label: s.name }))}
+                value={bookingServiceId}
+                onChange={setBookingServiceId}
+                searchable
+              />
+              <Group grow>
+                <TextInput
+                  label="Дата"
+                  type="date"
+                  value={bookingDate}
+                  onChange={(e) => setBookingDate(e.currentTarget.value)}
+                />
+                <TextInput
+                  label="Время"
+                  type="time"
+                  value={bookingTime}
+                  onChange={(e) => setBookingTime(e.currentTarget.value)}
+                />
+              </Group>
+              <Textarea
+                label="Комментарий"
+                minRows={2}
+                placeholder="Опционально"
+                value={bookingNotes}
+                onChange={(e) => setBookingNotes(e.currentTarget.value)}
+              />
+              {createBooking.isError ? (
+                <QueryErrorAlert error={createBooking.error} title="Не удалось создать запись" />
+              ) : null}
+              <Group justify="flex-end">
+                <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setBookingModalOpen(false)}>
+                  Отмена
+                </Button>
+                <Button
+                  color={SEMANTIC.action.confirm}
+                  onClick={handleCreateBooking}
+                  loading={createBooking.isPending}
+                  disabled={!bookingDoctorId || !bookingServiceId || !bookingDate || !bookingTime || !patientId}
+                >
+                  Создать запись
+                </Button>
+              </Group>
+            </>
+          )}
+        </Stack>
+      </GlassModal>
+
       <AdminDrawer
         opened={formDrawerOpen}
         onClose={() => setFormDrawerOpen(false)}
@@ -1606,7 +2067,7 @@ export default function AdminOmniChatPage() {
             onChange={(e) => setTaskDueAt(e.currentTarget.value)}
           />
           <Checkbox
-            label="Назначить на меня"
+            label="Взять в работу"
             checked={taskAssignMe}
             onChange={(e) => setTaskAssignMe(e.currentTarget.checked)}
           />

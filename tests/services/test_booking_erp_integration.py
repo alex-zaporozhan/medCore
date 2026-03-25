@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import time
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 from uuid import UUID

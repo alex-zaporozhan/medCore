@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import get_current_patient, get_session
 from src.application.dto.loyalty_dto import (
-    CustomerSubscriptionRead,
     PatientLoyaltyHistoryItem,
     PatientLoyaltyHistoryResponse,
     PatientLoyaltyMeResponseDigitalPass,
@@ -16,7 +15,6 @@ from src.application.dto.loyalty_dto import (
     WalletTransactionRead,
 )
 from src.application.services.loyalty_service import LoyaltyService
-from src.application.services.wallet_service import WalletService
 from src.domain.entities.patient import Patient
 from src.domain.entities.subscription_package import SubscriptionPackage
 from src.domain.interfaces.repositories.loyalty_repository import (

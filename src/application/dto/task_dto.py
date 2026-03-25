@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from src.domain.entities.task import Task
+    from src.domain.entities.task_comment import TaskComment
 
 
 # --- Request DTOs ---
@@ -18,6 +23,9 @@ class TaskCreate(BaseModel):
     description: str | None = None
     priority: str = Field(default="medium", pattern="^(low|medium|high|urgent)$")
     assignee_id: UUID | None = None
+    """Один исполнитель (совместимо со старыми клиентами); приоритет ниже assignee_ids."""
+    assignee_ids: list[UUID] | None = None
+    """Несколько исполнителей (коробка). Если задано, формирует строки в task_assignees."""
     role_assignee: str | None = None
     due_at: datetime | None = None
     booking_id: UUID | None = None
@@ -31,6 +39,7 @@ class TaskUpdate(BaseModel):
 
     status: str | None = Field(None, pattern="^(open|in_progress|done|cancelled)$")
     assignee_id: UUID | None = None
+    assignee_ids: list[UUID] | None = None
     role_assignee: str | None = None
     due_at: datetime | None = None
 
@@ -55,6 +64,7 @@ class TaskResponse(BaseModel):
     priority: str
     creator_id: UUID | None
     assignee_id: UUID | None
+    assignee_ids: list[UUID] = Field(default_factory=list)
     role_assignee: str | None
     due_at: datetime | None
     completed_at: datetime | None
@@ -76,6 +86,7 @@ class TaskCommentResponse(BaseModel):
     id: UUID
     task_id: UUID
     author_id: UUID
+    author_full_name: str | None = None
     text: str
     created_at: datetime
 
@@ -88,8 +99,13 @@ TASK_STATUSES = ("open", "in_progress", "done", "cancelled")
 TASK_PRIORITIES = ("low", "medium", "high", "urgent")
 
 
-def task_entity_to_response(task: "Task") -> TaskResponse:
+def task_entity_to_response(
+    task: "Task",
+    *,
+    assignee_ids: list[UUID] | None = None,
+) -> TaskResponse:
     """Build TaskResponse from domain Task entity."""
+    aids = assignee_ids if assignee_ids is not None else []
     return TaskResponse(
         id=task.id,
         clinic_id=task.clinic_id,
@@ -99,6 +115,7 @@ def task_entity_to_response(task: "Task") -> TaskResponse:
         priority=task.priority,
         creator_id=task.creator_id,
         assignee_id=task.assignee_id,
+        assignee_ids=aids,
         role_assignee=task.role_assignee,
         due_at=task.due_at,
         completed_at=task.completed_at,
@@ -113,12 +130,17 @@ def task_entity_to_response(task: "Task") -> TaskResponse:
     )
 
 
-def task_comment_entity_to_response(comment: "TaskComment") -> TaskCommentResponse:
+def task_comment_entity_to_response(
+    comment: "TaskComment",
+    *,
+    author_full_name: str | None = None,
+) -> TaskCommentResponse:
     """Build TaskCommentResponse from domain TaskComment entity."""
     return TaskCommentResponse(
         id=comment.id,
         task_id=comment.task_id,
         author_id=comment.author_id,
+        author_full_name=author_full_name,
         text=comment.text,
         created_at=comment.created_at,
     )

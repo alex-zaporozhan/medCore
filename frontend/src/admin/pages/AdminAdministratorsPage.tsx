@@ -1,6 +1,22 @@
-import { useAdminAdmins, useCreateAdminMutation } from "@/hooks";
-import { ActionIcon, Alert, Button, Menu, Paper, Stack, Table, Text, TextInput } from "@mantine/core";
+import {
+  useAdminAdmins,
+  useCreateAdminMutation,
+  usePatchAdminEmploymentMutation,
+} from "@/hooks";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Button,
+  Menu,
+  Paper,
+  Stack,
+  Table,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import { IconDotsVertical } from "@tabler/icons-react";
+import { getAdminId } from "@/api/client";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { QueryErrorAlert } from "@/shared/ui";
@@ -15,7 +31,10 @@ export default function AdminAdministratorsPage() {
   const [fullName, setFullName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [employmentError, setEmploymentError] = useState<string | null>(null);
   const createMut = useCreateAdminMutation();
+  const patchEmployment = usePatchAdminEmploymentMutation();
+  const currentAdminId = getAdminId();
 
   const handleAdd = () => {
     if (password.length < MIN_PASSWORD_LENGTH) {
@@ -98,6 +117,11 @@ export default function AdminAdministratorsPage() {
 
       <Paper p="md" withBorder>
         <Text fw={600} size="sm" mb="xs">Список</Text>
+        {employmentError && (
+          <Alert color="red" mb="sm" onClose={() => setEmploymentError(null)} withCloseButton>
+            {employmentError}
+          </Alert>
+        )}
         {isLoading && <PageSkeleton variant="table" rows={4} />}
         {isError && <QueryErrorAlert error={error} />}
         {!isLoading && !isError && list.length === 0 && (
@@ -110,34 +134,92 @@ export default function AdminAdministratorsPage() {
                 <Table.Th>Email</Table.Th>
                 <Table.Th>ФИО</Table.Th>
                 <Table.Th>Дата рождения</Table.Th>
+                <Table.Th>Статус</Table.Th>
                 <Table.Th style={{ width: 52 }} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {list.map((a) => (
+              {list.map((a) => {
+                const isSelf = Boolean(currentAdminId && a.id === currentAdminId);
+                const isTerminated = a.employment_status === "terminated";
+                const rowPatching =
+                  patchEmployment.isPending && patchEmployment.variables?.adminId === a.id;
+                return (
                 <Table.Tr key={a.id}>
                   <Table.Td>{a.email}</Table.Td>
                   <Table.Td>{a.full_name ?? "—"}</Table.Td>
                   <Table.Td>{a.birth_date ?? "—"}</Table.Td>
                   <Table.Td>
+                    <Badge
+                      size="sm"
+                      variant="light"
+                      color={isTerminated ? "gray" : "green"}
+                    >
+                      {isTerminated ? "Уволен" : "Активен"}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    {isSelf ? (
+                      <Text size="xs" c="dimmed" title="Увольнение себя недоступно">
+                        —
+                      </Text>
+                    ) : (
                     <Menu position="bottom-end" withArrow>
                       <Menu.Target>
-                        <ActionIcon variant="subtle" size="sm" aria-label="Действия">
+                        <ActionIcon
+                          variant="subtle"
+                          size="sm"
+                          aria-label="Действия"
+                          loading={rowPatching}
+                          disabled={rowPatching}
+                        >
                           <IconDotsVertical size={16} />
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
-                        <Menu.Item disabled title="Редактирование (API при необходимости)">
-                          Редактировать
-                        </Menu.Item>
-                        <Menu.Item disabled color="red" title="Удаление (API при необходимости)">
-                          Удалить
-                        </Menu.Item>
+                        {!isTerminated ? (
+                          <Menu.Item
+                            color="red"
+                            onClick={() => {
+                              setEmploymentError(null);
+                              patchEmployment.mutate(
+                                { adminId: a.id, employment_status: "terminated" },
+                                {
+                                  onError: (e) =>
+                                    setEmploymentError(
+                                      e instanceof Error ? e.message : "Не удалось уволить"
+                                    ),
+                                }
+                              );
+                            }}
+                          >
+                            Уволить
+                          </Menu.Item>
+                        ) : (
+                          <Menu.Item
+                            onClick={() => {
+                              setEmploymentError(null);
+                              patchEmployment.mutate(
+                                { adminId: a.id, employment_status: "active" },
+                                {
+                                  onError: (e) =>
+                                    setEmploymentError(
+                                      e instanceof Error ? e.message : "Не удалось восстановить"
+                                    ),
+                                }
+                              );
+                            }}
+                          >
+                            Восстановить
+                          </Menu.Item>
+                        )}
                       </Menu.Dropdown>
                     </Menu>
+                    )}
                   </Table.Td>
                 </Table.Tr>
-              ))}
+              );
+              })}
             </Table.Tbody>
           </Table>
         )}

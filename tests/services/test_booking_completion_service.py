@@ -10,7 +10,6 @@ from sqlalchemy import select
 from src.application.services.booking_completion_service import BookingCompletionService
 from src.application.services.loyalty_service import InsufficientSubscriptionBalance
 from src.application.services.booking_erp_service import ERPConfigurationError
-from src.application.services.erp_node_service import ErpVisitNodeService
 from src.application.services.booking_service import BookingService
 from src.core.context import RequestContext
 from src.domain.entities.booking import Booking, BookingStatus

@@ -15,7 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ScheduleCalendarGrid } from "@/admin/components/ScheduleCalendarGrid";
 import { WaitlistPanel } from "@/admin/components/WaitlistPanel";
 import { BookingEntityDrawer } from "@/admin/components/entity/BookingEntityDrawer";
-import { AdminDrawer, EmptyState, GlassModal, DataSkeleton, ContextBar, QueryErrorAlert } from "@/shared/ui";
+import { EmptyState, GlassModal, DataSkeleton, ContextBar, QueryErrorAlert } from "@/shared/ui";
 import {
   Button,
   Group,
@@ -27,6 +27,8 @@ import {
 } from "@mantine/core";
 import dayjs from "dayjs";
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
+import { ROUTE_PATHS } from "@/routePaths";
 import type { ComboboxItem } from "@mantine/core";
 import { IconCalendarEvent } from "@tabler/icons-react";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
@@ -159,6 +161,7 @@ function ScheduleCreateBookingForm({
 
 export default function SchedulePage() {
   const { currentClinicId, clinics, isClinicScopeLocked } = useAdminClinic();
+  const [searchParams] = useSearchParams();
   const [dateStr, setDateStr] = useState(dayjs().format("YYYY-MM-DD"));
   const [doctorIds, setDoctorIds] = useState<string[]>([]);
   const { data: doctors, isLoading: doctorsLoading } = useDoctors({
@@ -257,11 +260,30 @@ export default function SchedulePage() {
 
   const hasInitializedDoctors = useRef(false);
   useEffect(() => {
-    if (doctors && doctors.length > 0 && !hasInitializedDoctors.current) {
-      hasInitializedDoctors.current = true;
-      setDoctorIds(doctors.map((d) => d.id));
+    if (!doctors?.length) return;
+    const d = searchParams.get("date");
+    if (d) setDateStr(d);
+    const doc = searchParams.get("doctor");
+    if (doc) {
+      const ids = doc
+        .split(",")
+        .filter(Boolean)
+        .filter((id) => doctors.some((x) => x.id === id));
+      if (ids.length) setDoctorIds(ids);
+      return;
     }
-  }, [doctors]);
+    if (!hasInitializedDoctors.current) {
+      hasInitializedDoctors.current = true;
+      setDoctorIds(doctors.map((x) => x.id));
+    }
+  }, [doctors, searchParams]);
+
+  useEffect(() => {
+    const bid = searchParams.get("booking");
+    if (!bid || !bookings?.length) return;
+    const b = bookings.find((x) => x.id === bid);
+    if (b) setSelectedBooking(b);
+  }, [searchParams, bookings]);
 
   useEffect(() => {
     if (selectedBooking) {
@@ -270,6 +292,15 @@ export default function SchedulePage() {
       setEditDoctorId(selectedBooking.doctor_id);
     }
   }, [selectedBooking?.id]);
+
+  const scheduleShareUrl = useMemo(() => {
+    if (!selectedBooking || typeof window === "undefined") return null;
+    const u = new URL(`${window.location.origin}${ROUTE_PATHS.admin.schedule}`);
+    u.searchParams.set("date", selectedBooking.appointment_date);
+    u.searchParams.set("doctor", selectedBooking.doctor_id);
+    u.searchParams.set("booking", selectedBooking.id);
+    return `${u.pathname}${u.search}`;
+  }, [selectedBooking]);
 
   return (
     <Stack>
@@ -486,14 +517,15 @@ export default function SchedulePage() {
         onEditDateChange={setEditDate}
         onEditTimeChange={setEditTime}
         onEditDoctorIdChange={setEditDoctorId}
+        scheduleShareUrl={scheduleShareUrl}
+        onBookingNotesSaved={(b) => setSelectedBooking(b)}
       />
 
-      <AdminDrawer
+      <GlassModal
         opened={createSlot !== null}
         onClose={() => setCreateSlot(null)}
-        position="right"
-        size="lg"
         title="Новая запись"
+        size="lg"
       >
         {createSlot && (
           <ScheduleCreateBookingForm
@@ -516,7 +548,7 @@ export default function SchedulePage() {
             }
           />
         )}
-      </AdminDrawer>
+      </GlassModal>
     </Stack>
   );
 }

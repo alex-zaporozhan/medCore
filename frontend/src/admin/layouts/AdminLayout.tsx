@@ -24,8 +24,6 @@ import { IconSearch } from "@tabler/icons-react";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { clearAdminToken } from "@/api/client";
 import { useAdminOmniChats } from "@/hooks/useAdminOmniChat";
-import { useAttentionFeed } from "@/hooks/useAttentionFeed";
-import type { AttentionItem } from "@/api/types";
 import {
   IconDashboard,
   IconCalendar,
@@ -46,25 +44,15 @@ import {
   IconReceipt,
   IconListSearch,
   IconRefresh,
-  IconDiscount,
-  IconBell,
-  IconFileText,
   IconBrandWhatsapp,
-  IconPlug,
-  IconPalette,
-  IconMoodSmile,
   IconShield,
-  IconCreditCard,
   IconBook,
-  IconForms,
-  IconAlertCircle,
   IconHome2,
   IconDoorExit,
   IconRobot,
   IconUser,
   IconCalendarEvent,
   IconTarget,
-  IconPhoto,
 } from "@tabler/icons-react";
 import type { SpotlightActionData } from "@mantine/spotlight";
 import { useAdminSearch } from "@/hooks/useAdminSearch";
@@ -72,25 +60,39 @@ import { useAiAgent } from "@/hooks/useAiAgent";
 import { useAiFeatures, getAiFeatureBadgeColor, getAiFeatureStatusText, getAiFeatureTooltip } from "@/shared/aiFeatures";
 import { logUiEvent } from "@/shared/uiEvents";
 import { ROUTE_PATHS } from "@/routePaths";
+import { ADMIN_PERM_PATIENTS_PII_READ } from "@/shared/adminPermissions";
 import { SEMANTIC } from "@/shared/semanticUi";
+import { useAdminSession } from "@/hooks/useAdminSession";
+import { BOX_HIDDEN_ADMIN_PATHS, isBoxEdition } from "@/config/edition";
 
-const ATTENTION_BAR_STORAGE_KEY = "admin_attention_bar_visible";
 const NAVBAR_COLLAPSED_KEY = "admin_navbar_collapsed";
 
-type NavItem =
-  | { to: string; label: string; icon: React.ComponentType<Record<string, unknown>>; badgeKey?: string }
-  | { label: string; toggleAttentionBar: true };
+type NavItem = {
+  to: string;
+  label: string;
+  icon: React.ComponentType<Record<string, unknown>>;
+  badgeKey?: string;
+};
 
 const navGroups: { title: string; items: NavItem[] }[] = [
   {
-    title: "OPERATIONS",
+    title: "СОТРУДНИКИ",
     items: [
-      { to: ROUTE_PATHS.admin.dashboard, label: "Dashboard", icon: IconDashboard },
-      { to: ROUTE_PATHS.admin.schedule, label: "Schedule & Bookings", icon: IconCalendar },
+      { to: ROUTE_PATHS.admin.dashboard, label: "Лента", icon: IconDashboard },
+      { to: ROUTE_PATHS.admin.staffChat, label: "Мессенджер", icon: IconMessageCircle },
+      { to: ROUTE_PATHS.admin.staffCalendar, label: "Календарь", icon: IconCalendarEvent },
+      { to: ROUTE_PATHS.admin.tasks, label: "Задачи (Kanban)", icon: IconListCheck },
+      { to: ROUTE_PATHS.admin.knowledge, label: "База знаний", icon: IconBook },
+    ],
+  },
+  {
+    title: "КЛИЕНТЫ",
+    items: [
+      { to: ROUTE_PATHS.admin.schedule, label: "Расписание", icon: IconCalendar },
       {
         to: ROUTE_PATHS.admin.omniChat,
-        label: "Chat & AI",
-        icon: IconMessageCircle,
+        label: "Чат с клиентом",
+        icon: IconBrandWhatsapp,
         badgeKey: "omni-waiting",
       },
     ],
@@ -101,7 +103,6 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { to: ROUTE_PATHS.admin.sales, label: "CRM & Sales", icon: IconBriefcase },
       { to: ROUTE_PATHS.admin.finance, label: "Finance", icon: IconCash },
       { to: ROUTE_PATHS.admin.loyalty, label: "Loyalty", icon: IconGift },
-      { to: ROUTE_PATHS.admin.tasks, label: "Tasks", icon: IconListCheck },
       { to: ROUTE_PATHS.admin.reports, label: "Analytics / Reports", icon: IconChartBar },
       { to: ROUTE_PATHS.admin.bookings, label: "Записи", icon: IconClipboardList },
       { to: ROUTE_PATHS.admin.prepayment, label: "Предоплата", icon: IconReceipt },
@@ -109,7 +110,6 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { to: ROUTE_PATHS.admin.recall, label: "Recall", icon: IconRefresh },
       { to: ROUTE_PATHS.admin.marketing, label: "Маркетинг", icon: IconChartBar },
       { to: ROUTE_PATHS.admin.retention, label: "Retention", icon: IconTarget },
-      { to: ROUTE_PATHS.admin.attention, label: "Лента внимания", icon: IconAlertCircle },
     ],
   },
   {
@@ -121,30 +121,35 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { to: ROUTE_PATHS.admin.patients, label: "Пациенты", icon: IconUserCircle },
       { to: ROUTE_PATHS.admin.services, label: "Услуги", icon: IconClipboardList },
       { to: ROUTE_PATHS.admin.clinics, label: "Клиники", icon: IconBuilding },
-      { to: ROUTE_PATHS.admin.omniChannels, label: "Omni‑каналы", icon: IconBrandWhatsapp },
-      { to: ROUTE_PATHS.admin.channels, label: "Каналы", icon: IconBrandWhatsapp },
-      { to: ROUTE_PATHS.admin.integrations, label: "Интеграции", icon: IconPlug },
-      { to: ROUTE_PATHS.admin.styling, label: "Стилизация", icon: IconPalette },
-      { to: ROUTE_PATHS.admin.stickers, label: "Стикеры", icon: IconMoodSmile },
       { to: ROUTE_PATHS.admin.administrators, label: "Администраторы", icon: IconShield },
-      { to: ROUTE_PATHS.admin.paymentGateway, label: "Платёжный шлюз", icon: IconCreditCard },
-      { to: ROUTE_PATHS.admin.clientReference, label: "Справочник клиентов", icon: IconBook },
-      { to: ROUTE_PATHS.admin.discounts, label: "Скидки и акции", icon: IconDiscount },
-      { to: ROUTE_PATHS.admin.notificationPolicy, label: "Уведомления", icon: IconBell },
-      { to: ROUTE_PATHS.admin.agreements, label: "Соглашения", icon: IconFileText },
-      { to: ROUTE_PATHS.admin.forms, label: "Формы", icon: IconForms },
-      { to: ROUTE_PATHS.admin.omniVault, label: "Omni-Vault", icon: IconPhoto },
-      { label: "placeholder", toggleAttentionBar: true },
     ],
   },
 ];
 
-function pickFirstAttentionItem(data: { follow_up: AttentionItem[]; retention_gap: AttentionItem[]; conflicts: AttentionItem[] } | undefined): AttentionItem | null {
-  if (!data) return null;
-  const openFollowUps = data.follow_up.filter((i) => i.status === "new");
-  const all = [...openFollowUps, ...data.retention_gap, ...data.conflicts];
-  const byPriority = [...all].sort((a, b) => a.priority - b.priority);
-  return byPriority[0] ?? null;
+function navGroupsVisible(
+  groups: typeof navGroups,
+  canPatientsPii: boolean,
+): typeof navGroups {
+  if (canPatientsPii) return groups;
+  return groups.map((g) => ({
+    ...g,
+    items: g.items.filter((item) => {
+      if ("to" in item && item.to === ROUTE_PATHS.admin.patients) return false;
+      return true;
+    }),
+  }));
+}
+
+function navGroupsForBoxEdition(
+  groups: typeof navGroups,
+  box: boolean,
+): typeof navGroups {
+  if (!box) return groups;
+  const hidden = new Set(BOX_HIDDEN_ADMIN_PATHS);
+  return groups.map((g) => ({
+    ...g,
+    items: g.items.filter((item) => !("to" in item && hidden.has(item.to))),
+  }));
 }
 
 export default function AdminLayout() {
@@ -178,22 +183,14 @@ export default function AdminLayout() {
     });
   }, []);
 
-  const [attentionBarVisible, setAttentionBarVisible] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return localStorage.getItem(ATTENTION_BAR_STORAGE_KEY) !== "false";
-  });
-  const toggleAttentionBar = useCallback(() => {
-    setAttentionBarVisible((prev) => {
-      const next = !prev;
-      localStorage.setItem(ATTENTION_BAR_STORAGE_KEY, String(next));
-      return next;
-    });
-  }, []);
-
-  const { data: attentionFeedData } = useAttentionFeed(currentClinicId ?? null);
-  const firstAttentionItem = useMemo(
-    () => pickFirstAttentionItem(attentionFeedData),
-    [attentionFeedData]
+  const { data: adminSession } = useAdminSession();
+  const canPatientsPii =
+    adminSession?.permissions?.includes(ADMIN_PERM_PATIENTS_PII_READ) ?? false;
+  const boxEdition = isBoxEdition();
+  const sidebarNavGroups = useMemo(
+    () =>
+      navGroupsForBoxEdition(navGroupsVisible(navGroups, canPatientsPii), boxEdition),
+    [canPatientsPii, boxEdition],
   );
 
   const clinicOptions =
@@ -214,7 +211,7 @@ export default function AdminLayout() {
 
   const navActions: SpotlightActionData[] = useMemo(() => {
     const list: SpotlightActionData[] = [];
-    navGroups.forEach((group) => {
+    sidebarNavGroups.forEach((group) => {
       group.items.forEach((item) => {
         if ("to" in item && item.to) {
           const Icon = item.icon;
@@ -229,7 +226,7 @@ export default function AdminLayout() {
       });
     });
     return list;
-  }, [navigate]);
+  }, [navigate, sidebarNavGroups]);
 
   const askAiAction: SpotlightActionData = useMemo(
     () => ({
@@ -283,6 +280,14 @@ export default function AdminLayout() {
     <AppShell
       navbar={{ width: navbarWidth, breakpoint: "sm" }}
       padding="md"
+      styles={
+        omniChatFullWidth
+          ? {
+              root: { minHeight: "100dvh", maxHeight: "100dvh", display: "flex" },
+              main: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
+            }
+          : undefined
+      }
     >
       <AppShell.Navbar
         p="sm"
@@ -409,7 +414,7 @@ export default function AdminLayout() {
           style={{ minHeight: 0 }}
         >
           <Stack gap={6} pr={4}>
-            {navGroups.map((group, gi) => (
+            {sidebarNavGroups.map((group, gi) => (
               <Box key={gi}>
                 {!navbarCollapsed && (
                   <Text
@@ -424,30 +429,7 @@ export default function AdminLayout() {
                 )}
                 <Stack gap={2}>
                   {group.items.map((item) => {
-                    if ("toggleAttentionBar" in item && item.toggleAttentionBar) {
-                      if (navbarCollapsed) return null;
-                      return (
-                        <UnstyledButton
-                          key="attention-bar-toggle"
-                          type="button"
-                          onClick={toggleAttentionBar}
-                          w="100%"
-                          py={8}
-                          px={10}
-                          style={{
-                            borderRadius: 8,
-                            color: "var(--admin-sidebar-text-muted)",
-                          }}
-                        >
-                          <Text component="span" size="sm" fw={500} lineClamp={2}>
-                            {attentionBarVisible
-                              ? "Скрыть ленту внимания"
-                              : "Показать ленту внимания"}
-                          </Text>
-                        </UnstyledButton>
-                      );
-                    }
-                  const linkItem = item as { to: string; label: string; icon: React.ComponentType<Record<string, unknown>>; badgeKey?: string };
+                  const linkItem = item;
                   const Icon = linkItem.icon;
                   const isActive = location.pathname === linkItem.to;
                   const showBadge =
@@ -521,39 +503,30 @@ export default function AdminLayout() {
         </Box>
       </AppShell.Navbar>
 
-      <AppShell.Main style={{ backgroundColor: "var(--bg-main)" }}>
-        <Container fluid={omniChatFullWidth} size={omniChatFullWidth ? undefined : "xl"} py="md">
-          {attentionBarVisible && firstAttentionItem && (
-            <Box
-              mb="md"
-              py="xs"
-              px="md"
-              style={{
-                borderRadius: 8,
-                backgroundColor: "var(--mantine-color-orange-0)",
-                border: "1px solid var(--mantine-color-orange-2)",
-              }}
-            >
-              <Group justify="space-between" wrap="nowrap">
-                <Text size="sm" lineClamp={1} style={{ flex: 1 }}>
-                  {firstAttentionItem.title}
-                  {firstAttentionItem.description ? ` — ${firstAttentionItem.description}` : ""}
-                </Text>
-                <Anchor
-                  component={Link}
-                  to={
-                    firstAttentionItem.conversation_id
-                      ? `${ROUTE_PATHS.admin.omniChat}?conversation=${firstAttentionItem.conversation_id}`
-                      : ROUTE_PATHS.admin.attention
-                  }
-                  size="sm"
-                  fw={500}
-                >
-                  Перейти
-                </Anchor>
-              </Group>
-            </Box>
-          )}
+      <AppShell.Main
+        style={{
+          backgroundColor: "var(--bg-main)",
+          ...(omniChatFullWidth
+            ? { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }
+            : {}),
+        }}
+      >
+        <Container
+          fluid={omniChatFullWidth}
+          size={omniChatFullWidth ? undefined : "xl"}
+          py={omniChatFullWidth ? "sm" : "md"}
+          style={
+            omniChatFullWidth
+              ? {
+                  flex: 1,
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  paddingBottom: 0,
+                }
+              : undefined
+          }
+        >
           {clinicsError ? (
             <Alert mb="md" color="red" title="Ошибка загрузки данных">
               Не удалось загрузить список клиник. Убедитесь, что бэкенд запущен (порт 8000). Подробнее: docs/RUN_SERVICES.md
@@ -564,7 +537,18 @@ export default function AdminLayout() {
             p={omniChatFullWidth ? "sm" : "md"}
             withBorder
             shadow="none"
-            style={{ border: "1px solid var(--divider)" }}
+            style={{
+              border: "1px solid var(--divider)",
+              ...(omniChatFullWidth
+                ? {
+                    flex: 1,
+                    minHeight: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                  }
+                : {}),
+            }}
           >
             <Outlet />
           </Paper>

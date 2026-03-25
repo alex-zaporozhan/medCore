@@ -5,15 +5,12 @@ from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from src.application.services.attention_feed_service import AttentionFeedService
 from src.application.services.task_service import TaskService
 from src.application.dto.attention_feed_dto import AttentionItemRead
 from src.domain.entities.chat_message import ChatMessage
 from src.domain.entities.booking import Booking
-from src.domain.entities.patient import Patient
-from src.domain.entities.task import Task
 from src.domain.interfaces.repositories.task_repository import TaskRepository
 from src.infrastructure.database.task_repo_impl import TaskRepositoryImpl
 from src.core.datetime_utils import utc_now, utc_now_naive

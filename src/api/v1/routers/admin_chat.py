@@ -7,11 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_default_clinic_id, get_session
+from src.api.v1.dependencies import get_session
 from src.api.v1.routers.admin_auth import get_current_admin, get_current_admin_optional
 from src.application.dto.chat_ai_dto import ConversationSummaryResponse, SuggestReplyResponse
 from src.application.dto.chat_dto import (
-    AdminConversationListItemDto,
     AdminConversationsResponse,
     AssignRequest,
     AssignResponse,

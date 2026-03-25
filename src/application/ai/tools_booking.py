@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime
-from typing import Any
-from uuid import UUID
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from src.application.ai.booking_tools_adapter import get_available_slots_via_adapter
@@ -29,7 +26,6 @@ from src.application.dto.booking_ai_dto import (
 from src.application.dto.booking_dto import (
     BookingCreateAdmin,
     BookingErrorCode,
-    BookingRead,
     BookingRescheduleRequest,
 )
 from src.application.multitenancy import ClinicForbiddenError
@@ -37,7 +33,6 @@ from src.core.patient_messages import (
     BOOKING_CANNOT_CANCEL_PAST,
     BOOKING_CANNOT_CANCEL_STATUS,
     BOOKING_CANNOT_RESCHEDULE_CANCELLED,
-    BOOKING_INVALID_STATUS,
     BOOKING_NOT_FOUND,
     BOOKING_SLOT_ALREADY_BOOKED,
 )

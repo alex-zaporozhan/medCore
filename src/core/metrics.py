@@ -199,6 +199,13 @@ booking_errors_total = Counter(  # type: ignore[call-arg]
     ["code", "clinic_bucket", "source"],
 )
 
+# Domain validation / business-rule errors (patients, schedule, …) — QA_ARCH observability.
+domain_errors_total = Counter(  # type: ignore[call-arg]
+    "domain_errors_total",
+    "Structured domain-layer errors by domain, code and clinic bucket.",
+    ["domain", "code", "clinic_bucket"],
+)
+
 booking_error_attention_tasks_created_total = Counter(  # type: ignore[call-arg]
     "booking_error_attention_tasks_created_total",
     "Tasks created from booking error burst threshold (BE5).",

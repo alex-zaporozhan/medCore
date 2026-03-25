@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.dto.service_dto import ServiceCreate, ServiceUpdate, ServiceRead
-from src.application.services.pricing_service import PricingResult, PricingService
+from src.application.services.pricing_service import PricingResult
 from src.domain.entities.service import Service
 from src.domain.interfaces.repositories.service_repository import ServiceRepository
 from src.infrastructure.database.service_repo_impl import ServiceRepositoryImpl

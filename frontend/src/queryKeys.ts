@@ -8,6 +8,18 @@ export const queryKeys = {
     all: ["clinics"] as const,
     list: (includeDeleted: boolean) => ["clinics", { includeDeleted }] as const,
   },
+  staffCollab: {
+    feedPosts: () => ["staff-collab", "feed-posts"] as const,
+    chatRooms: () => ["staff-collab", "chat-rooms"] as const,
+    chatMessages: (roomId: string | null) => ["staff-collab", "chat-messages", roomId] as const,
+    calendarPrefix: ["staff-collab", "calendar"] as const,
+    calendarEvents: (fromIso: string, toIso: string) =>
+      ["staff-collab", "calendar", fromIso, toIso] as const,
+    calendarMonth: (fromIso: string, toIso: string) =>
+      ["staff-collab", "calendar-month", fromIso, toIso] as const,
+    calendarEventDetails: (eventId: string) => ["staff-collab", "calendar-event-details", eventId] as const,
+    knowledgeDocs: () => ["staff-collab", "knowledge"] as const,
+  },
   adminTasks: {
     /** Префикс для invalidateQueries — все списки задач админки */
     prefix: ["admin-tasks"] as const,
@@ -20,6 +32,8 @@ export const queryKeys = {
   adminAdmins: {
     list: () => ["admin-admins"] as const,
   },
+  /** GET /v1/admin/auth/session — права для скрытия кнопок (лента, collab). */
+  adminSession: () => ["admin", "session"] as const,
   attentionFeed: (clinicId: string | null) =>
     ["admin", "clinics", clinicId, "attention-feed"] as const,
   adminDiscounts: (clinicId: string | null) => ["admin-discounts", clinicId] as const,

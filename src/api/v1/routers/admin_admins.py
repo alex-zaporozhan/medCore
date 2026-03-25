@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import get_session
 from src.api.v1.routers.admin_auth import get_current_admin, hash_password
-from src.domain.entities.admin_user import AdminUser
+from src.application.services.staff_collaboration_service import StaffCollaborationService
+from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE, EMPLOYMENT_TERMINATED
 
 router = APIRouter(prefix="/admin/admins", tags=["admin-admins"])
 
@@ -22,6 +23,7 @@ class AdminRead(BaseModel):
     email: str
     full_name: str | None
     birth_date: str | None
+    employment_status: str
 
 
 class AdminCreate(BaseModel):
@@ -29,6 +31,15 @@ class AdminCreate(BaseModel):
     password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=200)
     full_name: str | None = Field(None, max_length=255)
     birth_date: str | None = None
+
+
+class AdminPatch(BaseModel):
+    """Увольнение / восстановление доступа (коробка)."""
+
+    employment_status: str | None = Field(
+        None,
+        description="active | terminated",
+    )
 
 
 @router.get("", response_model=list[AdminRead])
@@ -50,6 +61,7 @@ async def list_admins(
             email=a.email,
             full_name=a.full_name,
             birth_date=a.birth_date.isoformat() if a.birth_date else None,
+            employment_status=a.employment_status,
         )
         for a in admins
     ]
@@ -93,4 +105,52 @@ async def create_admin(
         email=admin.email,
         full_name=admin.full_name,
         birth_date=admin.birth_date.isoformat() if admin.birth_date else None,
+        employment_status=admin.employment_status,
     )
+
+
+def _to_admin_read(a: AdminUser) -> AdminRead:
+    return AdminRead(
+        id=str(a.id),
+        clinic_id=str(a.clinic_id),
+        email=a.email,
+        full_name=a.full_name,
+        birth_date=a.birth_date.isoformat() if a.birth_date else None,
+        employment_status=a.employment_status,
+    )
+
+
+@router.patch("/{admin_id}", response_model=AdminRead)
+async def patch_admin(
+    admin_id: UUID,
+    data: AdminPatch,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> AdminRead:
+    """Смена статуса занятости (уволен — без входа в админку, участие в чатах снимается)."""
+    if data.employment_status is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Нет полей для обновления")
+    if data.employment_status not in (EMPLOYMENT_ACTIVE, EMPLOYMENT_TERMINATED):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недопустимый employment_status")
+    result = await session.execute(
+        select(AdminUser).where(
+            AdminUser.id == admin_id,
+            AdminUser.clinic_id == current_admin.clinic_id,
+            AdminUser.deleted_at.is_(None),
+        )
+    )
+    target = result.scalar_one_or_none()
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Администратор не найден")
+    if target.id == current_admin.id and data.employment_status == EMPLOYMENT_TERMINATED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя уволить самого себя",
+        )
+    target.employment_status = data.employment_status
+    if data.employment_status == EMPLOYMENT_TERMINATED:
+        collab = StaffCollaborationService(session)
+        await collab.revoke_staff_chat_memberships_for_admin(admin_id)
+    await session.flush()
+    await session.refresh(target)
+    return _to_admin_read(target)

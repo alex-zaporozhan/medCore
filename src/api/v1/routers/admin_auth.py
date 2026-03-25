@@ -4,17 +4,17 @@ import logging
 from datetime import timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from jose import JWTError
+import jwt
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from passlib.hash import pbkdf2_sha256
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.dependencies import AdminContext, get_session, require_permissions
 from src.core.config import settings
 from src.core.security import create_access_token, parse_access_token
-from src.domain.entities.admin_user import AdminUser
+from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
 from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,14 @@ class AdminLoginResponse(BaseModel):
     admin_id: str
     clinic_id: str
     full_name: str | None
+
+
+class AdminSessionResponse(BaseModel):
+    """Текущая сессия: RBAC для UI (P1 лента, staff collab и т.д.)."""
+
+    clinic_id: str
+    permissions: list[str]
+    roles: list[str]
 
 
 def hash_password(password: str) -> str:
@@ -82,6 +90,11 @@ async def admin_login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный email или пароль",
         )
+    if admin.employment_status != EMPLOYMENT_ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный email или пароль",
+        )
     # Admin access token: short-lived; explicit token revocation will be implemented
     # separately according to ARCH_AUTH_SESSIONS.md (token version/blacklist pattern).
     token = create_access_token(
@@ -97,6 +110,24 @@ async def admin_login(
         admin_id=str(admin.id),
         clinic_id=str(admin.clinic_id),
         full_name=admin.full_name,
+    )
+
+
+@router.get("/session", response_model=AdminSessionResponse)
+async def admin_session(
+    admin_ctx: AdminContext = Depends(require_permissions()),
+) -> AdminSessionResponse:
+    """Права и роли текущего администратора (без отдельной проверки permission — любой валидный admin JWT)."""
+    cid = admin_ctx.clinic_id
+    if cid is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Требуется контекст клиники",
+        )
+    return AdminSessionResponse(
+        clinic_id=str(cid),
+        permissions=sorted(admin_ctx.permissions),
+        roles=sorted(admin_ctx.roles),
     )
 
 
@@ -116,7 +147,7 @@ def get_current_admin_dependency():
         token = authorization[7:].strip()
         try:
             payload = parse_access_token(token)
-        except JWTError:
+        except jwt.exceptions.InvalidTokenError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Недействительный или истёкший токен",
@@ -130,6 +161,7 @@ def get_current_admin_dependency():
             select(AdminUser).where(
                 AdminUser.id == UUID(admin_id),
                 AdminUser.deleted_at.is_(None),
+                AdminUser.employment_status == EMPLOYMENT_ACTIVE,
             ).limit(1)
         )
         admin = result.scalar_one_or_none()
@@ -141,6 +173,52 @@ def get_current_admin_dependency():
 
 
 get_current_admin = get_current_admin_dependency()
+
+
+def get_current_admin_sse_dependency():
+    """Bearer or query `access_token` (for EventSource which cannot set headers)."""
+
+    async def _get_current_admin_sse(
+        access_token: str | None = Query(None, description="JWT for SSE clients"),
+        authorization: str | None = Header(None),
+        session: AsyncSession = Depends(get_session),
+    ) -> AdminUser:
+        token = (access_token or "").strip() or None
+        if not token and authorization and authorization.startswith("Bearer "):
+            token = authorization[7:].strip()
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Требуется авторизация",
+            )
+        try:
+            payload = parse_access_token(token)
+        except jwt.exceptions.InvalidTokenError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Недействительный или истёкший токен",
+            ) from None
+        if payload.get("type") != "admin":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+        admin_id = payload.get("sub")
+        if not admin_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        result = await session.execute(
+            select(AdminUser).where(
+                AdminUser.id == UUID(admin_id),
+                AdminUser.deleted_at.is_(None),
+                AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+            ).limit(1)
+        )
+        admin = result.scalar_one_or_none()
+        if not admin:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
+        return admin
+
+    return _get_current_admin_sse
+
+
+get_current_admin_sse = get_current_admin_sse_dependency()
 
 
 def get_current_admin_optional_dependency():
@@ -156,7 +234,7 @@ def get_current_admin_optional_dependency():
         token = authorization[7:].strip()
         try:
             payload = parse_access_token(token)
-        except JWTError:
+        except jwt.exceptions.InvalidTokenError:
             return None
         if payload.get("type") != "admin":
             return None
@@ -167,6 +245,7 @@ def get_current_admin_optional_dependency():
             select(AdminUser).where(
                 AdminUser.id == UUID(admin_id),
                 AdminUser.deleted_at.is_(None),
+                AdminUser.employment_status == EMPLOYMENT_ACTIVE,
             ).limit(1)
         )
         return result.scalar_one_or_none()

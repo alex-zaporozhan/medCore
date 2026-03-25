@@ -1,9 +1,10 @@
 """Add form_link_tokens table for send-link (one-time form fill URL).
 
 Revision ID: a1b2c3d4e5f6_form_link_tokens
-Revises: c3d4e5f6g7h8_erp_finance_inventory
+Revises: expand_alembic_ver_64
 Create Date: 2026-03-15
 
+Note: ERP finance/inventory tables live in schema_v2_initial; the former c3d4 revision was redundant and removed from the chain.
 """
 from typing import Sequence, Union
 
@@ -12,7 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision: str = "a1b2c3d4e5f6_form_link_tokens"
-down_revision: Union[str, Sequence[str], None] = "c3d4e5f6g7h8_erp_finance_inventory"
+down_revision: Union[str, Sequence[str], None] = "expand_alembic_ver_64"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

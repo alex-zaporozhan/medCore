@@ -36,6 +36,12 @@ class Message(Base):
         nullable=True,
         index=True,
     )
+    sender_admin_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("admins.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     direction: Mapped[str] = mapped_column(
         String(16), nullable=False
     )  # INBOUND / OUTBOUND

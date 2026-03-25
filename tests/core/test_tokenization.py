@@ -6,7 +6,6 @@ from src.application.ai.tokenization import (
     BOOKING_TOKEN_RE,
     LEAD_TOKEN_RE,
     PATIENT_TOKEN_RE,
-    TOKEN_RE,
     WALLET_TOKEN_RE,
     make_booking_token,
     make_lead_token,

@@ -1,6 +1,7 @@
 import type { Booking, DoctorSlot } from "@/api/types";
 import type { CSSProperties } from "react";
-import { Badge, Box, Table, Text } from "@mantine/core";
+import { Badge, Box, Group, Table, Text } from "@mantine/core";
+import { IconMessageCircle } from "@tabler/icons-react";
 import {
   DndContext,
   PointerSensor,
@@ -169,8 +170,10 @@ export function ScheduleCalendarGrid({
   onReschedule,
   onEmptySlotClick,
 }: ScheduleCalendarGridProps) {
-  const getPatientLabel = (patientId: string) =>
-    patientNameMap?.[patientId] ?? patientId;
+  const getPatientLabel = (booking: Booking) =>
+    (booking.patient_name && booking.patient_name.trim()) ||
+    patientNameMap?.[booking.patient_id] ||
+    booking.patient_id;
   const getServiceLabel = (serviceId: string) =>
     serviceNameMap?.[serviceId] ?? serviceId;
   const sensors = useSensors(
@@ -253,9 +256,19 @@ export function ScheduleCalendarGrid({
                                   {sb.label}
                                 </Badge>
                               )}
-                              <Text size="sm" fw={500} c="gray.9">
-                                {getPatientLabel(booking.patient_id)}
-                              </Text>
+                              <Group gap={6} wrap="nowrap" align="center">
+                                <Text size="sm" fw={500} c="gray.9" style={{ flex: 1, minWidth: 0 }}>
+                                  {getPatientLabel(booking)}
+                                </Text>
+                                {booking.notes?.trim() ? (
+                                  <IconMessageCircle
+                                    size={14}
+                                    stroke={1.5}
+                                    color="var(--mantine-color-blue-6)"
+                                    aria-label="Есть комментарий к записи"
+                                  />
+                                ) : null}
+                              </Group>
                               <Text size="xs" c="dimmed">
                                 {getServiceLabel(booking.service_id)}
                               </Text>

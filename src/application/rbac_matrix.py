@@ -42,6 +42,10 @@ PERMISSIONS: Final[list[PermissionDef]] = [
     PermissionDef("manage_inventory", "Управление складом и остатками"),
     PermissionDef("view_crm", "Просмотр CRM и лидов"),
     PermissionDef("manage_crm", "Управление стадиями и данными CRM"),
+    PermissionDef(
+        "patients.pii.read",
+        "Просмотр и изменение ПД пациентов (списки, карточки, телефоны); не для роли врача/линейного персонала",
+    ),
     PermissionDef("view_tasks", "Просмотр задач"),
     PermissionDef("manage_tasks", "Создание и изменение задач"),
     PermissionDef("assign_tasks", "Назначение задач другим пользователям"),
@@ -75,6 +79,22 @@ PERMISSIONS: Final[list[PermissionDef]] = [
         "ai.tasks.run",
         "Запуск AI Task Manager / анализа attention для генерации задач",
     ),
+    PermissionDef(
+        "view_staff_collab",
+        "Просмотр ленты персонала, внутреннего чата, календаря и базы знаний",
+    ),
+    PermissionDef(
+        "manage_staff_collab",
+        "Публикация в ленту, сообщения в чате персонала, события календаря, статьи БЗ",
+    ),
+    PermissionDef(
+        "invite_staff_calendar_participants",
+        "Приглашение участников на события календаря (совещания); без права — только личные события",
+    ),
+    PermissionDef(
+        "omni.inbox.manage",
+        "Омниканал: назначение диалогов, статусы, быстрые ответы",
+    ),
 ]
 
 
@@ -91,6 +111,8 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "view_payroll",
         "view_inventory",
         "view_crm",
+        "manage_crm",
+        "patients.pii.read",
         "view_tasks",
         "manage_tasks",
         "assign_tasks",
@@ -106,6 +128,10 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "view_ai_settings",
         "booking.ai_tools.use",
         "ai.tasks.run",
+        "view_staff_collab",
+        "manage_staff_collab",
+        "invite_staff_calendar_participants",
+        "omni.inbox.manage",
         # SR5 (QA_ARCH W7): managers may review ERP owner reports + attribution read-only.
         "erp.owner_reports.read",
         "attribution.reports.read",
@@ -115,6 +141,7 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "view_dashboard",
         "view_crm",
         "manage_crm",
+        "patients.pii.read",
         "view_tasks",
         "manage_tasks",
         "assign_tasks",
@@ -124,10 +151,16 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "view_forms",
         "view_marketing_analytics",
         "booking.ai_tools.use",
+        "view_staff_collab",
+        "manage_staff_collab",
+        "invite_staff_calendar_participants",
+        "omni.inbox.manage",
     ],
     # Doctor: minimal read-only access to tasks (scoped by visibility rules).
     "doctor": [
         "view_tasks",
+        "view_staff_collab",
+        "manage_staff_collab",
     ],
 }
 

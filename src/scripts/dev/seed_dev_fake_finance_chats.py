@@ -29,7 +29,6 @@ from src.domain.entities.cashbox import Cashbox
 from src.domain.entities.financial_transaction import FinancialTransaction
 from src.domain.entities.conversation import Conversation
 from src.domain.entities.chat_message import ChatMessage
-from src.domain.entities.payment import Payment  # FK in metadata
 
 # Fake finance: descriptions only (no link to bookings/payments)
 FAKE_INCOME = [
