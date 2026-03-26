@@ -14,4 +14,8 @@ prepayment_transactions
 role_permissions
 service_doctors
 task_comments
+task_assignees
+staff_feed_comments
+staff_chat_room_members
+staff_calendar_event_participants
 waitlist_notifications
