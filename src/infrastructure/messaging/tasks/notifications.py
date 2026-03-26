@@ -316,6 +316,7 @@ def run_reminders_task(self):
                         .where(
                             Notification.booking_id == b.id,
                             Notification.template == template,
+                            Notification.status.in_(("pending", "sent")),
                         )
                         .limit(1)
                     )
