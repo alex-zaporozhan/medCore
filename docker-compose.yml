@@ -3,9 +3,10 @@
 # задаются только в .env; .env не коммитить (см. .gitignore).
 # Контейнеры приложения получают .env через env_file: - .env
 #
-# Образы приложения (по умолчанию — те же теги, что пушит CI в Docker Hub):
-#   BACKEND_IMAGE=moircreator/dental-booking-backend:latest
-#   FRONTEND_IMAGE=moircreator/dental-booking-frontend:latest
+# Образы приложения:
+# - production/staging: фиксируйте digest, например:
+#   BACKEND_IMAGE=moircreator/dental-booking-backend@sha256:<immutable_digest>
+#   FRONTEND_IMAGE=moircreator/dental-booking-frontend@sha256:<immutable_digest>
 # Локальные имена после `docker compose build` без привязки к Hub — в .env:
 #   BACKEND_IMAGE=dental-booking-backend:local
 #   FRONTEND_IMAGE=dental-booking-frontend:local
@@ -52,7 +53,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
+    image: ${BACKEND_IMAGE:-dental-booking-backend:local}
     container_name: dental_booking_migrations
     command: sh -c "python -m alembic -c alembic.ini upgrade head && echo alembic_upgrade_ok"
     environment:
@@ -70,7 +71,7 @@ services:
     restart: "no"
 
   backend:
-    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
+    image: ${BACKEND_IMAGE:-dental-booking-backend:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -103,7 +104,7 @@ services:
     restart: unless-stopped
 
   celery:
-    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
+    image: ${BACKEND_IMAGE:-dental-booking-backend:local}
     container_name: dental_booking_celery
     command: celery -A src.infrastructure.messaging.celery_app worker --loglevel=info
     healthcheck:
@@ -125,7 +126,7 @@ services:
     restart: unless-stopped
 
   celery-beat:
-    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
+    image: ${BACKEND_IMAGE:-dental-booking-backend:local}
     container_name: dental_booking_celery_beat
     command: celery -A src.infrastructure.messaging.celery_app beat --loglevel=info
     healthcheck:
@@ -147,7 +148,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${FRONTEND_IMAGE:-moircreator/dental-booking-frontend:latest}
+    image: ${FRONTEND_IMAGE:-dental-booking-frontend:local}
     build:
       context: ./frontend
       dockerfile: Dockerfile

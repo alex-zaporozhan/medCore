@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   backend-tests:
     name: Backend tests (pytest + ruff)
@@ -213,11 +217,137 @@ jobs:
           FRONTEND_E2E_URL: http://localhost:5175
         run: poetry run pytest -v tests/e2e/test_frontend_pages.py
 
-  build-and-push:
-    name: Build & push Docker images (Docker Hub)
+  supply-chain-scan:
+    name: Supply chain - scan
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     needs: [backend-tests, frontend-tests, e2e-frontend-pages]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+
+      - name: Upload scan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-scan
+          path: trivy-fs.sarif
+
+  supply-chain-sbom:
+    name: Supply chain - sbom
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [supply-chain-scan]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate backend SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          output-file: backend.sbom.spdx.json
+          format: spdx-json
+
+      - name: Generate frontend SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./frontend
+          output-file: frontend.sbom.spdx.json
+          format: spdx-json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-sbom
+          path: |
+            backend.sbom.spdx.json
+            frontend.sbom.spdx.json
+
+  supply-chain-sign:
+    name: Supply chain - sign
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [supply-chain-sbom]
+    steps:
+      - name: Download SBOM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: supply-chain-sbom
+          path: sbom
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Sign backend SBOM (keyless)
+        run: cosign sign-blob --yes --output-signature backend.sbom.sig sbom/backend.sbom.spdx.json
+
+      - name: Sign frontend SBOM (keyless)
+        run: cosign sign-blob --yes --output-signature frontend.sbom.sig sbom/frontend.sbom.spdx.json
+
+      - name: Upload signature artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-signatures
+          path: |
+            backend.sbom.sig
+            frontend.sbom.sig
+
+  supply-chain-provenance:
+    name: Supply chain - provenance
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [supply-chain-sign]
+    steps:
+      - name: Download SBOM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: supply-chain-sbom
+          path: sbom
+
+      - name: Generate provenance metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKEND_SHA=$(sha256sum sbom/backend.sbom.spdx.json | awk '{print $1}')
+          FRONTEND_SHA=$(sha256sum sbom/frontend.sbom.spdx.json | awk '{print $1}')
+          cat <<EOF > provenance.json
+          {
+            "repository": "${{ github.repository }}",
+            "commit": "${{ github.sha }}",
+            "run_id": "${{ github.run_id }}",
+            "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "artifacts": {
+              "backend_sbom_sha256": "${BACKEND_SHA}",
+              "frontend_sbom_sha256": "${FRONTEND_SHA}"
+            }
+          }
+          EOF
+
+      - name: Upload provenance artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-provenance
+          path: provenance.json
+
+  build-and-publish:
+    name: Build & publish Docker images
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [supply-chain-provenance]
+
+    outputs:
+      backend_changed: ${{ steps.changes.outputs.backend }}
+      frontend_changed: ${{ steps.changes.outputs.frontend }}
+      backend_digest: ${{ steps.build_backend.outputs.digest }}
+      frontend_digest: ${{ steps.build_frontend.outputs.digest }}
 
     steps:
       - name: Checkout
@@ -251,6 +381,7 @@ jobs:
 
       - name: Build and push backend image
         if: steps.changes.outputs.backend == 'true'
+        id: build_backend
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -258,13 +389,12 @@ jobs:
           push: true
           tags: |
             moircreator/dental-booking-backend:${{ github.sha }}
-            moircreator/dental-booking-backend:main
-            moircreator/dental-booking-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Build and push frontend image
         if: steps.changes.outputs.frontend == 'true'
+        id: build_frontend
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
@@ -272,8 +402,40 @@ jobs:
           push: true
           tags: |
             moircreator/dental-booking-frontend:${{ github.sha }}
-            moircreator/dental-booking-frontend:main
-            moircreator/dental-booking-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  digest-deploy:
+    name: Digest deploy verification
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [build-and-publish]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify backend deploy by digest
+        if: needs.build-and-publish.outputs.backend_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export BACKEND_IMAGE="moircreator/dental-booking-backend@${{ needs.build-and-publish.outputs.backend_digest }}"
+          export FRONTEND_IMAGE="moircreator/dental-booking-frontend@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          docker compose -f docker-compose.yml config > compose.resolved.yml
+          grep -q "moircreator/dental-booking-backend@sha256:" compose.resolved.yml
+
+      - name: Verify frontend deploy by digest
+        if: needs.build-and-publish.outputs.frontend_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export BACKEND_IMAGE="moircreator/dental-booking-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          export FRONTEND_IMAGE="moircreator/dental-booking-frontend@${{ needs.build-and-publish.outputs.frontend_digest }}"
+          docker compose -f docker-compose.yml config > compose.resolved.yml
+          grep -q "moircreator/dental-booking-frontend@sha256:" compose.resolved.yml
+
+      - name: Upload digest deploy evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-deploy-evidence
+          path: compose.resolved.yml
