@@ -15,7 +15,22 @@ interface ContextBarProps {
  */
 export function ContextBar({ title, breadcrumbs, actions }: ContextBarProps) {
   return (
-    <Group justify="space-between" mb="md" wrap="nowrap">
+    <Group
+      justify="space-between"
+      mb="md"
+      wrap="nowrap"
+      className="glass-light"
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 5,
+        marginInline: "calc(-1 * var(--mantine-spacing-md))",
+        paddingInline: "var(--mantine-spacing-md)",
+        paddingTop: "var(--mantine-spacing-xs)",
+        paddingBottom: "var(--mantine-spacing-sm)",
+        marginTop: "calc(-1 * var(--mantine-spacing-sm))",
+      }}
+    >
       <Group gap="sm" wrap="nowrap">
         <Title order={3}>{title}</Title>
         {breadcrumbs}

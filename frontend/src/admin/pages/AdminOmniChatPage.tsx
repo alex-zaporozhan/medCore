@@ -19,7 +19,6 @@ import { ROUTE_PATHS } from "@/routePaths";
 import {
   AdminDrawer,
   DataSkeleton,
-  AppCard,
   AiFeatureBadge,
   QueryErrorAlert,
   OmniInspectorTabShell,
@@ -60,22 +59,28 @@ import {
 } from "@mantine/core";
 import {
   IconBriefcase,
+  IconBrandTelegram,
+  IconBrandWhatsapp,
   IconCalendarEvent,
   IconCalendarPlus,
+  IconCopy,
+  IconDeviceMobile,
   IconChevronLeft,
   IconChevronRight,
   IconEyeOff,
   IconFileDescription,
   IconHistory,
   IconListCheck,
+  IconMessageReply,
   IconRefresh,
+  IconSend,
   IconRobot,
   IconUser,
+  IconDotsVertical,
 } from "@tabler/icons-react";
 import { useHotkeys } from "@mantine/hooks";
 import { GlassModal } from "@/shared/ui/GlassModal";
 import { Textarea } from "@mantine/core";
-import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
 import { getAdminId } from "@/api/client";
 import { useAiFeatures, getAiFeatureTooltip } from "@/shared/aiFeatures";
 import { useEffectiveAiFeatureGate } from "@/hooks/useEffectiveAiFeatureGate";
@@ -117,9 +122,17 @@ function omniMessageDeliveryLabel(
 function omniOutboundChannelLabel(t: string | null | undefined): string {
   const u = String(t || "").toUpperCase();
   if (u === "TELEGRAM_BOT") return "Telegram";
+  if (u === "WHATSAPP") return "WhatsApp";
   if (u === "WEB_WIDGET") return "Виджет сайта";
   if (u === "WEB_APP") return "Приложение";
   return t ? String(t) : "Канал";
+}
+
+function OmniChannelMetaIcon({ channelType, size = 12 }: { channelType: string | null | undefined; size?: number }) {
+  const u = String(channelType || "").toUpperCase();
+  if (u === "TELEGRAM_BOT") return <IconBrandTelegram size={size} stroke={1.6} />;
+  if (u === "WHATSAPP") return <IconBrandWhatsapp size={size} stroke={1.6} />;
+  return <IconDeviceMobile size={size} stroke={1.6} />;
 }
 
 /** Подсказка к сырому статусу диалога из API (список слева). */
@@ -165,6 +178,18 @@ export default function AdminOmniChatPage() {
   const [replyChannelPick, setReplyChannelPick] = useState<string | null>(null);
   const [showOnlyWaiting, setShowOnlyWaiting] = useState(false);
   const [showHiddenMessages, setShowHiddenMessages] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<{
+    id: string;
+    content: string;
+    actorType: string;
+  } | null>(null);
+  const [messageContextMenu, setMessageContextMenu] = useState<{
+    id: string;
+    content: string;
+    actorType: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [aiFilter, setAiFilter] = useState<string>("ALL");
   const [hideModalOpen, setHideModalOpen] = useState(false);
   const [hideMessageId, setHideMessageId] = useState<string | null>(null);
@@ -297,6 +322,8 @@ export default function AdminOmniChatPage() {
 
   useEffect(() => {
     setReplyChannelPick(null);
+    setReplyToMessage(null);
+    setMessageContextMenu(null);
   }, [selectedChatId]);
 
   const handleSend = () => {
@@ -312,7 +339,12 @@ export default function AdminOmniChatPage() {
     if (replyChannelOptions.length > 1 && effectiveReplyChannelId) {
       payload.reply_channel_id = effectiveReplyChannelId;
     }
-    sendMessage.mutate(payload, { onSuccess: () => setMessageText("") });
+    sendMessage.mutate(payload, {
+      onSuccess: () => {
+        setMessageText("");
+        setReplyToMessage(null);
+      },
+    });
   };
 
   const selectedItem = chatsData?.items?.find((c) => c.chat_id === selectedChatId) ?? null;
@@ -511,10 +543,45 @@ export default function AdminOmniChatPage() {
     );
   };
 
+  const handleReplyToMessage = useCallback((message: { id: string; content: string; actorType: string }) => {
+    setReplyToMessage(message);
+  }, []);
+
+  const handleCopyMessage = useCallback((content: string) => {
+    if (typeof navigator === "undefined" || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(content);
+  }, []);
+
+  useEffect(() => {
+    if (!messageContextMenu) return;
+    const closeMenu = () => setMessageContextMenu(null);
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [messageContextMenu]);
+
   return (
-    <Stack gap="md" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <ContextBar title="Chat & AI — единый чат с пациентами" />
-      <AppCard
+    <Stack gap={0} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", height: "100%" }}>
+      <Box px="md" pt="sm" style={{ flexShrink: 0 }}>
+        <ContextBar
+          title="Chat & AI — единый чат с пациентами"
+          breadcrumbs={
+            sseBroken ? (
+              <Tooltip label="Realtime недоступен: работает fallback polling (12с) и авто-переподключение SSE.">
+                <Badge size="xs" color="red" variant="dot">
+                  offline
+                </Badge>
+              </Tooltip>
+            ) : null
+          }
+        />
+      </Box>
+      <Box
+        px="md"
+        pb="sm"
         style={{
           flex: 1,
           minHeight: 0,
@@ -601,19 +668,6 @@ export default function AdminOmniChatPage() {
                 styles={{ label: { whiteSpace: "nowrap" } }}
               />
             </Tooltip>
-            {sseBroken ? (
-              <Tooltip label="Realtime недоступен: работает fallback polling (12с) и авто-переподключение SSE.">
-                <Badge size="sm" color="yellow" variant="light">
-                  Realtime degraded
-                </Badge>
-              </Tooltip>
-            ) : (
-              <Tooltip label="Realtime через SSE активен.">
-                <Badge size="sm" color="teal" variant="light">
-                  Realtime live
-                </Badge>
-              </Tooltip>
-            )}
           </Flex>
 
           {chatsLoading ? (
@@ -622,11 +676,27 @@ export default function AdminOmniChatPage() {
             <QueryErrorAlert error={chatsErr} title="Не удалось загрузить диалоги" />
           ) : (
             <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <ThreeColumnLayout
-              preset="omni-inspector"
-              omniRightCollapsed={inspectorCollapsed}
-              centerColumnScrollable={false}
-              left={
+            <Flex
+              direction="row"
+              gap={0}
+              w="100%"
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflow: "hidden",
+              }}
+            >
+              <Box
+                w={320}
+                style={{
+                  borderRight: "1px solid var(--mantine-color-gray-2)",
+                  backgroundColor: "white",
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <ScrollArea type="scroll" scrollbarSize={6} style={{ flex: 1, minHeight: 0 }}>
                 <Stack gap={4} p="xs" miw={0}>
                   {!chatsData?.items?.length ? (
                     <EmptyStateHint
@@ -733,9 +803,20 @@ export default function AdminOmniChatPage() {
                     })
                   )}
                 </Stack>
-              }
-              center={
-                !selectedChatId ? (
+                </ScrollArea>
+              </Box>
+              <Flex
+                direction="column"
+                flex={1}
+                bg="gray.0"
+                style={{
+                  minWidth: 0,
+                  position: "relative",
+                  minHeight: 0,
+                  overflow: "hidden",
+                }}
+              >
+                {!selectedChatId ? (
                   <Stack h="100%" align="center" justify="center">
                     <EmptyStateHint
                       title="Выберите диалог"
@@ -744,7 +825,7 @@ export default function AdminOmniChatPage() {
                   </Stack>
                 ) : (
                   <Box
-                    p="xs"
+                    p={0}
                     style={{
                       height: "100%",
                       minHeight: 0,
@@ -754,23 +835,21 @@ export default function AdminOmniChatPage() {
                     }}
                   >
                     <Box
+                      px="md"
+                      pt="sm"
+                      pb="sm"
                       style={{
                         flexShrink: 0,
-                        paddingBottom: "var(--mantine-spacing-sm)",
-                        borderBottom: "1px solid var(--divider)",
+                        borderBottom: "1px solid var(--mantine-color-gray-2)",
+                        backgroundColor: "var(--mantine-color-gray-0)",
                       }}
                     >
                       {detailLoading ? (
                         <DataSkeleton lines={2} />
                       ) : (
-                        <Group
-                          justify="space-between"
-                          align="flex-end"
-                          wrap="wrap"
-                          gap="md"
-                        >
-                          <Stack gap={4} miw={180}>
-                            <Text fw={700} size="lg" lh={1.25}>
+                        <Group justify="space-between" py="sm" px="md" wrap="nowrap" gap="md">
+                          <Stack gap={2} miw={180}>
+                            <Text fw={700} size="md" lh={1.25}>
                               {chatDetail?.contact_name ||
                                 chatDetail?.contact_primary_phone ||
                                 selectedItem?.contact_name ||
@@ -778,16 +857,16 @@ export default function AdminOmniChatPage() {
                                 "Контакт"}
                             </Text>
                             {chatDetail && (
-                              <Group gap={6}>
+                              <Group gap={6} wrap="nowrap">
                                 <Badge
-                                  size="sm"
+                                  size="xs"
                                   variant="dot"
                                   color={
                                     String(chatDetail.status).toUpperCase() === "OPEN"
-                                      ? "green"
+                                      ? "teal"
                                       : String(chatDetail.status).toUpperCase() === "CLOSED"
                                         ? "gray"
-                                        : "blue"
+                                        : "yellow"
                                   }
                                   radius="xs"
                                 >
@@ -799,7 +878,7 @@ export default function AdminOmniChatPage() {
                                   </Text>
                                 ) : null}
                                 {chatDetail.assignee_name ? (
-                                  <Badge size="sm" variant="light" color="blue" radius="xs">
+                                  <Badge size="xs" variant="light" color="indigo" radius="xs">
                                     {chatDetail.assignee_name}
                                   </Badge>
                                 ) : (
@@ -811,10 +890,10 @@ export default function AdminOmniChatPage() {
                             )}
                           </Stack>
                           {chatDetail ? (
-                            <Stack gap={6} align="flex-end">
+                            <Group gap={8} align="center" wrap="nowrap">
                               <Select
                                 size="xs"
-                                w={{ base: "100%", sm: 200 }}
+                                w={160}
                                 label={
                                   <Text component="span" size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: rem(0.5) }}>
                                     Режим AI
@@ -843,15 +922,7 @@ export default function AdminOmniChatPage() {
                                   input: { fontWeight: 600 },
                                 }}
                               />
-                              <Button
-                                size="xs"
-                                variant="light"
-                                onClick={handleAssignOmniToMe}
-                                loading={patchOmniChat.isPending}
-                              >
-                                Взять в работу
-                              </Button>
-                            </Stack>
+                            </Group>
                           ) : null}
                         </Group>
                       )}
@@ -861,9 +932,9 @@ export default function AdminOmniChatPage() {
                       scrollbarSize={6}
                       offsetScrollbars
                       viewportRef={omniMessagesViewportRef}
-                      style={{ flex: 1, minHeight: 0 }}
+                      style={{ flex: 1, minHeight: 0, padding: "20px" }}
                     >
-                      <Stack gap="md" pb="xs">
+                      <Stack gap={0} pb={0}>
                         {hasNextPage ? (
                           <Button
                             size="xs"
@@ -1131,8 +1202,9 @@ export default function AdminOmniChatPage() {
                       {messagesInitialLoading ? (
                         <DataSkeleton lines={3} />
                       ) : (
-                        <Stack gap={6} align="stretch">
-                          {mergedMessages.map((m) => {
+                        <Stack gap={0} align="stretch">
+                          {mergedMessages.map((m, index) => {
+                            const prev = index > 0 ? mergedMessages[index - 1] : null;
                             const metaChannel =
                               m.channel_type ||
                               chatDetail?.channel_type ||
@@ -1143,130 +1215,87 @@ export default function AdminOmniChatPage() {
                             const timeLabel = m.created_at
                               ? new Date(m.created_at).toLocaleString()
                               : "";
+                            const bubbleBg = m.ui_hidden
+                              ? "rgba(148, 163, 184, 0.2)"
+                              : outbound
+                                ? "var(--mantine-color-indigo-6)"
+                                : "#ffffff";
+                            const bubbleFg =
+                              m.ui_hidden || !outbound ? "var(--mantine-color-dark-8)" : "#ffffff";
+                            const sameAuthorAsPrev =
+                              !!prev &&
+                              prev.direction === m.direction &&
+                              prev.actor_type === m.actor_type;
                             return (
-                              <Tooltip
+                              <Stack
                                 key={m.id}
-                                label={timeLabel || "Время неизвестно"}
-                                disabled={!timeLabel}
-                                position="top"
-                                withArrow
-                                openDelay={350}
-                                withinPortal
-                              >
-                              <Paper
-                                withBorder
-                                p="xs"
-                                radius="sm"
-                                aria-label={timeLabel ? `Сообщение, время: ${timeLabel}` : undefined}
+                                gap={4}
+                                align={outbound ? "flex-end" : "flex-start"}
                                 style={{
                                   alignSelf: outbound ? "flex-end" : "flex-start",
-                                  maxWidth: "min(85%, 520px)",
-                                  position: "relative",
-                                  cursor: timeLabel ? "default" : undefined,
-                                  backgroundColor: m.ui_hidden
-                                    ? "rgba(148, 163, 184, 0.14)"
-                                    : outbound
-                                      ? "var(--mantine-color-dark-0)"
-                                      : "var(--mantine-color-gray-0)",
-                                  opacity: m.ui_hidden ? 0.85 : 1,
-                                  borderColor: "var(--mantine-color-gray-3)",
+                                  maxWidth: "100%",
+                                  marginTop: index === 0 ? 0 : sameAuthorAsPrev ? 4 : 16,
                                 }}
+                                aria-label={timeLabel ? `Сообщение, время: ${timeLabel}` : undefined}
                               >
-                                <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs" mb={6}>
-                                  <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
-                                    <Text
-                                      fz={rem(10)}
-                                      fw={800}
-                                      c="dimmed"
-                                      tt="uppercase"
-                                      style={{ letterSpacing: rem(0.5) }}
-                                    >
-                                      {m.actor_type}
+                                <Box
+                                  p={0}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    setMessageContextMenu({
+                                      id: m.id,
+                                      content: m.content || "",
+                                      actorType: m.actor_type,
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                    });
+                                  }}
+                                  style={{
+                                    position: "relative",
+                                    maxWidth: "min(85%, 520px)",
+                                    borderRadius: "var(--mantine-radius-md)",
+                                    boxShadow: "var(--mantine-shadow-xs)",
+                                    backgroundColor: bubbleBg,
+                                    border:
+                                      m.ui_hidden || outbound
+                                        ? m.ui_hidden
+                                          ? "1px solid var(--mantine-color-gray-3)"
+                                          : undefined
+                                        : "1px solid var(--mantine-color-gray-2)",
+                                    opacity: m.ui_hidden ? 0.9 : 1,
+                                  }}
+                                >
+                                  {m.ui_hidden ? (
+                                    <Text size="xs" c="dimmed" p="10px 14px">
+                                      Сообщение скрыто: {m.hidden_reason || "без указания причины"}
                                     </Text>
-                                    {metaChannel ? (
-                                      <>
-                                        <Text fz={rem(10)} fw={800} c="gray.4" component="span">
-                                          •
-                                        </Text>
-                                        <Text
-                                          fz={rem(10)}
-                                          fw={800}
-                                          c="gray.4"
-                                          tt="uppercase"
-                                          style={{ letterSpacing: rem(0.5) }}
-                                          lineClamp={1}
-                                        >
-                                          {String(metaChannel).replace(/_/g, " ")}
-                                        </Text>
-                                      </>
-                                    ) : null}
-                                    {m.actor_type === "AI" ? (
-                                      <>
-                                        <Text fz={rem(10)} fw={800} c="gray.4" component="span">
-                                          •
-                                        </Text>
-                                        <Tooltip label="Сообщение сгенерировано AI">
-                                          <Text
-                                            fz={rem(10)}
-                                            fw={800}
-                                            tt="uppercase"
-                                            style={{ color: "var(--mantine-color-ai-7)", letterSpacing: rem(0.5) }}
-                                          >
-                                            AI
-                                          </Text>
-                                        </Tooltip>
-                                      </>
-                                    ) : null}
-                                    {outbound && deliveryInfo ? (
-                                      <>
-                                        <Text fz={rem(10)} fw={800} c="gray.4" component="span">
-                                          •
-                                        </Text>
-                                        <Tooltip label={deliveryInfo.tooltip}>
-                                          <Text
-                                            fz={rem(10)}
-                                            fw={800}
-                                            tt="uppercase"
-                                            style={{ color: deliveryInfo.color, letterSpacing: rem(0.5) }}
-                                          >
-                                            {deliveryInfo.label}
-                                          </Text>
-                                        </Tooltip>
-                                      </>
-                                    ) : null}
+                                  ) : (
+                                    <Text
+                                      size="sm"
+                                      lh={1.55}
+                                      p="10px 14px"
+                                      style={{ wordBreak: "break-word", color: bubbleFg }}
+                                    >
+                                      {m.content}
+                                    </Text>
+                                  )}
+                                </Box>
+                                {timeLabel ? (
+                                  <Group gap={4} px={4}>
+                                    {!outbound ? (
+                                      <OmniChannelMetaIcon channelType={metaChannel} size={10} />
+                                    ) : m.actor_type === "AI" ? (
+                                      <IconRobot size={12} stroke={1.7} />
+                                    ) : (
+                                      <IconUser size={12} stroke={1.7} />
+                                    )}
+                                    <Text size="xs" c="dimmed">
+                                      {timeLabel}
+                                      {outbound && deliveryInfo ? ` · ${deliveryInfo.label}` : ""}
+                                    </Text>
                                   </Group>
-                                  {!m.ui_hidden ? (
-                                    <Tooltip label="Скрыть сообщение" position="left" withArrow>
-                                      <ActionIcon
-                                        variant="subtle"
-                                        color="gray"
-                                        size="sm"
-                                        aria-label="Скрыть сообщение"
-                                        style={{ opacity: 0.4, flexShrink: 0 }}
-                                        onMouseEnter={(e) => {
-                                          e.currentTarget.style.opacity = "1";
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.currentTarget.style.opacity = "0.4";
-                                        }}
-                                        onClick={() => handleOpenHideModal(m.id)}
-                                      >
-                                        <IconEyeOff size={14} stroke={1.5} />
-                                      </ActionIcon>
-                                    </Tooltip>
-                                  ) : null}
-                                </Group>
-                                {m.ui_hidden ? (
-                                  <Text size="xs" c="dimmed">
-                                    Сообщение скрыто: {m.hidden_reason || "без указания причины"}
-                                  </Text>
-                                ) : (
-                                  <Text size="sm" c="dark.8" lh={1.55} style={{ wordBreak: "break-word" }}>
-                                    {m.content}
-                                  </Text>
-                                )}
-                              </Paper>
-                              </Tooltip>
+                                ) : null}
+                              </Stack>
                             );
                           })}
                         </Stack>
@@ -1274,37 +1303,63 @@ export default function AdminOmniChatPage() {
                     </Stack>
                     </ScrollArea>
                     <Box
+                      p="md"
+                      bg="white"
                       style={{
                         flexShrink: 0,
-                        marginTop: "var(--mantine-spacing-sm)",
-                        paddingTop: "var(--mantine-spacing-sm)",
-                        borderTop: "1px solid var(--divider)",
+                        borderTop: "1px solid var(--mantine-color-gray-2)",
                       }}
                     >
                     <Stack gap="xs">
-                      {selectedChatId && effectiveReplyChannelId ? (
-                        replyChannelOptions.length > 1 ? (
-                          <Select
-                            size="xs"
-                            label="Ответ в канал"
-                            data={replyChannelOptions}
-                            value={effectiveReplyChannelId}
-                            onChange={(v) => setReplyChannelPick(v)}
-                          />
-                        ) : (
-                          <Text size="xs" c="dimmed">
-                            Ответ в: {effectiveReplyLabel || "—"}
-                          </Text>
-                        )
+                      {replyToMessage ? (
+                        <Paper withBorder p="xs" bg="var(--mantine-color-gray-0)">
+                          <Group justify="space-between" wrap="nowrap" gap="xs">
+                            <Stack gap={2} style={{ minWidth: 0 }}>
+                              <Text size="xs" c="dimmed">
+                                Ответ на {replyToMessage.actorType === "CLIENT" ? "сообщение клиента" : "сообщение клиники"}
+                              </Text>
+                              <Text size="xs" lineClamp={1}>
+                                {replyToMessage.content}
+                              </Text>
+                            </Stack>
+                            <ActionIcon
+                              size="sm"
+                              variant="subtle"
+                              color="gray"
+                              aria-label="Убрать ответ"
+                              onClick={() => setReplyToMessage(null)}
+                            >
+                              <IconChevronRight size={14} style={{ transform: "rotate(90deg)" }} />
+                            </ActionIcon>
+                          </Group>
+                        </Paper>
                       ) : null}
-                      <Group gap="xs" wrap="wrap" align="center">
+                      <Group gap="xs" align="flex-end" wrap="nowrap">
                         <Menu shadow="md" width={280} position="top-start">
                           <Menu.Target>
-                            <Button size="xs" variant="light" disabled={!(quickRepliesData?.items?.length)}>
-                              Быстрые ответы
-                            </Button>
+                            <ActionIcon
+                              variant="subtle"
+                              color="gray"
+                              aria-label="Действия: быстрые ответы, взять в работу, обновить"
+                            >
+                              <IconDotsVertical size={20} stroke={1.5} />
+                            </ActionIcon>
                           </Menu.Target>
                           <Menu.Dropdown>
+                            <Menu.Item
+                              disabled={!selectedChatId}
+                              leftSection={<IconRefresh size={14} stroke={1.5} />}
+                              onClick={() => handleRefreshOmniThread()}
+                            >
+                              Обновить переписку
+                            </Menu.Item>
+                            <Menu.Item
+                              disabled={!selectedChatId || patchOmniChat.isPending}
+                              onClick={() => handleAssignOmniToMe()}
+                            >
+                              Взять в работу
+                            </Menu.Item>
+                            <Menu.Divider />
                             {(quickRepliesData?.items ?? []).map((qr) => (
                               <Menu.Item
                                 key={qr.id}
@@ -1324,64 +1379,39 @@ export default function AdminOmniChatPage() {
                             ))}
                           </Menu.Dropdown>
                         </Menu>
-                        <Button
-                          size="xs"
-                          variant="default"
-                          leftSection={<IconRefresh size={14} stroke={1.5} />}
-                          onClick={handleRefreshOmniThread}
-                          disabled={!selectedChatId}
-                        >
-                          Обновить
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="default"
-                          onClick={handleAssignOmniToMe}
-                          disabled={!selectedChatId}
-                          loading={patchOmniChat.isPending}
-                        >
-                          Взять в работу
-                        </Button>
-                      </Group>
-                      <Group gap="xs" align="flex-start" wrap="nowrap">
-                        <TextInput
-                          placeholder="Сообщение... (⌘Enter — отправить)"
+                        <Textarea
+                          autosize
+                          minRows={1}
+                          maxRows={6}
+                          placeholder={`Написать ответ в ${effectiveReplyLabel || "канал"} (Ctrl+Enter)...`}
                           value={messageText}
                           size="sm"
                           onChange={(e) => setMessageText(e.currentTarget.value)}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
+                            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                               e.preventDefault();
                               handleSend();
                             }
                           }}
                           style={{ flex: 1, minWidth: 180 }}
-                          styles={{
-                            input: {
-                              border: `1px solid var(--mantine-color-gray-3)`,
-                            },
-                          }}
+                          styles={{ input: { border: `1px solid var(--mantine-color-gray-3)` } }}
                         />
-                        <Button
-                          color={SEMANTIC.action.send}
-                          px="lg"
+                        <ActionIcon
+                          size="lg"
+                          color="indigo"
+                          variant="filled"
                           onClick={handleSend}
+                          disabled={!messageText.trim() || !selectedChatId}
                           loading={sendMessage.isPending}
+                          aria-label="Отправить сообщение"
                         >
-                          Отправить
-                        </Button>
+                          <IconSend size={18} />
+                        </ActionIcon>
                       </Group>
-                      <Checkbox
-                        size="xs"
-                        label="Показывать скрытые сообщения"
-                        checked={showHiddenMessages}
-                        onChange={(e) => setShowHiddenMessages(e.currentTarget.checked)}
-                        styles={{ label: { color: "var(--mantine-color-dimmed)" } }}
-                      />
-                      <Group gap="sm">
+                      <Group gap="sm" mt="xs" align="center" wrap="wrap">
                         <Button
                           size="xs"
-                          variant="default"
+                          variant="subtle"
                           leftSection={<IconCalendarPlus size={14} stroke={1.5} />}
                           title={!patientId ? "Выберите чат с привязанным пациентом" : "Создать запись без перехода в расписание (⌘B / Ctrl+B)"}
                           onClick={handleOpenBookingModal}
@@ -1391,7 +1421,7 @@ export default function AdminOmniChatPage() {
                         </Button>
                         <Button
                           size="xs"
-                          variant="default"
+                          variant="subtle"
                           leftSection={<IconFileDescription size={14} stroke={1.5} />}
                           onClick={() => setFormDrawerOpen(true)}
                           disabled={!patientId}
@@ -1399,14 +1429,41 @@ export default function AdminOmniChatPage() {
                         >
                           Анкета
                         </Button>
+                        {selectedChatId && effectiveReplyChannelId && replyChannelOptions.length > 1 ? (
+                          <Select
+                            size="xs"
+                            data={replyChannelOptions}
+                            value={effectiveReplyChannelId}
+                            onChange={(v) => setReplyChannelPick(v)}
+                            w={180}
+                          />
+                        ) : null}
+                        <Checkbox
+                          size="xs"
+                          label="Скрытые сообщения"
+                          checked={showHiddenMessages}
+                          onChange={(e) => setShowHiddenMessages(e.currentTarget.checked)}
+                          styles={{ label: { color: "var(--mantine-color-dimmed)" } }}
+                        />
                       </Group>
                     </Stack>
                   </Box>
                   </Box>
-                )
-              }
-              right={
-                inspectorCollapsed ? (
+              )}
+              </Flex>
+              <Box
+                w={inspectorCollapsed ? 56 : 350}
+                miw={inspectorCollapsed ? 56 : 350}
+                style={{
+                  borderLeft: "1px solid var(--mantine-color-gray-2)",
+                  backgroundColor: "white",
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                }}
+              >
+                {inspectorCollapsed ? (
                   <Paper
                     p={4}
                     radius="md"
@@ -1531,7 +1588,7 @@ export default function AdminOmniChatPage() {
                     </Stack>
                   </Paper>
                 ) : (
-                <Stack gap="sm" style={{ minWidth: 0 }}>
+                <Stack gap="sm" style={{ minWidth: 0 }} p="sm">
                   <Paper
                     p="sm"
                     radius="md"
@@ -1606,7 +1663,8 @@ export default function AdminOmniChatPage() {
                         value={inspectorTab}
                         onChange={(v) => v && setInspectorTab(v as OmniInspectorTab)}
                         variant="pills"
-                        color="dark"
+                        radius="xl"
+                        color="indigo"
                         styles={{
                           list: {
                             width: "100%",
@@ -1853,11 +1911,86 @@ export default function AdminOmniChatPage() {
                   </Paper>
                 </Stack>
               )}
-            />
+              </Box>
+            </Flex>
             </Box>
           )}
         </Stack>
-      </AppCard>
+      </Box>
+
+      {messageContextMenu ? (
+        <Paper
+          withBorder
+          shadow="md"
+          p={4}
+          style={{
+            position: "fixed",
+            left: messageContextMenu.x,
+            top: messageContextMenu.y,
+            zIndex: 400,
+            minWidth: 180,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Stack gap={2}>
+            <Button
+              size="xs"
+              variant="subtle"
+              color="gray"
+              justify="flex-start"
+              leftSection={<IconMessageReply size={14} />}
+              onClick={() => {
+                handleReplyToMessage({
+                  id: messageContextMenu.id,
+                  content: messageContextMenu.content,
+                  actorType: messageContextMenu.actorType,
+                });
+                setMessageContextMenu(null);
+              }}
+            >
+              Ответить
+            </Button>
+            <Button
+              size="xs"
+              variant="subtle"
+              color="gray"
+              justify="flex-start"
+              leftSection={<IconCopy size={14} />}
+              onClick={() => {
+                handleCopyMessage(messageContextMenu.content || "");
+                setMessageContextMenu(null);
+              }}
+            >
+              Копировать
+            </Button>
+            <Button
+              size="xs"
+              variant="subtle"
+              color="gray"
+              justify="flex-start"
+              leftSection={<IconSend size={14} />}
+              onClick={() => {
+                setMessageContextMenu(null);
+              }}
+            >
+              Переслать (скоро)
+            </Button>
+            <Button
+              size="xs"
+              variant="subtle"
+              color="red"
+              justify="flex-start"
+              leftSection={<IconEyeOff size={14} />}
+              onClick={() => {
+                handleOpenHideModal(messageContextMenu.id);
+                setMessageContextMenu(null);
+              }}
+            >
+              Скрыть сообщение
+            </Button>
+          </Stack>
+        </Paper>
+      ) : null}
 
       <GlassModal
         opened={hideModalOpen}

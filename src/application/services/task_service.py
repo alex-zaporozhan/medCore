@@ -1,16 +1,42 @@
 """Task service: high-level operations for creating and managing tasks."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from src.domain.entities.task import Task
 from src.domain.entities.task_comment import TaskComment
+from src.domain.entities.task_status_transition import TaskStatusTransition
 from src.domain.interfaces.repositories.task_repository import TaskRepository
 from src.core.metrics import tasks_created_total, task_time_to_close_seconds
+from src.core.metrics import (
+    task_blocked_events_total,
+    task_sla_overdue_total,
+    task_status_transitions_total,
+)
 from src.core.prometheus_labels import clinic_bucket_label
+
+COMMENT_RATE_LIMIT_WINDOW_SECONDS = 60
+COMMENT_RATE_LIMIT_PER_WINDOW = 12
+SYSTEM_COMMENT_RATE_LIMIT_PER_WINDOW = 24
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class TaskService:
+    @staticmethod
+    def _status_transition_text(
+        *,
+        from_status: str,
+        to_status: str,
+        reason: str | None,
+    ) -> str:
+        msg = f"Системное событие: статус задачи изменен {from_status} -> {to_status}."
+        if reason:
+            msg += f" Причина: {reason.strip()}."
+        return msg
+
     def __init__(self, repo: TaskRepository) -> None:
         self._repo = repo
 
@@ -77,12 +103,62 @@ class TaskService:
         task_id: UUID,
         status: str,
         completed_at: datetime | None = None,
+        actor_admin_id: UUID | None = None,
+        reason: str | None = None,
+        metadata: dict | None = None,
     ) -> Task:
         task = await self._require_task(task_id)
+        old_status = task.status
+        if status == "done":
+            if task.blocked:
+                raise ValueError("TASK_BLOCKED")
+            if not task.checklist_done:
+                raise ValueError("CHECKLIST_REQUIRED")
         task.status = status
+        if old_status != status:
+            task.stage_entered_at = _utc_now()
+        task.updated_by_admin_id = actor_admin_id
         if completed_at is not None:
             task.completed_at = completed_at
         saved = await self._repo.save_task(task)
+        if old_status != status:
+            await self._repo.add_status_transition(
+                TaskStatusTransition(
+                    clinic_id=saved.clinic_id,
+                    task_id=saved.id,
+                    from_status=old_status,
+                    to_status=status,
+                    reason=reason,
+                    actor_admin_id=actor_admin_id,
+                    metadata_json=dict(metadata or {}),
+                )
+            )
+            # Keep task-room timeline in sync with workflow changes.
+            if actor_admin_id is not None:
+                recent_system_comments = await self._repo.count_comments_for_author_since(
+                    task_id=saved.id,
+                    author_id=actor_admin_id,
+                    since=_utc_now() - timedelta(seconds=COMMENT_RATE_LIMIT_WINDOW_SECONDS),
+                    system_only=True,
+                )
+                if recent_system_comments >= SYSTEM_COMMENT_RATE_LIMIT_PER_WINDOW:
+                    raise ValueError("SYSTEM_COMMENT_RATE_LIMITED")
+                await self._repo.add_comment(
+                    TaskComment(
+                        task_id=saved.id,
+                        author_id=actor_admin_id,
+                        text=self._status_transition_text(
+                            from_status=old_status,
+                            to_status=status,
+                            reason=reason,
+                        ),
+                    )
+                )
+            task_status_transitions_total.labels(
+                clinic_bucket=clinic_bucket_label(saved.clinic_id),
+                from_status=old_status,
+                to_status=status,
+            ).inc()
         if saved.status == "done" and saved.completed_at is not None:
             delta = (saved.completed_at - saved.created_at).total_seconds()
             if delta >= 0:
@@ -91,7 +167,62 @@ class TaskService:
                     source=saved.source,
                     attention_kind=saved.attention_kind or "none",
                 ).observe(delta)
+            if saved.due_at is not None and saved.completed_at > saved.due_at:
+                task_sla_overdue_total.labels(
+                    clinic_bucket=clinic_bucket_label(saved.clinic_id),
+                    source=saved.source,
+                ).inc()
         return saved
+
+    async def update_task_fields(
+        self,
+        *,
+        task_id: UUID,
+        rank: int | None = None,
+        blocked: bool | None = None,
+        blocked_reason: str | None = None,
+        checklist_done: bool | None = None,
+        actor_admin_id: UUID | None = None,
+    ) -> Task:
+        task = await self._require_task(task_id)
+        if rank is not None:
+            task.rank = rank
+        if blocked is not None:
+            prev_blocked = task.blocked
+            task.blocked = blocked
+            if not blocked:
+                task.blocked_reason = None
+            if prev_blocked != blocked:
+                task_blocked_events_total.labels(
+                    clinic_bucket=clinic_bucket_label(task.clinic_id),
+                    action="blocked" if blocked else "unblocked",
+                ).inc()
+                await self._repo.add_status_transition(
+                    TaskStatusTransition(
+                        clinic_id=task.clinic_id,
+                        task_id=task.id,
+                        from_status=task.status,
+                        to_status=task.status,
+                        reason=blocked_reason if blocked else "UNBLOCKED",
+                        actor_admin_id=actor_admin_id,
+                        metadata_json={
+                            "event": "blocked" if blocked else "unblocked",
+                            "source": "task_fields",
+                        },
+                    )
+                )
+        if blocked_reason is not None:
+            task.blocked_reason = blocked_reason
+        if checklist_done is not None:
+            task.checklist_done = checklist_done
+        task.updated_by_admin_id = actor_admin_id
+        return await self._repo.save_task(task)
+
+    async def list_status_transitions_for_task(
+        self, task_id: UUID, limit: int = 50
+    ) -> list[TaskStatusTransition]:
+        await self._require_task(task_id)
+        return await self._repo.list_status_transitions_for_task(task_id, limit=limit)
 
     async def reassign_task(
         self,
@@ -127,6 +258,14 @@ class TaskService:
         text: str,
     ) -> TaskComment:
         task = await self._require_task(task_id)
+        recent_comments = await self._repo.count_comments_for_author_since(
+            task_id=task.id,
+            author_id=author_id,
+            since=_utc_now() - timedelta(seconds=COMMENT_RATE_LIMIT_WINDOW_SECONDS),
+            system_only=False,
+        )
+        if recent_comments >= COMMENT_RATE_LIMIT_PER_WINDOW:
+            raise ValueError("COMMENT_RATE_LIMITED")
         comment = TaskComment(
             task_id=task.id,
             author_id=author_id,

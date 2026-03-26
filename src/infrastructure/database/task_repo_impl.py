@@ -1,13 +1,15 @@
 """Task repository implementation using SQLAlchemy AsyncSession."""
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.task import Task
 from src.domain.entities.task_assignee import TaskAssignee
 from src.domain.entities.task_comment import TaskComment
+from src.domain.entities.task_status_transition import TaskStatusTransition
 from src.domain.interfaces.repositories.task_repository import TaskRepository
 
 
@@ -63,3 +65,37 @@ class TaskRepositoryImpl(TaskRepository):
             out.setdefault(task_id, []).append(admin_id)
         return out
 
+    async def add_status_transition(self, transition: TaskStatusTransition) -> TaskStatusTransition:
+        self._session.add(transition)
+        await self._session.flush()
+        await self._session.refresh(transition)
+        return transition
+
+    async def list_status_transitions_for_task(
+        self, task_id: UUID, limit: int = 50
+    ) -> list[TaskStatusTransition]:
+        res = await self._session.execute(
+            select(TaskStatusTransition)
+            .where(TaskStatusTransition.task_id == task_id)
+            .order_by(TaskStatusTransition.created_at.desc())
+            .limit(limit)
+        )
+        return list(res.scalars().all())
+
+    async def count_comments_for_author_since(
+        self,
+        *,
+        task_id: UUID,
+        author_id: UUID,
+        since: datetime,
+        system_only: bool = False,
+    ) -> int:
+        stmt = select(func.count(TaskComment.id)).where(
+            TaskComment.task_id == task_id,
+            TaskComment.author_id == author_id,
+            TaskComment.created_at >= since,
+        )
+        if system_only:
+            stmt = stmt.where(TaskComment.text.like("Системное событие:%"))
+        res = await self._session.execute(stmt)
+        return int(res.scalar_one() or 0)

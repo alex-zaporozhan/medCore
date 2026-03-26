@@ -9,6 +9,7 @@ from src.domain.entities.user_role import UserRole  # noqa: F401
 from src.domain.entities.task import Task  # noqa: F401
 from src.domain.entities.task_assignee import TaskAssignee  # noqa: F401
 from src.domain.entities.task_comment import TaskComment  # noqa: F401
+from src.domain.entities.task_status_transition import TaskStatusTransition  # noqa: F401
 from src.domain.entities.staff_calendar_event_participant import (  # noqa: F401
     StaffCalendarEventParticipant,
 )

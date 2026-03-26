@@ -12,6 +12,9 @@ export const SHELL_MODAL_CONTENT_STYLE: CSSProperties = {
   background: "rgba(255, 255, 255, 0.92)",
   backdropFilter: "blur(10px)",
   boxShadow: "0 8px 32px rgba(62, 73, 84, 0.12)",
+  borderRadius: "var(--mantine-radius-lg)",
+  border: "1px solid var(--mantine-color-gray-2)",
+  overflow: "hidden",
 };
 
 const shellDrawerBase = {
@@ -21,6 +24,8 @@ const shellDrawerBase = {
     boxShadow: "0 8px 32px rgba(62, 73, 84, 0.14)",
     borderTopLeftRadius: "var(--mantine-radius-md)",
     borderBottomLeftRadius: "var(--mantine-radius-md)",
+    border: "1px solid var(--mantine-color-gray-2)",
+    overflow: "hidden",
   },
   header: {
     paddingBottom: "var(--mantine-spacing-sm)",

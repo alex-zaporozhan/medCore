@@ -26,6 +26,17 @@ import { usePatchBookingAdmin } from "@/hooks";
 import { AdminDrawer, GlassModal } from "@/shared/ui";
 import { useEffect, useState } from "react";
 
+function looksLikeUuid(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s).trim());
+}
+
+function displayPersonName(name: string | undefined, fallbackId: string): string {
+  const n = (name ?? "").trim();
+  if (n) return n;
+  if (looksLikeUuid(fallbackId)) return "Имя неизвестно";
+  return fallbackId;
+}
+
 export interface BookingEntityDrawerProps {
   /** По умолчанию центрированное модальное окно (единый стандарт админки). */
   presentation?: "modal" | "drawer";
@@ -91,7 +102,7 @@ export function BookingEntityDrawer({
     currentClinicId,
     booking?.service_id ?? null
   );
-  const { data: patientSummary } = useAdminLoyaltySummaryByContact(
+  const { data: patientSummary, isPending: patientSummaryLoading } = useAdminLoyaltySummaryByContact(
     booking?.patient_id ?? null
   );
   const { data: doctors } = useDoctors({
@@ -119,7 +130,8 @@ export function BookingEntityDrawer({
     new Date(booking.appointment_date + "T" + timeStr + ":00") > new Date();
 
   const tabs = (
-      <Tabs defaultValue="details">
+    <ScrollArea.Autosize mah="calc(100vh - 220px)" offsetScrollbars>
+      <Tabs defaultValue="details" variant="outline">
         <Tabs.List>
           <Tabs.Tab value="details">Детали</Tabs.Tab>
           <Tabs.Tab value="services">Услуги и чек</Tabs.Tab>
@@ -128,20 +140,30 @@ export function BookingEntityDrawer({
         </Tabs.List>
 
         <Tabs.Panel value="details" pt="md">
-          <Stack gap="sm">
+          <Stack gap="md">
             {!editing ? (
               <>
-                <Text size="sm" c="dimmed">Пациент</Text>
+                <Text size="xs" tt="uppercase" fw={600} c="dimmed">
+                  Пациент
+                </Text>
                 <HoverCard openDelay={300} width={260} shadow="md">
                   <HoverCard.Target>
                     <Text span style={{ cursor: "default" }}>
-                      {patientName ?? booking.patient_id}
+                      {patientSummaryLoading && !patientName?.trim() ? (
+                        <Skeleton height={18} width={200} />
+                      ) : (
+                        displayPersonName(
+                          patientSummary?.patient_full_name ?? patientName,
+                          booking.patient_id
+                        )
+                      )}
                     </Text>
                   </HoverCard.Target>
                   <HoverCard.Dropdown>
                     <Stack gap={4}>
                       <Text size="sm" fw={500}>
-                        {patientSummary?.patient_full_name ?? patientName ?? booking.patient_id}
+                        {patientSummary?.patient_full_name ??
+                          displayPersonName(patientName, booking.patient_id)}
                       </Text>
                       {patientSummary?.patient_phone && (
                         <Text size="xs" c="dimmed">Телефон: {patientSummary.patient_phone}</Text>
@@ -155,17 +177,19 @@ export function BookingEntityDrawer({
                     </Stack>
                   </HoverCard.Dropdown>
                 </HoverCard>
-                <Text size="sm" c="dimmed">Врач</Text>
+                <Text size="xs" tt="uppercase" fw={600} c="dimmed">
+                  Врач
+                </Text>
                 <HoverCard openDelay={300} width={260} shadow="md">
                   <HoverCard.Target>
                     <Text span style={{ cursor: "default" }}>
-                      {doctorName ?? doctor?.full_name ?? booking.doctor_id}
+                      {displayPersonName(doctorName ?? doctor?.full_name, booking.doctor_id)}
                     </Text>
                   </HoverCard.Target>
                   <HoverCard.Dropdown>
                     <Stack gap={4}>
                       <Text size="sm" fw={500}>
-                        {doctor?.full_name ?? doctorName ?? booking.doctor_id}
+                        {displayPersonName(doctor?.full_name ?? doctorName, booking.doctor_id)}
                       </Text>
                       {doctor?.specialization && (
                         <Text size="xs" c="dimmed">Специализация: {doctor.specialization}</Text>
@@ -174,13 +198,25 @@ export function BookingEntityDrawer({
                     </Stack>
                   </HoverCard.Dropdown>
                 </HoverCard>
-                <Text size="sm" c="dimmed">Дата и время</Text>
+                <Text size="xs" tt="uppercase" fw={600} c="dimmed">
+                  Дата и время
+                </Text>
                 <Text>
                   {booking.appointment_date} {timeStr}
                 </Text>
-                <Text size="sm" c="dimmed">Услуга</Text>
-                <Text>{serviceName ?? booking.service_id}</Text>
-                <Text size="sm" c="dimmed">Статус</Text>
+                <Text size="xs" tt="uppercase" fw={600} c="dimmed">
+                  Услуга
+                </Text>
+                <Text>
+                  {serviceName && !looksLikeUuid(serviceName)
+                    ? serviceName
+                    : looksLikeUuid(booking.service_id)
+                      ? "—"
+                      : booking.service_id}
+                </Text>
+                <Text size="xs" tt="uppercase" fw={600} c="dimmed">
+                  Статус
+                </Text>
                 <Text>{booking.status}</Text>
                 <Group gap="md" mt="xs">
                   <Anchor component={Link} to={`${ROUTE_PATHS.admin.patients}?patient_id=${booking.patient_id}`} size="sm">
@@ -257,8 +293,10 @@ export function BookingEntityDrawer({
               </>
             ) : (
               <>
-                <Text size="sm" c="dimmed">Пациент</Text>
-                <Text>{patientName ?? booking.patient_id}</Text>
+                <Text size="xs" tt="uppercase" fw={600} c="dimmed">
+                  Пациент
+                </Text>
+                <Text>{displayPersonName(patientName, booking.patient_id)}</Text>
                 <TextInput
                   label="Дата"
                   type="date"
@@ -302,7 +340,7 @@ export function BookingEntityDrawer({
         </Tabs.Panel>
 
         <Tabs.Panel value="services" pt="md">
-          <Stack gap="sm">
+          <Stack gap="md">
             <Table striped verticalSpacing="sm">
               <Table.Thead>
                 <Table.Tr>
@@ -324,6 +362,7 @@ export function BookingEntityDrawer({
         </Tabs.Panel>
 
         <Tabs.Panel value="consumables" pt="md">
+          <Stack gap="md">
           {!consumables ? (
             <Skeleton height={80} />
           ) : consumables.length === 0 ? (
@@ -350,14 +389,18 @@ export function BookingEntityDrawer({
               </Table.Tbody>
             </Table>
           )}
+          </Stack>
         </Tabs.Panel>
 
         <Tabs.Panel value="tasks" pt="md">
-          <Text size="sm" c="dimmed">
-            Задачи, привязанные к визиту — при наличии API.
-          </Text>
+          <Stack gap="md">
+            <Text size="sm" c="dimmed">
+              Задачи, привязанные к визиту — при наличии API.
+            </Text>
+          </Stack>
         </Tabs.Panel>
       </Tabs>
+    </ScrollArea.Autosize>
   );
 
   if (presentation === "drawer") {
@@ -369,7 +412,7 @@ export function BookingEntityDrawer({
   }
 
   return (
-    <GlassModal size="xl" centered scrollAreaComponent={ScrollArea} {...shellProps}>
+    <GlassModal size="xl" centered {...shellProps}>
       {tabs}
     </GlassModal>
   );

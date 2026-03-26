@@ -368,6 +368,30 @@ task_time_to_close_seconds = Histogram(  # type: ignore[call-arg]
     ["clinic_bucket", "source", "attention_kind"],
 )
 
+task_status_transitions_total = Counter(  # type: ignore[call-arg]
+    "task_status_transitions_total",
+    "Task status transitions by clinic bucket and from/to statuses.",
+    ["clinic_bucket", "from_status", "to_status"],
+)
+
+task_blocked_events_total = Counter(  # type: ignore[call-arg]
+    "task_blocked_events_total",
+    "Task blocked/unblocked events by clinic bucket and action.",
+    ["clinic_bucket", "action"],
+)
+
+task_sla_overdue_total = Counter(  # type: ignore[call-arg]
+    "task_sla_overdue_total",
+    "Tasks completed after due_at (SLA overdue) by clinic bucket and source.",
+    ["clinic_bucket", "source"],
+)
+
+task_bulk_status_total = Counter(  # type: ignore[call-arg]
+    "task_bulk_status_total",
+    "Bulk status update outcomes by clinic bucket, target status and outcome.",
+    ["clinic_bucket", "to_status", "outcome"],
+)
+
 # ------------------------------------------------------------------------------
 # CRM funnel / lifecycle metrics (CRM_EVENTS_007)
 # ------------------------------------------------------------------------------

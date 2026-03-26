@@ -1,19 +1,19 @@
 /*
- * Midnight & Graphite: Surface Low/High (Slate), графитовый primary в теме Mantine,
- * семантика success/warning/danger/AI — см. ARCH_FRONTEND_DESIGN_SYSTEM_MIDNIGHT.md
+ * Глобальные токены + админ-навигация (Crisp SaaS): см. docs/ARCH_FRONTEND_UI_LOGIC.md.
+ * Mantine: primary indigo в `theme.ts`; палитра `dark` (slate) сохранена для вторичных акцентов.
  */
 :root {
-  /* Surfaces (REDISIGN канон) */
-  --bg-main: #f8fafc;
+  /* Surfaces — Crisp SaaS: main = Mantine gray.0 (синхрон с theme / §7) */
+  --bg-main: var(--mantine-color-gray-0, #f8f9fa);
   --bg-card: #ffffff;
   --bg-card-soft: #f1f5f9;
   --bg-sidebar: #f1f5f9;
 
-  /* Primary — графит (согласовано с Mantine primary dark.8) */
-  --primary: #1e293b;
-  --primary-hover: #334155;
-  --primary-active: #0f172a;
-  --primary-light: #f1f5f9;
+  /* Primary — indigo.6 (согласовано с Mantine primary) */
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-active: #3730a3;
+  --primary-light: #eef2ff;
 
   --accent-slate: #64748b;
   --accent-teal: #0d9488;
@@ -32,21 +32,22 @@
   --danger: #ef4444;
   --warning: #f59e0b;
 
-  --focus-ring: rgba(30, 41, 59, 0.18);
+  --focus-ring: rgba(79, 70, 229, 0.22);
 
-  /* Админка: белый сайдбар, активный пункт — inset-полоска (Linear/Stripe) */
+  /* Админка: белый сайдбар; активный пункт — Mantine indigo.0 / indigo.6 (ARCH §2.6) */
   --admin-sidebar-bg: #ffffff;
-  --admin-sidebar-border: #e2e8f0;
+  --admin-sidebar-border: var(--mantine-color-gray-2);
   --admin-sidebar-text: #334155;
   --admin-sidebar-text-muted: #64748b;
-  --admin-sidebar-footer-bg: #f8fafc;
-  --admin-nav-active-text: #0f172a;
-  --admin-nav-active-indicator: #0f172a;
+  --admin-sidebar-footer-bg: var(--mantine-color-gray-0);
+  --admin-nav-active-bg: var(--mantine-color-indigo-0);
+  --admin-nav-active-text: var(--mantine-color-indigo-6);
+  --admin-nav-active-indicator: var(--mantine-color-indigo-6);
 
   --semantic-ai: #7c3aed;
   --semantic-ai-soft: rgba(124, 58, 237, 0.12);
-  --admin-nav-hover-bg: #f8fafc;
-  --admin-nav-active-stripe-shadow: 2px 0 10px rgba(15, 23, 42, 0.22);
+  --admin-nav-hover-bg: #f8f9fa;
+  --admin-nav-active-stripe-shadow: 2px 0 8px rgba(79, 70, 229, 0.25);
 
   /* RADII & SHADOWS — объём без жёсткого контраста */
   --radius-xs: 4px;
@@ -124,12 +125,20 @@
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12);
 }
 
-/* Админка: активный пункт — полоска слева + лёгкая «объёмная» тень (Stripe/Linear) */
+/* Sticky context / таблицы — ARCH §2.5 */
+.glass-light {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--mantine-color-gray-2);
+}
+
+/* Админка: активный пункт — indigo-подложка + полоска слева */
 .admin-nav-link {
   position: relative;
 }
 .admin-nav-link[data-active] {
-  background-color: transparent;
+  background-color: var(--admin-nav-active-bg);
   color: var(--admin-nav-active-text);
   font-weight: 600;
 }

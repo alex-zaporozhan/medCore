@@ -13,6 +13,9 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
+const ROW_H = 80;
+const TIME_COL_W = 80;
+
 export interface ScheduleCalendarGridProps {
   doctors: { id: string; name: string }[];
   date: string;
@@ -37,43 +40,55 @@ function timeStr(t: string): string {
   return String(t).slice(0, 5);
 }
 
-/** Слот с записью: фон + левая граница по статусу (Apple Calendar–подобный акцент). */
+function looksLikeUuid(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.trim());
+}
+
+/** Монолитная сетка: цвет + левая полоса, без теней (Google Calendar–подобно). */
 function bookingSlotSurface(status: string): CSSProperties {
   const s = status.toLowerCase();
   if (s === "completed") {
     return {
       background: "var(--mantine-color-teal-0)",
-      borderRadius: 8,
-      padding: "6px 8px",
-      border: "1px solid var(--mantine-color-teal-3)",
+      borderRadius: "var(--mantine-radius-sm)",
+      border: "none",
       borderLeft: "4px solid var(--mantine-color-teal-6)",
+      boxShadow: "none",
     };
   }
   if (s === "cancelled" || s === "no_show") {
     return {
       background: "var(--mantine-color-red-0)",
-      borderRadius: 8,
-      padding: "6px 8px",
-      border: "1px solid var(--mantine-color-red-3)",
+      borderRadius: "var(--mantine-radius-sm)",
+      border: "none",
       borderLeft: "4px solid var(--mantine-color-red-6)",
+      boxShadow: "none",
     };
   }
   if (s === "pending") {
     return {
       background: "var(--mantine-color-orange-0)",
-      borderRadius: 8,
-      padding: "6px 8px",
-      border: "1px solid var(--mantine-color-orange-3)",
-      borderLeft: "4px solid var(--mantine-color-orange-6)",
+      borderRadius: "var(--mantine-radius-sm)",
+      border: "none",
+      borderLeft: "4px solid var(--mantine-color-orange-5)",
+      boxShadow: "none",
     };
   }
   return {
-    background: "var(--mantine-color-dark-0)",
-    borderRadius: 8,
-    padding: "6px 8px",
-    border: "1px solid var(--mantine-color-dark-2)",
-    borderLeft: "4px solid var(--mantine-color-dark-7)",
+    background: "var(--mantine-color-blue-0)",
+    borderRadius: "var(--mantine-radius-sm)",
+    border: "none",
+    borderLeft: "4px solid var(--mantine-color-blue-5)",
+    boxShadow: "none",
   };
+}
+
+function textColorForStatus(status: string): string {
+  const s = status.toLowerCase();
+  if (s === "completed") return "var(--mantine-color-teal-9)";
+  if (s === "cancelled" || s === "no_show") return "var(--mantine-color-red-9)";
+  if (s === "pending") return "var(--mantine-color-orange-9)";
+  return "var(--mantine-color-blue-9)";
 }
 
 function statusBadge(status: string): { color: string; label: string } {
@@ -82,7 +97,7 @@ function statusBadge(status: string): { color: string; label: string } {
   if (s === "cancelled") return { color: "red", label: "Отмена" };
   if (s === "no_show") return { color: "red", label: "Неявка" };
   if (s === "pending") return { color: "orange", label: "Ожидает" };
-  return { color: "dark", label: "Занято" };
+  return { color: "blue", label: "Занято" };
 }
 
 function findBooking(
@@ -126,7 +141,10 @@ function DroppableCell({
     <Table.Td
       ref={setNodeRef}
       style={{
-        background: isOver && canDrop ? "var(--mantine-color-dark-0)" : undefined,
+        height: ROW_H,
+        verticalAlign: "top",
+        padding: 2,
+        background: isOver && canDrop ? "var(--mantine-color-gray-1)" : undefined,
         cursor: booking ? "grab" : onEmptyClick ? "pointer" : "default",
         minWidth: 100,
       }}
@@ -152,7 +170,7 @@ function DraggableBookingCard({
   });
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
   return (
-    <Box ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <Box ref={setNodeRef} style={{ ...style, height: "100%", minHeight: 0 }} {...attributes} {...listeners}>
       {children}
     </Box>
   );
@@ -170,12 +188,19 @@ export function ScheduleCalendarGrid({
   onReschedule,
   onEmptySlotClick,
 }: ScheduleCalendarGridProps) {
-  const getPatientLabel = (booking: Booking) =>
-    (booking.patient_name && booking.patient_name.trim()) ||
-    patientNameMap?.[booking.patient_id] ||
-    booking.patient_id;
-  const getServiceLabel = (serviceId: string) =>
-    serviceNameMap?.[serviceId] ?? serviceId;
+  const getPatientLabel = (booking: Booking) => {
+    const raw =
+      (booking.patient_name && booking.patient_name.trim()) ||
+      patientNameMap?.[booking.patient_id] ||
+      booking.patient_id;
+    if (typeof raw === "string" && looksLikeUuid(raw)) return "Имя неизвестно";
+    return raw;
+  };
+  const getServiceLabel = (serviceId: string) => {
+    const name = serviceNameMap?.[serviceId] ?? serviceId;
+    if (looksLikeUuid(String(name))) return "Услуга";
+    return name;
+  };
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
@@ -199,10 +224,19 @@ export function ScheduleCalendarGrid({
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <Box className="schedule-grid-card">
-        <Table striped>
+        <Table striped={false} withTableBorder withColumnBorders withRowBorders>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Время</Table.Th>
+              <Table.Th
+                style={{
+                  width: TIME_COL_W,
+                  maxWidth: TIME_COL_W,
+                }}
+              >
+                <Text size="xs" c="dimmed" fw={500} ta="right" pr={4}>
+                  Время
+                </Text>
+              </Table.Th>
               {doctors.map((d) => (
                 <Table.Th key={d.id}>{d.name}</Table.Th>
               ))}
@@ -213,8 +247,18 @@ export function ScheduleCalendarGrid({
               const timeKey = timeStr(t);
               return (
                 <Table.Tr key={timeKey}>
-                  <Table.Td>
-                    <Text size="sm">{timeKey}</Text>
+                  <Table.Td
+                    style={{
+                      width: TIME_COL_W,
+                      maxWidth: TIME_COL_W,
+                      height: ROW_H,
+                      verticalAlign: "top",
+                      padding: "8px 6px",
+                    }}
+                  >
+                    <Text size="sm" c="dimmed" fw={500} ta="right">
+                      {timeKey}
+                    </Text>
                   </Table.Td>
                   {doctors.map((doc) => {
                     const slots = byDoctor[doc.id];
@@ -223,6 +267,7 @@ export function ScheduleCalendarGrid({
                       ? findBooking(slot, doc.id, date, bookings)
                       : undefined;
                     const sb = booking ? statusBadge(booking.status) : null;
+                    const tc = booking ? textColorForStatus(booking.status) : undefined;
                     return (
                       <DroppableCell
                         key={doc.id}
@@ -249,7 +294,18 @@ export function ScheduleCalendarGrid({
                           <DraggableBookingCard booking={booking}>
                             <Box
                               onClick={() => onBookingClick(booking)}
-                              style={bookingSlotSurface(booking.status)}
+                              style={{
+                                ...bookingSlotSurface(booking.status),
+                                width: "100%",
+                                height: "100%",
+                                minHeight: ROW_H - 4,
+                                boxSizing: "border-box",
+                                padding: "6px 8px",
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "flex-start",
+                                overflow: "hidden",
+                              }}
                             >
                               {sb && (
                                 <Badge size="xs" variant="light" color={sb.color} mb={4}>
@@ -257,7 +313,12 @@ export function ScheduleCalendarGrid({
                                 </Badge>
                               )}
                               <Group gap={6} wrap="nowrap" align="center">
-                                <Text size="sm" fw={500} c="gray.9" style={{ flex: 1, minWidth: 0 }}>
+                                <Text
+                                  size="sm"
+                                  fw={600}
+                                  lineClamp={1}
+                                  style={{ flex: 1, minWidth: 0, color: tc }}
+                                >
                                   {getPatientLabel(booking)}
                                 </Text>
                                 {booking.notes?.trim() ? (
@@ -269,13 +330,13 @@ export function ScheduleCalendarGrid({
                                   />
                                 ) : null}
                               </Group>
-                              <Text size="xs" c="dimmed">
+                              <Text size="xs" lineClamp={1} opacity={0.8} style={{ color: tc }}>
                                 {getServiceLabel(booking.service_id)}
                               </Text>
                             </Box>
                           </DraggableBookingCard>
                         ) : (
-                          <Text size="sm" c="dimmed">
+                          <Text size="sm" c="dimmed" p={4}>
                             {slot?.is_available ? "Свободен" : "—"}
                           </Text>
                         )}
