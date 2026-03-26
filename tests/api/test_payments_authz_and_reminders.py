@@ -6,8 +6,10 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from src.core.datetime_utils import utc_now
 from src.domain.entities.booking import Booking
+from src.domain.entities.patient import Patient
 from src.infrastructure.database.base import AsyncSessionLocal
 
 
@@ -28,6 +30,19 @@ async def _create_confirmed_booking(seed_data: dict, patient_id):
         session.add(booking)
         await session.commit()
         return booking.id
+
+
+async def _create_foreign_patient_in_same_clinic(seed_data: dict):
+    async with AsyncSessionLocal() as session:
+        patient = Patient(
+            id=uuid4(),
+            clinic_id=seed_data["clinic_id"],
+            phone="+7999" + str(uuid4().int)[:7],
+            full_name="Foreign Patient",
+        )
+        session.add(patient)
+        await session.commit()
+        return patient.id
 
 
 @pytest.mark.regression_payments
@@ -54,7 +69,8 @@ async def test_create_payment_rejects_foreign_patient_booking(
     patient_auth: dict,
 ):
     """Patient cannot create payment for another patient's booking."""
-    booking_id = await _create_confirmed_booking(seed_data, seed_data["patient_id"])
+    foreign_patient_id = await _create_foreign_patient_in_same_clinic(seed_data)
+    booking_id = await _create_confirmed_booking(seed_data, foreign_patient_id)
     headers = {"Authorization": f"Bearer {patient_auth['access_token']}"}
 
     response = await client.post(
@@ -65,4 +81,10 @@ async def test_create_payment_rejects_foreign_patient_booking(
     assert response.status_code == 404, response.text
     body = response.json()
     assert body.get("detail", {}).get("code") == "PAYMENT_BOOKING_NOT_FOUND"
+
+    async with AsyncSessionLocal() as session:
+        row = await session.execute(select(Booking).where(Booking.id == booking_id))
+        booking = row.scalar_one_or_none()
+        assert booking is not None
+        assert booking.patient_id == foreign_patient_id
 
