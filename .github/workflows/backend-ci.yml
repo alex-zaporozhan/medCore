@@ -62,6 +62,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -88,13 +90,11 @@ jobs:
         run: poetry run mypy src/core/security.py --ignore-missing-imports --follow-imports=skip
 
       - name: pip-audit
-        continue-on-error: true
         run: |
           poetry run pip install pip-audit
           poetry run pip-audit
 
       - name: Pytest
-        continue-on-error: true
         timeout-minutes: 20
         run: poetry run pytest tests/ -q --tb=short --ignore=tests/e2e --maxfail=1
 
