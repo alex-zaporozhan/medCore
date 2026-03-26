@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Box,
   Badge,
   ActionIcon,
   Button,
-  Card,
   Group,
   Modal,
   MultiSelect,
@@ -17,6 +16,7 @@ import {
   Text,
   TextInput,
   Textarea,
+  Table,
 } from "@mantine/core";
 import { IconClock } from "@tabler/icons-react";
 import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
@@ -30,12 +30,67 @@ import {
   useUpdateStaffCalendarEvent,
 } from "@/hooks";
 import type { StaffCalendarEventResponse } from "@/hooks";
+import type { CalendarDayCell } from "@/hooks/useStaffCollab";
 import { useAdminTaskDetails } from "@/hooks/useAdminTaskDetails";
 import { getAdminId } from "@/api/client";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
 dayjs.locale("ru");
+
+/** Разбить плоский список дней месяца на строки по 7 (Пн–Вс). Недостающие ячейки — null. */
+function chunkCalendarWeeks(days: CalendarDayCell[]): (CalendarDayCell | null)[][] {
+  const rows: (CalendarDayCell | null)[][] = [];
+  for (let i = 0; i < days.length; i += 7) {
+    const slice: (CalendarDayCell | null)[] = days.slice(i, i + 7);
+    while (slice.length < 7) slice.push(null);
+    rows.push(slice);
+  }
+  return rows;
+}
+
+function staffEventChipSurface(isReminder: boolean, isUnseen: boolean): CSSProperties {
+  if (isReminder) {
+    return {
+      background: "var(--mantine-color-blue-0)",
+      borderRadius: "var(--mantine-radius-sm)",
+      border: "none",
+      borderLeft: "4px solid var(--mantine-color-blue-5)",
+      boxShadow: "none",
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "4px 6px",
+    };
+  }
+  if (isUnseen) {
+    return {
+      background: "var(--mantine-color-yellow-0)",
+      borderRadius: "var(--mantine-radius-sm)",
+      border: "none",
+      borderLeft: "4px solid var(--mantine-color-yellow-6)",
+      boxShadow: "none",
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "4px 6px",
+    };
+  }
+  return {
+    background: "var(--mantine-color-indigo-0)",
+    borderRadius: "var(--mantine-radius-sm)",
+    border: "none",
+    borderLeft: "4px solid var(--mantine-color-indigo-5)",
+    boxShadow: "none",
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "4px 6px",
+  };
+}
+
+function staffEventTextColor(isReminder: boolean, isUnseen: boolean): string {
+  if (isReminder) return "var(--mantine-color-blue-9)";
+  if (isUnseen) return "var(--mantine-color-yellow-9)";
+  return "var(--mantine-color-indigo-9)";
+}
 
 type CalendarModalState =
   | null
@@ -61,6 +116,10 @@ export default function AdminStaffCalendarPage() {
   );
 
   const { data: monthGrid, isLoading, isError, error } = useStaffCalendarMonthGrid(fromIso, toIso);
+  const calendarWeekRows = useMemo(
+    () => (monthGrid?.days?.length ? chunkCalendarWeeks(monthGrid.days) : []),
+    [monthGrid?.days]
+  );
   const createMut = useCreateStaffCalendarEvent();
   const updateMut = useUpdateStaffCalendarEvent();
   const ackMut = useAckStaffCalendarInvitation();
@@ -681,132 +740,162 @@ export default function AdminStaffCalendarPage() {
         <EmptyState title="Нет событий" description="Создайте совещание или напоминание." />
       ) : (
         <Stack gap="xs">
-          <SimpleGrid cols={7} spacing={0} mb="xs">
-            {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((d) => (
-              <Text key={d} size="xs" c="dark" fw={600} px="xs" py="xs">
-                {d}
-              </Text>
-            ))}
-          </SimpleGrid>
-          <SimpleGrid cols={7} spacing="xs">
-            {monthGrid.days.map((day) => {
-              const sortedDayEvents = day.events
-                .slice()
-                .sort((a, b) => {
-                  if (a.all_day !== b.all_day) return a.all_day ? -1 : 1;
-                  return a.starts_at.localeCompare(b.starts_at);
-                });
-              const previewLines = sortedDayEvents.slice(0, 3);
-              const extraTotal = Math.max(0, sortedDayEvents.length - 3);
-
-              const flashDay =
-                flashUntilMs > Date.now() && (day.unseen_invite_count > 0 || day.reminder_event_ids.length > 0);
-
-              return (
-                <Card
-                  key={day.date}
-                  withBorder
-                  padding="xs"
-                  radius="md"
-                  onClick={() => setDayDrawerDate(day.date)}
-                  style={{
-                    cursor: "pointer",
-                    borderColor: "var(--mantine-color-gray-4)",
-                    boxShadow: flashDay ? "0 0 0 2px rgba(255, 193, 7, 0.65)" : undefined,
-                    backgroundColor: flashDay
-                      ? "rgba(255, 228, 99, 0.18)"
-                      : day.is_in_current_month
-                        ? undefined
-                        : "var(--mantine-color-gray-0)",
-                  }}
-                >
-                  <Group justify="space-between" align="flex-start" wrap="nowrap">
-                    <Text size="sm" fw={700} c="dark">
-                      {day.is_in_current_month
-                        ? dayjs(day.date).date()
-                        : dayjs(day.date).format("D MMM")}
-                    </Text>
-                    <Group gap={4} wrap="nowrap">
-                      {day.events.length > 0 ? (
-                        <Badge color="indigo" size="xs" variant="filled">
-                          {day.events.length}
-                        </Badge>
-                      ) : null}
-                      {day.unseen_invite_count > 0 ? (
-                        <Badge color="yellow" size="xs" variant="filled">
-                          {`Новые: ${day.unseen_invite_count}`}
-                        </Badge>
-                      ) : null}
-                      {day.reminder_event_ids.length > 0 ? (
-                        <Badge
-                          color="blue"
-                          size="xs"
-                          variant="light"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                        >
-                          <IconClock size={12} />
-                          {`+${day.reminder_event_ids.length}`}
-                        </Badge>
-                      ) : null}
-                    </Group>
-                  </Group>
-
-                  {previewLines.length > 0 ? (
-                    <Stack gap={4} mt={6}>
-                      {previewLines.map((ev) => {
-                        const isUnseen = day.unseen_invite_event_ids.includes(ev.id);
-                        const isReminder = day.reminder_event_ids.includes(ev.id);
+          <Box style={{ overflow: "auto" }}>
+            <Table
+              withTableBorder
+              withColumnBorders
+              withRowBorders
+              striped={false}
+              horizontalSpacing={4}
+              verticalSpacing={4}
+              style={{ tableLayout: "fixed", width: "100%" }}
+            >
+              <Table.Thead>
+                <Table.Tr>
+                  {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((d) => (
+                    <Table.Th key={d} style={{ width: `${100 / 7}%` }}>
+                      <Text size="xs" c="dimmed" fw={600} ta="center">
+                        {d}
+                      </Text>
+                    </Table.Th>
+                  ))}
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {calendarWeekRows.map((week, wi) => (
+                  <Table.Tr key={wi}>
+                    {week.map((day, di) =>
+                      day === null ? (
+                        <Table.Td
+                          key={`pad-${wi}-${di}`}
+                          style={{
+                            height: 120,
+                            verticalAlign: "top",
+                            padding: 4,
+                            backgroundColor: "var(--mantine-color-gray-0)",
+                          }}
+                        />
+                      ) : (() => {
+                        const sortedDayEvents = day.events
+                          .slice()
+                          .sort((a, b) => {
+                            if (a.all_day !== b.all_day) return a.all_day ? -1 : 1;
+                            return a.starts_at.localeCompare(b.starts_at);
+                          });
+                        const previewLines = sortedDayEvents.slice(0, 3);
+                        const extraTotal = Math.max(0, sortedDayEvents.length - 3);
+                        const flashDay =
+                          flashUntilMs > Date.now() &&
+                          (day.unseen_invite_count > 0 || day.reminder_event_ids.length > 0);
                         return (
-                          <Box
-                            key={ev.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openDetails(ev.id);
-                            }}
+                          <Table.Td
+                            key={day.date}
                             style={{
-                              padding: "5px 7px",
-                              borderRadius: 8,
-                              border: "1px solid var(--mantine-color-gray-3)",
-                              background: "var(--mantine-color-body)",
+                              height: 120,
+                              minHeight: 120,
+                              verticalAlign: "top",
+                              padding: 4,
                               cursor: "pointer",
+                              backgroundColor: flashDay
+                                ? "rgba(255, 228, 99, 0.22)"
+                                : day.is_in_current_month
+                                  ? "#ffffff"
+                                  : "var(--mantine-color-gray-0)",
+                              outline: flashDay ? "2px solid rgba(255, 193, 7, 0.55)" : undefined,
+                              outlineOffset: -1,
                             }}
+                            onClick={() => setDayDrawerDate(day.date)}
                           >
-                            <Group gap={6} wrap="nowrap" align="center">
-                              {isReminder ? <IconClock size={12} color="var(--mantine-color-blue-6)" /> : null}
-                              {isUnseen ? (
-                                <Badge size="xs" color="yellow" variant="filled">
-                                  Нов
-                                </Badge>
-                              ) : null}
-                              <Text
-                                size="xs"
-                                fw={600}
-                                c="dark"
-                                style={{
-                                  flex: 1,
-                                  minWidth: 0,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {ev.all_day ? "Весь день" : dayjs(ev.starts_at).format("HH:mm")} {ev.title}
+                            <Group justify="space-between" align="flex-start" wrap="nowrap" gap={4}>
+                              <Text size="sm" fw={700} c="dark">
+                                {day.is_in_current_month
+                                  ? dayjs(day.date).date()
+                                  : dayjs(day.date).format("D MMM")}
                               </Text>
+                              <Group gap={4} wrap="nowrap">
+                                {day.events.length > 0 ? (
+                                  <Badge color="indigo" size="xs" variant="light">
+                                    {day.events.length}
+                                  </Badge>
+                                ) : null}
+                                {day.unseen_invite_count > 0 ? (
+                                  <Badge color="yellow" size="xs" variant="light">
+                                    {`+${day.unseen_invite_count}`}
+                                  </Badge>
+                                ) : null}
+                                {day.reminder_event_ids.length > 0 ? (
+                                  <Badge
+                                    color="blue"
+                                    size="xs"
+                                    variant="light"
+                                    style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                                  >
+                                    <IconClock size={12} />
+                                    {day.reminder_event_ids.length}
+                                  </Badge>
+                                ) : null}
+                              </Group>
                             </Group>
-                          </Box>
+                            {previewLines.length > 0 ? (
+                              <Stack gap={4} mt={6}>
+                                {previewLines.map((ev) => {
+                                  const isUnseen = day.unseen_invite_event_ids.includes(ev.id);
+                                  const isReminder = day.reminder_event_ids.includes(ev.id);
+                                  const tc = staffEventTextColor(isReminder, isUnseen);
+                                  return (
+                                    <Box
+                                      key={ev.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openDetails(ev.id);
+                                      }}
+                                      style={{
+                                        ...staffEventChipSurface(isReminder, isUnseen),
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      <Group gap={6} wrap="nowrap" align="center">
+                                        {isReminder ? (
+                                          <IconClock size={12} color="var(--mantine-color-blue-6)" />
+                                        ) : null}
+                                        {isUnseen ? (
+                                          <Badge size="xs" color="yellow" variant="light">
+                                            Нов
+                                          </Badge>
+                                        ) : null}
+                                        <Text
+                                          size="xs"
+                                          fw={600}
+                                          lineClamp={1}
+                                          style={{
+                                            flex: 1,
+                                            minWidth: 0,
+                                            color: tc,
+                                          }}
+                                        >
+                                          {ev.all_day ? "Весь день" : dayjs(ev.starts_at).format("HH:mm")}{" "}
+                                          {ev.title}
+                                        </Text>
+                                      </Group>
+                                    </Box>
+                                  );
+                                })}
+                                {extraTotal > 0 ? (
+                                  <Text size="xs" c="dimmed">
+                                    +{extraTotal}
+                                  </Text>
+                                ) : null}
+                              </Stack>
+                            ) : null}
+                          </Table.Td>
                         );
-                      })}
-                      {extraTotal > 0 ? (
-                        <Text size="xs" c="dimmed">
-                          +{extraTotal}
-                        </Text>
-                      ) : null}
-                    </Stack>
-                  ) : null}
-                </Card>
-              );
-            })}
-          </SimpleGrid>
+                      })()
+                    )}
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Box>
         </Stack>
       )}
 
@@ -824,14 +913,12 @@ export default function AdminStaffCalendarPage() {
                 Быстрое действие
               </Text>
               <Button
-                variant="light"
+                variant="filled"
+                color="indigo"
+                size="sm"
                 onClick={() => {
                   openCreateWithDay(dayForDrawer.date);
                   setDayDrawerDate(null);
-                }}
-                style={{
-                  background: "#ffffff",
-                  boxShadow: "0 4px 18px rgba(0, 0, 0, 0.08)",
                 }}
               >
                 + Добавить событие
@@ -851,14 +938,10 @@ export default function AdminStaffCalendarPage() {
                   <Button
                     key={h}
                     size="xs"
-                    variant="light"
+                    variant="default"
                     onClick={() => {
                       openCreateWithDayAndStartHour(dayForDrawer.date, h);
                       setDayDrawerDate(null);
-                    }}
-                    style={{
-                      background: "#ffffff",
-                      boxShadow: "0 4px 18px rgba(0, 0, 0, 0.06)",
                     }}
                   >
                     {String(h).padStart(2, "0")}:00
@@ -883,21 +966,23 @@ export default function AdminStaffCalendarPage() {
                     const clippedStart = evStart.isBefore(dayStart) ? dayStart : evStart;
                     const clippedEnd = evEnd.isAfter(dayEnd) ? dayEnd : evEnd;
 
+                    const tc = staffEventTextColor(isReminder, isUnseen);
                     return (
-                      <Card
+                      <Box
                         key={ev.id}
-                        withBorder
-                        padding="sm"
-                        radius="md"
                         onClick={() => openDetails(ev.id)}
-                        style={{ cursor: "pointer" }}
+                        style={{
+                          ...staffEventChipSurface(isReminder, isUnseen),
+                          cursor: "pointer",
+                          padding: "8px 10px",
+                        }}
                       >
-                        <Group justify="space-between" align="flex-start">
-                          <Stack gap={2} style={{ flex: 1 }}>
-                            <Text fw={800} size="sm">
+                        <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
+                          <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+                            <Text fw={600} size="sm" lineClamp={2} style={{ color: tc }}>
                               {ev.title}
                             </Text>
-                            <Text size="xs" c="dimmed">
+                            <Text size="xs" c="dimmed" lineClamp={1}>
                               {ev.all_day
                                 ? "Весь день"
                                 : `${clippedStart.format("DD.MM.YYYY HH:mm")} — ${clippedEnd.format("HH:mm")}`}
@@ -910,7 +995,7 @@ export default function AdminStaffCalendarPage() {
                                 </Badge>
                               ) : null}
                               {isUnseen ? (
-                                <Badge size="xs" color="yellow" variant="filled">
+                                <Badge size="xs" color="yellow" variant="light">
                                   Новое для меня
                                 </Badge>
                               ) : null}
@@ -922,7 +1007,7 @@ export default function AdminStaffCalendarPage() {
                           String(ev.created_by_admin_id) !== String(myAdminId) ? (
                             <Button
                               size="xs"
-                              variant="light"
+                              variant="default"
                               loading={ackMut.isPending}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -933,7 +1018,7 @@ export default function AdminStaffCalendarPage() {
                             </Button>
                           ) : null}
                         </Group>
-                      </Card>
+                      </Box>
                     );
                   })}
               </Stack>

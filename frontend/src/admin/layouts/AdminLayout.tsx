@@ -279,7 +279,7 @@ export default function AdminLayout() {
   return (
     <AppShell
       navbar={{ width: navbarWidth, breakpoint: "sm" }}
-      padding="md"
+      padding={omniChatFullWidth ? 0 : "md"}
       styles={
         omniChatFullWidth
           ? {
@@ -452,7 +452,9 @@ export default function AdminLayout() {
                         padding: navbarCollapsed ? 10 : "8px 10px",
                         fontWeight: isActive ? 600 : 500,
                         textDecoration: "none",
-                        color: "var(--admin-sidebar-text)",
+                        color: isActive
+                          ? "var(--admin-nav-active-text)"
+                          : "var(--admin-sidebar-text)",
                       }}
                     >
                       <Icon size={20} />
@@ -505,54 +507,42 @@ export default function AdminLayout() {
 
       <AppShell.Main
         style={{
-          backgroundColor: "var(--bg-main)",
+          backgroundColor: "var(--mantine-color-gray-0)",
           ...(omniChatFullWidth
             ? { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }
             : {}),
         }}
       >
-        <Container
-          fluid={omniChatFullWidth}
-          size={omniChatFullWidth ? undefined : "xl"}
-          py={omniChatFullWidth ? "sm" : "md"}
-          style={
-            omniChatFullWidth
-              ? {
-                  flex: 1,
-                  minHeight: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  paddingBottom: 0,
-                }
-              : undefined
-          }
-        >
-          {clinicsError ? (
-            <Alert mb="md" color="red" title="Ошибка загрузки данных">
-              Не удалось загрузить список клиник. Убедитесь, что бэкенд запущен (порт 8000). Подробнее: docs/RUN_SERVICES.md
-            </Alert>
-          ) : null}
-          <Paper
-            radius="md"
-            p={omniChatFullWidth ? "sm" : "md"}
-            withBorder
-            shadow="none"
-            style={{
-              border: "1px solid var(--divider)",
-              ...(omniChatFullWidth
-                ? {
-                    flex: 1,
-                    minHeight: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    overflow: "hidden",
-                  }
-                : {}),
-            }}
-          >
-            <Outlet />
-          </Paper>
-        </Container>
+        {omniChatFullWidth ? (
+          <>
+            {clinicsError ? (
+              <Alert m="md" color="red" title="Ошибка загрузки данных">
+                Не удалось загрузить список клиник. Убедитесь, что бэкенд запущен (порт 8000). Подробнее: docs/RUN_SERVICES.md
+              </Alert>
+            ) : null}
+            <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <Outlet />
+            </Box>
+          </>
+        ) : (
+          <Container size="xl" py="md">
+            {clinicsError ? (
+              <Alert mb="md" color="red" title="Ошибка загрузки данных">
+                Не удалось загрузить список клиник. Убедитесь, что бэкенд запущен (порт 8000). Подробнее: docs/RUN_SERVICES.md
+              </Alert>
+            ) : null}
+            <Paper
+              radius="md"
+              p="md"
+              withBorder
+              shadow="sm"
+              bg="#ffffff"
+              style={{ border: "1px solid var(--mantine-color-gray-2)" }}
+            >
+              <Outlet />
+            </Paper>
+          </Container>
+        )}
       </AppShell.Main>
 
       {/* Спросить AI (Spotlight → вкладка/режим по техпаспорту) */}

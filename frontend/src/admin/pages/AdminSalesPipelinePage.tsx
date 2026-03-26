@@ -158,7 +158,7 @@ function KanbanColumn({
       }}
     >
       <Group gap="xs" wrap="nowrap">
-        <Badge color={stage.color || "blue"} variant="filled" radius="sm">
+        <Badge color={stage.color || "blue"} variant="light" radius="sm">
           {stage.name}
         </Badge>
         <Text size="xs" c="dimmed">

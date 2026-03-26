@@ -37,11 +37,18 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     """Request body for PATCH task (partial update)."""
 
-    status: str | None = Field(None, pattern="^(open|in_progress|done|cancelled)$")
+    status: str | None = Field(
+        None, pattern="^(open|in_progress|on_hold|review|done|cancelled)$"
+    )
     assignee_id: UUID | None = None
     assignee_ids: list[UUID] | None = None
     role_assignee: str | None = None
     due_at: datetime | None = None
+    rank: int | None = None
+    blocked: bool | None = None
+    blocked_reason: str | None = None
+    checklist_done: bool | None = None
+    transition_reason: str | None = None
 
 
 class TaskCommentCreate(BaseModel):
@@ -74,6 +81,11 @@ class TaskResponse(BaseModel):
     inventory_product_id: UUID | None
     source: str
     trace_id: str | None = None
+    rank: int
+    blocked: bool
+    blocked_reason: str | None = None
+    checklist_done: bool = False
+    stage_entered_at: datetime
     created_at: datetime
     updated_at: datetime
 
@@ -95,7 +107,7 @@ class TaskCommentResponse(BaseModel):
 
 # --- List filters (for query params; not a Pydantic body) ---
 
-TASK_STATUSES = ("open", "in_progress", "done", "cancelled")
+TASK_STATUSES = ("open", "in_progress", "on_hold", "review", "done", "cancelled")
 TASK_PRIORITIES = ("low", "medium", "high", "urgent")
 
 
@@ -125,6 +137,11 @@ def task_entity_to_response(
         inventory_product_id=task.inventory_product_id,
         source=task.source,
         trace_id=task.trace_id,
+        rank=task.rank,
+        blocked=task.blocked,
+        blocked_reason=task.blocked_reason,
+        checklist_done=task.checklist_done,
+        stage_entered_at=task.stage_entered_at,
         created_at=task.created_at,
         updated_at=task.updated_at,
     )

@@ -1,37 +1,41 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, type ReactNode } from "react";
 import {
   ActionIcon,
+  Avatar,
   Badge,
   Button,
   Card,
+  Checkbox,
   Group,
-  HoverCard,
   Loader,
   Menu,
   ScrollArea,
   Stack,
-  Table,
   Text,
   Textarea,
   TextInput,
   Select,
   MultiSelect,
-  SegmentedControl,
   Box,
   Paper,
+  Alert,
+  Tooltip,
 } from "@mantine/core";
 import {
-  IconDotsVertical,
+  IconGripVertical,
   IconRobot,
   IconMessageCircle,
   IconMessages,
   IconCalendarEvent,
   IconPhone,
   IconBrandWhatsapp,
+  IconAlertTriangle,
+  IconLock,
+  IconLockOpen,
 } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
-import { AdminDrawer } from "@/shared/ui";
+import { GlassModal } from "@/shared/ui";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -42,10 +46,16 @@ import {
   useAdminAdmins,
   useAdminTasksList,
   useAdminTasksMyFocus,
-  useAdminTasksAi,
   useCreateAdminTaskMutation,
   useClaimAdminTaskMutation,
   useUpdateAdminTaskStatusMutation,
+  useUpdateAdminTaskMetaMutation,
+  useReorderAdminTasksMutation,
+  useBulkUpdateAdminTaskStatusMutation,
+  useTaskWipPolicies,
+  useTaskTransitions,
+  useTaskCalendarContext,
+  useInviteTaskCalendarParticipants,
   useTaskComments,
   usePostTaskComment,
 } from "@/hooks";
@@ -62,13 +72,24 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
-const STATUS_COLUMNS = [
-  { id: "open", label: "Открыты" },
-  { id: "in_progress", label: "В работе" },
-  { id: "done", label: "Выполнены" },
-];
+const STATUS_META: Record<string, string> = {
+  open: "Открыто",
+  in_progress: "В работе",
+  on_hold: "На паузе",
+  review: "На проверке",
+  done: "Выполнено",
+  cancelled: "Отменено",
+};
+const STATUS_ORDER = ["open", "in_progress", "on_hold", "review", "done", "cancelled"] as const;
 
 const TIME_BOMB_HOURS = 2;
+const AGING_ALERT_HOURS = 48;
+const KANBAN_WIP_LIMITS: Record<string, number> = {
+  open: 8,
+  in_progress: 6,
+  on_hold: 6,
+  review: 6,
+};
 
 /** Имена личных исполнителей: assignee_ids или legacy assignee_id. */
 function taskAssigneeIdList(task: AdminTaskRow): string[] {
@@ -95,175 +116,212 @@ function isTimeBomb(dueAt: string | null): boolean {
   return due.isBefore(now) || due.diff(now, "hour", true) <= TIME_BOMB_HOURS;
 }
 
+function isDueOverdue(dueAt: string | null): boolean {
+  if (!dueAt) return false;
+  return dayjs(dueAt).isBefore(dayjs());
+}
+
+function priorityLeftBorder(priority: string): string {
+  if (priority === "urgent") return "4px solid var(--mantine-color-red-5)";
+  if (priority === "high") return "4px solid var(--mantine-color-yellow-5)";
+  return "4px solid var(--mantine-color-gray-5)";
+}
+
+function firstAssigneeForAvatar(task: AdminTaskRow, admins: AdminUserRow[]): AdminUserRow | null {
+  const ids = taskAssigneeIdList(task);
+  if (ids.length === 0) return null;
+  return admins.find((a) => a.id === ids[0]) ?? null;
+}
+
 function TaskKanbanCard({
   task,
   admins,
-  isTimeBombActive,
+  patientName,
+  onOpenDetail,
   onClaim,
   onTaskChat,
   isAi,
-  patientPhone,
+  draggable,
+  blocked,
+  selected,
+  onSelect,
+  onMoveByKeyboard,
 }: {
   task: AdminTaskRow;
   admins: AdminUserRow[];
-  isTimeBombActive: boolean;
+  patientName?: string | null;
+  onOpenDetail: (taskId: string) => void;
   onClaim?: (taskId: string) => void;
   onTaskChat?: (taskId: string) => void;
   isAi?: boolean;
-  patientPhone?: string | null;
+  draggable: boolean;
+  blocked?: boolean;
+  selected?: boolean;
+  onSelect?: (taskId: string, checked: boolean) => void;
+  onMoveByKeyboard?: (taskId: string, direction: -1 | 1) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
+    disabled: !draggable,
   });
-  const style = {
-    transform: transform ? CSS.Translate.toString(transform) : undefined,
-    opacity: isDragging ? 0.85 : 1,
-  };
-  const assigneeLine = formatTaskAssigneeLine(task, admins);
+  const overdue = isDueOverdue(task.due_at);
+  const timeBomb = isTimeBomb(task.due_at);
+  const assignee = firstAssigneeForAvatar(task, admins);
+  const displayName = assignee?.full_name || assignee?.email || null;
+
+  const outerStyle = draggable
+    ? {
+        transform: transform ? CSS.Translate.toString(transform) : undefined,
+        opacity: isDragging ? 0.88 : 1,
+      }
+    : undefined;
+
   return (
-    <Paper
-      ref={setNodeRef}
-      style={{
-        ...style,
-        border: isTimeBombActive ? "2px solid var(--mantine-color-red-6)" : undefined,
-        boxShadow: isTimeBombActive ? "0 0 12px rgba(228, 55, 55, 0.3)" : undefined,
-      }}
-      p="sm"
-      radius="md"
-      withBorder
-      {...attributes}
-      {...listeners}
-    >
-      <Stack gap={4}>
-        <Group gap={4} wrap="nowrap">
-          {isAi && <IconRobot size={14} color="var(--mantine-color-blue-6)" />}
-          <Text size="sm" fw={600} lineClamp={2}>
-            {task.title}
-          </Text>
-        </Group>
-        <Group gap={4}>
-          <Badge size="xs" variant="light" color={task.priority === "urgent" ? "red" : task.priority === "high" ? "orange" : "gray"}>
-            {task.priority}
-          </Badge>
-          {task.due_at && (
-            <Text size="xs" c={isTimeBombActive ? "red" : "dimmed"}>
-              {dayjs(task.due_at).format("DD.MM HH:mm")}
-            </Text>
-          )}
-        </Group>
-        {assigneeLine ? (
-          <Text size="xs" c="dimmed" lineClamp={2}>
-            {assigneeLine}
-          </Text>
-        ) : task.role_assignee && taskAssigneeIdList(task).length === 0 ? (
-          <Text size="xs" c="dimmed">
-            Очередь роли: {task.role_assignee}
-          </Text>
-        ) : null}
-        <Group gap={4} wrap="wrap">
-          {task.patient_id && (
-            <>
-              <Button
-                component={Link}
-                to={`/admin/omni-chat?patient_id=${task.patient_id}`}
-                variant="subtle"
-                size="compact-xs"
-                onClick={(e) => e.stopPropagation()}
-                leftSection={<IconMessageCircle size={10} />}
-              >
-                Чат
-              </Button>
-              {patientPhone && (
-                <>
-                  <Button
-                    component="a"
-                    href={`tel:${patientPhone.replace(/\s/g, "")}`}
-                    variant="subtle"
-                    size="compact-xs"
-                    onClick={(e) => e.stopPropagation()}
-                    leftSection={<IconPhone size={10} />}
-                    title="Позвонить"
-                  >
-                    Позвонить
-                  </Button>
-                  <Button
-                    component="a"
-                    href={`https://wa.me/${patientPhone.replace(/\D/g, "").replace(/^8/, "7")}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    variant="subtle"
-                    size="compact-xs"
-                    onClick={(e) => e.stopPropagation()}
-                    leftSection={<IconBrandWhatsapp size={10} />}
-                    title="Отправить ссылку в WhatsApp"
-                  >
-                    WhatsApp
-                  </Button>
-                </>
-              )}
-            </>
-          )}
-          {task.booking_id && (
-            <Button
-              component={Link}
-              to={`/admin/schedule?booking_id=${task.booking_id}`}
-              variant="subtle"
-              size="compact-xs"
+    <Box ref={setNodeRef} style={outerStyle}>
+      <Paper
+        bg="white"
+        shadow="sm"
+        radius="md"
+        p="md"
+        withBorder
+        style={{
+          borderLeft: priorityLeftBorder(task.priority),
+          cursor: "pointer",
+          width: "100%",
+          opacity: blocked ? 0.9 : 1,
+        }}
+        onClick={() => onOpenDetail(task.id)}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (!onMoveByKeyboard) return;
+          if (e.altKey && e.key === "ArrowRight") {
+            e.preventDefault();
+            onMoveByKeyboard(task.id, 1);
+          }
+          if (e.altKey && e.key === "ArrowLeft") {
+            e.preventDefault();
+            onMoveByKeyboard(task.id, -1);
+          }
+        }}
+      >
+        <Group gap="xs" wrap="nowrap" align="flex-start">
+          {onSelect ? (
+            <Checkbox
+              mt={2}
+              checked={Boolean(selected)}
+              onChange={(e) => onSelect(task.id, e.currentTarget.checked)}
               onClick={(e) => e.stopPropagation()}
-              leftSection={<IconCalendarEvent size={10} />}
+              aria-label="Выбрать задачу"
+            />
+          ) : null}
+          {draggable ? (
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="sm"
+              style={{ cursor: "grab", flexShrink: 0, marginTop: 2 }}
+              {...listeners}
+              {...attributes}
+              onClick={(e) => e.stopPropagation()}
+              aria-label="Перетащить задачу"
             >
-              Запись
-            </Button>
-          )}
-          <Button
-            component={Link}
-            to={`${ROUTE_PATHS.admin.staffCalendar}?task_id=${task.id}&open_create=1`}
-            variant="subtle"
-            size="compact-xs"
-            title="Добавить событие в календарь, привязав к задаче"
-            leftSection={<IconCalendarEvent size={10} />}
-            onClick={(e) => e.stopPropagation()}
-          >
-            В календарь
-          </Button>
+              <IconGripVertical size={16} />
+            </ActionIcon>
+          ) : null}
+          <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
+            <Group gap={6} wrap="nowrap" align="flex-start">
+              {isAi && <IconRobot size={16} color="var(--mantine-color-indigo-6)" style={{ flexShrink: 0 }} />}
+              <Text size="sm" fw={600} lineClamp={2} style={{ flex: 1 }}>
+                {task.title}
+              </Text>
+            </Group>
+            {blocked ? (
+              <Tooltip
+                label={task.blocked_reason?.trim() ? `Причина: ${task.blocked_reason}` : "Причина блокировки не указана"}
+                withArrow
+                multiline
+                maw={300}
+              >
+                <Badge size="xs" color="red" variant="light" leftSection={<IconLock size={12} />}>
+                  Заблокировано
+                </Badge>
+              </Tooltip>
+            ) : null}
+            {patientName ? (
+              <Text size="xs" c="dimmed" lineClamp={1}>
+                Привязка: {patientName}
+              </Text>
+            ) : null}
+            <Group justify="space-between" mt="md" wrap="nowrap" gap="xs">
+              <Text size="xs" c={overdue || timeBomb ? "red" : "dimmed"} fw={overdue ? 500 : 400}>
+                {task.due_at ? dayjs(task.due_at).format("DD.MM HH:mm") : "—"}
+              </Text>
+              <Avatar size="sm" radius="xl" color="indigo">
+                {(displayName || "?").slice(0, 2).toUpperCase()}
+              </Avatar>
+            </Group>
+            {isAi && onClaim && (task.status === "open" || task.source === "ai_suggested" || task.source === "ai_auto") ? (
+              <Button
+                size="xs"
+                variant="light"
+                color="indigo"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClaim(task.id);
+                }}
+              >
+                Принять в работу
+              </Button>
+            ) : null}
+            {onTaskChat ? (
+              <Button
+                size="xs"
+                variant="light"
+                color="gray"
+                leftSection={<IconMessages size={12} />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTaskChat(task.id);
+                }}
+              >
+                Чат задачи
+              </Button>
+            ) : null}
+          </Stack>
         </Group>
-        {onTaskChat && (
-          <Button
-            size="xs"
-            variant="light"
-            color="gray"
-            leftSection={<IconMessages size={12} />}
-            onClick={(e) => {
-              e.stopPropagation();
-              onTaskChat(task.id);
-            }}
-          >
-            Чат задачи
-          </Button>
-        )}
-        {isAi && onClaim && (
-          <Button size="xs" variant="light" onClick={(e) => { e.stopPropagation(); onClaim(task.id); }}>
-            Принять в работу
-          </Button>
-        )}
-      </Stack>
-    </Paper>
+      </Paper>
+    </Box>
   );
 }
 
 export default function AdminTasksPage() {
   const { currentClinicId } = useAdminClinic();
-  const [viewMode, setViewMode] = useState<"table" | "kanban">("table");
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const [detailCommentDraft, setDetailCommentDraft] = useState("");
   const [taskChatId, setTaskChatId] = useState<string | null>(null);
   const [taskChatDraft, setTaskChatDraft] = useState("");
   const { data: taskComments = [], isLoading: taskCommentsLoading } = useTaskComments(taskChatId);
   const postTaskComment = usePostTaskComment(taskChatId);
+  const { data: detailComments = [], isLoading: detailCommentsLoading } = useTaskComments(detailTaskId);
+  const postDetailComment = usePostTaskComment(detailTaskId);
   const [createOpened, setCreateOpened] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<string | null>("medium");
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState("");
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [filterAssignee, setFilterAssignee] = useState<string | null>(null);
+  const [filterPriority, setFilterPriority] = useState<string | null>(null);
+  const [filterDue, setFilterDue] = useState<string>("all");
+  const [onlyNeedsMyApproval, setOnlyNeedsMyApproval] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<string | null>(null);
+  const [blockedReasonDraft, setBlockedReasonDraft] = useState("");
+  const [auditTrail, setAuditTrail] = useState<
+    Array<{ id: string; taskId: string; taskTitle: string; from: string; to: string; at: string }>
+  >([]);
+  const [dragError, setDragError] = useState<string | null>(null);
+  const [bulkResultMessage, setBulkResultMessage] = useState<string | null>(null);
 
   const currentAdminId = getAdminId();
   const { data: tasks = [], isLoading } = useAdminTasksList();
@@ -272,7 +330,6 @@ export default function AdminTasksPage() {
     return tasks.find((t) => t.id === taskChatId)?.title ?? "";
   }, [taskChatId, tasks]);
   const { data: myFocusTasks = [] } = useAdminTasksMyFocus(currentAdminId);
-  const { data: aiTasks = [] } = useAdminTasksAi();
   const { data: admins = [] } = useAdminAdmins();
   const { data: patientsList = [] } = usePatients({ clinic_id: currentClinicId ?? undefined, limit: 500 });
   const patientIdToPhone = useMemo(() => {
@@ -282,10 +339,61 @@ export default function AdminTasksPage() {
     });
     return m;
   }, [patientsList]);
+  const patientIdToName = useMemo(() => {
+    const m = new Map<string, string>();
+    patientsList.forEach((p) => {
+      if (p.full_name) m.set(p.id, p.full_name);
+    });
+    return m;
+  }, [patientsList]);
+
+  const detailTask = useMemo(
+    () => (detailTaskId ? tasks.find((t) => t.id === detailTaskId) : undefined),
+    [detailTaskId, tasks]
+  );
 
   const createTaskMutation = useCreateAdminTaskMutation();
   const claimMutation = useClaimAdminTaskMutation();
   const updateStatusMutation = useUpdateAdminTaskStatusMutation();
+  const updateTaskMetaMutation = useUpdateAdminTaskMetaMutation();
+  const reorderTasksMutation = useReorderAdminTasksMutation();
+  const bulkUpdateMutation = useBulkUpdateAdminTaskStatusMutation();
+  const { data: wipPolicies = KANBAN_WIP_LIMITS } = useTaskWipPolicies();
+  const { data: detailTransitions = [] } = useTaskTransitions(detailTaskId);
+  const { data: taskCalendarContext = [] } = useTaskCalendarContext(detailTaskId);
+  const [inviteEventId, setInviteEventId] = useState<string | null>(null);
+  const [inviteAdminIds, setInviteAdminIds] = useState<string[]>([]);
+  const inviteParticipantsMutation = useInviteTaskCalendarParticipants(detailTaskId, inviteEventId);
+
+  useEffect(() => {
+    setSelectedTaskIds((prev) => prev.filter((id) => tasks.some((t) => t.id === id)));
+  }, [tasks]);
+
+  useEffect(() => {
+    if (!detailTask) {
+      setBlockedReasonDraft("");
+      return;
+    }
+    setBlockedReasonDraft(detailTask.blocked_reason ?? "");
+  }, [detailTask?.id, detailTask?.blocked_reason]);
+
+  useEffect(() => {
+    if (!dragError) return;
+    const t = window.setTimeout(() => setDragError(null), 3500);
+    return () => window.clearTimeout(t);
+  }, [dragError]);
+
+  useEffect(() => {
+    if (!bulkResultMessage) return;
+    const t = window.setTimeout(() => setBulkResultMessage(null), 5500);
+    return () => window.clearTimeout(t);
+  }, [bulkResultMessage]);
+
+  useEffect(() => {
+    if (!inviteEventId && taskCalendarContext.length > 0) {
+      setInviteEventId(taskCalendarContext[0].event_id);
+    }
+  }, [inviteEventId, taskCalendarContext]);
 
   const handleCreate = () => {
     if (!title.trim()) return;
@@ -316,35 +424,201 @@ export default function AdminTasksPage() {
     label: a.full_name || a.email || a.id.slice(0, 8),
   }));
 
+  const statusColumns = useMemo(() => {
+    const discovered = Array.from(new Set(tasks.map((t) => t.status).filter(Boolean)));
+    const ordered = STATUS_ORDER.filter((s) => discovered.includes(s));
+    const extras = discovered.filter((s) => !STATUS_ORDER.includes(s as (typeof STATUS_ORDER)[number])).sort();
+    return [...ordered, ...extras].map((id) => ({
+      id,
+      label: STATUS_META[id] ?? id.replace(/_/g, " "),
+    }));
+  }, [tasks]);
+
+  const needsApprovalTaskIds = useMemo(() => {
+    return new Set(
+      tasks
+        .filter((t) => t.status === "review" || (t.source?.startsWith("ai") && t.status !== "done" && t.status !== "cancelled"))
+        .filter((t) => {
+          if (!currentAdminId) return true;
+          const assignees = taskAssigneeIdList(t);
+          return assignees.length === 0 || assignees.includes(currentAdminId);
+        })
+        .map((t) => t.id)
+    );
+  }, [tasks, currentAdminId]);
+
+  const approvalQueueTasks = useMemo(() => {
+    return tasks
+      .filter((t) => needsApprovalTaskIds.has(t.id))
+      .slice()
+      .sort((a, b) => {
+        const ra = a.rank ?? Number.MAX_SAFE_INTEGER;
+        const rb = b.rank ?? Number.MAX_SAFE_INTEGER;
+        if (ra !== rb) return ra - rb;
+        return (a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER) - (b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER);
+      });
+  }, [tasks, needsApprovalTaskIds]);
+
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if (onlyNeedsMyApproval && !needsApprovalTaskIds.has(t.id)) return false;
+      if (filterAssignee) {
+        const assignees = taskAssigneeIdList(t);
+        if (!assignees.includes(filterAssignee)) return false;
+      }
+      if (filterPriority && t.priority !== filterPriority) return false;
+      if (filterDue === "today") {
+        if (!t.due_at || !dayjs(t.due_at).isSame(dayjs(), "day")) return false;
+      }
+      if (filterDue === "overdue") {
+        if (!isDueOverdue(t.due_at)) return false;
+      }
+      return true;
+    });
+  }, [tasks, onlyNeedsMyApproval, needsApprovalTaskIds, filterAssignee, filterPriority, filterDue]);
+
   const tasksByStatus = (list: AdminTaskRow[]) => {
-    const m: Record<string, AdminTaskRow[]> = { open: [], in_progress: [], done: [] };
+    const m: Record<string, AdminTaskRow[]> = {};
+    statusColumns.forEach((c) => {
+      m[c.id] = [];
+    });
     list.forEach((t) => {
-      const key = t.status === "done" ? "done" : t.status === "in_progress" ? "in_progress" : "open";
-      if (m[key]) m[key].push(t);
+      const key = t.status || "open";
+      if (!m[key]) m[key] = [];
+      m[key].push(t);
+    });
+    Object.keys(m).forEach((status) => {
+      m[status] = m[status].slice().sort((a, b) => {
+        const ra = a.rank ?? Number.MAX_SAFE_INTEGER;
+        const rb = b.rank ?? Number.MAX_SAFE_INTEGER;
+        if (ra !== rb) return ra - rb;
+        return (a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER) - (b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER);
+      });
     });
     return m;
+  };
+
+  const columnMap = tasksByStatus(filteredTasks);
+
+  const canMoveToStatus = (task: AdminTaskRow, toStatus: string): { ok: boolean; reason?: string } => {
+    if (toStatus === task.status) return { ok: true };
+    const wipLimit = wipPolicies[toStatus];
+    if (typeof wipLimit === "number") {
+      const currentCount = (columnMap[toStatus] ?? []).length;
+      if (currentCount >= wipLimit) return { ok: false, reason: `WIP-лимит колонки "${STATUS_META[toStatus] ?? toStatus}" исчерпан` };
+    }
+    if (toStatus === "done") {
+      if (!task.checklist_done) return { ok: false, reason: "Перед завершением отметьте checklist в карточке задачи" };
+      if (task.blocked) return { ok: false, reason: "Нельзя завершить заблокированную задачу" };
+    }
+    return { ok: true };
+  };
+
+  const moveTask = (task: AdminTaskRow, toStatus: string) => {
+    const decision = canMoveToStatus(task, toStatus);
+    if (!decision.ok) {
+      setDragError(decision.reason ?? "Переход запрещен");
+      return;
+    }
+    setDragError(null);
+    updateStatusMutation.mutate({ taskId: task.id, status: toStatus });
+    setAuditTrail((prev) => [
+      {
+        id: `${Date.now()}-${task.id}`,
+        taskId: task.id,
+        taskTitle: task.title,
+        from: task.status,
+        to: toStatus,
+        at: new Date().toISOString(),
+      },
+      ...prev,
+    ].slice(0, 40));
   };
 
   const handleKanbanDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || typeof over.id !== "string") return;
-    const status = String(over.id).replace("droppable-", "");
-    if (!STATUS_COLUMNS.some((c) => c.id === status)) return;
+    const overId = String(over.id);
+    const status = overId.startsWith("droppable-")
+      ? overId.replace("droppable-", "")
+      : overId.startsWith("task-slot-")
+        ? overId.split("--")[0].replace("task-slot-", "")
+        : "";
+    if (!statusColumns.some((c) => c.id === status)) return;
     const taskId = String(active.id);
     const task = tasks.find((t) => t.id === taskId);
-    if (!task || task.status === status) return;
-    updateStatusMutation.mutate({ taskId, status });
+    if (!task) return;
+    const hasActiveFilters =
+      onlyNeedsMyApproval || Boolean(filterAssignee) || Boolean(filterPriority) || filterDue !== "all";
+    if (overId.startsWith("task-slot-")) {
+      if (hasActiveFilters) {
+        setDragError("Перестановка внутри колонки доступна только без активных фильтров.");
+        return;
+      }
+      const targetTaskId = overId.split("--")[1];
+      const current = columnMap[status] ?? [];
+      const without = current.filter((x) => x.id !== task.id);
+      const targetIdx = without.findIndex((x) => x.id === targetTaskId);
+      const insertAt = targetIdx >= 0 ? targetIdx : without.length;
+      const next = [...without.slice(0, insertAt), { ...task, status }, ...without.slice(insertAt)];
+      reorderTasksMutation.mutate({
+        status,
+        ordered_task_ids: next.map((item) => item.id),
+      });
+    }
+    if (task.status !== status) moveTask(task, status);
   };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
+  const handleKeyboardColumnMove = (taskId: string, direction: -1 | 1) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const idx = statusColumns.findIndex((s) => s.id === task.status);
+    if (idx < 0) return;
+    const target = statusColumns[idx + direction];
+    if (!target) return;
+    moveTask(task, target.id);
+  };
+
+  const applyBulkStatus = () => {
+    if (!bulkStatus) return;
+    setBulkResultMessage(null);
+    bulkUpdateMutation.mutate(
+      {
+        task_ids: selectedTaskIds,
+        to_status: bulkStatus,
+      },
+      {
+        onSuccess: (result) => {
+          const appliedCount = result.applied.length;
+          const rejectedCount = result.rejected.length;
+          if (rejectedCount > 0) {
+            const firstReason = result.rejected[0]?.detail;
+            setBulkResultMessage(
+              `Массовая операция завершена частично: успешно ${appliedCount}, отклонено ${rejectedCount}${
+                firstReason ? ` (пример: ${firstReason})` : ""
+              }`
+            );
+          } else {
+            setBulkResultMessage(`Массовая операция выполнена: обновлено ${appliedCount}.`);
+          }
+          if (appliedCount > 0) {
+            setSelectedTaskIds([]);
+            setBulkStatus(null);
+          }
+        },
+      }
+    );
+  };
+
   if (isLoading) {
     return (
       <Stack>
         <ContextBar title="Задачи" />
-        <PageSkeleton variant="table" rows={6} />
+        <PageSkeleton variant="cards" rows={6} />
       </Stack>
     );
   }
@@ -354,332 +628,593 @@ export default function AdminTasksPage() {
       <ContextBar
         title="Задачи"
         actions={
-          <Group>
-            <SegmentedControl
-              size="xs"
-              data={[
-                { label: "Таблица", value: "table" },
-                { label: "Канбан", value: "kanban" },
-              ]}
-              value={viewMode}
-              onChange={(v) => setViewMode(v as "table" | "kanban")}
-            />
-            <Button size="sm" onClick={() => setCreateOpened(true)}>
-              Новая задача
-            </Button>
-          </Group>
+          <Button size="sm" onClick={() => setCreateOpened(true)}>
+            Новая задача
+          </Button>
         }
       />
 
-      <Group align="flex-start" wrap="nowrap">
-        <Stack gap="sm" style={{ minWidth: 220 }}>
-          <Text size="sm" fw={500}>
-            Контекст
+      <Card withBorder p="sm">
+        <Group gap="xs" wrap="wrap" justify="space-between">
+          <Group gap="xs" wrap="wrap">
+            <Button
+              size="xs"
+              variant={onlyNeedsMyApproval ? "filled" : "light"}
+              onClick={() => setOnlyNeedsMyApproval((v) => !v)}
+            >
+              Ждут моего подтверждения ({needsApprovalTaskIds.size})
+            </Button>
+            <Select
+              size="xs"
+              placeholder="Исполнитель"
+              data={adminOptions}
+              value={filterAssignee}
+              onChange={setFilterAssignee}
+              clearable
+              w={190}
+            />
+            <Select
+              size="xs"
+              placeholder="Приоритет"
+              data={[
+                { value: "low", label: "Низкий" },
+                { value: "medium", label: "Средний" },
+                { value: "high", label: "Высокий" },
+                { value: "urgent", label: "Срочно" },
+              ]}
+              value={filterPriority}
+              onChange={setFilterPriority}
+              clearable
+              w={160}
+            />
+            <Select
+              size="xs"
+              placeholder="Срок"
+              data={[
+                { value: "all", label: "Все сроки" },
+                { value: "today", label: "Сегодня" },
+                { value: "overdue", label: "Просрочено" },
+              ]}
+              value={filterDue}
+              onChange={(v) => setFilterDue(v ?? "all")}
+              w={150}
+            />
+          </Group>
+          <Group gap="xs" wrap="wrap">
+            <Select
+              size="xs"
+              placeholder="Массово: статус"
+              data={statusColumns.map((c) => ({ value: c.id, label: c.label }))}
+              value={bulkStatus}
+              onChange={setBulkStatus}
+              w={180}
+            />
+            <Button
+              size="xs"
+              variant="light"
+              onClick={applyBulkStatus}
+              disabled={!bulkStatus || selectedTaskIds.length === 0}
+            >
+              Применить ({selectedTaskIds.length})
+            </Button>
+          </Group>
+        </Group>
+      </Card>
+
+      {dragError ? (
+        <Alert color="orange" icon={<IconAlertTriangle size={16} />} variant="light">
+          {dragError}
+        </Alert>
+      ) : null}
+      {bulkResultMessage ? (
+        <Alert color="blue" icon={<IconAlertTriangle size={16} />} variant="light">
+          {bulkResultMessage}
+        </Alert>
+      ) : null}
+
+      <Card withBorder p="sm">
+        <Group justify="space-between" mb="xs">
+          <Text size="sm" fw={700}>
+            Требуют подтверждения
           </Text>
-          {currentAdminId && (
-            <Card withBorder p="sm">
-              <Text size="xs" fw={600} c="dimmed" mb="xs">
-                My Focus
-              </Text>
-              {myFocusTasks.length === 0 ? (
-                <Text size="xs" c="dimmed">
-                  Нет задач, назначенных на вас
-                </Text>
-              ) : (
-                <Stack gap={4}>
-                  {myFocusTasks
-                    .filter((t) => t.status !== "done" && t.status !== "cancelled")
-                    .sort((a, b) => (a.due_at && b.due_at ? new Date(a.due_at).getTime() - new Date(b.due_at).getTime() : 0))
-                    .slice(0, 5)
-                    .map((t) => (
-                      <TaskKanbanCard
-                        key={t.id}
-                        task={t}
-                        admins={admins}
-                        isTimeBombActive={isTimeBomb(t.due_at)}
-                        onClaim={(t.source === "ai_suggested" || t.source === "ai_auto") ? (id) => claimMutation.mutate(id) : undefined}
-                        onTaskChat={setTaskChatId}
-                        isAi={t.source === "ai_suggested" || t.source === "ai_auto"}
-                        patientPhone={t.patient_id ? patientIdToPhone.get(t.patient_id) : null}
-                      />
-                    ))}
-                </Stack>
-              )}
-            </Card>
-          )}
-          <Card withBorder p="sm">
-            <Text size="xs" fw={600} c="dimmed" mb="xs">
-              Задачи от AI
-            </Text>
-            {aiTasks.length === 0 ? (
-              <Text size="xs" c="dimmed">
-                Нет предложенных задач
-              </Text>
-            ) : (
-              <Stack gap={4}>
-                {aiTasks.slice(0, 5).map((t) => (
+          <Badge size="sm" variant="light" color={approvalQueueTasks.length > 0 ? "orange" : "gray"}>
+            {approvalQueueTasks.length}
+          </Badge>
+        </Group>
+        {approvalQueueTasks.length === 0 ? (
+          <Text size="xs" c="dimmed">
+            Очередь подтверждений пуста.
+          </Text>
+        ) : (
+          <Box style={{ overflowX: "auto" }}>
+            <Group gap="xs" wrap="nowrap" align="stretch">
+              {approvalQueueTasks.slice(0, 24).map((t) => (
+                <Box key={t.id} w={300} style={{ flexShrink: 0 }}>
                   <TaskKanbanCard
-                    key={t.id}
                     task={t}
                     admins={admins}
-                    isTimeBombActive={isTimeBomb(t.due_at)}
-                    onClaim={(id) => claimMutation.mutate(id)}
+                    patientName={t.patient_id ? patientIdToName.get(t.patient_id) ?? null : null}
+                    onOpenDetail={setDetailTaskId}
+                    onClaim={(t.source === "ai_suggested" || t.source === "ai_auto") ? (id) => claimMutation.mutate(id) : undefined}
                     onTaskChat={setTaskChatId}
-                    isAi
-                    patientPhone={t.patient_id ? patientIdToPhone.get(t.patient_id) : null}
+                    isAi={t.source === "ai_suggested" || t.source === "ai_auto"}
+                    draggable={false}
+                    blocked={Boolean(t.blocked)}
+                    selected={selectedTaskIds.includes(t.id)}
+                    onSelect={(taskId, checked) =>
+                      setSelectedTaskIds((prev) =>
+                        checked ? Array.from(new Set([...prev, taskId])) : prev.filter((id) => id !== taskId)
+                      )
+                    }
+                    onMoveByKeyboard={handleKeyboardColumnMove}
                   />
-                ))}
-              </Stack>
-            )}
-          </Card>
-        </Stack>
+                </Box>
+              ))}
+            </Group>
+          </Box>
+        )}
+      </Card>
 
-        <Box style={{ flex: 1 }}>
-          {viewMode === "table" && (
-            <Card shadow="sm" padding="md" withBorder>
-              {tasks.length === 0 ? (
+      <DndContext sensors={sensors} onDragEnd={handleKanbanDragEnd}>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Card shadow="sm" padding="sm" withBorder mb="md">
+              <Group justify="space-between" align="center">
+                <Text size="sm" fw={700}>
+                  Список задач
+                </Text>
+                {currentAdminId ? (
+                  <Text size="xs" c="dimmed">
+                    Назначено мне: {myFocusTasks.filter((t) => t.status !== "done" && t.status !== "cancelled").length}
+                  </Text>
+                ) : null}
+              </Group>
+            </Card>
+            {filteredTasks.length === 0 ? (
+              <Card shadow="sm" padding="md" withBorder>
                 <EmptyState
                   title="Нет задач"
                   description="Создайте первую задачу или примите задачу от AI в работу."
                   action={{ label: "Создать задачу", onClick: () => setCreateOpened(true) }}
                 />
+              </Card>
+            ) : (
+              <Box style={{ overflowX: "auto" }}>
+                <Box
+                  style={{
+                    display: "grid",
+                    gridAutoFlow: "column",
+                    gridAutoColumns: "minmax(290px, 1fr)",
+                    gap: "12px",
+                    alignItems: "start",
+                    minWidth: "max-content",
+                  }}
+                >
+                {statusColumns.map((col, colIndex) => {
+                  const droppableId = `droppable-${col.id}`;
+                  const columnTasks = columnMap[col.id] ?? [];
+                  const wipLimit = wipPolicies[col.id] ?? KANBAN_WIP_LIMITS[col.id];
+                  const overdueCount = columnTasks.filter((t) => isDueOverdue(t.due_at)).length;
+                  const agingCount = columnTasks.filter((t) => {
+                    if (!t.stage_entered_at) return false;
+                    return dayjs().diff(dayjs(t.stage_entered_at), "hour") >= AGING_ALERT_HOURS;
+                  }).length;
+                  return (
+                    <KanbanColumn
+                      key={col.id}
+                      id={droppableId}
+                      title={col.label}
+                      tasks={columnTasks}
+                      admins={admins}
+                      isLast={colIndex === statusColumns.length - 1}
+                      onOpenDetail={setDetailTaskId}
+                      onClaim={(id) => claimMutation.mutate(id)}
+                      onTaskChat={setTaskChatId}
+                      patientIdToName={patientIdToName}
+                      selectedTaskIds={selectedTaskIds}
+                      onSelectTask={(taskId, checked) =>
+                        setSelectedTaskIds((prev) =>
+                          checked ? Array.from(new Set([...prev, taskId])) : prev.filter((id) => id !== taskId)
+                        )
+                      }
+                      onMoveByKeyboard={handleKeyboardColumnMove}
+                      wipLimit={wipLimit}
+                      overdueCount={overdueCount}
+                      agingCount={agingCount}
+                    />
+                  );
+                })}
+                </Box>
+              </Box>
+            )}
+          </Box>
+      </DndContext>
+
+      <Card withBorder p="sm">
+        <Text size="sm" fw={700} mb={6}>
+          Аудит перемещений
+        </Text>
+        {auditTrail.length === 0 ? (
+          <Text size="xs" c="dimmed">
+            Пока нет перемещений в этой сессии.
+          </Text>
+        ) : (
+          <Stack gap={4}>
+            {auditTrail.slice(0, 8).map((a) => (
+              <Text key={a.id} size="xs" c="dimmed">
+                {dayjs(a.at).format("DD.MM HH:mm")} · {a.taskTitle} · {STATUS_META[a.from] ?? a.from} →{" "}
+                {STATUS_META[a.to] ?? a.to}
+              </Text>
+            ))}
+          </Stack>
+        )}
+      </Card>
+
+      <GlassModal
+        size="lg"
+        centered
+        styles={{ body: { maxHeight: "calc(100vh - 180px)", overflowY: "auto" } }}
+        opened={!!detailTaskId && !!detailTask}
+        onClose={() => {
+          setDetailTaskId(null);
+          setDetailCommentDraft("");
+        }}
+        title={detailTask ? detailTask.title : "Задача"}
+      >
+        {detailTask ? (
+          <Stack gap="md">
+            <Group gap="xs">
+              <Badge size="sm" variant="light" color="gray">
+                {detailTask.priority}
+              </Badge>
+              <Badge
+                size="sm"
+                variant="light"
+                color={
+                  detailTask.status === "done"
+                    ? "teal"
+                    : detailTask.status === "in_progress"
+                      ? "orange"
+                      : detailTask.status === "cancelled"
+                        ? "red"
+                        : "yellow"
+                }
+              >
+                {detailTask.status}
+              </Badge>
+            </Group>
+            {detailTask.description ? (
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                {detailTask.description}
+              </Text>
+            ) : (
+              <Text size="sm" c="dimmed">
+                Без описания
+              </Text>
+            )}
+            <Text size="xs" c="dimmed">
+              Срок: {detailTask.due_at ? dayjs(detailTask.due_at).format("DD.MM.YYYY HH:mm") : "—"} · Исполнители:{" "}
+              {formatTaskAssigneeLine(detailTask, admins) || detailTask.role_assignee || "—"}
+            </Text>
+            <Card withBorder p="sm">
+              <Stack gap="xs">
+                <Group justify="space-between" wrap="wrap">
+                  <Text size="sm" fw={600}>
+                    Критерии перехода
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    color={detailTask.blocked ? "red" : "gray"}
+                    leftSection={detailTask.blocked ? <IconLockOpen size={12} /> : <IconLock size={12} />}
+                    onClick={() =>
+                      updateTaskMetaMutation.mutate({
+                        taskId: detailTask.id,
+                        blocked: !detailTask.blocked,
+                      })
+                    }
+                  >
+                    {detailTask.blocked ? "Разблокировать" : "Заблокировать"}
+                  </Button>
+                </Group>
+                {detailTask.blocked ? (
+                  <Stack gap="xs">
+                    <TextInput
+                      label="Причина блокировки"
+                      placeholder="Опишите, что мешает завершить задачу"
+                      value={blockedReasonDraft}
+                      onChange={(e) => setBlockedReasonDraft(e.currentTarget.value)}
+                    />
+                    <Group justify="flex-end">
+                      <Button
+                        size="xs"
+                        variant="light"
+                        onClick={() =>
+                          updateTaskMetaMutation.mutate({
+                            taskId: detailTask.id,
+                            blocked: true,
+                            blocked_reason: blockedReasonDraft.trim() || null,
+                          })
+                        }
+                        loading={updateTaskMetaMutation.isPending}
+                      >
+                        Сохранить причину
+                      </Button>
+                    </Group>
+                  </Stack>
+                ) : null}
+                <Checkbox
+                  label="Checklist завершения подтвержден"
+                  checked={Boolean(detailTask.checklist_done)}
+                  onChange={(e) =>
+                    updateTaskMetaMutation.mutate({
+                      taskId: detailTask.id,
+                      checklist_done: e.currentTarget.checked,
+                    })
+                  }
+                />
+              </Stack>
+            </Card>
+            <Group gap="xs" wrap="wrap">
+              {detailTask.patient_id && (
+                <Button
+                  component={Link}
+                  to={`/admin/omni-chat?patient_id=${detailTask.patient_id}`}
+                  variant="light"
+                  size="xs"
+                  leftSection={<IconMessageCircle size={14} />}
+                >
+                  Чат с клиентом
+                </Button>
+              )}
+              {detailTask.booking_id && (
+                <Button
+                  component={Link}
+                  to={`/admin/schedule?booking_id=${detailTask.booking_id}`}
+                  variant="light"
+                  size="xs"
+                  leftSection={<IconCalendarEvent size={14} />}
+                >
+                  Запись
+                </Button>
+              )}
+              <Button
+                component={Link}
+                to={`${ROUTE_PATHS.admin.staffCalendar}?task_id=${detailTask.id}&open_create=1`}
+                variant="light"
+                size="xs"
+                leftSection={<IconCalendarEvent size={14} />}
+              >
+                В календарь
+              </Button>
+              <Button variant="light" size="xs" leftSection={<IconMessages size={14} />} onClick={() => setTaskChatId(detailTask.id)}>
+                Чат задачи
+              </Button>
+            </Group>
+            {detailTask.patient_id && patientIdToPhone.get(detailTask.patient_id) && (
+              <Group gap="xs">
+                <Button
+                  component="a"
+                  href={`tel:${patientIdToPhone.get(detailTask.patient_id)!.replace(/\s/g, "")}`}
+                  variant="subtle"
+                  size="xs"
+                  leftSection={<IconPhone size={14} />}
+                >
+                  Позвонить
+                </Button>
+                <Button
+                  component="a"
+                  href={`https://wa.me/${patientIdToPhone.get(detailTask.patient_id)!.replace(/\D/g, "").replace(/^8/, "7")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  variant="subtle"
+                  size="xs"
+                  leftSection={<IconBrandWhatsapp size={14} />}
+                >
+                  WhatsApp
+                </Button>
+              </Group>
+            )}
+            <Menu shadow="md" width={260}>
+              <Menu.Target>
+                <Button variant="light" color="indigo">
+                  Сменить статус
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  onClick={() => {
+                    moveTask(detailTask, "open");
+                  }}
+                >
+                  Открыто
+                </Menu.Item>
+                <Menu.Item
+                  onClick={() => {
+                    moveTask(detailTask, "in_progress");
+                  }}
+                >
+                  В работе
+                </Menu.Item>
+                <Menu.Item
+                  onClick={() => {
+                    moveTask(detailTask, "on_hold");
+                  }}
+                >
+                  На паузе
+                </Menu.Item>
+                <Menu.Item
+                  onClick={() => {
+                    moveTask(detailTask, "review");
+                  }}
+                >
+                  На проверке
+                </Menu.Item>
+                <Menu.Item
+                  onClick={() => {
+                    moveTask(detailTask, "done");
+                  }}
+                >
+                  Выполнено
+                </Menu.Item>
+                <Menu.Item
+                  color="red"
+                  onClick={() => {
+                    moveTask(detailTask, "cancelled");
+                  }}
+                >
+                  Отменить
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+            <Card withBorder p="sm">
+              <Text size="sm" fw={600} mb={6}>
+                История переходов
+              </Text>
+              {detailTransitions.length === 0 ? (
+                <Text size="xs" c="dimmed">
+                  Пока нет переходов статусов.
+                </Text>
               ) : (
-                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Заголовок</Table.Th>
-                      <Table.Th>Приоритет</Table.Th>
-                      <Table.Th>Источник</Table.Th>
-                      <Table.Th>Статус</Table.Th>
-                      <Table.Th>Исполнитель</Table.Th>
-                      <Table.Th>Срок</Table.Th>
-                      <Table.Th w={50}></Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {tasks.map((t) => (
-                      <Table.Tr key={t.id}>
-                        <Table.Td>
-                          <Group gap={4}>
-                            {(t.source === "ai_suggested" || t.source === "ai_auto") && (
-                              <IconRobot size={14} color="var(--mantine-color-blue-6)" />
-                            )}
-                            <Text size="sm">{t.title}</Text>
-                          </Group>
-                        </Table.Td>
-                        <Table.Td>
-                          <Badge
-                            size="sm"
-                            color={
-                              t.priority === "urgent"
-                                ? "red"
-                                : t.priority === "high"
-                                  ? "orange"
-                                  : "gray"
-                            }
-                            variant="light"
-                          >
-                            {t.priority}
-                          </Badge>
-                        </Table.Td>
-                      <Table.Td>
-                        <Badge size="sm" variant="outline">
-                          {t.attention_kind
-                            ? "from Attention"
-                            : t.source === "ai_suggested" || t.source === "ai_auto"
-                              ? "from AI"
-                              : t.source === "system"
-                                ? "system"
-                                : "manual"}
-                        </Badge>
-                      </Table.Td>
-                        <Table.Td>
-                          <Badge
-                            size="sm"
-                            variant="outline"
-                            color={
-                              t.status === "done"
-                                ? "green"
-                                : t.status === "in_progress"
-                                  ? "blue"
-                                  : t.status === "cancelled"
-                                    ? "red"
-                                    : "gray"
-                            }
-                          >
-                            {t.status}
-                          </Badge>
-                        </Table.Td>
-                        <Table.Td>
-                          {formatTaskAssigneeLine(t, admins) ? (
-                            <HoverCard openDelay={300} width={260} shadow="md">
-                              <HoverCard.Target>
-                                <Text size="xs" span style={{ cursor: "default" }} lineClamp={2}>
-                                  {formatTaskAssigneeLine(t, admins)}
-                                </Text>
-                              </HoverCard.Target>
-                              <HoverCard.Dropdown>
-                                <Stack gap={4}>
-                                  {taskAssigneeIdList(t).map((id) => (
-                                    <Text key={id} size="sm" fw={500}>
-                                      {admins.find((a) => a.id === id)?.full_name ||
-                                        admins.find((a) => a.id === id)?.email ||
-                                        id.slice(0, 8)}
-                                    </Text>
-                                  ))}
-                                  <Text size="xs" c="dimmed">
-                                    Срок: {t.due_at ? dayjs(t.due_at).format("DD.MM.YYYY HH:mm") : "—"}
-                                  </Text>
-                                </Stack>
-                              </HoverCard.Dropdown>
-                            </HoverCard>
-                          ) : t.role_assignee ? (
-                            <Badge size="xs" variant="outline" title="Очередь по роли (без личного исполнителя)">
-                              {t.role_assignee}
-                            </Badge>
-                          ) : (
-                            <Text size="xs">—</Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          <Text
-                            size="xs"
-                            c={isTimeBomb(t.due_at) ? "red" : "dimmed"}
-                          >
-                            {t.due_at ? dayjs(t.due_at).format("DD.MM.YYYY HH:mm") : "—"}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Group gap={4} wrap="nowrap">
-                            <Button
-                              variant="subtle"
-                              size="compact-xs"
-                              title="Чат задачи (команда)"
-                              leftSection={<IconMessages size={12} />}
-                              onClick={() => setTaskChatId(t.id)}
-                            >
-                              Чат задачи
-                            </Button>
-                            <Button
-                              component={Link}
-                              to={`${ROUTE_PATHS.admin.staffCalendar}?task_id=${t.id}&open_create=1`}
-                              variant="subtle"
-                              size="compact-xs"
-                              title="Создать событие в календаре, привязанное к задаче"
-                              leftSection={<IconCalendarEvent size={12} />}
-                            >
-                              Календарь
-                            </Button>
-                            {t.patient_id && (
-                              <Button
-                                component={Link}
-                                to={`/admin/omni-chat?patient_id=${t.patient_id}`}
-                                variant="subtle"
-                                size="compact-xs"
-                                title="Открыть чат с клиентом"
-                                leftSection={<IconMessageCircle size={12} />}
-                              >
-                                Чат
-                              </Button>
-                            )}
-                            {t.booking_id && (
-                              <Button
-                                component={Link}
-                                to={`/admin/schedule?booking_id=${t.booking_id}`}
-                                variant="subtle"
-                                size="compact-xs"
-                                title="Открыть запись"
-                                leftSection={<IconCalendarEvent size={12} />}
-                              >
-                                Запись
-                              </Button>
-                            )}
-                            <Menu position="bottom-end">
-                              <Menu.Target>
-                                <ActionIcon variant="subtle" size="sm" aria-label="Действия">
-                                  <IconDotsVertical size={16} />
-                                </ActionIcon>
-                              </Menu.Target>
-                              <Menu.Dropdown>
-                                {t.patient_id && patientIdToPhone.get(t.patient_id) && (
-                                  <>
-                                    <Menu.Item
-                                      component="a"
-                                      href={`tel:${patientIdToPhone.get(t.patient_id)!.replace(/\s/g, "")}`}
-                                      leftSection={<IconPhone size={14} />}
-                                    >
-                                      Позвонить
-                                    </Menu.Item>
-                                    <Menu.Item
-                                      component="a"
-                                      href={`https://wa.me/${patientIdToPhone.get(t.patient_id)!.replace(/\D/g, "").replace(/^8/, "7")}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      leftSection={<IconBrandWhatsapp size={14} />}
-                                    >
-                                      Отправить ссылку в WhatsApp
-                                    </Menu.Item>
-                                  </>
-                                )}
-                                <Menu.Item
-                                  onClick={() => updateStatusMutation.mutate({ taskId: t.id, status: "in_progress" })}
-                                >
-                                  В работу
-                                </Menu.Item>
-                                <Menu.Item
-                                  onClick={() => updateStatusMutation.mutate({ taskId: t.id, status: "done" })}
-                                >
-                                  Выполнено
-                                </Menu.Item>
-                                <Menu.Item
-                                  color="red"
-                                  onClick={() => updateStatusMutation.mutate({ taskId: t.id, status: "cancelled" })}
-                                >
-                                  Отменить
-                                </Menu.Item>
-                              </Menu.Dropdown>
-                            </Menu>
-                          </Group>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
+                <Stack gap={4}>
+                  {detailTransitions.slice(0, 6).map((tr) => (
+                    <Text key={tr.id} size="xs" c="dimmed">
+                      {dayjs(tr.created_at).format("DD.MM HH:mm")} · {STATUS_META[tr.from_status] ?? tr.from_status} →{" "}
+                      {STATUS_META[tr.to_status] ?? tr.to_status}
+                      {tr.reason ? ` · ${tr.reason}` : ""}
+                      {tr.metadata && typeof tr.metadata === "object" && "event" in tr.metadata
+                        ? ` · ${String((tr.metadata as Record<string, unknown>).event)}`
+                        : ""}
+                    </Text>
+                  ))}
+                </Stack>
               )}
             </Card>
-          )}
-
-          {viewMode === "kanban" && (
-            <Card shadow="sm" padding="md" withBorder>
-              <DndContext sensors={sensors} onDragEnd={handleKanbanDragEnd}>
-                <Group align="flex-start" gap="md" wrap="nowrap">
-                  {STATUS_COLUMNS.map((col) => {
-                    const droppableId = `droppable-${col.id}`;
-                    const columnTasks = tasksByStatus(tasks)[col.id] ?? [];
-                    return (
-                      <KanbanColumn
-                        key={col.id}
-                        id={droppableId}
-                        title={col.label}
-                        tasks={columnTasks}
-                        admins={admins}
-                        isTimeBomb={isTimeBomb}
-                        onClaim={(id) => claimMutation.mutate(id)}
-                        onTaskChat={setTaskChatId}
-                        patientIdToPhone={patientIdToPhone}
-                      />
-                    );
-                  })}
-                </Group>
-              </DndContext>
+            <Card withBorder p="sm">
+              <Text size="sm" fw={600} mb={6}>
+                Календарные слоты задачи
+              </Text>
+              {taskCalendarContext.length === 0 ? (
+                <Text size="xs" c="dimmed">
+                  Нет связанных слотов. Нажмите «В календарь», чтобы создать слот из этой задачи.
+                </Text>
+              ) : (
+                <Stack gap="xs">
+                  {taskCalendarContext.map((ev) => (
+                    <Paper key={ev.event_id} p="xs" withBorder>
+                      <Group justify="space-between" wrap="nowrap">
+                        <Text size="sm" fw={500} lineClamp={1}>
+                          {ev.title}
+                        </Text>
+                        <Badge size="xs" variant="light" color={ev.acknowledged_count < ev.participants_count ? "orange" : "teal"}>
+                          ACK {ev.acknowledged_count}/{ev.participants_count}
+                        </Badge>
+                      </Group>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        {dayjs(ev.starts_at).format("DD.MM HH:mm")} - {dayjs(ev.ends_at).format("HH:mm")}
+                      </Text>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        Участники:{" "}
+                        {ev.participants
+                          .map((p) => `${p.full_name || "Сотрудник"}${p.acknowledged_at ? " (ACK)" : ""}`)
+                          .join(", ") || "—"}
+                      </Text>
+                    </Paper>
+                  ))}
+                  <Group align="end" wrap="wrap">
+                    <Select
+                      size="xs"
+                      label="Слот"
+                      data={taskCalendarContext.map((ev) => ({
+                        value: ev.event_id,
+                        label: `${dayjs(ev.starts_at).format("DD.MM HH:mm")} · ${ev.title}`,
+                      }))}
+                      value={inviteEventId}
+                      onChange={setInviteEventId}
+                      w={280}
+                    />
+                    <MultiSelect
+                      size="xs"
+                      label="Пригласить в слот"
+                      data={adminOptions}
+                      value={inviteAdminIds}
+                      onChange={setInviteAdminIds}
+                      searchable
+                      w={340}
+                    />
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() => {
+                        if (!inviteEventId || inviteAdminIds.length === 0) return;
+                        inviteParticipantsMutation.mutate(inviteAdminIds, {
+                          onSuccess: () => setInviteAdminIds([]),
+                        });
+                      }}
+                      loading={inviteParticipantsMutation.isPending}
+                      disabled={!inviteEventId || inviteAdminIds.length === 0}
+                    >
+                      Пригласить
+                    </Button>
+                  </Group>
+                </Stack>
+              )}
             </Card>
-          )}
-        </Box>
-      </Group>
+            <Text size="sm" fw={600}>
+              Комментарии
+            </Text>
+            {detailCommentsLoading ? (
+              <Loader size="sm" />
+            ) : (
+              <ScrollArea h={240} offsetScrollbars>
+                <Stack gap="xs">
+                  {detailComments.length === 0 ? (
+                    <Text size="sm" c="dimmed">
+                      Пока нет комментариев.
+                    </Text>
+                  ) : (
+                    detailComments.map((c) => (
+                      <Paper key={c.id} p="xs" withBorder>
+                        <Text size="xs" c="dimmed" mb={4}>
+                          {c.author_full_name || "Сотрудник"} · {dayjs(c.created_at).format("DD.MM.YYYY HH:mm")}
+                        </Text>
+                        <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                          {c.text}
+                        </Text>
+                      </Paper>
+                    ))
+                  )}
+                </Stack>
+              </ScrollArea>
+            )}
+            <Textarea
+              label="Новый комментарий"
+              placeholder="Текст для команды…"
+              minRows={2}
+              value={detailCommentDraft}
+              onChange={(e) => setDetailCommentDraft(e.currentTarget.value)}
+            />
+            <Group justify="flex-end">
+              <Button
+                onClick={() => {
+                  const text = detailCommentDraft.trim();
+                  if (!text || !detailTaskId) return;
+                  postDetailComment.mutate(text, {
+                    onSuccess: () => setDetailCommentDraft(""),
+                  });
+                }}
+                loading={postDetailComment.isPending}
+                disabled={!detailCommentDraft.trim()}
+              >
+                Отправить
+              </Button>
+            </Group>
+          </Stack>
+        ) : null}
+      </GlassModal>
 
-      <AdminDrawer
-        position="right"
+      <GlassModal
         size="md"
+        centered
         opened={createOpened}
         onClose={() => setCreateOpened(false)}
         title="Новая задача"
@@ -737,11 +1272,12 @@ export default function AdminTasksPage() {
             </Button>
           </Group>
         </Stack>
-      </AdminDrawer>
+      </GlassModal>
 
-      <AdminDrawer
-        position="right"
+      <GlassModal
         size="md"
+        centered
+        styles={{ body: { maxHeight: "calc(100vh - 180px)", overflowY: "auto" } }}
         opened={!!taskChatId}
         onClose={() => {
           setTaskChatId(null);
@@ -808,7 +1344,7 @@ export default function AdminTasksPage() {
             </Button>
           </Group>
         </Stack>
-      </AdminDrawer>
+      </GlassModal>
     </Stack>
   );
 }
@@ -818,56 +1354,116 @@ function KanbanColumn({
   title,
   tasks,
   admins,
-  isTimeBomb,
+  isLast,
+  onOpenDetail,
   onClaim,
   onTaskChat,
-  patientIdToPhone,
+  patientIdToName,
+  selectedTaskIds,
+  onSelectTask,
+  onMoveByKeyboard,
+  wipLimit,
+  overdueCount,
+  agingCount,
 }: {
   id: string;
   title: string;
   tasks: AdminTaskRow[];
   admins: AdminUserRow[];
-  isTimeBomb: (due: string | null) => boolean;
+  isLast: boolean;
+  onOpenDetail: (taskId: string) => void;
   onClaim: (taskId: string) => void;
   onTaskChat?: (taskId: string) => void;
-  patientIdToPhone: Map<string, string>;
+  patientIdToName: Map<string, string>;
+  selectedTaskIds: string[];
+  onSelectTask: (taskId: string, checked: boolean) => void;
+  onMoveByKeyboard: (taskId: string, direction: -1 | 1) => void;
+  wipLimit?: number;
+  overdueCount: number;
+  agingCount: number;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id });
+  const overWip = typeof wipLimit === "number" && tasks.length > wipLimit;
   return (
     <Stack
       ref={setNodeRef}
       gap="xs"
+      w={300}
+      p="sm"
       style={{
-        minWidth: 260,
         minHeight: 200,
-        padding: 8,
-        borderRadius: 8,
-        background: isOver ? "var(--mantine-color-blue-0)" : undefined,
-        border: isOver ? "2px dashed var(--mantine-color-blue-6)" : undefined,
+        flexShrink: 0,
+        borderRadius: "var(--mantine-radius-md)",
+        borderRight: isLast ? undefined : "1px solid var(--mantine-color-gray-3)",
+        outline: isOver ? `2px dashed ${overWip ? "var(--mantine-color-red-4)" : "var(--mantine-color-indigo-4)"}` : undefined,
+        background: isOver ? (overWip ? "var(--mantine-color-red-0)" : "var(--mantine-color-indigo-0)") : "var(--mantine-color-gray-0)",
       }}
     >
       <Group justify="space-between">
-        <Text size="sm" fw={600}>
-          {title}
-        </Text>
-        <Badge size="sm" variant="light">
+        <Stack gap={2}>
+          <Text size="sm" fw={600}>
+            {title}
+          </Text>
+          <Group gap={4}>
+            {typeof wipLimit === "number" ? (
+              <Badge size="xs" variant="light" color={tasks.length > wipLimit ? "red" : "gray"}>
+                WIP {tasks.length}/{wipLimit}
+              </Badge>
+            ) : null}
+            <Badge size="xs" variant="light" color={overdueCount > 0 ? "red" : "gray"}>
+              SLA overdue: {overdueCount}
+            </Badge>
+            <Badge size="xs" variant="light" color={agingCount > 0 ? "orange" : "gray"}>
+              Aging 48h+: {agingCount}
+            </Badge>
+          </Group>
+        </Stack>
+        <Badge size="sm" variant="light" color={tasks.length > (wipLimit ?? Number.MAX_SAFE_INTEGER) ? "red" : "gray"}>
           {tasks.length}
         </Badge>
       </Group>
       <Stack gap="xs">
         {tasks.map((t) => (
-          <TaskKanbanCard
+          <TaskDropSlot
             key={t.id}
-            task={t}
-            admins={admins}
-            isTimeBombActive={isTimeBomb(t.due_at)}
-            onClaim={(t.source === "ai_suggested" || t.source === "ai_auto") ? onClaim : undefined}
-            onTaskChat={onTaskChat}
-            isAi={t.source === "ai_suggested" || t.source === "ai_auto"}
-            patientPhone={t.patient_id ? patientIdToPhone.get(t.patient_id) ?? null : null}
-          />
+            statusId={id.replace("droppable-", "")}
+            taskId={t.id}
+          >
+            <TaskKanbanCard
+              task={t}
+              admins={admins}
+              patientName={t.patient_id ? patientIdToName.get(t.patient_id) ?? null : null}
+              onOpenDetail={onOpenDetail}
+              onClaim={(t.source === "ai_suggested" || t.source === "ai_auto") ? onClaim : undefined}
+              onTaskChat={onTaskChat}
+              isAi={t.source === "ai_suggested" || t.source === "ai_auto"}
+              draggable
+              blocked={Boolean(t.blocked)}
+              selected={selectedTaskIds.includes(t.id)}
+              onSelect={onSelectTask}
+              onMoveByKeyboard={onMoveByKeyboard}
+            />
+          </TaskDropSlot>
         ))}
       </Stack>
     </Stack>
+  );
+}
+
+function TaskDropSlot({
+  statusId,
+  taskId,
+  children,
+}: {
+  statusId: string;
+  taskId: string;
+  children: ReactNode;
+}) {
+  const slotId = `task-slot-${statusId}--${taskId}`;
+  const { setNodeRef, isOver } = useDroppable({ id: slotId });
+  return (
+    <Box ref={setNodeRef} style={{ outline: isOver ? "1px dashed var(--mantine-color-indigo-4)" : undefined, borderRadius: 8 }}>
+      {children}
+    </Box>
   );
 }

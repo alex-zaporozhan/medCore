@@ -75,10 +75,25 @@ export {
   useCreateAdminTaskMutation,
   useClaimAdminTaskMutation,
   useUpdateAdminTaskStatusMutation,
+  useUpdateAdminTaskMetaMutation,
+  useReorderAdminTasksMutation,
+  useBulkUpdateAdminTaskStatusMutation,
+  useTaskTransitions,
+  useTaskWipPolicies,
+  useTaskCalendarContext,
+  useInviteTaskCalendarParticipants,
   useTaskComments,
   usePostTaskComment,
 } from "./useAdminTasks";
-export type { AdminTaskRow, AdminTaskOpenRow, TaskCommentRow } from "./useAdminTasks";
+export type {
+  AdminTaskRow,
+  AdminTaskOpenRow,
+  TaskCommentRow,
+  TaskTransitionRow,
+  TaskCalendarEventContextRow,
+  TaskCalendarParticipantAckRow,
+} from "./useAdminTasks";
+export { useAdminTaskDetails } from "./useAdminTaskDetails";
 export {
   useAdminDiscounts,
   useCreateAdminDiscountMutation,

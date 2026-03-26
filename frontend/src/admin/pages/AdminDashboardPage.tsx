@@ -31,6 +31,9 @@ import {
   Anchor,
   ActionIcon,
   Divider,
+  Paper,
+  Menu,
+  Box,
 } from "@mantine/core";
 import { Link } from "react-router-dom";
 import { useState, useMemo, useEffect, useRef } from "react";
@@ -51,6 +54,9 @@ import {
   IconPaperclip,
   IconPhoto,
   IconMicrophone,
+  IconHeart,
+  IconMessageCircle,
+  IconDots,
 } from "@tabler/icons-react";
 
 const BACKEND_HINT =
@@ -68,7 +74,7 @@ const metricCardShell = {
   h: 95,
   styles: {
     root: {
-      borderColor: "var(--mantine-color-gray-3)",
+      borderColor: "var(--mantine-color-gray-2)",
       height: 95,
       display: "flex" as const,
       flexDirection: "column" as const,
@@ -116,11 +122,18 @@ function StaffFeedAttachmentPreview({ attachment }: { attachment: StaffAttachmen
 
   if (url && ct.startsWith("image/")) {
     return (
-      <img
-        src={url}
-        alt={attachment.file_name}
-        style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 8 }}
-      />
+      <Box mt="md" mb="md">
+        <img
+          src={url}
+          alt={attachment.file_name}
+          style={{
+            width: "100%",
+            maxHeight: 320,
+            objectFit: "contain",
+            borderRadius: "var(--mantine-radius-md)",
+          }}
+        />
+      </Box>
     );
   }
 
@@ -213,6 +226,8 @@ function StaffFeedPostComments({
       <Group justify="flex-end">
         <Button
           size="xs"
+          variant="filled"
+          color="indigo"
           onClick={() => addComment.mutate(body)}
           disabled={!body.trim() || addComment.isPending}
           loading={addComment.isPending}
@@ -551,14 +566,12 @@ export default function AdminDashboardPage() {
         <Card
           padding="md"
           radius="md"
-          shadow="none"
+          shadow="sm"
           withBorder
           bg="white"
           styles={{
             root: {
-              borderColor: "var(--mantine-color-ai-3)",
-              background:
-                "linear-gradient(120deg, var(--mantine-color-ai-0) 0%, var(--mantine-color-white) 55%)",
+              borderColor: "var(--mantine-color-gray-2)",
             },
           }}
         >
@@ -677,6 +690,8 @@ export default function AdminDashboardPage() {
                 </Group>
                 <Group justify="flex-end">
                   <Button
+                    variant="filled"
+                    color="indigo"
                     onClick={() => void publishPost()}
                     loading={createPost.isPending}
                     disabled={!feedBody.trim()}
@@ -701,74 +716,46 @@ export default function AdminDashboardPage() {
                 .slice()
                 .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                 .map((p) => (
-                  <Card
+                  <Paper
                     key={p.id}
                     withBorder
+                    shadow="sm"
                     radius="md"
-                    padding="md"
+                    p="lg"
                     bg="white"
-                    styles={{ root: { borderColor: "var(--mantine-color-gray-3)" } }}
+                    styles={{ root: { borderColor: "var(--mantine-color-gray-2)" } }}
                   >
-                    <Group justify="space-between" align="flex-start">
-                      <Stack gap={4}>
-                        {p.title ? (
-                          <Text size="sm" fw={600}>
-                            {p.title}
+                    <Stack gap="sm">
+                      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
+                        <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+                          {p.title ? (
+                            <Text size="sm" fw={600}>
+                              {p.title}
+                            </Text>
+                          ) : null}
+                          <Text size="xs" c="dimmed">
+                            {p.author.full_name?.trim() || "Сотрудник"} ·{" "}
+                            {new Date(p.created_at).toLocaleString()}
                           </Text>
-                        ) : null}
-                        <Text size="xs" c="dimmed">
-                          {p.author.full_name?.trim() || "Сотрудник"} · {new Date(p.created_at).toLocaleString()}
-                        </Text>
-                        <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                          {p.body}
-                        </Text>
-                        {(p.attachments ?? []).length > 0 ? (
-                          <Stack gap="xs" mt={4}>
-                            {(p.attachments ?? []).map((att) => (
-                              <StaffFeedAttachmentPreview key={att.id} attachment={att} />
-                            ))}
-                          </Stack>
-                        ) : null}
-                        <Group justify="space-between" align="center" mt={8}>
-                          <Group gap="xs">
-                            <Button
-                              size="xs"
-                              variant="light"
-                              loading={toggleLike.isPending}
-                              onClick={() => toggleLike.mutate(p.id)}
-                            >
-                              Лайк{p.likes_count ? ` (${p.likes_count})` : ""}
-                            </Button>
-                            <Button
-                              size="xs"
-                              variant="light"
-                              onClick={() =>
-                                setOpenCommentsByPostId((prev) => ({
-                                  ...prev,
-                                  [p.id]: !prev[p.id],
-                                }))
-                              }
-                            >
-                              Комментарии{p.comments_count ? ` (${p.comments_count})` : ""}
-                            </Button>
-                          </Group>
-
-                          {canPostToStaffFeed ? (
-                            <Group gap="xs">
-                              <Button
-                                size="xs"
-                                variant="light"
+                        </Stack>
+                        {canPostToStaffFeed ? (
+                          <Menu position="bottom-end" withinPortal>
+                            <Menu.Target>
+                              <ActionIcon variant="subtle" color="gray" aria-label="Действия с постом">
+                                <IconDots size={18} stroke={1.5} />
+                              </ActionIcon>
+                            </Menu.Target>
+                            <Menu.Dropdown>
+                              <Menu.Item
                                 onClick={() => {
                                   setEditingPost(p);
                                 }}
                               >
                                 Редактировать
-                              </Button>
-                              <Button
-                                size="xs"
+                              </Menu.Item>
+                              <Menu.Item
                                 color="red"
-                                variant="light"
-                                loading={deletePost.isPending}
+                                disabled={deletePost.isPending}
                                 onClick={() => {
                                   const ok = window.confirm("Удалить пост?");
                                   if (!ok) return;
@@ -778,15 +765,69 @@ export default function AdminDashboardPage() {
                                 }}
                               >
                                 Удалить
-                              </Button>
-                            </Group>
-                          ) : null}
+                              </Menu.Item>
+                            </Menu.Dropdown>
+                          </Menu>
+                        ) : null}
+                      </Group>
+                      <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                        {p.body}
+                      </Text>
+                      {(p.attachments ?? []).length > 0 ? (
+                        <Stack gap="xs">
+                          {(p.attachments ?? []).map((att) => (
+                            <StaffFeedAttachmentPreview key={att.id} attachment={att} />
+                          ))}
+                        </Stack>
+                      ) : null}
+                      <Group gap="md" align="center" mt={4}>
+                        <Group gap={6} align="center">
+                          <ActionIcon
+                            variant="subtle"
+                            aria-label="Лайк"
+                            loading={toggleLike.isPending}
+                            onClick={() => toggleLike.mutate(p.id)}
+                            styles={{
+                              root: {
+                                color: "var(--mantine-color-dimmed)",
+                                "&:hover": { color: "var(--mantine-color-red-6)" },
+                              },
+                            }}
+                          >
+                            <IconHeart size={20} stroke={1.5} />
+                          </ActionIcon>
+                          <Text size="sm" c="dimmed" component="span">
+                            {p.likes_count ?? 0}
+                          </Text>
                         </Group>
+                        <Group gap={6} align="center">
+                          <ActionIcon
+                            variant="subtle"
+                            aria-label="Комментарии"
+                            onClick={() =>
+                              setOpenCommentsByPostId((prev) => ({
+                                ...prev,
+                                [p.id]: !prev[p.id],
+                              }))
+                            }
+                            styles={{
+                              root: {
+                                color: "var(--mantine-color-dimmed)",
+                                "&:hover": { color: "var(--mantine-color-red-6)" },
+                              },
+                            }}
+                          >
+                            <IconMessageCircle size={20} stroke={1.5} />
+                          </ActionIcon>
+                          <Text size="sm" c="dimmed" component="span">
+                            {p.comments_count ?? 0}
+                          </Text>
+                        </Group>
+                      </Group>
 
-                        <StaffFeedPostComments postId={p.id} isOpen={Boolean(openCommentsByPostId[p.id])} />
-                      </Stack>
-                    </Group>
-                  </Card>
+                      <StaffFeedPostComments postId={p.id} isOpen={Boolean(openCommentsByPostId[p.id])} />
+                    </Stack>
+                  </Paper>
                 ))}
             </Stack>
           )}
@@ -799,7 +840,7 @@ export default function AdminDashboardPage() {
         title="Редактировать пост"
       >
         {editingPost ? (
-          <Stack gap="sm">
+          <Stack gap="md">
             <TextInput
               label="Заголовок"
               placeholder="Необязательно"
@@ -873,10 +914,12 @@ export default function AdminDashboardPage() {
             ) : null}
 
             <Group justify="flex-end" mt="xs">
-              <Button variant="light" onClick={() => setEditingPost(null)} disabled={updatePost.isPending}>
+              <Button variant="default" onClick={() => setEditingPost(null)} disabled={updatePost.isPending}>
                 Отмена
               </Button>
               <Button
+                variant="filled"
+                color="indigo"
                 loading={updatePost.isPending}
                 onClick={() => {
                   const title = editTitle.trim() ? editTitle : null;
