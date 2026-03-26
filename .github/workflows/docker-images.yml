@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  pull-requests: read
 
 jobs:
   backend-tests:
@@ -50,6 +51,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -75,14 +78,17 @@ jobs:
       - name: Mypy (JWT module)
         run: poetry run mypy src/core/security.py --ignore-missing-imports --follow-imports=skip
 
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: pip-audit
-        continue-on-error: true
         run: |
           poetry run pip install pip-audit
           poetry run pip-audit
 
       - name: Pytest (full suite)
-        continue-on-error: true
         timeout-minutes: 20
         run: poetry run pytest -v tests/ --ignore=tests/e2e --maxfail=1
 
@@ -168,7 +174,7 @@ jobs:
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: "1.7.1"
+          version: "1.8.3"
 
       - name: Install backend dependencies
         run: |

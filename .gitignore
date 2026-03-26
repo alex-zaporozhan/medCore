@@ -74,3 +74,4 @@ __pycache__/
 frontend/node_modules/
 frontend/playwright-report/
 frontend/test-results/
+.tmp_ci_logs/

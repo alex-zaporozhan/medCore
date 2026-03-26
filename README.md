@@ -30,11 +30,28 @@ Backend (FastAPI) + frontend (Vite/React) для записи в стомато�
 - **Security (Trivy FS)** (`.github/workflows/security-trivy.yml`) — уязвимости в зависимостях (CRITICAL).
 - **DR restore drill** (`.github/workflows/restore-drill.yml`) — `pg_dump` / `pg_restore` и сверка `alembic_version` (по расписанию и вручную).
 
-Отдельно — frontend, при необходимости **E2E** (Playwright). После крупных обновлений зависимостей полезен полный прогон **docker-images** на `main` (тесты + сборка образов).
+**Жесткий gate для Docker Hub**: workflow `docker-images` публикует образы только после green шагов `backend-tests` (ruff, tenant audit, mypy, gitleaks, pip-audit, pytest), `frontend-tests` и `e2e-frontend-pages`.
 
 ### Образы Docker
 
-Workflow **docker-images** пушит теги `:${{ github.sha }}`, `:main`, `:latest` (см. файл). **Trivy FS** в CI дополняет (не заменяет) скан **слоёв образа** в реестре — по политике SME и @LEAD.
+Workflow **docker-images** пушит только immutable-теги `:${{ github.sha }}`. **Trivy FS** в CI дополняет (не заменяет) скан **слоёв образа** в реестре — по политике SME и @LEAD.
+
+### Локальный pre-push gate (блокирует push при любой ошибке)
+
+Перед первым пушем включите репозиторные hooks:
+
+`git config core.hooksPath .githooks`
+
+Локальные hooks:
+
+- `pre-commit`: быстрые проверки по staged-файлам (ruff/eslint), лог `.tmp_ci_logs/local-pre-commit-gate.log`.
+- `pre-push`: полный quality gate (backend + frontend), лог `.tmp_ci_logs/local-pre-push-gate.log`.
+- прямой push в `main` запрещен hook-ом (override только вручную: `ALLOW_MAIN_PUSH=1 git push ...`).
+
+Ручной запуск:
+
+- macOS/Linux/Git Bash: `bash scripts/dev/pre_push_gate.sh`
+- Windows PowerShell: `powershell -ExecutionPolicy Bypass -File scripts/dev/pre_push_gate.ps1`
 
 ## Документация для операций
 
