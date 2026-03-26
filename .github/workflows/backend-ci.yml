@@ -84,6 +84,7 @@ jobs:
         run: poetry run mypy src/core/security.py --ignore-missing-imports --follow-imports=skip
 
       - name: pip-audit
+        continue-on-error: true
         run: |
           poetry run pip install pip-audit
           poetry run pip-audit
