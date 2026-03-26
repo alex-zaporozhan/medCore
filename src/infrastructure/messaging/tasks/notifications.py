@@ -287,7 +287,7 @@ def send_reminder_2h_task(self, booking_id: str, trace_id: str | None = None):
     return {"booking_id": booking_id, "status": "sent"}
 
 
-@celery_app.task(name="notifications.run_reminders")
+@celery_app.task(name="notifications.run_reminders", bind=True)
 def run_reminders_task(self):
     """
     Periodic task (e.g. every 15 min): find confirmed bookings in 24h and 2h windows,
@@ -310,6 +310,17 @@ def run_reminders_task(self):
                     )
                 )
                 for b in result.scalars().all():
+                    template = "reminder_24h" if task_fn is send_reminder_24h_task else "reminder_2h"
+                    already_queued_or_sent = await session.execute(
+                        select(Notification.id)
+                        .where(
+                            Notification.booking_id == b.id,
+                            Notification.template == template,
+                        )
+                        .limit(1)
+                    )
+                    if already_queued_or_sent.scalar_one_or_none() is not None:
+                        continue
                     task_fn.delay(str(b.id))
 
     _run_async(_do())
