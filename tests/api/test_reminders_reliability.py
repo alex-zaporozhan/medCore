@@ -84,3 +84,43 @@ async def test_run_reminders_task_signature_and_dedup(seed_data: dict):
             )
         )
         assert row.scalar_one_or_none() is not None
+
+
+@pytest.mark.asyncio
+async def test_run_reminders_task_retries_after_failed_notification(seed_data: dict):
+    """Failed reminder notification must not block next scheduler retry."""
+    booking_id = await _create_confirmed_booking(seed_data, seed_data["patient_id"])
+    enqueued: list[str] = []
+
+    class _FakeTask:
+        @staticmethod
+        def delay(value: str):
+            enqueued.append(value)
+
+    original_24 = notifications_tasks.send_reminder_24h_task
+    original_2 = notifications_tasks.send_reminder_2h_task
+    notifications_tasks.send_reminder_24h_task = _FakeTask  # type: ignore[assignment]
+    notifications_tasks.send_reminder_2h_task = _FakeTask  # type: ignore[assignment]
+    try:
+        async with AsyncSessionLocal() as session:
+            session.add(
+                Notification(
+                    clinic_id=seed_data["clinic_id"],
+                    patient_id=seed_data["patient_id"],
+                    admin_id=None,
+                    booking_id=booking_id,
+                    channel="sms",
+                    template="reminder_24h",
+                    payload={"booking_id": str(booking_id)},
+                    status="failed",
+                    error="transport timeout",
+                    sent_at=utc_now(),
+                )
+            )
+            await session.commit()
+
+        notifications_tasks.run_reminders_task()
+        assert str(booking_id) in enqueued
+    finally:
+        notifications_tasks.send_reminder_24h_task = original_24
+        notifications_tasks.send_reminder_2h_task = original_2
