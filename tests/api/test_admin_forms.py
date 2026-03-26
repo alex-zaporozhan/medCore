@@ -29,7 +29,8 @@ async def test_admin_forms_create_template_and_submission_flow(
   # Seed patient for submission linkage
   patient = Patient(clinic_id=clinic_id, phone="+79990002233", full_name="Forms Test", email=None)
   db_session.add(patient)
-  await db_session.flush()
+  # Commit is required so API request (separate DB session) can see the patient row.
+  await db_session.commit()
   await db_session.refresh(patient)
 
   headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
