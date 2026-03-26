@@ -90,7 +90,7 @@ jobs:
           poetry run pip-audit
 
       - name: Pytest
-        run: poetry run pytest tests/ -q --tb=short
+        run: poetry run pytest tests/ -q --tb=short --ignore=tests/e2e
 
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2

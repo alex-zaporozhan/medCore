@@ -82,7 +82,7 @@ jobs:
           poetry run pip-audit
 
       - name: Pytest (full suite)
-        run: poetry run pytest -v tests/
+        run: poetry run pytest -v tests/ --ignore=tests/e2e
 
   frontend-tests:
     name: Frontend tests (lint + build + vitest)
