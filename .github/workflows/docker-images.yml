@@ -80,7 +80,7 @@ jobs:
       - name: Pytest (full suite)
         continue-on-error: true
         timeout-minutes: 20
-        run: poetry run pytest -v tests/ --ignore=tests/e2e
+        run: poetry run pytest -v tests/ --ignore=tests/e2e --maxfail=1
 
   frontend-tests:
     name: Frontend tests (lint + build + vitest)
