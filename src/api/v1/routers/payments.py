@@ -37,6 +37,19 @@ async def create_payment(
     context: RequestContext = Depends(get_request_context),
 ):
     """Create payment in YooKassa for booking; returns payment_url for redirect."""
+    if context.user_type != "patient" or context.user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"detail": "Forbidden", "code": "FORBIDDEN"},
+        )
+    booking_row = await session.get(Booking, data.booking_id)
+    if booking_row is not None and booking_row.patient_id != context.user_id:
+        # Do not leak cross-subject booking existence to caller.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": "Booking not found", "code": "PAYMENT_BOOKING_NOT_FOUND"},
+        )
+
     service = PaymentService(session)
     try:
         result = await service.create_payment(
