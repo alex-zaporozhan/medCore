@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import get_session, get_request_context
@@ -18,6 +19,7 @@ from src.application.errors import (
     payment_error_from_value_error,
 )
 from src.domain.entities.booking import Booking
+from src.domain.entities.patient import Patient
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,17 @@ async def create_payment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"detail": "Booking not found", "code": "PAYMENT_BOOKING_NOT_FOUND"},
         )
+    if booking_row is not None:
+        patient_result = await session.execute(
+            select(Patient).where(Patient.id == context.user_id, Patient.deleted_at.is_(None))
+        )
+        patient_row = patient_result.scalar_one_or_none()
+        if patient_row is None or patient_row.clinic_id != booking_row.clinic_id:
+            # Explicit tenant boundary: patient and booking must belong to same clinic.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"detail": "Booking not found", "code": "PAYMENT_BOOKING_NOT_FOUND"},
+            )
 
     service = PaymentService(session)
     try:
