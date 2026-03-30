@@ -9,13 +9,22 @@ import {
   downloadStaffFeedPostAttachmentFile,
   useStaffFeedComments,
   useAddStaffFeedComment,
+  useUploadStaffFeedCommentAttachment,
 } from "@/hooks/useStaffCollab";
-import type { StaffAttachmentBrief, StaffFeedPostResponse } from "@/hooks/useStaffCollab";
-import { api } from "@/api/client";
+import type {
+  StaffAttachmentBrief,
+  StaffFeedCommentResponse,
+  StaffFeedPostResponse,
+} from "@/hooks/useStaffCollab";
+import { api, ApiErrorWithCode } from "@/api/client";
+import { ChatInlineAudioPlayer } from "@/shared/ChatInlineAudioPlayer";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/queryKeys";
 import { useRevenueHunterSaved, isRevenueHunterEnabled, useAdminSession } from "@/hooks";
 import { PageSkeleton, EmptyState, ContextBar, QueryErrorAlert, GlassModal } from "@/shared/ui";
+import { EmojiMartPopoverPicker, AppleEmojiOverlayTextarea } from "@/shared/ui";
+import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
+import { STAFF_FEED_CHROME } from "@/shared/staffFeedChrome";
 import {
   Card,
   Grid,
@@ -25,7 +34,7 @@ import {
   Text,
   Button,
   ThemeIcon,
-  Textarea,
+  Input,
   TextInput,
   Progress,
   Anchor,
@@ -34,9 +43,10 @@ import {
   Paper,
   Menu,
   Box,
+  Skeleton,
 } from "@mantine/core";
 import { Link } from "react-router-dom";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { ROUTE_PATHS } from "@/routePaths";
 import { SEMANTIC } from "@/shared/semanticUi";
 import type { AttentionFeed, AttentionItem } from "@/api/types";
@@ -55,6 +65,7 @@ import {
   IconPhoto,
   IconMicrophone,
   IconHeart,
+  IconHeartFilled,
   IconMessageCircle,
   IconDots,
 } from "@tabler/icons-react";
@@ -120,6 +131,26 @@ function StaffFeedAttachmentPreview({ attachment }: { attachment: StaffAttachmen
 
   const ct = (attachment.content_type || "").toLowerCase();
 
+  if (!url && !loadFailed) {
+    if (ct.startsWith("image/")) {
+      return (
+        <Box mt="md" mb="md">
+          <Skeleton height={220} radius="md" />
+        </Box>
+      );
+    }
+    if (ct.startsWith("audio/")) {
+      return <Skeleton height={54} radius="md" my="sm" />;
+    }
+    if (ct.startsWith("video/")) {
+      return (
+        <Box mt="md" mb="md">
+          <Skeleton height={240} radius="md" />
+        </Box>
+      );
+    }
+  }
+
   if (url && ct.startsWith("image/")) {
     return (
       <Box mt="md" mb="md">
@@ -138,7 +169,7 @@ function StaffFeedAttachmentPreview({ attachment }: { attachment: StaffAttachmen
   }
 
   if (url && ct.startsWith("audio/")) {
-    return <audio controls src={url} style={{ width: "100%" }} />;
+    return <ChatInlineAudioPlayer src={url} style={{ width: "100%" }} />;
   }
 
   if (url && ct.startsWith("video/")) {
@@ -146,7 +177,7 @@ function StaffFeedAttachmentPreview({ attachment }: { attachment: StaffAttachmen
       <video
         controls
         src={url}
-        style={{ width: "100%", maxHeight: 360, objectFit: "contain", borderRadius: 8 }}
+        style={{ width: "100%", maxHeight: 360, objectFit: "contain", borderRadius: "var(--radius-md)" }}
       />
     );
   }
@@ -172,6 +203,10 @@ function StaffFeedAttachmentPreview({ attachment }: { attachment: StaffAttachmen
   );
 }
 
+const FEED_COMMENT_MAX_FILE_BYTES = 5 * 1024 * 1024;
+const FEED_COMMENT_DOC_ACCEPT =
+  ".pdf,.doc,.docx,.txt,.xlsx,.xls,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain";
+
 function StaffFeedPostComments({
   postId,
   isOpen,
@@ -180,12 +215,33 @@ function StaffFeedPostComments({
   isOpen: boolean;
 }) {
   const [body, setBody] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [fileHint, setFileHint] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<StaffFeedCommentResponse | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const commentFileRef = useRef<HTMLInputElement>(null);
   const { data: comments, isLoading } = useStaffFeedComments(isOpen ? postId : null);
-  const addComment = useAddStaffFeedComment(postId);
+  const addComment = useAddStaffFeedComment(isOpen ? postId : null);
+  const uploadCommentAtt = useUploadStaffFeedCommentAttachment(isOpen ? postId : null);
+
+  const triggerCommentAttachPick = useCallback((mode: "doc" | "image") => {
+    const el = commentFileRef.current;
+    if (!el) return;
+    el.accept = mode === "image" ? "image/*" : FEED_COMMENT_DOC_ACCEPT;
+    el.value = "";
+    el.click();
+  }, []);
 
   useEffect(() => {
-    if (!isOpen) setBody("");
+    if (!isOpen) {
+      setBody("");
+      setReplyTo(null);
+      setPendingFiles([]);
+      setFileHint(null);
+    }
   }, [isOpen]);
+
+  const replyLabel = (c: StaffFeedCommentResponse) => c.author.full_name?.trim() || "Сотрудник";
 
   if (!isOpen) return null;
 
@@ -201,13 +257,62 @@ function StaffFeedPostComments({
       ) : comments && comments.length ? (
         <Stack gap="xs">
           {comments.map((c) => (
-            <Card key={c.id} padding="sm" radius="md" withBorder bg="white">
-              <Text size="xs" c="dimmed">
-                {c.author.full_name?.trim() || "Сотрудник"} · {new Date(c.created_at).toLocaleString()}
-              </Text>
-              <Text size="sm" style={{ whiteSpace: "pre-wrap" }} mt={4}>
-                {c.body}
-              </Text>
+            <Card
+              key={c.id}
+              id={`staff-feed-comment-${c.id}`}
+              padding="sm"
+              radius="md"
+              withBorder
+              bg="white"
+            >
+              <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+                <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+                  <Text size="xs" c="dimmed">
+                    {replyLabel(c)} · {new Date(c.created_at).toLocaleString()}
+                  </Text>
+                  {c.in_reply_to ? (
+                    <Text size="xs" c="dimmed" style={{ fontStyle: "italic" }}>
+                      <Anchor
+                        component="button"
+                        type="button"
+                        size="xs"
+                        c="dimmed"
+                        onClick={() => {
+                          const el = document.getElementById(
+                            `staff-feed-comment-${c.parent_comment_id}`
+                          );
+                          el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                        }}
+                      >
+                        {c.in_reply_to.full_name?.trim() || "Сотрудник"}
+                      </Anchor>
+                      , —{" "}
+                    </Text>
+                  ) : null}
+                  {c.body.trim() ? (
+                    <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                      <AppleEmojiRichText text={c.body} />
+                    </Text>
+                  ) : null}
+                  {(c.attachments ?? []).length > 0 ? (
+                    <Stack gap="xs" mt={4}>
+                      {(c.attachments ?? []).map((att) => (
+                        <StaffFeedAttachmentPreview key={att.id} attachment={att} />
+                      ))}
+                    </Stack>
+                  ) : null}
+                </Stack>
+                <Button
+                  {...STAFF_FEED_CHROME.subtleButton}
+                  size="compact-xs"
+                  onClick={() => {
+                    setReplyTo(c);
+                    textareaRef.current?.focus();
+                  }}
+                >
+                  Ответить
+                </Button>
+              </Group>
             </Card>
           ))}
         </Stack>
@@ -217,20 +322,128 @@ function StaffFeedPostComments({
         </Text>
       )}
 
-      <Textarea
+      {replyTo ? (
+        <Group gap="xs" align="center">
+          <Text size="xs" c="dimmed">
+            Ответ для{" "}
+            <Text span fw={600} c="gray.8">
+              {replyLabel(replyTo)}
+            </Text>
+          </Text>
+          <ActionIcon
+            {...STAFF_FEED_CHROME.actionIcon}
+            size="sm"
+            aria-label="Отменить ответ"
+            onClick={() => setReplyTo(null)}
+          >
+            <IconX size={16} />
+          </ActionIcon>
+        </Group>
+      ) : null}
+
+      <AppleEmojiOverlayTextarea
+        ref={textareaRef}
         value={body}
         onChange={(e) => setBody(e.currentTarget.value)}
         minRows={2}
-        placeholder="Ваш комментарий..."
+        placeholder="Ваш комментарий… (можно только вложения без текста)"
       />
-      <Group justify="flex-end">
+      <input
+        ref={commentFileRef}
+        type="file"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0] ?? null;
+          e.target.value = "";
+          setFileHint(null);
+          if (!f) return;
+          if (f.size > FEED_COMMENT_MAX_FILE_BYTES) {
+            setFileHint("Файл больше 5 МБ");
+            return;
+          }
+          setPendingFiles((prev) => [...prev, f]);
+        }}
+      />
+      {fileHint ? (
+        <Text size="xs" c="red">
+          {fileHint}
+        </Text>
+      ) : null}
+      {pendingFiles.length > 0 ? (
+        <Text size="xs" c="dimmed">
+          К комментарию:{" "}
+          {pendingFiles.map((f) => f.name).join(", ")}{" "}
+          <Anchor
+            component="button"
+            type="button"
+            size="xs"
+            c="red.7"
+            onClick={() => setPendingFiles([])}
+          >
+            Убрать
+          </Anchor>
+        </Text>
+      ) : null}
+      <Group justify="space-between" align="center" wrap="wrap">
+        <Group gap="xs">
+          <EmojiMartPopoverPicker
+            onPick={(native) => setBody((prev) => prev + native)}
+            onInserted={() => textareaRef.current?.focus()}
+          />
+          <ActionIcon
+            {...STAFF_FEED_CHROME.actionIcon}
+            aria-label="Документ"
+            onClick={() => triggerCommentAttachPick("doc")}
+          >
+            <IconPaperclip size={18} />
+          </ActionIcon>
+          <ActionIcon
+            {...STAFF_FEED_CHROME.actionIcon}
+            aria-label="Изображение"
+            onClick={() => triggerCommentAttachPick("image")}
+          >
+            <IconPhoto size={18} />
+          </ActionIcon>
+        </Group>
         <Button
+          {...STAFF_FEED_CHROME.primaryButton}
           size="xs"
-          variant="filled"
-          color="indigo"
-          onClick={() => addComment.mutate(body)}
-          disabled={!body.trim() || addComment.isPending}
-          loading={addComment.isPending}
+          onClick={async () => {
+            if (!body.trim() && pendingFiles.length === 0) return;
+            for (const f of pendingFiles) {
+              if (f.size > FEED_COMMENT_MAX_FILE_BYTES) {
+                setFileHint("Файл больше 5 МБ");
+                return;
+              }
+            }
+            setFileHint(null);
+            const filesSnapshot = [...pendingFiles];
+            try {
+              const comment = await addComment.mutateAsync({
+                body: body.trim(),
+                parent_comment_id: replyTo?.id ?? null,
+              });
+              const cid = String(comment.id);
+              for (const f of filesSnapshot) {
+                await uploadCommentAtt.mutateAsync({ commentId: cid, file: f });
+              }
+              setBody("");
+              setPendingFiles([]);
+              setReplyTo(null);
+            } catch (e) {
+              const msg =
+                e instanceof ApiErrorWithCode
+                  ? e.message
+                  : "Не удалось отправить комментарий или вложение. Попробуйте ещё раз.";
+              setFileHint(msg);
+            }
+          }}
+          disabled={
+            (!body.trim() && pendingFiles.length === 0) ||
+            addComment.isPending ||
+            uploadCommentAtt.isPending
+          }
+          loading={addComment.isPending || uploadCommentAtt.isPending}
         >
           Отправить
         </Button>
@@ -604,11 +817,12 @@ export default function AdminDashboardPage() {
           mt="xs"
           bg="var(--mantine-color-gray-0)"
           p="sm"
-          style={{ borderRadius: 8 }}
+          style={{ borderRadius: "var(--radius-md)" }}
         >
           <Group justify="flex-start" align="center" wrap="wrap">
             <Button
               variant="light"
+              color="brand"
               disabled={!canPostToStaffFeed || sessionLoading}
               onClick={() => {
                 if (!canPostToStaffFeed) return;
@@ -637,13 +851,14 @@ export default function AdminDashboardPage() {
                   value={feedTitle}
                   onChange={(e) => setFeedTitle(e.currentTarget.value)}
                 />
-                <Textarea
-                  label="Текст"
-                  placeholder="Текст новости для персонала…"
-                  minRows={5}
-                  value={feedBody}
-                  onChange={(e) => setFeedBody(e.currentTarget.value)}
-                />
+                <Input.Wrapper label="Текст">
+                  <AppleEmojiOverlayTextarea
+                    placeholder="Текст новости для персонала…"
+                    minRows={5}
+                    value={feedBody}
+                    onChange={(e) => setFeedBody(e.currentTarget.value)}
+                  />
+                </Input.Wrapper>
                 <Group gap="xs">
                   <input
                     ref={feedFileRef}
@@ -657,28 +872,25 @@ export default function AdminDashboardPage() {
                     }}
                   />
                   <ActionIcon
-                    variant="light"
-                    size="lg"
+                    {...STAFF_FEED_CHROME.actionIcon}
                     aria-label="Прикрепить файлы"
                     onClick={() => feedFileRef.current?.click()}
                   >
                     <IconPaperclip size={20} />
                   </ActionIcon>
                   <ActionIcon
-                    variant="light"
-                    size="lg"
+                    {...STAFF_FEED_CHROME.actionIcon}
                     aria-label="Изображение"
                     onClick={() => feedFileRef.current?.click()}
                   >
                     <IconPhoto size={20} />
                   </ActionIcon>
                   <ActionIcon
-                    variant="light"
-                    size="lg"
-                    color="gray"
+                    {...STAFF_FEED_CHROME.actionIcon}
                     aria-label="Аудио (в разработке)"
                     title="Аудио: единый контур для админки и чатов — в плане"
                     disabled
+                    styles={{ root: { opacity: 0.45 } }}
                   >
                     <IconMicrophone size={20} />
                   </ActionIcon>
@@ -690,8 +902,7 @@ export default function AdminDashboardPage() {
                 </Group>
                 <Group justify="flex-end">
                   <Button
-                    variant="filled"
-                    color="indigo"
+                    {...STAFF_FEED_CHROME.primaryButton}
                     onClick={() => void publishPost()}
                     loading={createPost.isPending}
                     disabled={!feedBody.trim()}
@@ -741,7 +952,7 @@ export default function AdminDashboardPage() {
                         {canPostToStaffFeed ? (
                           <Menu position="bottom-end" withinPortal>
                             <Menu.Target>
-                              <ActionIcon variant="subtle" color="gray" aria-label="Действия с постом">
+                              <ActionIcon {...STAFF_FEED_CHROME.actionIcon} aria-label="Действия с постом">
                                 <IconDots size={18} stroke={1.5} />
                               </ActionIcon>
                             </Menu.Target>
@@ -771,7 +982,7 @@ export default function AdminDashboardPage() {
                         ) : null}
                       </Group>
                       <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                        {p.body}
+                        <AppleEmojiRichText text={p.body ?? ""} />
                       </Text>
                       {(p.attachments ?? []).length > 0 ? (
                         <Stack gap="xs">
@@ -783,18 +994,19 @@ export default function AdminDashboardPage() {
                       <Group gap="md" align="center" mt={4}>
                         <Group gap={6} align="center">
                           <ActionIcon
-                            variant="subtle"
                             aria-label="Лайк"
-                            loading={toggleLike.isPending}
+                            loading={toggleLike.isPending && toggleLike.variables === p.id}
+                            variant={p.liked_by_me ? "filled" : "light"}
+                            color={p.liked_by_me ? "red" : "brand"}
+                            size="lg"
+                            radius="md"
                             onClick={() => toggleLike.mutate(p.id)}
-                            styles={{
-                              root: {
-                                color: "var(--mantine-color-dimmed)",
-                                "&:hover": { color: "var(--mantine-color-red-6)" },
-                              },
-                            }}
                           >
-                            <IconHeart size={20} stroke={1.5} />
+                            {p.liked_by_me ? (
+                              <IconHeartFilled size={20} stroke={1.5} />
+                            ) : (
+                              <IconHeart size={20} stroke={1.5} />
+                            )}
                           </ActionIcon>
                           <Text size="sm" c="dimmed" component="span">
                             {p.likes_count ?? 0}
@@ -802,20 +1014,15 @@ export default function AdminDashboardPage() {
                         </Group>
                         <Group gap={6} align="center">
                           <ActionIcon
-                            variant="subtle"
+                            {...STAFF_FEED_CHROME.actionIcon}
                             aria-label="Комментарии"
+                            variant={openCommentsByPostId[p.id] ? "filled" : "light"}
                             onClick={() =>
                               setOpenCommentsByPostId((prev) => ({
                                 ...prev,
                                 [p.id]: !prev[p.id],
                               }))
                             }
-                            styles={{
-                              root: {
-                                color: "var(--mantine-color-dimmed)",
-                                "&:hover": { color: "var(--mantine-color-red-6)" },
-                              },
-                            }}
                           >
                             <IconMessageCircle size={20} stroke={1.5} />
                           </ActionIcon>
@@ -847,12 +1054,13 @@ export default function AdminDashboardPage() {
               value={editTitle}
               onChange={(e) => setEditTitle(e.currentTarget.value)}
             />
-            <Textarea
-              label="Текст"
-              value={editBody}
-              onChange={(e) => setEditBody(e.currentTarget.value)}
-              minRows={5}
-            />
+            <Input.Wrapper label="Текст">
+              <AppleEmojiOverlayTextarea
+                value={editBody}
+                onChange={(e) => setEditBody(e.currentTarget.value)}
+                minRows={5}
+              />
+            </Input.Wrapper>
 
             <Text size="sm" fw={700} c="gray.9">
               Изображение / вложение
@@ -881,8 +1089,8 @@ export default function AdminDashboardPage() {
             />
             <Group justify="space-between" align="center">
               <Button
+                {...STAFF_FEED_CHROME.subtleButton}
                 size="xs"
-                variant="light"
                 onClick={() => editFileRef.current?.click()}
                 disabled={updatePost.isPending}
               >
@@ -899,17 +1107,17 @@ export default function AdminDashboardPage() {
               <img
                 src={editFilePreviewUrl}
                 alt="preview"
-                style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 8 }}
+                style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: "var(--radius-md)" }}
               />
             ) : null}
             {editFilePreviewUrl && (editFile?.type || "").toLowerCase().startsWith("audio/") ? (
-              <audio controls src={editFilePreviewUrl} style={{ width: "100%" }} />
+              <ChatInlineAudioPlayer src={editFilePreviewUrl} style={{ width: "100%" }} />
             ) : null}
             {editFilePreviewUrl && (editFile?.type || "").toLowerCase().startsWith("video/") ? (
               <video
                 controls
                 src={editFilePreviewUrl}
-                style={{ width: "100%", maxHeight: 360, objectFit: "contain", borderRadius: 8 }}
+                style={{ width: "100%", maxHeight: 360, objectFit: "contain", borderRadius: "var(--radius-md)" }}
               />
             ) : null}
 
@@ -918,8 +1126,7 @@ export default function AdminDashboardPage() {
                 Отмена
               </Button>
               <Button
-                variant="filled"
-                color="indigo"
+                {...STAFF_FEED_CHROME.primaryButton}
                 loading={updatePost.isPending}
                 onClick={() => {
                   const title = editTitle.trim() ? editTitle : null;
@@ -943,8 +1150,8 @@ export default function AdminDashboardPage() {
 
       <style>{`
         @keyframes admin-emergency-blink {
-          0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(250, 140, 0, 0.4); }
-          50% { opacity: 0.92; box-shadow: 0 0 0 6px rgba(250, 140, 0, 0.15); }
+          0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--admin-emergency-blink-shadow-outer); }
+          50% { opacity: 0.92; box-shadow: 0 0 0 6px var(--admin-emergency-blink-shadow-ring); }
         }
         .admin-emergency-blink {
           animation: admin-emergency-blink 1.2s ease-in-out infinite;

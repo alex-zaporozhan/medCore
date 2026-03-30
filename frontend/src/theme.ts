@@ -1,7 +1,8 @@
 /**
- * Crisp SaaS (светлая админка): приглушённые палитры (Slate / Indigo / Rose / Emerald),
- * многослойные тени, карточки с микрограницей.
- * Канон: `docs/ARCH_FRONTEND_UI_LOGIC.md` · `docs/TECH_PASSPORT_FRONTEND_UI_LOGIC.md` §7–§9
+ * Swiss Slate / Ink (светлая админка): brand = сине-графит, холодные нейтрали,
+ * многослойные тени с подтоном ink, карточки с микрограницей.
+ * Канон: `docs/artifacts/85 plus/DESIGN_ENTERPRISE_85_PLUS_CONCEPT.md` §3.6 · `docs/ARCH_FRONTEND_UI_LOGIC.md`
+ * Пиксельная сверка шкал brand/gray/семантики — `docs/design/DESIGN_PALETTE_SPECTRUM_SWATCHES.html` §1 Swiss Slate / Ink.
  */
 
 import {
@@ -14,59 +15,59 @@ import {
   type MantineColorsTuple,
 } from "@mantine/core";
 
-/** Layered shadows — `docs/ARCH_FRONTEND_UI_LOGIC.md` §2.2 */
+/** Тени Crisp × Ink — `DESIGN_ENTERPRISE_85_PLUS_CONCEPT.md` §3.6.4 */
 const crispShadows = {
-  xs: "0 1px 2px rgba(0, 0, 0, 0.04)",
-  sm: "0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03)",
-  md: "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)",
-  lg: "0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -2px rgba(0,0,0,0.025)",
-  xl: "0 20px 25px -5px rgba(0,0,0,0.05), 0 10px 10px -5px rgba(0,0,0,0.02)",
+  xs: "0 1px 2px rgba(15, 20, 25, 0.05)",
+  sm: "0 1px 2px rgba(15,20,25,0.05), 0 4px 12px rgba(15,20,25,0.06)",
+  md: "0 4px 8px rgba(15,20,25,0.06), 0 16px 40px rgba(15,20,25,0.08)",
+  lg: "0 10px 15px -3px rgba(15,20,25,0.07), 0 4px 6px -2px rgba(15,20,25,0.05)",
+  xl: "0 20px 25px -5px rgba(15,20,25,0.08), 0 10px 10px -5px rgba(15,20,25,0.04)",
 };
 
-/** Slate Indigo — primary; без «ядовитого» дефолтного indigo Mantine */
-const slateIndigo: MantineColorsTuple = [
-  "#EEF2F6",
-  "#E0E7FF",
-  "#C7D2FE",
-  "#A5B4FC",
-  "#818CF8",
-  "#6366F1",
-  "#4F46E5",
-  "#4338CA",
-  "#3730A3",
-  "#312E81",
+/** Swiss Slate / Ink — brand (как в DESIGN_PALETTE_SPECTRUM_SWATCHES.html §1: ink-50…900) */
+const swissInk: MantineColorsTuple = [
+  "#e8eef3", // ink-50
+  "#dce4eb", // между 50 и 100
+  "#c5d4e0", // ink-100
+  "#8a9faf", // ink-300
+  "#6b7f90", // между 300 и 500
+  "#4a5f73", // ink-500
+  "#1c2e45", // primary
+  "#152338", // hover
+  "#0f1a28", // между hover и 900
+  "#0a1018", // ink-900
 ];
 
-/** Холодный Slate вместо нейтрального gray */
+/** Нейтраль Swiss (свотчи §1: поверхности + лестница n-50…text main) */
 const slateCool: MantineColorsTuple = [
-  "#f8fafc",
-  "#f1f5f9",
-  "#e2e8f0",
-  "#cbd5e1",
-  "#94a3b8",
-  "#64748b",
-  "#475569",
-  "#334155",
-  "#1e293b",
-  "#0f172a",
+  "#f4f6f8", // bg app
+  "#eef1f4", // bg hover
+  "#e2e6ea", // border
+  "#d0d7de", // border 2°
+  "#9aa8b3", // n-400
+  "#5c6d7a", // text ·
+  "#3d4f5c", // n-700
+  "#2a3844",
+  "#1a2430",
+  "#0f1419", // text main
 ];
 
-/** Rose — приглушённый «красный» */
-const roseMuted: MantineColorsTuple = [
-  "#fff1f2",
-  "#ffe4e6",
-  "#fecdd3",
-  "#fda4af",
-  "#fb7185",
-  "#f43f5e",
-  "#e11d48",
-  "#be123c",
+/** Danger / error — якоря из свотчей §1: danger bg, danger, danger text */
+const swissDanger: MantineColorsTuple = [
+  "#fef2f2",
+  "#fee2e2",
+  "#fecaca",
+  "#fca5a5",
+  "#f87171",
+  "#ef4444",
+  "#dc2626",
+  "#b42318",
   "#9f1239",
-  "#881337",
+  "#7f1d1d",
 ];
 
-/** Emerald — спокойный «зелёный» / успех */
-const emeraldCalm: MantineColorsTuple = [
+/** Success — якоря §1: success bg #ecfdf5, success #065f46 */
+const swissSuccess: MantineColorsTuple = [
   "#ecfdf5",
   "#d1fae5",
   "#a7f3d0",
@@ -79,7 +80,21 @@ const emeraldCalm: MantineColorsTuple = [
   "#064e3b",
 ];
 
-/** Blue — мягкий slate-blue (не кислотный) */
+/** Warning — якоря §1: warn bg #fffbeb, warn #b45309 */
+const swissWarning: MantineColorsTuple = [
+  "#fffbeb",
+  "#fef3c7",
+  "#fde68a",
+  "#fcd34d",
+  "#fbbf24",
+  "#f59e0b",
+  "#d97706",
+  "#b45309",
+  "#92400e",
+  "#78350f",
+];
+
+/** Blue — info / ссылки второго порядка (не смешивать с brand-ink на CTA) */
 const blueSoft: MantineColorsTuple = [
   "#f8fafc",
   "#eff6ff",
@@ -93,7 +108,7 @@ const blueSoft: MantineColorsTuple = [
   "#1e3a8a",
 ];
 
-/** Совместимость: ключ `dark` — та же холодная шкала (расписание, вторичные акценты) */
+/** Совместимость: ключ `dark` — та же холодная шкала */
 const slateDark: MantineColorsTuple = [...slateCool];
 
 const aiViolet: MantineColorsTuple = [
@@ -115,22 +130,28 @@ export const appTheme = createTheme({
     xs: rem(12),
     sm: rem(14),
     md: rem(16),
+    lg: rem(18),
+    xl: rem(20),
   },
   spacing: {
-    xs: rem(8),
-    sm: rem(12),
-    md: rem(16),
-    lg: rem(24),
-    xl: rem(32),
+    xs: rem(4),
+    sm: rem(8),
+    md: rem(12),
+    lg: rem(16),
+    xl: rem(24),
+    "2xl": rem(32),
   },
-  primaryColor: "indigo",
+  primaryColor: "brand",
   primaryShade: 6,
   defaultRadius: "sm",
   colors: {
-    indigo: slateIndigo,
+    brand: swissInk,
+    /** Алиас для существующих `color="indigo"` — та же шкала ink */
+    indigo: swissInk,
     gray: slateCool,
-    red: roseMuted,
-    green: emeraldCalm,
+    red: swissDanger,
+    green: swissSuccess,
+    yellow: swissWarning,
     blue: blueSoft,
     dark: slateDark,
     ai: aiViolet,
@@ -208,7 +229,7 @@ export const appTheme = createTheme({
       },
       styles: (theme, props) => {
         const root: Record<string, string | number | undefined> = {
-          transition: "background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease",
+          transition: "background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease",
         };
         if (props.variant === "default") {
           Object.assign(root, {
@@ -252,9 +273,9 @@ export const appTheme = createTheme({
         },
         styles: {
           content: {
-            background: "rgba(255, 255, 255, 0.92)",
+            background: "var(--overlay-glass-surface)",
             backdropFilter: "blur(10px)",
-            boxShadow: "0 12px 40px rgba(15, 23, 42, 0.14)",
+            boxShadow: "var(--shadow-soft-md)",
           },
         },
       },

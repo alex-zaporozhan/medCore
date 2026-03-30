@@ -1,5 +1,12 @@
 export { DataSkeleton } from "./DataSkeleton";
 export { ContextBar } from "./ContextBar";
+export {
+  AdminDataTableToolbar,
+  AdminDataTableSurface,
+  ADMIN_TABLE_PROPS,
+  ADMIN_TABLE_PROPS_COMPACT,
+} from "./AdminDataTableShell";
+export { AdminSettingsSectionCard } from "./AdminSettingsSectionCard";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { PageSkeleton, type PageSkeletonProps } from "./PageSkeleton";
 export { GlassModal } from "./GlassModal";
@@ -18,3 +25,5 @@ export { SignatureCanvas, type SignaturePayload } from "./SignatureCanvas";
 export { AiFeatureBadge, type AiFeatureBadgeProps } from "./AiFeatureBadge";
 export { SEMANTIC, type SemanticDateNavKey, type SemanticMetricKey } from "../semanticUi";
 export { OmniInspectorTabShell, OmniInspectorSection } from "./OmniInspectorShell";
+export { EmojiMartPopoverPicker } from "./EmojiMartPopoverPicker";
+export { AppleEmojiOverlayTextarea } from "./AppleEmojiOverlayTextarea";

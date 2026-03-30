@@ -21,7 +21,7 @@ from src.application.services.booking_status_service import (
     BookingStatusService,
     all_booking_status_values,
 )
-from src.domain.entities.booking import Booking, BookingStatus
+from src.domain.entities.booking import Booking, BookingStatus, coerce_booking_status
 from src.domain.entities.patient import Patient
 from src.domain.entities.doctor import Doctor
 from src.domain.entities.service import Service
@@ -505,8 +505,14 @@ class BookingService:
         if not booking:
             raise LookupError(BOOKING_NOT_FOUND)
         assert_entity_belongs_to_clinic(booking, clinic_id, entity_label="booking")
+        booking.status = coerce_booking_status(booking.status)
 
-        if booking.status not in {BookingStatus.CONFIRMED, BookingStatus.PENDING}:
+        if booking.status not in {
+            BookingStatus.CONFIRMED,
+            BookingStatus.PENDING,
+            BookingStatus.REGISTERED,
+            BookingStatus.IN_PROGRESS,
+        }:
             raise ValueError(BOOKING_ONLY_PENDING_CONFIRMED_COMPLETED)
 
         loyalty_service = LoyaltyService(self.session)
@@ -589,8 +595,14 @@ class BookingService:
         if not booking:
             raise LookupError(BOOKING_NOT_FOUND)
         assert_entity_belongs_to_clinic(booking, clinic_id, entity_label="booking")
+        booking.status = coerce_booking_status(booking.status)
 
-        if booking.status not in {BookingStatus.CONFIRMED, BookingStatus.PENDING}:
+        if booking.status not in {
+            BookingStatus.CONFIRMED,
+            BookingStatus.PENDING,
+            BookingStatus.REGISTERED,
+            BookingStatus.IN_PROGRESS,
+        }:
             raise ValueError(BOOKING_ONLY_PENDING_CONFIRMED_NO_SHOW)
 
         await self.status_service.transition(booking, BookingStatus.NO_SHOW, context={})
@@ -617,16 +629,23 @@ class BookingService:
         booking_id: UUID,
         data: BookingPatchAdmin,
     ) -> BookingRead:
-        """Update booking fields allowed for admin (notes)."""
+        """Update booking fields allowed for admin (notes, status via state machine)."""
         booking = await self.repository.get_by_id(booking_id)
         if not booking:
             raise LookupError(BOOKING_NOT_FOUND)
         assert_entity_belongs_to_clinic(booking, clinic_id, entity_label="booking")
+        booking.status = coerce_booking_status(booking.status)
 
         # P2-FU1: различаем «поле не передано» и «передан null» — очистка комментария.
         patch = data.model_dump(exclude_unset=True)
         if "notes" in patch:
             booking.notes = patch["notes"]
+        if "status" in patch:
+            try:
+                new_status = BookingStatus(patch["status"])
+            except ValueError as exc:
+                raise ValueError(BOOKING_INVALID_STATUS) from exc
+            await self.status_service.transition(booking, new_status, context={})
         booking = await self.repository.update(booking)
         logger.info(
             "Booking patched by admin",

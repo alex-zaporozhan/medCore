@@ -178,7 +178,7 @@ export default function AdminFinancePage() {
         </Tabs.List>
 
         <Tabs.Panel value="cashboxes" pt="md">
-          <Card shadow="sm" padding="md" withBorder>
+          <Card shadow="sm" padding="md" withBorder className="data-table-card">
             <Text size="sm" fw={500} mb="sm">
               Кассы клиники
             </Text>
@@ -193,7 +193,7 @@ export default function AdminFinancePage() {
               />
             )}
             {cashboxes && cashboxes.length > 0 && (
-              <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+              <Table withRowBorders highlightOnHover verticalSpacing="sm">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Название</Table.Th>
@@ -278,7 +278,7 @@ export default function AdminFinancePage() {
             )}
           </Card>
           {liability && (
-            <Card shadow="sm" padding="md" withBorder mt="md">
+            <Card shadow="sm" padding="md" withBorder mt="md" className="data-toolbar-card">
               <Text size="sm" fw={500} c="dimmed" mb="xs">
                 Деньги в воздухе (Unearned Revenue)
               </Text>
@@ -319,7 +319,7 @@ export default function AdminFinancePage() {
               </Stack>
             }
             center={
-              <Card shadow="sm" padding="md" withBorder>
+              <Card shadow="sm" padding="md" withBorder className="data-table-card">
                 <Text size="sm" fw={500} mb="sm">
                   Движение денег по кассам
                 </Text>
@@ -329,7 +329,7 @@ export default function AdminFinancePage() {
                   </Text>
                 )}
                 {txs && txs.length > 0 && (
-                  <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                  <Table withRowBorders highlightOnHover verticalSpacing="sm">
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Дата</Table.Th>
@@ -365,7 +365,7 @@ export default function AdminFinancePage() {
               </Card>
             }
             right={
-              <Card shadow="sm" padding="md" withBorder>
+              <Card shadow="sm" padding="md" withBorder className="data-toolbar-card">
                 <Text size="sm" fw={500} mb="xs">
                   Итого по транзакциям
                 </Text>
@@ -394,7 +394,7 @@ export default function AdminFinancePage() {
             {salarySummary && (
               <>
                 <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-                  <Card shadow="sm" padding="md" withBorder>
+                  <Card shadow="sm" padding="md" withBorder className="data-table-card">
                     <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
                       Всего начислено
                     </Text>
@@ -424,7 +424,7 @@ export default function AdminFinancePage() {
                     <Text size="sm" fw={500} mb="sm">
                       Начисления по врачам (агрегат)
                     </Text>
-                    <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                    <Table withRowBorders highlightOnHover verticalSpacing="sm">
                       <Table.Thead>
                         <Table.Tr>
                           <Table.Th>Врач (ID)</Table.Th>
@@ -446,7 +446,7 @@ export default function AdminFinancePage() {
                 )}
               </>
             )}
-            <Card shadow="sm" padding="md" withBorder>
+            <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Text size="sm" fw={500} mb="sm">
                 Политики расчёта зарплаты
               </Text>
@@ -456,7 +456,7 @@ export default function AdminFinancePage() {
                 </Text>
               )}
               {payrollPolicies && payrollPolicies.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Доктор</Table.Th>
@@ -480,7 +480,7 @@ export default function AdminFinancePage() {
                 </Table>
               )}
             </Card>
-            <Card shadow="sm" padding="md" withBorder>
+            <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Group justify="space-between" mb="sm">
                 <Text size="sm" fw={500}>
                   Начисления по врачам
@@ -501,7 +501,7 @@ export default function AdminFinancePage() {
               )}
               {salaryTxs && salaryTxs.length > 0 && (
                 <>
-                  <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                  <Table withRowBorders highlightOnHover verticalSpacing="sm">
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Дата</Table.Th>
@@ -547,7 +547,7 @@ export default function AdminFinancePage() {
 
         <Tabs.Panel value="inventory" pt="md">
           <Stack>
-            <Card shadow="sm" padding="md" withBorder>
+            <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Text size="sm" fw={500} mb="sm">
                 Товары и материалы
               </Text>
@@ -557,7 +557,7 @@ export default function AdminFinancePage() {
                 </Text>
               )}
               {products && products.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Название</Table.Th>
@@ -570,7 +570,7 @@ export default function AdminFinancePage() {
                     {products.map((p) => (
                       <Table.Tr
                         key={p.id}
-                        style={{ cursor: "pointer" }}
+                        className="data-table-clickable-row"
                         onClick={() => setSelectedProductId(p.id)}
                       >
                         <Table.Td>{p.name}</Table.Td>
@@ -584,7 +584,7 @@ export default function AdminFinancePage() {
               )}
             </Card>
 
-            <Card shadow="sm" padding="md" withBorder>
+            <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Text size="sm" fw={500} mb="sm">
                 Склады
               </Text>
@@ -594,7 +594,7 @@ export default function AdminFinancePage() {
                 </Text>
               )}
               {warehouses && warehouses.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Название</Table.Th>
@@ -605,7 +605,7 @@ export default function AdminFinancePage() {
                     {warehouses.map((w) => (
                       <Table.Tr
                         key={w.id}
-                        style={{ cursor: "pointer" }}
+                        className="data-table-clickable-row"
                         onClick={() => setSelectedWarehouseId(w.id)}
                       >
                         <Table.Td>{w.name}</Table.Td>
@@ -617,7 +617,7 @@ export default function AdminFinancePage() {
               )}
             </Card>
 
-            <Card shadow="sm" padding="md" withBorder>
+            <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Group justify="space-between" mb="sm">
                 <Text size="sm" fw={500}>
                   История движений по складу
@@ -648,7 +648,7 @@ export default function AdminFinancePage() {
                 </Text>
               )}
               {inventoryTxs && inventoryTxs.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Дата</Table.Th>
@@ -674,7 +674,7 @@ export default function AdminFinancePage() {
             </Card>
 
             {inventoryStock && (
-              <Card shadow="sm" padding="md" withBorder>
+              <Card shadow="sm" padding="md" withBorder className="data-toolbar-card">
                 <Text size="sm" fw={500} mb="xs">
                   Текущий остаток по выбранной паре товар/склад
                 </Text>

@@ -1,8 +1,13 @@
 """Chat service."""
 
 import logging
+import os
+import re
+import uuid
+from pathlib import Path
 from uuid import UUID
 
+from src.core.config import settings
 from src.core.datetime_utils import utc_now_naive
 
 from sqlalchemy import select
@@ -11,11 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.application.dto.chat_dto import (
     AdminConversationListItemDto,
     AssignResponse,
+    ChatAttachmentBrief,
     ConversationResponse,
     MessageDto,
     MessagesResponse,
 )
+from src.application.services.omni_media_storage import CLINIC_CHAT_BRIDGE_META_KEY
+
 from src.domain.entities.chat_message import ChatMessage
+from src.domain.entities.chat_message_attachment import ChatMessageAttachment
 from src.domain.entities.conversation import Conversation
 from src.domain.entities.patient import Patient
 from src.domain.interfaces.repositories.chat_message_repository import ChatMessageRepository
@@ -30,11 +39,49 @@ MESSAGES_DEFAULT_LIMIT = 50
 MESSAGES_MAX_LIMIT = 200
 
 
+def _sanitize_chat_filename(name: str) -> str:
+    base = os.path.basename(name or "file")
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", base)[:200] or "file"
+
+
+def _allowed_clinic_chat_upload_mime(content_type: str) -> bool:
+    ct = (content_type or "").split(";")[0].strip().lower()
+    if ct.startswith("image/") or ct.startswith("audio/"):
+        return True
+    return ct in (
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/plain",
+        "video/webm",
+    )
+
+
 class ChatService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.conv_repo: ConversationRepository = ConversationRepositoryImpl(session)
         self.msg_repo: ChatMessageRepository = ChatMessageRepositoryImpl(session)
+
+    async def _attachments_by_message_ids(self, message_ids: list[UUID]) -> dict[UUID, list[ChatAttachmentBrief]]:
+        if not message_ids:
+            return {}
+        res = await self.session.execute(
+            select(ChatMessageAttachment).where(ChatMessageAttachment.message_id.in_(message_ids))
+        )
+        rows = list(res.scalars().all())
+        out: dict[UUID, list[ChatAttachmentBrief]] = {}
+        for r in rows:
+            out.setdefault(r.message_id, []).append(
+                ChatAttachmentBrief(
+                    id=r.id,
+                    file_name=r.file_name,
+                    content_type=r.content_type,
+                    size_bytes=r.size_bytes,
+                )
+            )
+        return out
 
     async def get_or_create_conversation_for_patient(
         self, clinic_id: UUID, patient_id: UUID
@@ -75,6 +122,7 @@ class ChatService:
             rows = await self.msg_repo.list_by_conversation(conv.id, cursor=cursor, limit=limit + 1, ascending=True)
             items = rows[:limit]
             next_cursor = rows[limit].id if len(rows) > limit else None
+        att_map = await self._attachments_by_message_ids([m.id for m in items])
         dtos = [
             MessageDto(
                 id=m.id,
@@ -84,6 +132,7 @@ class ChatService:
                 sticker_key=getattr(m, "sticker_key", None),
                 created_at=m.created_at,
                 is_mine=(m.sender_type == "patient"),
+                attachments=att_map.get(m.id, []),
             )
             for m in items
         ]
@@ -147,7 +196,221 @@ class ChatService:
             sticker_key=msg.sticker_key,
             created_at=msg.created_at if msg.created_at is not None else now,
             is_mine=True,
+            attachments=[],
         )
+
+    async def send_message_from_patient_with_file(
+        self,
+        clinic_id: UUID,
+        patient_id: UUID,
+        *,
+        body: str,
+        file_name: str,
+        content_type: str,
+        raw: bytes,
+    ) -> MessageDto | None:
+        if not raw:
+            return None
+        if len(raw) > settings.staff_chat_max_attachment_bytes:
+            raise ValueError("file_too_large")
+        if not _allowed_clinic_chat_upload_mime(content_type):
+            raise ValueError("file_type_not_allowed")
+        caption = (body or "").strip()
+        if len(caption) > BODY_MAX_LENGTH:
+            return None
+        conv = await self.conv_repo.get_by_clinic_patient(clinic_id, patient_id)
+        if conv is None:
+            conv = Conversation(
+                clinic_id=clinic_id,
+                patient_id=patient_id,
+                assigned_admin_id=None,
+                last_message_at=None,
+                last_message_sender_type=None,
+                unread_by_admin_count=0,
+                unread_by_patient_count=0,
+            )
+            conv = await self.conv_repo.create(conv)
+        now = utc_now_naive()
+        msg = ChatMessage(
+            clinic_id=clinic_id,
+            conversation_id=conv.id,
+            patient_id=patient_id,
+            admin_id=None,
+            sender_type="patient",
+            message_type="text",
+            body=caption,
+            sticker_key=None,
+            read_by_admin_at=None,
+            read_by_patient_at=None,
+        )
+        msg = await self.msg_repo.create(msg)
+        att_id = uuid.uuid4()
+        safe = _sanitize_chat_filename(file_name)
+        rel = f"{clinic_id}/clinic_chat/{att_id}_{safe}"
+        fs_path = Path(settings.staff_chat_upload_root) / rel.replace("/", os.sep)
+        fs_path.parent.mkdir(parents=True, exist_ok=True)
+        fs_path.write_bytes(raw)
+        att_row = ChatMessageAttachment(
+            id=att_id,
+            clinic_id=clinic_id,
+            message_id=msg.id,
+            file_name=(file_name or "file")[:500],
+            content_type=(content_type or "application/octet-stream")[:128],
+            size_bytes=len(raw),
+            storage_path=rel.replace("\\", "/"),
+        )
+        self.session.add(att_row)
+        await self.session.flush()
+        conv.last_message_at = now
+        conv.last_message_sender_type = "patient"
+        conv.unread_by_admin_count = (conv.unread_by_admin_count or 0) + 1
+        await self.conv_repo.update(conv)
+        await self._bridge_patient_message_to_omni(clinic_id, patient_id, conv.id, msg)
+        logger.info(
+            "Chat message from patient with file",
+            extra={"conversation_id": str(conv.id), "message_id": str(msg.id)},
+        )
+        brief = ChatAttachmentBrief(
+            id=att_row.id,
+            file_name=att_row.file_name,
+            content_type=att_row.content_type,
+            size_bytes=att_row.size_bytes,
+        )
+        return MessageDto(
+            id=msg.id,
+            sender_type=msg.sender_type,
+            message_type=msg.message_type,
+            body=msg.body,
+            sticker_key=msg.sticker_key,
+            created_at=msg.created_at if msg.created_at is not None else now,
+            is_mine=True,
+            attachments=[brief],
+        )
+
+    async def send_message_from_admin_with_file(
+        self,
+        clinic_id: UUID,
+        conversation_id: UUID,
+        admin_id: UUID | None,
+        *,
+        body: str,
+        file_name: str,
+        content_type: str,
+        raw: bytes,
+    ) -> MessageDto | None:
+        if not raw:
+            return None
+        if len(raw) > settings.staff_chat_max_attachment_bytes:
+            raise ValueError("file_too_large")
+        if not _allowed_clinic_chat_upload_mime(content_type):
+            raise ValueError("file_type_not_allowed")
+        caption = (body or "").strip()
+        if len(caption) > BODY_MAX_LENGTH:
+            return None
+        conv = await self.conv_repo.get_by_id(conversation_id)
+        if conv is None or conv.clinic_id != clinic_id:
+            return None
+        now = utc_now_naive()
+        msg = ChatMessage(
+            clinic_id=clinic_id,
+            conversation_id=conv.id,
+            patient_id=conv.patient_id,
+            admin_id=admin_id,
+            sender_type="admin",
+            message_type="text",
+            body=caption,
+            sticker_key=None,
+            read_by_admin_at=None,
+            read_by_patient_at=None,
+        )
+        msg = await self.msg_repo.create(msg)
+        att_id = uuid.uuid4()
+        safe = _sanitize_chat_filename(file_name)
+        rel = f"{clinic_id}/clinic_chat/{att_id}_{safe}"
+        fs_path = Path(settings.staff_chat_upload_root) / rel.replace("/", os.sep)
+        fs_path.parent.mkdir(parents=True, exist_ok=True)
+        fs_path.write_bytes(raw)
+        att_row = ChatMessageAttachment(
+            id=att_id,
+            clinic_id=clinic_id,
+            message_id=msg.id,
+            file_name=(file_name or "file")[:500],
+            content_type=(content_type or "application/octet-stream")[:128],
+            size_bytes=len(raw),
+            storage_path=rel.replace("\\", "/"),
+        )
+        self.session.add(att_row)
+        await self.session.flush()
+        conv.last_message_at = now
+        conv.last_message_sender_type = "admin"
+        conv.unread_by_patient_count = (conv.unread_by_patient_count or 0) + 1
+        await self.conv_repo.update(conv)
+        logger.info(
+            "Chat message from admin with file",
+            extra={"conversation_id": str(conv.id), "message_id": str(msg.id)},
+        )
+        brief = ChatAttachmentBrief(
+            id=att_row.id,
+            file_name=att_row.file_name,
+            content_type=att_row.content_type,
+            size_bytes=att_row.size_bytes,
+        )
+        return MessageDto(
+            id=msg.id,
+            sender_type=msg.sender_type,
+            message_type=msg.message_type,
+            body=msg.body,
+            sticker_key=msg.sticker_key,
+            created_at=msg.created_at if msg.created_at is not None else now,
+            is_mine=True,
+            attachments=[brief],
+        )
+
+    async def get_clinic_chat_attachment_for_patient(
+        self, clinic_id: UUID, patient_id: UUID, attachment_id: UUID
+    ) -> tuple[ChatMessageAttachment, bytes] | None:
+        res = await self.session.execute(
+            select(ChatMessageAttachment).where(
+                ChatMessageAttachment.id == attachment_id,
+                ChatMessageAttachment.clinic_id == clinic_id,
+            )
+        )
+        row = res.scalar_one_or_none()
+        if row is None:
+            return None
+        msg = await self.msg_repo.get_by_id(row.message_id)
+        if msg is None or msg.deleted_at is not None:
+            return None
+        conv = await self.conv_repo.get_by_clinic_patient(clinic_id, patient_id)
+        if conv is None or msg.conversation_id != conv.id:
+            return None
+        path = Path(settings.staff_chat_upload_root) / row.storage_path.replace("/", os.sep)
+        if not path.is_file():
+            return None
+        return row, path.read_bytes()
+
+    async def get_clinic_chat_attachment_for_admin(
+        self, clinic_id: UUID, conversation_id: UUID, attachment_id: UUID
+    ) -> tuple[ChatMessageAttachment, bytes] | None:
+        conv = await self.conv_repo.get_by_id(conversation_id)
+        if conv is None or conv.clinic_id != clinic_id:
+            return None
+        res = await self.session.execute(
+            select(ChatMessageAttachment).where(
+                ChatMessageAttachment.id == attachment_id,
+                ChatMessageAttachment.clinic_id == clinic_id,
+            )
+        )
+        row = res.scalar_one_or_none()
+        if row is None:
+            return None
+        msg = await self.msg_repo.get_by_id(row.message_id)
+        if msg is None or msg.deleted_at is not None or msg.conversation_id != conv.id:
+            return None
+        path = Path(settings.staff_chat_upload_root) / row.storage_path.replace("/", os.sep)
+        if not path.is_file():
+            return None
+        return row, path.read_bytes()
 
     async def _bridge_patient_message_to_omni(
         self,
@@ -182,13 +445,37 @@ class ChatService:
         external_message_id = f"patient_msg_{conversation_id}_{msg.id}"
         if await omni_svc.exists_inbound_by_external_id(chat.id, "WEB_APP", external_message_id):
             return
+        # Текст без дублирования имён файлов: вложения уходят в meta и рендерятся отдельно в UI.
         content = (msg.body or "").strip() or (f"[{msg.message_type}]" if msg.message_type != "text" else "")
+        att_rows = await self._attachments_by_message_ids([msg.id])
+        bridge_attachments: list[dict] = []
+        for br in att_rows.get(msg.id) or []:
+            bridge_attachments.append(
+                {
+                    "id": str(br.id),
+                    "file_name": br.file_name,
+                    "content_type": br.content_type,
+                    "size_bytes": br.size_bytes,
+                }
+            )
+        meta: dict = {
+            "provider": "WEB_APP",
+            "external_message_id": external_message_id,
+        }
+        if bridge_attachments:
+            meta[CLINIC_CHAT_BRIDGE_META_KEY] = {
+                "conversation_id": str(conversation_id),
+                "message_id": str(msg.id),
+                "attachments": bridge_attachments,
+            }
+        msg_ct = "MEDIA" if bridge_attachments else "TEXT"
         await omni_svc.create_inbound_message(
             chat=chat,
             contact=contact,
             content=content,
             channel_id=channel_id,
-            source_metadata={"provider": "WEB_APP", "external_message_id": external_message_id},
+            source_metadata=meta,
+            content_type=msg_ct,
         )
 
     async def mark_read_by_patient(
@@ -220,8 +507,6 @@ class ChatService:
             skip=skip,
             limit=limit,
         )
-        from src.domain.entities.patient import Patient
-
         patient_ids = [c.patient_id for c in convs]
         patients_map: dict[UUID, Patient] = {}
         if patient_ids:
@@ -261,6 +546,7 @@ class ChatService:
             rows = await self.msg_repo.list_by_conversation(conv.id, cursor=cursor, limit=limit + 1, ascending=True)
             items = rows[:limit]
             next_cursor = rows[limit].id if len(rows) > limit else None
+        att_map = await self._attachments_by_message_ids([m.id for m in items])
         dtos = [
             MessageDto(
                 id=m.id,
@@ -270,6 +556,7 @@ class ChatService:
                 sticker_key=getattr(m, "sticker_key", None),
                 created_at=m.created_at,
                 is_mine=(m.sender_type == "admin"),
+                attachments=att_map.get(m.id, []),
             )
             for m in items
         ]
@@ -334,6 +621,7 @@ class ChatService:
             sticker_key=msg.sticker_key,
             created_at=msg.created_at if msg.created_at is not None else now,
             is_mine=True,
+            attachments=[],
         )
 
     async def assign_conversation(

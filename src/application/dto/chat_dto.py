@@ -8,6 +8,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 from src.core.datetime_utils import to_iso8601_utc
 
 
+class ChatAttachmentBrief(BaseModel):
+    id: UUID
+    file_name: str
+    content_type: str
+    size_bytes: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class MessageDto(BaseModel):
     id: UUID
     sender_type: str
@@ -16,6 +25,7 @@ class MessageDto(BaseModel):
     sticker_key: str | None = None
     created_at: datetime | None
     is_mine: bool
+    attachments: list[ChatAttachmentBrief] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

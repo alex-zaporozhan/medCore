@@ -9,9 +9,9 @@ export const SHELL_OVERLAY_PROPS: NonNullable<ModalProps["overlayProps"]> = {
 
 /** Center modal content — aligned with legacy `GlassModal` look. */
 export const SHELL_MODAL_CONTENT_STYLE: CSSProperties = {
-  background: "rgba(255, 255, 255, 0.92)",
+  background: "var(--overlay-glass-surface)",
   backdropFilter: "blur(10px)",
-  boxShadow: "0 8px 32px rgba(62, 73, 84, 0.12)",
+  boxShadow: "var(--shadow-soft-md)",
   borderRadius: "var(--mantine-radius-lg)",
   border: "1px solid var(--mantine-color-gray-2)",
   overflow: "hidden",
@@ -19,9 +19,9 @@ export const SHELL_MODAL_CONTENT_STYLE: CSSProperties = {
 
 const shellDrawerBase = {
   content: {
-    background: "rgba(255, 255, 255, 0.96)",
+    background: "var(--drawer-glass-surface)",
     backdropFilter: "blur(10px)",
-    boxShadow: "0 8px 32px rgba(62, 73, 84, 0.14)",
+    boxShadow: "var(--shadow-soft-md)",
     borderTopLeftRadius: "var(--mantine-radius-md)",
     borderBottomLeftRadius: "var(--mantine-radius-md)",
     border: "1px solid var(--mantine-color-gray-2)",

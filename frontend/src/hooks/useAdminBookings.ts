@@ -146,13 +146,25 @@ export function useCreateAdminBooking() {
   });
 }
 
+export interface PatchBookingAdminPayload {
+  id: string;
+  notes?: string | null;
+  status?: string;
+}
+
 export function usePatchBookingAdmin() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, notes }: { id: string; notes: string | null }) =>
-      api.patch<Booking>(`/v1/admin/bookings/${id}`, { notes }),
+    mutationFn: ({ id, notes, status }: PatchBookingAdminPayload) => {
+      const body: Record<string, unknown> = {};
+      if (notes !== undefined) body.notes = notes;
+      if (status !== undefined) body.status = status;
+      return api.patch<Booking>(`/v1/admin/bookings/${id}`, body);
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["reports-dashboard"] });
     },
   });
 }

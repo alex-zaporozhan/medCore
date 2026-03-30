@@ -156,6 +156,7 @@ export {
   usePatientConversation,
   usePatientChatMessages,
   useSendPatientMessage,
+  useSendPatientMessageWithFile,
   useDeletePatientMessage,
   usePatientMarkRead,
 } from "./usePatientChat";
@@ -163,6 +164,7 @@ export {
   useAdminChatConversations,
   useAdminChatMessages,
   useSendAdminMessage,
+  useSendAdminMessageWithFile,
   useAdminAssignConversation,
   useAdminChatMarkRead,
   useDeleteAdminMessage,

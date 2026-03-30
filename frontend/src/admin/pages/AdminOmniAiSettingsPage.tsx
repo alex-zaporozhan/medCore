@@ -6,11 +6,10 @@ import {
   type OmniChannelAiSettings,
 } from "@/hooks/useOwnerOmniAiSettings";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
-import { QueryErrorAlert } from "@/shared/ui";
+import { AdminSettingsSectionCard, ADMIN_TABLE_PROPS, QueryErrorAlert } from "@/shared/ui";
 import {
   Box,
   Button,
-  Paper,
   Select,
   Stack,
   Table,
@@ -95,10 +94,10 @@ export default function AdminOmniAiSettingsPage() {
         Глобальные настройки и переопределения по каналам (Telegram, веб-чат и др.).
       </Text>
 
-      <Paper p="md" radius="md" withBorder>
-        <Text fw={600} mb="xs">
-          Режим по умолчанию (для всей клиники)
-        </Text>
+      <AdminSettingsSectionCard
+        title="Режим по умолчанию"
+        description="Для всей клиники; каналы ниже могут переопределять режим."
+      >
         <Box style={{ maxWidth: 320 }}>
           <Select
             label="Режим AI"
@@ -117,19 +116,19 @@ export default function AdminOmniAiSettingsPage() {
             Сохранить
           </Button>
         </Box>
-      </Paper>
+      </AdminSettingsSectionCard>
 
-      <Paper p="md" radius="md" withBorder>
-        <Text fw={600} mb="xs">
-          По каналам
-        </Text>
+      <AdminSettingsSectionCard
+        title="По каналам"
+        description="Переопределения для Telegram, виджета сайта и других каналов."
+      >
         {!data?.channels?.length ? (
           <Text size="sm" c="dimmed">
             Нет настроенных каналов. Добавьте каналы в разделе «Единый чат» / Омниканальные каналы.
           </Text>
         ) : (
           <>
-            <Table striped highlightOnHover>
+            <Table striped {...ADMIN_TABLE_PROPS}>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Канал</Table.Th>
@@ -176,7 +175,7 @@ export default function AdminOmniAiSettingsPage() {
             )}
           </>
         )}
-      </Paper>
+      </AdminSettingsSectionCard>
     </Stack>
   );
 }

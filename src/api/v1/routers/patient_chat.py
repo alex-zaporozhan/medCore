@@ -3,10 +3,12 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from starlette.responses import Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.chat_attachment_disposition import clinic_chat_attachment_content_disposition
 from src.api.v1.dependencies import get_current_patient, get_session
 from src.core.patient_messages import CHAT_EMPTY_MESSAGE
 from src.application.dto.chat_dto import (
@@ -120,6 +122,86 @@ async def send_message(
             detail=CHAT_EMPTY_MESSAGE,
         )
     return msg
+
+
+@router.post("/conversation/messages/upload", response_model=MessageDto, status_code=status.HTTP_201_CREATED)
+async def send_message_with_file(
+    body: str = Form(""),
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+    current_patient=Depends(get_current_patient),
+):
+    """Отправка сообщения с одним вложением (изображение или документ). Подпись — необязательна."""
+    service = ChatService(session)
+    clinic_id = current_patient.clinic_id
+    patient_id = current_patient.id
+    try:
+        raw = await file.read()
+        msg = await service.send_message_from_patient_with_file(
+            clinic_id,
+            patient_id,
+            body=body,
+            file_name=file.filename or "file",
+            content_type=file.content_type or "application/octet-stream",
+            raw=raw,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "file_too_large":
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Файл слишком большой",
+            ) from exc
+        if code == "file_type_not_allowed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Недопустимый тип файла. Разрешены изображения, аудио, PDF и распространённые документы.",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=code) from exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_handle_chat_error(e, "send_message_with_file"),
+        ) from e
+    if msg is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=CHAT_EMPTY_MESSAGE,
+        )
+    return msg
+
+
+@router.get("/attachments/{attachment_id}/file")
+async def download_chat_attachment(
+    attachment_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_patient=Depends(get_current_patient),
+) -> Response:
+    service = ChatService(session)
+    try:
+        payload = await service.get_clinic_chat_attachment_for_patient(
+            current_patient.clinic_id, current_patient.id, attachment_id
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_handle_chat_error(e, "download_chat_attachment"),
+        ) from e
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вложение не найдено")
+    row, raw = payload
+    disp = clinic_chat_attachment_content_disposition(
+        row.content_type,
+        row.file_name,
+        allow_audio_as_attachment=False,
+    )
+    return Response(
+        content=raw,
+        media_type=row.content_type,
+        headers={"Content-Disposition": disp},
+    )
 
 
 @router.delete("/conversation/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)

@@ -355,6 +355,13 @@ export interface CreatePaymentResponse {
   prepayment_required?: boolean;
 }
 
+export interface ChatAttachmentBriefDto {
+  id: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+}
+
 export interface ChatMessageDto {
   id: string;
   sender_type: string;
@@ -363,6 +370,7 @@ export interface ChatMessageDto {
   sticker_key?: string | null;
   created_at: string;
   is_mine: boolean;
+  attachments?: ChatAttachmentBriefDto[];
 }
 
 export interface ConversationResponse {

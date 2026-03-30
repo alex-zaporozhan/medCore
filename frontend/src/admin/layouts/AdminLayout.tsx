@@ -79,7 +79,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: "СОТРУДНИКИ",
     items: [
       { to: ROUTE_PATHS.admin.dashboard, label: "Лента", icon: IconDashboard },
-      { to: ROUTE_PATHS.admin.staffChat, label: "Мессенджер", icon: IconMessageCircle },
+      { to: ROUTE_PATHS.admin.staffChat, label: "Чат команды", icon: IconMessageCircle },
       { to: ROUTE_PATHS.admin.staffCalendar, label: "Календарь", icon: IconCalendarEvent },
       { to: ROUTE_PATHS.admin.tasks, label: "Задачи (Kanban)", icon: IconListCheck },
       { to: ROUTE_PATHS.admin.knowledge, label: "База знаний", icon: IconBook },
@@ -536,7 +536,6 @@ export default function AdminLayout() {
               p="md"
               withBorder
               shadow="sm"
-              bg="#ffffff"
               style={{ border: "1px solid var(--mantine-color-gray-2)" }}
             >
               <Outlet />

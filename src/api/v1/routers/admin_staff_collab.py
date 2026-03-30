@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v1.chat_attachment_disposition import clinic_chat_attachment_content_disposition
 from src.api.v1.dependencies import AdminContext, get_request_context, get_session, require_permissions
 from src.application.dto.staff_collab_dto import (
     StaffCalendarEventDetailsResponse,
@@ -70,6 +71,30 @@ async def _admin_in_clinic(session: AsyncSession, clinic_id: UUID, admin_id: UUI
         )
     )
     return res.scalar_one_or_none() is not None
+
+
+async def require_active_clinic_admin(
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(require_permissions()),
+) -> AdminContext:
+    """Любой активный администратор в контексте своей клиники.
+
+    Для **внутренней стены** (лента персонала): чтение, лайки и комментарии доступны всем
+    сотрудникам с учётной записью админки этой клиники, без отдельного ``view_staff_collab``.
+    Чат, календарь и база знаний по-прежнему требуют ``view_staff_collab``.
+    """
+    if context.user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Требуется пользователь",
+        )
+    cid = _clinic_id(context)
+    if not await _admin_in_clinic(session, cid, context.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа к клинике",
+        )
+    return context
 
 
 @router.get(
@@ -297,24 +322,31 @@ async def download_staff_chat_attachment(
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вложение не найдено")
     row, raw = payload
+    allow_audio = "owner" in context.roles
+    disp = clinic_chat_attachment_content_disposition(
+        row.content_type,
+        row.file_name,
+        allow_audio_as_attachment=allow_audio,
+    )
     return Response(
         content=raw,
         media_type=row.content_type,
-        headers={"Content-Disposition": f'attachment; filename="{row.file_name}"'},
+        headers={"Content-Disposition": disp},
     )
 
 
 @router.get(
     "/feed/posts",
     response_model=list[StaffFeedPostResponse],
-    dependencies=[Depends(require_permissions("view_staff_collab"))],
 )
 async def list_staff_feed_posts(
     limit: int = Query(30, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(get_request_context),
+    context: AdminContext = Depends(require_active_clinic_admin),
 ) -> list[StaffFeedPostResponse]:
-    return await _svc(session).list_feed_posts(_clinic_id(context), limit=limit)
+    return await _svc(session).list_feed_posts(
+        _clinic_id(context), viewer_admin_id=context.user_id, limit=limit
+    )
 
 
 @router.post(
@@ -404,12 +436,11 @@ async def delete_staff_feed_post(
 @router.post(
     "/feed/posts/{post_id}/like",
     response_model=StaffFeedPostLikeResponse,
-    dependencies=[Depends(require_permissions())],
 )
 async def toggle_staff_feed_post_like(
     post_id: UUID,
     session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(get_request_context),
+    context: AdminContext = Depends(require_active_clinic_admin),
 ) -> StaffFeedPostLikeResponse:
     cid = _clinic_id(context)
     if context.user_id is None:
@@ -460,12 +491,11 @@ async def upload_staff_feed_post_attachment(
 
 @router.get(
     "/feed/attachments/{attachment_id}/file",
-    dependencies=[Depends(require_permissions("view_staff_collab"))],
 )
 async def download_staff_feed_post_attachment(
     attachment_id: UUID,
     session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(get_request_context),
+    context: AdminContext = Depends(require_active_clinic_admin),
 ) -> Response:
     cid = _clinic_id(context)
     if context.user_id is None:
@@ -484,12 +514,11 @@ async def download_staff_feed_post_attachment(
 @router.get(
     "/feed/posts/{post_id}/comments",
     response_model=list[StaffFeedCommentResponse],
-    dependencies=[Depends(require_permissions("view_staff_collab"))],
 )
 async def list_staff_feed_comments(
     post_id: UUID,
     session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(get_request_context),
+    context: AdminContext = Depends(require_active_clinic_admin),
 ) -> list[StaffFeedCommentResponse]:
     rows = await _svc(session).list_feed_comments(_clinic_id(context), post_id)
     if rows is None:
@@ -501,21 +530,67 @@ async def list_staff_feed_comments(
     "/feed/posts/{post_id}/comments",
     response_model=StaffFeedCommentResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permissions())],
 )
 async def add_staff_feed_comment(
     post_id: UUID,
     data: StaffFeedCommentCreate,
     session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(get_request_context),
+    context: AdminContext = Depends(require_active_clinic_admin),
 ) -> StaffFeedCommentResponse:
     cid = _clinic_id(context)
     if context.user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
-    c = await _svc(session).add_feed_comment(cid, post_id, context.user_id, data)
+    try:
+        c = await _svc(session).add_feed_comment(cid, post_id, context.user_id, data)
+    except ValueError as exc:
+        if str(exc) == "invalid_parent_comment":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Комментарий для ответа не найден в этом посте",
+            ) from exc
+        raise
     if c is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
     return c
+
+
+@router.post(
+    "/feed/comments/{comment_id}/attachments",
+    response_model=StaffAttachmentBrief,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_staff_feed_comment_attachment(
+    comment_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(require_active_clinic_admin),
+    file: UploadFile = File(...),
+) -> StaffAttachmentBrief:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    raw = await file.read()
+    try:
+        att = await _svc(session).add_feed_comment_attachment(
+            cid,
+            comment_id,
+            context.user_id,
+            file_name=file.filename or "file",
+            content_type=file.content_type or "application/octet-stream",
+            raw=raw,
+        )
+    except ValueError as exc:
+        if str(exc) == "file_too_large":
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Файл слишком большой",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if att is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Комментарий не найден или вы не автор",
+        )
+    return att
 
 
 @router.get(

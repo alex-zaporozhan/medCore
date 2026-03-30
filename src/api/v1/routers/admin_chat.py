@@ -3,11 +3,13 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.chat_attachment_disposition import clinic_chat_attachment_content_disposition
+from src.api.v1.dependencies import AdminContext, get_session, require_permissions
 from src.api.v1.routers.admin_auth import get_current_admin, get_current_admin_optional
 from src.application.dto.chat_ai_dto import ConversationSummaryResponse, SuggestReplyResponse
 from src.application.dto.chat_dto import (
@@ -98,6 +100,83 @@ async def send_admin_message(
             detail="Invalid message body/sticker or conversation not found",
         )
     return msg
+
+
+@router.post(
+    "/conversations/{conversation_id}/messages/upload",
+    response_model=MessageDto,
+    status_code=status.HTTP_201_CREATED,
+)
+async def send_admin_message_with_file(
+    conversation_id: UUID,
+    body: str = Form(""),
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+):
+    clinic_id: UUID = current_admin.clinic_id
+    service = ChatService(session)
+    try:
+        raw = await file.read()
+        msg = await service.send_message_from_admin_with_file(
+            clinic_id,
+            conversation_id,
+            admin_id=current_admin.id,
+            body=body,
+            file_name=file.filename or "file",
+            content_type=file.content_type or "application/octet-stream",
+            raw=raw,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "file_too_large":
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Файл слишком большой",
+            ) from exc
+        if code == "file_type_not_allowed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Недопустимый тип файла",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=code) from exc
+    if msg is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid message or conversation not found",
+        )
+    return msg
+
+
+@router.get("/conversations/{conversation_id}/attachments/{attachment_id}/file")
+async def download_clinic_chat_attachment(
+    conversation_id: UUID,
+    attachment_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    admin_ctx: AdminContext = Depends(require_permissions()),
+) -> Response:
+    if admin_ctx.clinic_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Требуется контекст клиники",
+        )
+    clinic_id = admin_ctx.clinic_id
+    service = ChatService(session)
+    payload = await service.get_clinic_chat_attachment_for_admin(clinic_id, conversation_id, attachment_id)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вложение не найдено")
+    row, raw = payload
+    allow_audio = "owner" in admin_ctx.roles
+    disp = clinic_chat_attachment_content_disposition(
+        row.content_type,
+        row.file_name,
+        allow_audio_as_attachment=allow_audio,
+    )
+    return Response(
+        content=raw,
+        media_type=row.content_type,
+        headers={"Content-Disposition": disp},
+    )
 
 
 @router.post("/conversations/{conversation_id}/assign", response_model=AssignResponse)

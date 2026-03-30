@@ -1,7 +1,9 @@
 import type { Booking, DoctorSlot } from "@/api/types";
 import type { CSSProperties } from "react";
-import { Badge, Box, Group, Table, Text } from "@mantine/core";
+import { Anchor, Badge, Box, Group, Table, Text } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
+import { Link } from "react-router-dom";
+import { ROUTE_PATHS } from "@/routePaths";
 import {
   DndContext,
   PointerSensor,
@@ -44,60 +46,174 @@ function looksLikeUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.trim());
 }
 
-/** Монолитная сетка: цвет + левая полоса, без теней (Google Calendar–подобно). */
+/** Монолитная сетка: Swiss calendar tokens (`index.css` --calendar-*). Единый каркас — DESIGN_SCHEDULE_MODAL_SEMANTICS_85_PLUS §1. */
 function bookingSlotSurface(status: string): CSSProperties {
   const s = status.toLowerCase();
+  const base: CSSProperties = {
+    borderRadius: "var(--calendar-slot-radius)",
+    border: "1px solid var(--calendar-card-border)",
+    boxShadow: "var(--calendar-card-shadow)",
+    borderLeftWidth: "var(--calendar-bar-width)",
+    borderLeftStyle: "solid",
+  };
   if (s === "completed") {
     return {
-      background: "var(--mantine-color-teal-0)",
-      borderRadius: "var(--mantine-radius-sm)",
-      border: "none",
-      borderLeft: "4px solid var(--mantine-color-teal-6)",
-      boxShadow: "none",
+      ...base,
+      background: "var(--calendar-completed-bg)",
+      borderLeftColor: "var(--calendar-completed-bar)",
+    };
+  }
+  if (s === "in_progress") {
+    return {
+      ...base,
+      background: "var(--calendar-in-progress-bg)",
+      borderLeftColor: "var(--calendar-in-progress-bar)",
     };
   }
   if (s === "cancelled" || s === "no_show") {
     return {
-      background: "var(--mantine-color-red-0)",
-      borderRadius: "var(--mantine-radius-sm)",
-      border: "none",
-      borderLeft: "4px solid var(--mantine-color-red-6)",
-      boxShadow: "none",
+      ...base,
+      background: "var(--calendar-negative-bg)",
+      borderLeftColor: "var(--calendar-negative-bar)",
     };
   }
   if (s === "pending") {
     return {
-      background: "var(--mantine-color-orange-0)",
-      borderRadius: "var(--mantine-radius-sm)",
-      border: "none",
-      borderLeft: "4px solid var(--mantine-color-orange-5)",
-      boxShadow: "none",
+      ...base,
+      background: "var(--calendar-scheduled-bg)",
+      borderLeftColor: "var(--calendar-scheduled-bar)",
+    };
+  }
+  if (s === "registered") {
+    return {
+      ...base,
+      background: "var(--calendar-scheduled-bg)",
+      borderLeftColor: "var(--calendar-attention-denim-bar)",
+    };
+  }
+  if (s === "confirmed") {
+    return {
+      ...base,
+      background: "var(--calendar-attention-denim-bg)",
+      borderLeftColor: "var(--calendar-attention-denim-bar)",
     };
   }
   return {
-    background: "var(--mantine-color-blue-0)",
-    borderRadius: "var(--mantine-radius-sm)",
-    border: "none",
-    borderLeft: "4px solid var(--mantine-color-blue-5)",
-    boxShadow: "none",
+    ...base,
+    background: "var(--calendar-scheduled-bg)",
+    borderLeftColor: "var(--calendar-scheduled-bar)",
   };
 }
 
-function textColorForStatus(status: string): string {
+function textColorsForStatus(status: string): { primary: string; secondary: string } {
   const s = status.toLowerCase();
-  if (s === "completed") return "var(--mantine-color-teal-9)";
-  if (s === "cancelled" || s === "no_show") return "var(--mantine-color-red-9)";
-  if (s === "pending") return "var(--mantine-color-orange-9)";
-  return "var(--mantine-color-blue-9)";
+  if (s === "completed")
+    return { primary: "var(--calendar-completed-title)", secondary: "var(--calendar-completed-meta)" };
+  if (s === "in_progress")
+    return { primary: "var(--calendar-in-progress-title)", secondary: "var(--calendar-in-progress-meta)" };
+  if (s === "cancelled" || s === "no_show")
+    return { primary: "var(--calendar-negative-title)", secondary: "var(--calendar-negative-meta)" };
+  if (s === "pending")
+    return { primary: "var(--calendar-scheduled-title)", secondary: "var(--calendar-scheduled-meta)" };
+  if (s === "registered")
+    return { primary: "var(--calendar-scheduled-title)", secondary: "var(--calendar-scheduled-meta)" };
+  if (s === "confirmed")
+    return { primary: "var(--calendar-attention-denim-title)", secondary: "var(--calendar-attention-denim-meta)" };
+  return { primary: "var(--calendar-scheduled-title)", secondary: "var(--calendar-scheduled-meta)" };
 }
 
-function statusBadge(status: string): { color: string; label: string } {
+type CalendarBadgeConfig = { label: string; styles: { root: CSSProperties } };
+
+function statusBadge(status: string): CalendarBadgeConfig {
   const s = status.toLowerCase();
-  if (s === "completed") return { color: "teal", label: "Завершено" };
-  if (s === "cancelled") return { color: "red", label: "Отмена" };
-  if (s === "no_show") return { color: "red", label: "Неявка" };
-  if (s === "pending") return { color: "orange", label: "Ожидает" };
-  return { color: "blue", label: "Занято" };
+  if (s === "completed") {
+    return {
+      label: "Завершён",
+      styles: {
+        root: {
+          backgroundColor: "var(--calendar-completed-badge-bg)",
+          color: "var(--calendar-completed-badge-text)",
+        },
+      },
+    };
+  }
+  if (s === "in_progress") {
+    return {
+      label: "На приёме",
+      styles: {
+        root: {
+          backgroundColor: "var(--calendar-in-progress-badge-bg)",
+          color: "var(--calendar-in-progress-badge-text)",
+          border: "1px solid var(--calendar-in-progress-badge-border)",
+        },
+      },
+    };
+  }
+  if (s === "cancelled") {
+    return {
+      label: "Отмена",
+      styles: {
+        root: {
+          backgroundColor: "var(--calendar-negative-badge-bg)",
+          color: "var(--calendar-negative-badge-text)",
+        },
+      },
+    };
+  }
+  if (s === "no_show") {
+    return {
+      label: "Неявка",
+      styles: {
+        root: {
+          backgroundColor: "var(--calendar-negative-badge-bg)",
+          color: "var(--calendar-negative-badge-text)",
+        },
+      },
+    };
+  }
+  if (s === "pending") {
+    return {
+      label: "Ожидает",
+      styles: {
+        root: {
+          backgroundColor: "var(--calendar-scheduled-badge-bg)",
+          color: "var(--calendar-scheduled-badge-text)",
+        },
+      },
+    };
+  }
+  if (s === "registered") {
+    return {
+      label: "Зарегистрирован",
+      styles: {
+        root: {
+          backgroundColor: "var(--calendar-scheduled-badge-bg)",
+          color: "var(--calendar-attention-denim-badge-text)",
+          border: "1px solid var(--calendar-attention-denim-badge-bg)",
+        },
+      },
+    };
+  }
+  if (s === "confirmed") {
+    return {
+      label: "Подтверждён",
+      styles: {
+        root: {
+          backgroundColor: "var(--calendar-attention-denim-badge-bg)",
+          color: "var(--calendar-attention-denim-badge-text)",
+        },
+      },
+    };
+  }
+  return {
+    label: "Занято",
+    styles: {
+      root: {
+        backgroundColor: "var(--calendar-scheduled-badge-bg)",
+        color: "var(--calendar-scheduled-badge-text)",
+      },
+    },
+  };
 }
 
 function findBooking(
@@ -238,7 +354,20 @@ export function ScheduleCalendarGrid({
                 </Text>
               </Table.Th>
               {doctors.map((d) => (
-                <Table.Th key={d.id}>{d.name}</Table.Th>
+                <Table.Th key={d.id}>
+                  <Anchor
+                    component={Link}
+                    to={`${ROUTE_PATHS.admin.doctors}?doctor_id=${d.id}&doctor_tab=schedule`}
+                    size="sm"
+                    fw={600}
+                    c="gray.8"
+                    underline="hover"
+                    lineClamp={2}
+                    style={{ lineHeight: 1.3 }}
+                  >
+                    {d.name}
+                  </Anchor>
+                </Table.Th>
               ))}
             </Table.Tr>
           </Table.Thead>
@@ -267,7 +396,7 @@ export function ScheduleCalendarGrid({
                       ? findBooking(slot, doc.id, date, bookings)
                       : undefined;
                     const sb = booking ? statusBadge(booking.status) : null;
-                    const tc = booking ? textColorForStatus(booking.status) : undefined;
+                    const tc = booking ? textColorsForStatus(booking.status) : undefined;
                     return (
                       <DroppableCell
                         key={doc.id}
@@ -308,29 +437,37 @@ export function ScheduleCalendarGrid({
                               }}
                             >
                               {sb && (
-                                <Badge size="xs" variant="light" color={sb.color} mb={4}>
+                                <Badge size="xs" variant="transparent" styles={sb.styles} mb={4}>
                                   {sb.label}
                                 </Badge>
                               )}
                               <Group gap={6} wrap="nowrap" align="center">
-                                <Text
+                                <Anchor
+                                  component={Link}
+                                  to={`${ROUTE_PATHS.admin.patients}?patient_id=${booking.patient_id}`}
                                   size="sm"
                                   fw={600}
                                   lineClamp={1}
-                                  style={{ flex: 1, minWidth: 0, color: tc }}
+                                  underline="hover"
+                                  style={{
+                                    flex: 1,
+                                    minWidth: 0,
+                                    color: tc?.primary,
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   {getPatientLabel(booking)}
-                                </Text>
+                                </Anchor>
                                 {booking.notes?.trim() ? (
                                   <IconMessageCircle
                                     size={14}
                                     stroke={1.5}
-                                    color="var(--mantine-color-blue-6)"
+                                    color="var(--text-muted)"
                                     aria-label="Есть комментарий к записи"
                                   />
                                 ) : null}
                               </Group>
-                              <Text size="xs" lineClamp={1} opacity={0.8} style={{ color: tc }}>
+                              <Text size="xs" fw={500} lineClamp={1} style={{ color: tc?.secondary }}>
                                 {getServiceLabel(booking.service_id)}
                               </Text>
                             </Box>

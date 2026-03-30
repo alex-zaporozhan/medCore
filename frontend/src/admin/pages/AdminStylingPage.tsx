@@ -59,19 +59,19 @@ export default function AdminStylingPage() {
   };
 
   const paletteRef = [
-    { name: "Фон страницы", var: "--bg-main", hex: "#F6F7FB" },
+    { name: "Фон страницы", var: "--bg-main", hex: "#F4F6F8" },
     { name: "Карточка", var: "--bg-card", hex: "#FFFFFF" },
-    { name: "Боковая панель (пациент)", var: "--bg-sidebar", hex: "#EEF1F7" },
-    { name: "Админ-сайдбар", var: "--admin-sidebar-bg", hex: "#F1F3F9" },
-    { name: "Акцент (основной)", var: "--primary", hex: "#4F46E5" },
-    { name: "Акцент hover", var: "--primary-hover", hex: "#4338CA" },
-    { name: "Акцент active", var: "--primary-active", hex: "#3730A3" },
-    { name: "Акцент светлый", var: "--primary-light", hex: "#EEF2FF" },
-    { name: "Граница полей", var: "--input-border", hex: "#D5DBE8" },
-    { name: "Разделитель", var: "--divider", hex: "#E4E8F0" },
-    { name: "Основной текст", var: "--text-main", hex: "#334155" },
-    { name: "Вспом. текст", var: "--text-muted", hex: "#64748B" },
-    { name: "Успех", var: "--success", hex: "#15803D" },
+    { name: "Боковая панель (пациент)", var: "--bg-sidebar", hex: "#FFFFFF" },
+    { name: "Админ-сайдбар", var: "--admin-sidebar-bg", hex: "#FFFFFF" },
+    { name: "Акцент (основной)", var: "--primary", hex: "#1C2E45" },
+    { name: "Акцент hover", var: "--primary-hover", hex: "#152338" },
+    { name: "Акцент active", var: "--primary-active", hex: "#0F1A28" },
+    { name: "Акцент светлый", var: "--primary-light", hex: "#E8EEF3" },
+    { name: "Граница полей", var: "--input-border", hex: "#E2E6EA" },
+    { name: "Разделитель", var: "--divider", hex: "#E2E6EA" },
+    { name: "Основной текст", var: "--text-main", hex: "#0F1419" },
+    { name: "Вспом. текст", var: "--text-muted", hex: "#5C6D7A" },
+    { name: "Успех", var: "--success", hex: "#065F46" },
     { name: "Золотой акцент", var: "--accent-gold", hex: "#B8860B" },
   ];
 
@@ -85,7 +85,7 @@ export default function AdminStylingPage() {
         <Stack gap="md">
           <TextInput
             label="Основной цвет (переменная --primary, hex или CSS)"
-            placeholder="#4F46E5"
+            placeholder="#1C2E45"
             value={primaryColor}
             onChange={(e) => setPrimaryColor(e.currentTarget.value)}
             description="Переопределяет цвет кнопок и шапки в приложении пациента"

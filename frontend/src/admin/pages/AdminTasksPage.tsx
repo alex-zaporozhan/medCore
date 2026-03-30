@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, type ReactNode } from "react";
+import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import {
   ActionIcon,
   Avatar,
@@ -7,6 +7,7 @@ import {
   Card,
   Checkbox,
   Group,
+  Input,
   Loader,
   Menu,
   ScrollArea,
@@ -21,6 +22,7 @@ import {
   Alert,
   Tooltip,
 } from "@mantine/core";
+import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
 import {
   IconGripVertical,
   IconRobot,
@@ -35,10 +37,23 @@ import {
 } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
-import { GlassModal } from "@/shared/ui";
+import {
+  GlassModal,
+  AdminDataTableToolbar,
+  AdminDataTableSurface,
+  AppleEmojiOverlayTextarea,
+  EmojiMartPopoverPicker,
+} from "@/shared/ui";
 import { ContextBar } from "@/shared/ui/ContextBar";
+import { SEMANTIC } from "@/shared/semanticUi";
 import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { EmptyState } from "@/shared/ui/EmptyState";
+import {
+  priorityBadgeColor,
+  taskStatusBadgeStyles,
+  taskStatusCardSurface,
+  taskStatusTextColors,
+} from "@/shared/taskStatusSemantic";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { usePatients } from "@/hooks/usePatients";
@@ -121,12 +136,6 @@ function isDueOverdue(dueAt: string | null): boolean {
   return dayjs(dueAt).isBefore(dayjs());
 }
 
-function priorityLeftBorder(priority: string): string {
-  if (priority === "urgent") return "4px solid var(--mantine-color-red-5)";
-  if (priority === "high") return "4px solid var(--mantine-color-yellow-5)";
-  return "4px solid var(--mantine-color-gray-5)";
-}
-
 function firstAssigneeForAvatar(task: AdminTaskRow, admins: AdminUserRow[]): AdminUserRow | null {
   const ids = taskAssigneeIdList(task);
   if (ids.length === 0) return null;
@@ -168,6 +177,7 @@ function TaskKanbanCard({
   const timeBomb = isTimeBomb(task.due_at);
   const assignee = firstAssigneeForAvatar(task, admins);
   const displayName = assignee?.full_name || assignee?.email || null;
+  const tc = taskStatusTextColors(task.status);
 
   const outerStyle = draggable
     ? {
@@ -179,16 +189,17 @@ function TaskKanbanCard({
   return (
     <Box ref={setNodeRef} style={outerStyle}>
       <Paper
-        bg="white"
-        shadow="sm"
         radius="md"
         p="md"
-        withBorder
+        withBorder={false}
         style={{
-          borderLeft: priorityLeftBorder(task.priority),
+          ...taskStatusCardSurface(task.status),
           cursor: "pointer",
           width: "100%",
           opacity: blocked ? 0.9 : 1,
+          boxShadow: selected
+            ? `0 0 0 2px var(--mantine-color-indigo-5), var(--calendar-card-shadow)`
+            : "var(--calendar-card-shadow)",
         }}
         onClick={() => onOpenDetail(task.id)}
         tabIndex={0}
@@ -229,9 +240,17 @@ function TaskKanbanCard({
             </ActionIcon>
           ) : null}
           <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
+            <Group gap={6} wrap="wrap">
+              <Badge size="xs" variant="transparent" tt="uppercase" styles={taskStatusBadgeStyles(task.status)}>
+                {STATUS_META[task.status] ?? task.status}
+              </Badge>
+              <Badge size="xs" variant="light" color={priorityBadgeColor(task.priority)} tt="uppercase">
+                {task.priority}
+              </Badge>
+            </Group>
             <Group gap={6} wrap="nowrap" align="flex-start">
               {isAi && <IconRobot size={16} color="var(--mantine-color-indigo-6)" style={{ flexShrink: 0 }} />}
-              <Text size="sm" fw={600} lineClamp={2} style={{ flex: 1 }}>
+              <Text size="sm" fw={600} lineClamp={2} style={{ flex: 1, color: tc.title }}>
                 {task.title}
               </Text>
             </Group>
@@ -248,7 +267,7 @@ function TaskKanbanCard({
               </Tooltip>
             ) : null}
             {patientName ? (
-              <Text size="xs" c="dimmed" lineClamp={1}>
+              <Text size="xs" lineClamp={1} style={{ color: tc.meta }}>
                 Привязка: {patientName}
               </Text>
             ) : null}
@@ -276,8 +295,8 @@ function TaskKanbanCard({
             {onTaskChat ? (
               <Button
                 size="xs"
-                variant="light"
-                color="gray"
+                variant="outline"
+                color="indigo"
                 leftSection={<IconMessages size={12} />}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -298,8 +317,10 @@ export default function AdminTasksPage() {
   const { currentClinicId } = useAdminClinic();
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [detailCommentDraft, setDetailCommentDraft] = useState("");
+  const detailCommentTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [taskChatId, setTaskChatId] = useState<string | null>(null);
   const [taskChatDraft, setTaskChatDraft] = useState("");
+  const taskChatTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { data: taskComments = [], isLoading: taskCommentsLoading } = useTaskComments(taskChatId);
   const postTaskComment = usePostTaskComment(taskChatId);
   const { data: detailComments = [], isLoading: detailCommentsLoading } = useTaskComments(detailTaskId);
@@ -634,7 +655,7 @@ export default function AdminTasksPage() {
         }
       />
 
-      <Card withBorder p="sm">
+      <AdminDataTableToolbar>
         <Group gap="xs" wrap="wrap" justify="space-between">
           <Group gap="xs" wrap="wrap">
             <Button
@@ -699,25 +720,29 @@ export default function AdminTasksPage() {
             </Button>
           </Group>
         </Group>
-      </Card>
+      </AdminDataTableToolbar>
 
       {dragError ? (
-        <Alert color="orange" icon={<IconAlertTriangle size={16} />} variant="light">
+        <Alert color={SEMANTIC.opsSeverity.warning} icon={<IconAlertTriangle size={16} />} variant="light">
           {dragError}
         </Alert>
       ) : null}
       {bulkResultMessage ? (
-        <Alert color="blue" icon={<IconAlertTriangle size={16} />} variant="light">
+        <Alert color={SEMANTIC.opsSeverity.info} icon={<IconAlertTriangle size={16} />} variant="light">
           {bulkResultMessage}
         </Alert>
       ) : null}
 
-      <Card withBorder p="sm">
+      <AdminDataTableSurface>
         <Group justify="space-between" mb="xs">
           <Text size="sm" fw={700}>
             Требуют подтверждения
           </Text>
-          <Badge size="sm" variant="light" color={approvalQueueTasks.length > 0 ? "orange" : "gray"}>
+          <Badge
+            size="sm"
+            variant="light"
+            color={approvalQueueTasks.length > 0 ? SEMANTIC.opsSeverity.warning : "gray"}
+          >
             {approvalQueueTasks.length}
           </Badge>
         </Group>
@@ -753,30 +778,32 @@ export default function AdminTasksPage() {
             </Group>
           </Box>
         )}
-      </Card>
+      </AdminDataTableSurface>
 
       <DndContext sensors={sensors} onDragEnd={handleKanbanDragEnd}>
           <Box style={{ flex: 1, minWidth: 0 }}>
-            <Card shadow="sm" padding="sm" withBorder mb="md">
-              <Group justify="space-between" align="center">
-                <Text size="sm" fw={700}>
-                  Список задач
-                </Text>
-                {currentAdminId ? (
-                  <Text size="xs" c="dimmed">
-                    Назначено мне: {myFocusTasks.filter((t) => t.status !== "done" && t.status !== "cancelled").length}
+            <Box mb="md">
+              <AdminDataTableSurface>
+                <Group justify="space-between" align="center">
+                  <Text size="sm" fw={700}>
+                    Список задач
                   </Text>
-                ) : null}
-              </Group>
-            </Card>
+                  {currentAdminId ? (
+                    <Text size="xs" c="dimmed">
+                      Назначено мне: {myFocusTasks.filter((t) => t.status !== "done" && t.status !== "cancelled").length}
+                    </Text>
+                  ) : null}
+                </Group>
+              </AdminDataTableSurface>
+            </Box>
             {filteredTasks.length === 0 ? (
-              <Card shadow="sm" padding="md" withBorder>
+              <AdminDataTableSurface>
                 <EmptyState
                   title="Нет задач"
                   description="Создайте первую задачу или примите задачу от AI в работу."
                   action={{ label: "Создать задачу", onClick: () => setCreateOpened(true) }}
                 />
-              </Card>
+              </AdminDataTableSurface>
             ) : (
               <Box style={{ overflowX: "auto" }}>
                 <Box
@@ -784,7 +811,7 @@ export default function AdminTasksPage() {
                     display: "grid",
                     gridAutoFlow: "column",
                     gridAutoColumns: "minmax(290px, 1fr)",
-                    gap: "12px",
+                    gap: "var(--space-md)",
                     alignItems: "start",
                     minWidth: "max-content",
                   }}
@@ -829,7 +856,7 @@ export default function AdminTasksPage() {
           </Box>
       </DndContext>
 
-      <Card withBorder p="sm">
+      <AdminDataTableSurface>
         <Text size="sm" fw={700} mb={6}>
           Аудит перемещений
         </Text>
@@ -847,7 +874,7 @@ export default function AdminTasksPage() {
             ))}
           </Stack>
         )}
-      </Card>
+      </AdminDataTableSurface>
 
       <GlassModal
         size="lg"
@@ -862,40 +889,36 @@ export default function AdminTasksPage() {
       >
         {detailTask ? (
           <Stack gap="md">
-            <Group gap="xs">
-              <Badge size="sm" variant="light" color="gray">
-                {detailTask.priority}
-              </Badge>
-              <Badge
-                size="sm"
-                variant="light"
-                color={
-                  detailTask.status === "done"
-                    ? "teal"
-                    : detailTask.status === "in_progress"
-                      ? "orange"
-                      : detailTask.status === "cancelled"
-                        ? "red"
-                        : "yellow"
-                }
-              >
-                {detailTask.status}
-              </Badge>
-            </Group>
-            {detailTask.description ? (
-              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                {detailTask.description}
+            <Box
+              p="md"
+              style={{
+                ...taskStatusCardSurface(detailTask.status),
+                borderRadius: "var(--calendar-slot-radius)",
+              }}
+            >
+              <Group gap="xs" wrap="wrap">
+                <Badge size="sm" variant="light" color={priorityBadgeColor(detailTask.priority)} tt="uppercase">
+                  {detailTask.priority}
+                </Badge>
+                <Badge size="sm" variant="transparent" tt="uppercase" styles={taskStatusBadgeStyles(detailTask.status)}>
+                  {STATUS_META[detailTask.status] ?? detailTask.status}
+                </Badge>
+              </Group>
+              {detailTask.description ? (
+                <Text size="sm" mt="sm" style={{ whiteSpace: "pre-wrap", color: taskStatusTextColors(detailTask.status).title }}>
+                  {detailTask.description}
+                </Text>
+              ) : (
+                <Text size="sm" mt="sm" c="dimmed">
+                  Без описания
+                </Text>
+              )}
+              <Text size="xs" mt="xs" style={{ color: taskStatusTextColors(detailTask.status).meta }}>
+                Срок: {detailTask.due_at ? dayjs(detailTask.due_at).format("DD.MM.YYYY HH:mm") : "—"} · Исполнители:{" "}
+                {formatTaskAssigneeLine(detailTask, admins) || detailTask.role_assignee || "—"}
               </Text>
-            ) : (
-              <Text size="sm" c="dimmed">
-                Без описания
-              </Text>
-            )}
-            <Text size="xs" c="dimmed">
-              Срок: {detailTask.due_at ? dayjs(detailTask.due_at).format("DD.MM.YYYY HH:mm") : "—"} · Исполнители:{" "}
-              {formatTaskAssigneeLine(detailTask, admins) || detailTask.role_assignee || "—"}
-            </Text>
-            <Card withBorder p="sm">
+            </Box>
+            <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
               <Stack gap="xs">
                 <Group justify="space-between" wrap="wrap">
                   <Text size="sm" fw={600}>
@@ -903,8 +926,8 @@ export default function AdminTasksPage() {
                   </Text>
                   <Button
                     size="xs"
-                    variant="light"
-                    color={detailTask.blocked ? "red" : "gray"}
+                    variant="outline"
+                    color={detailTask.blocked ? "red" : "indigo"}
                     leftSection={detailTask.blocked ? <IconLockOpen size={12} /> : <IconLock size={12} />}
                     onClick={() =>
                       updateTaskMetaMutation.mutate({
@@ -980,13 +1003,20 @@ export default function AdminTasksPage() {
               <Button
                 component={Link}
                 to={`${ROUTE_PATHS.admin.staffCalendar}?task_id=${detailTask.id}&open_create=1`}
-                variant="light"
+                variant="outline"
+                color="indigo"
                 size="xs"
                 leftSection={<IconCalendarEvent size={14} />}
               >
                 В календарь
               </Button>
-              <Button variant="light" size="xs" leftSection={<IconMessages size={14} />} onClick={() => setTaskChatId(detailTask.id)}>
+              <Button
+                variant="outline"
+                color="indigo"
+                size="xs"
+                leftSection={<IconMessages size={14} />}
+                onClick={() => setTaskChatId(detailTask.id)}
+              >
                 Чат задачи
               </Button>
             </Group>
@@ -1016,7 +1046,7 @@ export default function AdminTasksPage() {
             )}
             <Menu shadow="md" width={260}>
               <Menu.Target>
-                <Button variant="light" color="indigo">
+                <Button variant="filled" color="indigo">
                   Сменить статус
                 </Button>
               </Menu.Target>
@@ -1066,7 +1096,7 @@ export default function AdminTasksPage() {
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
-            <Card withBorder p="sm">
+            <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
               <Text size="sm" fw={600} mb={6}>
                 История переходов
               </Text>
@@ -1089,7 +1119,7 @@ export default function AdminTasksPage() {
                 </Stack>
               )}
             </Card>
-            <Card withBorder p="sm">
+            <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
               <Text size="sm" fw={600} mb={6}>
                 Календарные слоты задачи
               </Text>
@@ -1173,12 +1203,17 @@ export default function AdminTasksPage() {
                     </Text>
                   ) : (
                     detailComments.map((c) => (
-                      <Paper key={c.id} p="xs" withBorder>
+                      <Paper
+                        key={c.id}
+                        p="xs"
+                        withBorder
+                        style={{ borderColor: "var(--calendar-card-border)", background: "var(--mantine-color-body)" }}
+                      >
                         <Text size="xs" c="dimmed" mb={4}>
                           {c.author_full_name || "Сотрудник"} · {dayjs(c.created_at).format("DD.MM.YYYY HH:mm")}
                         </Text>
                         <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                          {c.text}
+                          <AppleEmojiRichText text={c.text} />
                         </Text>
                       </Paper>
                     ))
@@ -1186,15 +1221,23 @@ export default function AdminTasksPage() {
                 </Stack>
               </ScrollArea>
             )}
-            <Textarea
-              label="Новый комментарий"
-              placeholder="Текст для команды…"
-              minRows={2}
-              value={detailCommentDraft}
-              onChange={(e) => setDetailCommentDraft(e.currentTarget.value)}
-            />
-            <Group justify="flex-end">
+            <Input.Wrapper label="Новый комментарий">
+              <AppleEmojiOverlayTextarea
+                ref={detailCommentTextareaRef}
+                placeholder="Текст для команды…"
+                minRows={2}
+                value={detailCommentDraft}
+                onChange={(e) => setDetailCommentDraft(e.currentTarget.value)}
+              />
+            </Input.Wrapper>
+            <Group justify="space-between" align="center" wrap="wrap">
+              <EmojiMartPopoverPicker
+                actionIconProps={{ variant: "light", color: "indigo", size: "md" }}
+                onPick={(native) => setDetailCommentDraft((prev) => prev + native)}
+                onInserted={() => detailCommentTextareaRef.current?.focus()}
+              />
               <Button
+                color="indigo"
                 onClick={() => {
                   const text = detailCommentDraft.trim();
                   if (!text || !detailTaskId) return;
@@ -1303,7 +1346,7 @@ export default function AdminTasksPage() {
                         {dayjs(c.created_at).format("DD.MM.YYYY HH:mm")}
                       </Text>
                       <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                        {c.text}
+                        <AppleEmojiRichText text={c.text} />
                       </Text>
                     </Paper>
                   ))
@@ -1321,14 +1364,21 @@ export default function AdminTasksPage() {
               Открыть thread в мессенджере персонала
             </Button>
           ) : null}
-          <Textarea
-            label="Сообщение"
-            placeholder="Текст для команды…"
-            minRows={3}
-            value={taskChatDraft}
-            onChange={(e) => setTaskChatDraft(e.currentTarget.value)}
-          />
-          <Group justify="flex-end">
+          <Input.Wrapper label="Сообщение">
+            <AppleEmojiOverlayTextarea
+              ref={taskChatTextareaRef}
+              placeholder="Текст для команды…"
+              minRows={3}
+              value={taskChatDraft}
+              onChange={(e) => setTaskChatDraft(e.currentTarget.value)}
+            />
+          </Input.Wrapper>
+          <Group justify="space-between" align="center" wrap="wrap">
+            <EmojiMartPopoverPicker
+              actionIconProps={{ variant: "light", color: "indigo", size: "md" }}
+              onPick={(native) => setTaskChatDraft((prev) => prev + native)}
+              onInserted={() => taskChatTextareaRef.current?.focus()}
+            />
             <Button
               onClick={() => {
                 const text = taskChatDraft.trim();
@@ -1462,7 +1512,13 @@ function TaskDropSlot({
   const slotId = `task-slot-${statusId}--${taskId}`;
   const { setNodeRef, isOver } = useDroppable({ id: slotId });
   return (
-    <Box ref={setNodeRef} style={{ outline: isOver ? "1px dashed var(--mantine-color-indigo-4)" : undefined, borderRadius: 8 }}>
+    <Box
+      ref={setNodeRef}
+      style={{
+        outline: isOver ? "1px dashed var(--mantine-color-indigo-4)" : undefined,
+        borderRadius: "var(--radius-sm)",
+      }}
+    >
       {children}
     </Box>
   );

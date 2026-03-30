@@ -1,8 +1,8 @@
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useClinics, useSetClinicPaymentGatewayCredentials, useUpdateClinicMutation } from "@/hooks";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { Button, Paper, Select, Stack, Text, TextInput } from "@mantine/core";
-import { ContextBar, QueryErrorAlert } from "@/shared/ui";
+import { Button, Select, Stack, Text, TextInput } from "@mantine/core";
+import { AdminSettingsSectionCard, ContextBar, QueryErrorAlert } from "@/shared/ui";
 import { useState, useEffect } from "react";
 
 const GATEWAY_OPTIONS = [
@@ -151,9 +151,8 @@ export default function AdminPaymentGatewayPage() {
       {credentialsError && (
         <QueryErrorAlert error={credentialsError} title="Не удалось сохранить ключи кассы" />
       )}
-      <Paper p="md" withBorder>
-        <Stack gap="md">
-          <Select
+      <AdminSettingsSectionCard title="Параметры кассы">
+        <Select
             label="Платёжная система"
             data={GATEWAY_OPTIONS}
             value={gateway}
@@ -315,11 +314,10 @@ export default function AdminPaymentGatewayPage() {
             </>
           )}
 
-          <Button onClick={handleSave} loading={saving}>
-            Сохранить
-          </Button>
-        </Stack>
-      </Paper>
+        <Button onClick={handleSave} loading={saving}>
+          Сохранить
+        </Button>
+      </AdminSettingsSectionCard>
     </Stack>
   );
 }

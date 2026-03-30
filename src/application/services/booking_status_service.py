@@ -20,21 +20,61 @@ class BookingStatusService:
 
     Keeps all rules in one place so business logic is not scattered
     across services.
+
+    Lifecycle (LEAD_BOOKING_STATUS_LIFECYCLE_RU): reception path may use
+    pending → registered → confirmed → pending (зал ожидания) → in_progress;
+    online prepayment may do pending → confirmed directly. See rules below.
     """
 
-    # Minimal ruleset based on current implementation and ARCH_DEV_BKG_STATE_002.
-    # We intentionally keep it conservative and backward compatible.
     _rules: tuple[BookingStatusTransitionRule, ...] = (
+        # Подтверждение: оплата / политика (из pending), ресепшн после registered, webhook из awaiting_payment.
         BookingStatusTransitionRule(
             from_statuses=(BookingStatus.PENDING,),
             to_status=BookingStatus.CONFIRMED,
         ),
         BookingStatusTransitionRule(
-            from_statuses=(BookingStatus.PENDING, BookingStatus.CONFIRMED),
+            from_statuses=(BookingStatus.REGISTERED,),
+            to_status=BookingStatus.CONFIRMED,
+        ),
+        BookingStatusTransitionRule(
+            from_statuses=(BookingStatus.AWAITING_PAYMENT,),
+            to_status=BookingStatus.CONFIRMED,
+        ),
+        # Регистрация на ресепшене (из «ожидает»).
+        BookingStatusTransitionRule(
+            from_statuses=(BookingStatus.PENDING,),
+            to_status=BookingStatus.REGISTERED,
+        ),
+        # После подтверждения онлайн — в зал ожидания (тот же код pending).
+        BookingStatusTransitionRule(
+            from_statuses=(BookingStatus.CONFIRMED,),
+            to_status=BookingStatus.PENDING,
+        ),
+        # На приём (кабинет).
+        BookingStatusTransitionRule(
+            from_statuses=(
+                BookingStatus.PENDING,
+                BookingStatus.CONFIRMED,
+                BookingStatus.REGISTERED,
+            ),
+            to_status=BookingStatus.IN_PROGRESS,
+        ),
+        BookingStatusTransitionRule(
+            from_statuses=(
+                BookingStatus.PENDING,
+                BookingStatus.CONFIRMED,
+                BookingStatus.REGISTERED,
+                BookingStatus.IN_PROGRESS,
+            ),
             to_status=BookingStatus.COMPLETED,
         ),
         BookingStatusTransitionRule(
-            from_statuses=(BookingStatus.PENDING, BookingStatus.CONFIRMED),
+            from_statuses=(
+                BookingStatus.PENDING,
+                BookingStatus.CONFIRMED,
+                BookingStatus.REGISTERED,
+                BookingStatus.IN_PROGRESS,
+            ),
             to_status=BookingStatus.NO_SHOW,
         ),
         BookingStatusTransitionRule(
@@ -42,6 +82,8 @@ class BookingStatusService:
                 BookingStatus.PENDING,
                 BookingStatus.CONFIRMED,
                 BookingStatus.AWAITING_PAYMENT,
+                BookingStatus.REGISTERED,
+                BookingStatus.IN_PROGRESS,
             ),
             to_status=BookingStatus.CANCELLED,
         ),
@@ -81,4 +123,3 @@ class BookingStatusService:
 def all_booking_status_values() -> Iterable[str]:
     """Utility: list of all status codes for validation and external contracts."""
     return [s.value for s in BookingStatus]
-

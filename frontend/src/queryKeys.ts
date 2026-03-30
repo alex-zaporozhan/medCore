@@ -10,6 +10,7 @@ export const queryKeys = {
   },
   staffCollab: {
     feedPosts: () => ["staff-collab", "feed-posts"] as const,
+    feedComments: (postId: string | null) => ["staff-collab", "feed-comments", postId] as const,
     chatRooms: () => ["staff-collab", "chat-rooms"] as const,
     chatMessages: (roomId: string | null) => ["staff-collab", "chat-messages", roomId] as const,
     calendarPrefix: ["staff-collab", "calendar"] as const,
