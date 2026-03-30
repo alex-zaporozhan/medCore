@@ -1,4 +1,5 @@
 import type { Doctor } from "@/api/types";
+import { EntityDrawerFieldBlock, EntityDrawerFooterBar } from "@/admin/components/entity/entityDrawerChrome";
 import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
 import {
   Avatar,
@@ -41,6 +42,8 @@ export interface DoctorEntityDrawerProps {
   doctor: Doctor | null;
   mode: "view" | "create" | "edit";
   onSaved?: () => void;
+  /** При открытии карточки (например из ссылки) — вкладка по умолчанию: profile | schedule | payroll | services */
+  initialTab?: string | null;
 }
 
 export function DoctorEntityDrawer({
@@ -49,6 +52,7 @@ export function DoctorEntityDrawer({
   doctor,
   mode,
   onSaved,
+  initialTab,
 }: DoctorEntityDrawerProps) {
   const { currentClinicId } = useAdminClinic();
   const [activeTab, setActiveTab] = useState<string | null>("profile");
@@ -82,6 +86,11 @@ export function DoctorEntityDrawer({
     adminServices?.filter((item) =>
       item.doctors.some((d) => d.doctor_id === doctor?.id)
     ) ?? [];
+
+  useEffect(() => {
+    if (!opened || !doctor) return;
+    setActiveTab(initialTab || "profile");
+  }, [opened, doctor?.id, initialTab]);
 
   useEffect(() => {
     if (doctor) {
@@ -210,71 +219,75 @@ export function DoctorEntityDrawer({
 
         <Tabs.Panel value="profile" pt="md">
           <Stack gap="sm">
-            <TextInput
-              label="ФИО"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-              disabled={mode === "view"}
-            />
-            <TextInput
-              label="Специализация"
-              value={specialization}
-              onChange={(e) => setSpecialization(e.target.value)}
-              disabled={mode === "view"}
-            />
-            <TextInput
-              label="Фото (URL)"
-              value={photoUrl}
-              onChange={(e) => setPhotoUrl(e.target.value)}
-              disabled={mode === "view"}
-            />
-            <Group grow>
-              <NumberInput
-                label="Рейтинг"
-                min={0}
-                max={5}
-                step={0.1}
-                value={rating}
-                decimalScale={1}
-                onChange={(v) => setRating(typeof v === "number" ? v : undefined)}
-                disabled={mode === "view"}
-              />
-              <NumberInput
-                label="Стаж (лет)"
-                min={0}
-                max={60}
-                value={experienceYears}
-                onChange={(v) => setExperienceYears(typeof v === "number" ? v : undefined)}
-                disabled={mode === "view"}
-              />
-            </Group>
-            <Select
-              label="Роль специалиста"
-              data={SPECIALIST_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              value={specialistRole}
-              onChange={(v) => setSpecialistRole(v ?? "doctor")}
-              disabled={mode === "view"}
-            />
-            {specialistRole === "other" && (
-              <TextInput
-                label="Своя роль"
-                value={specialistRoleCustomName}
-                onChange={(e) => setSpecialistRoleCustomName(e.target.value)}
-                disabled={mode === "view"}
-              />
-            )}
-            <Switch
-              label="Активен и доступен для записи"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.currentTarget.checked)}
-              disabled={mode === "view"}
-            />
-            <Text size="xs" c="dimmed">
-              Цвет в календаре — при наличии API.
-            </Text>
+            <EntityDrawerFieldBlock label="Профиль">
+              <Stack gap="sm">
+                <TextInput
+                  label="ФИО"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                  disabled={mode === "view"}
+                />
+                <TextInput
+                  label="Специализация"
+                  value={specialization}
+                  onChange={(e) => setSpecialization(e.target.value)}
+                  disabled={mode === "view"}
+                />
+                <TextInput
+                  label="Фото (URL)"
+                  value={photoUrl}
+                  onChange={(e) => setPhotoUrl(e.target.value)}
+                  disabled={mode === "view"}
+                />
+                <Group grow>
+                  <NumberInput
+                    label="Рейтинг"
+                    min={0}
+                    max={5}
+                    step={0.1}
+                    value={rating}
+                    decimalScale={1}
+                    onChange={(v) => setRating(typeof v === "number" ? v : undefined)}
+                    disabled={mode === "view"}
+                  />
+                  <NumberInput
+                    label="Стаж (лет)"
+                    min={0}
+                    max={60}
+                    value={experienceYears}
+                    onChange={(v) => setExperienceYears(typeof v === "number" ? v : undefined)}
+                    disabled={mode === "view"}
+                  />
+                </Group>
+                <Select
+                  label="Роль специалиста"
+                  data={SPECIALIST_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                  value={specialistRole}
+                  onChange={(v) => setSpecialistRole(v ?? "doctor")}
+                  disabled={mode === "view"}
+                />
+                {specialistRole === "other" && (
+                  <TextInput
+                    label="Своя роль"
+                    value={specialistRoleCustomName}
+                    onChange={(e) => setSpecialistRoleCustomName(e.target.value)}
+                    disabled={mode === "view"}
+                  />
+                )}
+                <Switch
+                  label="Активен и доступен для записи"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.currentTarget.checked)}
+                  disabled={mode === "view"}
+                />
+                <Text size="xs" c="dimmed">
+                  Цвет в календаре — при наличии API.
+                </Text>
+              </Stack>
+            </EntityDrawerFieldBlock>
             {mode !== "view" && (
-              <Group mt="sm">
+              <EntityDrawerFooterBar>
                 <Button
                   onClick={handleSave}
                   loading={createMutation.isPending || updateMutation.isPending}
@@ -284,7 +297,7 @@ export function DoctorEntityDrawer({
                 <Button variant="subtle" onClick={onClose}>
                   Отмена
                 </Button>
-              </Group>
+              </EntityDrawerFooterBar>
             )}
             {(createMutation.isError || updateMutation.isError) && (
               <QueryErrorAlert

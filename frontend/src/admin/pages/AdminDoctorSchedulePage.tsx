@@ -122,14 +122,16 @@ export default function AdminDoctorSchedulePage() {
         Настройте рабочие дни и часы, а также отпуска для каждого врача.
       </Text>
 
-      <Select
-        label="Врач"
-        placeholder="Выберите врача"
-        data={doctorOptions}
-        value={doctorId}
-        onChange={(v) => setDoctorId(v)}
-        clearable
-      />
+      <Paper p="sm" withBorder radius="md" className="data-toolbar-card">
+        <Select
+          label="Врач"
+          placeholder="Выберите врача"
+          data={doctorOptions}
+          value={doctorId}
+          onChange={(v) => setDoctorId(v)}
+          clearable
+        />
+      </Paper>
 
       {doctorsLoading && <DataSkeleton lines={2} />}
       {!doctorId && (
@@ -141,7 +143,7 @@ export default function AdminDoctorSchedulePage() {
 
       {doctorId && (
         <>
-          <Paper p="md" withBorder radius="md">
+          <Paper p="md" withBorder radius="md" className="data-table-card">
             <Group justify="space-between" mb="sm">
               <Text fw={600}>Рабочие часы (по дням недели)</Text>
               <Button
@@ -163,7 +165,7 @@ export default function AdminDoctorSchedulePage() {
               </Text>
             )}
             {workingHours && workingHours.length > 0 && (
-              <Table>
+              <Table withRowBorders highlightOnHover>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>День</Table.Th>
@@ -197,7 +199,7 @@ export default function AdminDoctorSchedulePage() {
             )}
           </Paper>
 
-          <Paper p="md" withBorder radius="md">
+          <Paper p="md" withBorder radius="md" className="data-table-card">
             <Group justify="space-between" mb="sm">
               <Text fw={600}>Отпуска и нерабочие периоды</Text>
               <Button
@@ -216,7 +218,7 @@ export default function AdminDoctorSchedulePage() {
               </Text>
             )}
             {absences && absences.length > 0 && (
-              <Table>
+              <Table withRowBorders highlightOnHover>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>С</Table.Th>

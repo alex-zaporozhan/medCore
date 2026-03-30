@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import uuid
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
@@ -53,6 +54,7 @@ from src.domain.entities.staff_chat_message_attachment import StaffChatMessageAt
 from src.domain.entities.staff_chat_room import StaffChatRoom
 from src.domain.entities.staff_chat_room_member import StaffChatRoomMember
 from src.domain.entities.staff_feed_comment import StaffFeedComment
+from src.domain.entities.staff_feed_comment_attachment import StaffFeedCommentAttachment
 from src.domain.entities.staff_feed_post import StaffFeedPost
 from src.domain.entities.staff_feed_post_attachment import StaffFeedPostAttachment
 from src.domain.entities.staff_feed_post_like import StaffFeedPostLike
@@ -414,7 +416,22 @@ class StaffCollaborationService:
         await self._session.flush()
         return room
 
-    async def list_feed_posts(self, clinic_id: UUID, *, limit: int = 30) -> list[StaffFeedPostResponse]:
+    async def _feed_posts_liked_by_admin(
+        self, post_ids: list[UUID], admin_id: UUID | None
+    ) -> set[UUID]:
+        if not post_ids or admin_id is None:
+            return set()
+        res = await self._session.execute(
+            select(StaffFeedPostLike.post_id).where(
+                StaffFeedPostLike.post_id.in_(post_ids),
+                StaffFeedPostLike.author_admin_id == admin_id,
+            )
+        )
+        return {row[0] for row in res.all()}
+
+    async def list_feed_posts(
+        self, clinic_id: UUID, *, viewer_admin_id: UUID | None = None, limit: int = 30
+    ) -> list[StaffFeedPostResponse]:
         res = await self._session.execute(
             select(StaffFeedPost)
             .where(
@@ -425,6 +442,9 @@ class StaffCollaborationService:
             .limit(limit)
         )
         posts = list(res.scalars().all())
+        liked_ids = await self._feed_posts_liked_by_admin(
+            [p.id for p in posts], viewer_admin_id
+        )
         out: list[StaffFeedPostResponse] = []
         for post in posts:
             cnt_res = await self._session.execute(
@@ -465,6 +485,7 @@ class StaffCollaborationService:
                     created_at=post.created_at,
                     comments_count=cc,
                     likes_count=lc,
+                    liked_by_me=post.id in liked_ids,
                     attachments=atts,
                 )
             )
@@ -496,6 +517,8 @@ class StaffCollaborationService:
             author=author,
             created_at=post.created_at,
             comments_count=0,
+            likes_count=0,
+            liked_by_me=False,
             attachments=[],
         )
 
@@ -516,15 +539,47 @@ class StaffCollaborationService:
             .where(StaffFeedComment.post_id == post_id)
             .order_by(StaffFeedComment.created_at)
         )
+        rows = list(res.scalars().all())
+        parent_ids = {c.parent_comment_id for c in rows if c.parent_comment_id}
+        parent_by_id: dict[UUID, StaffFeedComment] = {}
+        if parent_ids:
+            pres = await self._session.execute(
+                select(StaffFeedComment).where(StaffFeedComment.id.in_(parent_ids))
+            )
+            for pc in pres.scalars().all():
+                parent_by_id[pc.id] = pc
+        att_map: dict[UUID, list[StaffAttachmentBrief]] = defaultdict(list)
+        if rows:
+            cids = [c.id for c in rows]
+            ares = await self._session.execute(
+                select(StaffFeedCommentAttachment).where(StaffFeedCommentAttachment.comment_id.in_(cids))
+            )
+            for ar in ares.scalars().all():
+                att_map[ar.comment_id].append(
+                    StaffAttachmentBrief(
+                        id=ar.id,
+                        file_name=ar.file_name,
+                        content_type=ar.content_type,
+                        size_bytes=ar.size_bytes,
+                    )
+                )
         out: list[StaffFeedCommentResponse] = []
-        for c in res.scalars().all():
+        for c in rows:
             author = await self._admin_brief(c.author_admin_id)
+            in_reply_to = None
+            if c.parent_comment_id:
+                parent = parent_by_id.get(c.parent_comment_id)
+                if parent is not None:
+                    in_reply_to = await self._admin_brief(parent.author_admin_id)
             out.append(
                 StaffFeedCommentResponse(
                     id=c.id,
                     body=c.body,
                     author=author,
                     created_at=c.created_at,
+                    parent_comment_id=c.parent_comment_id,
+                    in_reply_to=in_reply_to,
+                    attachments=att_map.get(c.id, []),
                 )
             )
         return out
@@ -545,20 +600,93 @@ class StaffCollaborationService:
         )
         if chk.scalar_one_or_none() is None:
             return None
+        parent_comment_id = data.parent_comment_id
+        parent_row: StaffFeedComment | None = None
+        if parent_comment_id is not None:
+            pres = await self._session.execute(
+                select(StaffFeedComment).where(
+                    StaffFeedComment.id == parent_comment_id,
+                    StaffFeedComment.post_id == post_id,
+                )
+            )
+            parent_row = pres.scalar_one_or_none()
+            if parent_row is None:
+                raise ValueError("invalid_parent_comment")
         c = StaffFeedComment(
             id=uuid.uuid4(),
             post_id=post_id,
+            parent_comment_id=parent_comment_id,
             author_admin_id=author_admin_id,
             body=data.body.strip(),
         )
         self._session.add(c)
         await self._session.flush()
         author = await self._admin_brief(author_admin_id)
+        in_reply_to = (
+            await self._admin_brief(parent_row.author_admin_id) if parent_row is not None else None
+        )
         return StaffFeedCommentResponse(
             id=c.id,
             body=c.body,
             author=author,
             created_at=c.created_at,
+            parent_comment_id=c.parent_comment_id,
+            in_reply_to=in_reply_to,
+            attachments=[],
+        )
+
+    async def add_feed_comment_attachment(
+        self,
+        clinic_id: UUID,
+        comment_id: UUID,
+        admin_id: UUID,
+        *,
+        file_name: str,
+        content_type: str,
+        raw: bytes,
+    ) -> StaffAttachmentBrief | None:
+        if len(raw) > settings.staff_chat_max_attachment_bytes:
+            raise ValueError("file_too_large")
+        crow = await self._session.execute(
+            select(StaffFeedComment).where(
+                StaffFeedComment.id == comment_id,
+                StaffFeedComment.author_admin_id == admin_id,
+            )
+        )
+        c = crow.scalar_one_or_none()
+        if c is None:
+            return None
+        post_chk = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == c.post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        if post_chk.scalar_one_or_none() is None:
+            return None
+        att_id = uuid.uuid4()
+        safe = _sanitize_filename(file_name)
+        rel = f"feed_comments/{clinic_id}/{att_id}_{safe}"
+        path = Path(settings.staff_chat_upload_root) / rel.replace("/", os.sep)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+        row = StaffFeedCommentAttachment(
+            id=att_id,
+            clinic_id=clinic_id,
+            comment_id=comment_id,
+            file_name=file_name[:500],
+            content_type=content_type[:128],
+            size_bytes=len(raw),
+            storage_path=rel.replace("\\", "/"),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return StaffAttachmentBrief(
+            id=row.id,
+            file_name=row.file_name,
+            content_type=row.content_type,
+            size_bytes=row.size_bytes,
         )
 
     async def toggle_feed_post_like(
@@ -712,6 +840,7 @@ class StaffCollaborationService:
             )
             for a in att_res.scalars().all()
         ]
+        liked_ids = await self._feed_posts_liked_by_admin([post_id], editor_admin_id)
 
         return StaffFeedPostResponse(
             id=post.id,
@@ -721,6 +850,7 @@ class StaffCollaborationService:
             created_at=post.created_at,
             comments_count=cc,
             likes_count=lc,
+            liked_by_me=post_id in liked_ids,
             attachments=atts,
         )
 
@@ -754,6 +884,30 @@ class StaffCollaborationService:
             delete(StaffFeedPostAttachment).where(StaffFeedPostAttachment.post_id == post_id)
         )
         await self._session.execute(delete(StaffFeedPostLike).where(StaffFeedPostLike.post_id == post_id))
+        com_ids_res = await self._session.execute(
+            select(StaffFeedComment.id).where(StaffFeedComment.post_id == post_id)
+        )
+        comment_ids = [r[0] for r in com_ids_res.all()]
+        if comment_ids:
+            c_atts = (
+                await self._session.execute(
+                    select(StaffFeedCommentAttachment).where(
+                        StaffFeedCommentAttachment.comment_id.in_(comment_ids)
+                    )
+                )
+            ).scalars().all()
+            for a in c_atts:
+                try:
+                    p = Path(settings.staff_chat_upload_root) / a.storage_path.replace("/", os.sep)
+                    if p.is_file():
+                        p.unlink()
+                except OSError:
+                    pass
+            await self._session.execute(
+                delete(StaffFeedCommentAttachment).where(
+                    StaffFeedCommentAttachment.comment_id.in_(comment_ids)
+                )
+            )
         await self._session.execute(delete(StaffFeedComment).where(StaffFeedComment.post_id == post_id))
 
         post.deleted_at = utc_now_naive()
@@ -1518,16 +1672,7 @@ class StaffCollaborationService:
         clinic_id: UUID,
         attachment_id: UUID,
         viewer_admin_id: UUID,
-    ) -> tuple[StaffFeedPostAttachment, bytes] | None:
-        res = await self._session.execute(
-            select(StaffFeedPostAttachment).where(
-                StaffFeedPostAttachment.id == attachment_id,
-                StaffFeedPostAttachment.clinic_id == clinic_id,
-            )
-        )
-        row = res.scalar_one_or_none()
-        if row is None:
-            return None
+    ) -> tuple[StaffFeedPostAttachment | StaffFeedCommentAttachment, bytes] | None:
         ures = await self._session.execute(
             select(AdminUser.id).where(
                 AdminUser.id == viewer_admin_id,
@@ -1537,10 +1682,31 @@ class StaffCollaborationService:
         )
         if ures.scalar_one_or_none() is None:
             return None
-        path = Path(settings.staff_chat_upload_root) / row.storage_path.replace("/", os.sep)
-        if not path.is_file():
+        res = await self._session.execute(
+            select(StaffFeedPostAttachment).where(
+                StaffFeedPostAttachment.id == attachment_id,
+                StaffFeedPostAttachment.clinic_id == clinic_id,
+            )
+        )
+        row = res.scalar_one_or_none()
+        if row is not None:
+            path = Path(settings.staff_chat_upload_root) / row.storage_path.replace("/", os.sep)
+            if not path.is_file():
+                return None
+            return row, path.read_bytes()
+        res_c = await self._session.execute(
+            select(StaffFeedCommentAttachment).where(
+                StaffFeedCommentAttachment.id == attachment_id,
+                StaffFeedCommentAttachment.clinic_id == clinic_id,
+            )
+        )
+        crow = res_c.scalar_one_or_none()
+        if crow is None:
             return None
-        return row, path.read_bytes()
+        path_c = Path(settings.staff_chat_upload_root) / crow.storage_path.replace("/", os.sep)
+        if not path_c.is_file():
+            return None
+        return crow, path_c.read_bytes()
 
     async def list_knowledge(
         self,

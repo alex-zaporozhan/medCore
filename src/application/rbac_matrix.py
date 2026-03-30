@@ -14,6 +14,9 @@ Procedure when matrix evolves:
    - for existing roles: INSERT new role_permissions for new permission codes,
      or run a data migration that syncs from this module (e.g. script that
      reads ROLE_PERMISSIONS and upserts role_permissions).
+   - **Important:** production often uses **global** roles (``roles.clinic_id IS NULL``)
+     from ``seed_rbac_baseline``; link new permissions to those rows as well as
+     per-clinic role copies (see migration ``v2w3x4y5z6_patients_pii_read_global_roles.py``).
 3. Keep require_permissions(...) usage in routers aligned with these codes
    (see DEV_PROMPTS_RBAC_AND_TASKS.md and ARCH_RBAC_AND_TASKS.md).
 """
@@ -85,11 +88,12 @@ PERMISSIONS: Final[list[PermissionDef]] = [
     ),
     PermissionDef(
         "view_staff_collab",
-        "Просмотр ленты персонала, внутреннего чата, календаря и базы знаний",
+        "Внутренний чат, календарь и база знаний. Стена клиники (лента): чтение, лайки и комментарии "
+        "доступны всем активным администраторам клиники и не требуют этого права",
     ),
     PermissionDef(
         "manage_staff_collab",
-        "Публикация в ленту, сообщения в чате персонала, события календаря, статьи БЗ",
+        "Публикация и правка постов на стене, сообщения в чате персонала, календарь, статьи базы знаний",
     ),
     PermissionDef(
         "invite_staff_calendar_participants",

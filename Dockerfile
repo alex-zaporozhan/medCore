@@ -1,5 +1,7 @@
-# AWS Public ECR mirrors Docker Official Images; avoids broken docker.io registry-mirrors (e.g. Beget → 127.0.0.1:proxy).
-FROM public.ecr.aws/docker/library/python:3.11-slim AS builder
+# Default: Docker Hub. For flaky docker.io mirrors use:
+#   docker build --build-arg PYTHON_BUILDER_IMAGE=public.ecr.aws/docker/library/python:3.11-slim -t dental-booking-backend:local .
+ARG PYTHON_BUILDER_IMAGE=python:3.11-slim
+FROM ${PYTHON_BUILDER_IMAGE} AS builder
 
 WORKDIR /app
 

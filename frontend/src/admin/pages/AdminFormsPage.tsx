@@ -405,7 +405,12 @@ export default function AdminFormsPage() {
                         component="img"
                         src={(submissionDetail.signature.signature_payload as { image: string }).image}
                         alt="Подпись"
-                        style={{ maxWidth: "100%", height: "auto", border: "1px solid var(--mantine-color-default-border)", borderRadius: 4 }}
+                        style={{
+                          maxWidth: "100%",
+                          height: "auto",
+                          border: "1px solid var(--mantine-color-default-border)",
+                          borderRadius: "var(--radius-xs)",
+                        }}
                       />
                     )}
                   </Stack>

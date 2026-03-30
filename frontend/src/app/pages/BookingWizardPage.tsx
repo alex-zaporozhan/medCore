@@ -283,7 +283,7 @@ export default function BookingWizardPage() {
                         cursor: "pointer",
                         borderWidth: isSelected ? 2 : 1,
                         borderColor: isSelected ? "var(--mantine-color-primary-6)" : undefined,
-                        backgroundColor: isSelected ? "var(--mantine-color-primary-light)" : undefined,
+                        backgroundColor: isSelected ? "var(--primary-light)" : undefined,
                       }}
                       onClick={() => setDoctorId(d.id)}
                     >

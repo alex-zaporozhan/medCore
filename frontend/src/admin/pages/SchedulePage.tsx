@@ -518,7 +518,7 @@ export default function SchedulePage() {
         onEditTimeChange={setEditTime}
         onEditDoctorIdChange={setEditDoctorId}
         scheduleShareUrl={scheduleShareUrl}
-        onBookingNotesSaved={(b) => setSelectedBooking(b)}
+        onBookingUpdated={(b) => setSelectedBooking(b)}
       />
 
       <GlassModal

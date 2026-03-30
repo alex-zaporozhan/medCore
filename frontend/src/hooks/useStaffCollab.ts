@@ -22,6 +22,7 @@ export interface StaffFeedPostResponse {
   created_at: string;
   comments_count: number;
   likes_count: number;
+  liked_by_me?: boolean;
   attachments?: StaffAttachmentBrief[];
 }
 
@@ -30,6 +31,9 @@ export interface StaffFeedCommentResponse {
   body: string;
   author: NamedAdminBrief;
   created_at: string;
+  parent_comment_id?: string | null;
+  in_reply_to?: NamedAdminBrief | null;
+  attachments?: StaffAttachmentBrief[];
 }
 
 export interface StaffChatRoomResponse {
@@ -161,7 +165,8 @@ export interface StaffFeedPostLikeResponse {
 export function useToggleStaffFeedPostLike() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (postId: string) => api.post<StaffFeedPostLikeResponse>(`/v1/admin/staff/feed/posts/${postId}/like`),
+    mutationFn: (postId: string) =>
+      api.post<StaffFeedPostLikeResponse>(`/v1/admin/staff/feed/posts/${postId}/like`),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
     },
@@ -227,7 +232,7 @@ export async function downloadStaffFeedPostAttachmentFile(attachmentId: string, 
 
 export function useStaffFeedComments(postId: string | null) {
   return useQuery({
-    queryKey: ["staff-collab", "feed-comments", postId] as const,
+    queryKey: queryKeys.staffCollab.feedComments(postId),
     queryFn: () =>
       api.get<StaffFeedCommentResponse[]>(`/v1/admin/staff/feed/posts/${postId}/comments`),
     enabled: !!postId,
@@ -237,11 +242,38 @@ export function useStaffFeedComments(postId: string | null) {
 export function useAddStaffFeedComment(postId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) =>
-      api.post<StaffFeedCommentResponse>(`/v1/admin/staff/feed/posts/${postId}/comments`, { body }),
+    mutationFn: (payload: { body: string; parent_comment_id?: string | null }) => {
+      if (!postId) throw new Error("post");
+      return api.post<StaffFeedCommentResponse>(`/v1/admin/staff/feed/posts/${postId}/comments`, {
+        body: payload.body,
+        parent_comment_id: payload.parent_comment_id ?? null,
+      });
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
-      void qc.invalidateQueries({ queryKey: ["staff-collab", "feed-comments", postId] as const });
+      if (postId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedComments(postId) });
+      }
+    },
+  });
+}
+
+export function useUploadStaffFeedCommentAttachment(postId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ commentId, file }: { commentId: string; file: File }) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return api.postFormData<StaffAttachmentBrief>(
+        `/v1/admin/staff/feed/comments/${commentId}/attachments`,
+        fd
+      );
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
+      if (postId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedComments(postId) });
+      }
     },
   });
 }

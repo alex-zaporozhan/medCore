@@ -10,6 +10,9 @@
 # Локальные имена после `docker compose build` без привязки к Hub — в .env:
 #   BACKEND_IMAGE=dental-booking-backend:local
 #   FRONTEND_IMAGE=dental-booking-frontend:local
+#
+# Сборка: ошибка dockerhub1.beget.com + 127.0.0.1:12334 — см. docs/DOCKER_INFRA_PASSPORT.md §6.1
+# (прокси в Docker Desktop и/или registry-mirrors; отключение VPN это не сбрасывает).
 
 services:
   db:

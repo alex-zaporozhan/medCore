@@ -49,47 +49,43 @@ function chunkCalendarWeeks(days: CalendarDayCell[]): (CalendarDayCell | null)[]
   return rows;
 }
 
+/** Swiss calendar tokens — см. DESIGN_CALENDAR_SEMANTIC_MAPPING.md */
 function staffEventChipSurface(isReminder: boolean, isUnseen: boolean): CSSProperties {
-  if (isReminder) {
-    return {
-      background: "var(--mantine-color-blue-0)",
-      borderRadius: "var(--mantine-radius-sm)",
-      border: "none",
-      borderLeft: "4px solid var(--mantine-color-blue-5)",
-      boxShadow: "none",
-      width: "100%",
-      boxSizing: "border-box",
-      padding: "4px 6px",
-    };
-  }
-  if (isUnseen) {
-    return {
-      background: "var(--mantine-color-yellow-0)",
-      borderRadius: "var(--mantine-radius-sm)",
-      border: "none",
-      borderLeft: "4px solid var(--mantine-color-yellow-6)",
-      boxShadow: "none",
-      width: "100%",
-      boxSizing: "border-box",
-      padding: "4px 6px",
-    };
-  }
-  return {
-    background: "var(--mantine-color-indigo-0)",
-    borderRadius: "var(--mantine-radius-sm)",
+  const base: CSSProperties = {
+    borderRadius: "var(--calendar-slot-radius)",
     border: "none",
-    borderLeft: "4px solid var(--mantine-color-indigo-5)",
     boxShadow: "none",
     width: "100%",
     boxSizing: "border-box",
-    padding: "4px 6px",
+    padding: "var(--space-xs) var(--space-6)",
+    borderLeftWidth: "var(--calendar-bar-width)",
+    borderLeftStyle: "solid",
+  };
+  if (isUnseen) {
+    return {
+      ...base,
+      background: "var(--calendar-attention-coral-bg)",
+      borderLeftColor: "var(--calendar-attention-coral-bar)",
+    };
+  }
+  if (isReminder) {
+    return {
+      ...base,
+      background: "var(--calendar-scheduled-bg)",
+      borderLeftColor: "var(--calendar-scheduled-bar)",
+    };
+  }
+  return {
+    ...base,
+    background: "var(--calendar-attention-denim-bg)",
+    borderLeftColor: "var(--calendar-attention-denim-bar)",
   };
 }
 
 function staffEventTextColor(isReminder: boolean, isUnseen: boolean): string {
-  if (isReminder) return "var(--mantine-color-blue-9)";
-  if (isUnseen) return "var(--mantine-color-yellow-9)";
-  return "var(--mantine-color-indigo-9)";
+  if (isUnseen) return "var(--calendar-attention-coral-title)";
+  if (isReminder) return "var(--calendar-scheduled-title)";
+  return "var(--calendar-attention-denim-title)";
 }
 
 type CalendarModalState =
@@ -743,7 +739,6 @@ export default function AdminStaffCalendarPage() {
           <Box style={{ overflow: "auto" }}>
             <Table
               withTableBorder
-              withColumnBorders
               withRowBorders
               striped={false}
               horizontalSpacing={4}
@@ -771,7 +766,7 @@ export default function AdminStaffCalendarPage() {
                           style={{
                             height: 120,
                             verticalAlign: "top",
-                            padding: 4,
+                            padding: "var(--space-xs)",
                             backgroundColor: "var(--mantine-color-gray-0)",
                           }}
                         />
@@ -794,14 +789,14 @@ export default function AdminStaffCalendarPage() {
                               height: 120,
                               minHeight: 120,
                               verticalAlign: "top",
-                              padding: 4,
+                              padding: "var(--space-xs)",
                               cursor: "pointer",
                               backgroundColor: flashDay
-                                ? "rgba(255, 228, 99, 0.22)"
+                                ? "var(--calendar-attention-coral-bg)"
                                 : day.is_in_current_month
-                                  ? "#ffffff"
+                                  ? "var(--bg-card)"
                                   : "var(--mantine-color-gray-0)",
-                              outline: flashDay ? "2px solid rgba(255, 193, 7, 0.55)" : undefined,
+                              outline: flashDay ? "2px solid var(--calendar-attention-coral-bar)" : undefined,
                               outlineOffset: -1,
                             }}
                             onClick={() => setDayDrawerDate(day.date)}
@@ -814,20 +809,20 @@ export default function AdminStaffCalendarPage() {
                               </Text>
                               <Group gap={4} wrap="nowrap">
                                 {day.events.length > 0 ? (
-                                  <Badge color="indigo" size="xs" variant="light">
+                                  <Badge size="xs" variant="transparent" styles={{ root: { backgroundColor: "var(--calendar-neutral-badge-bg)", color: "var(--calendar-neutral-badge-text)" } }}>
                                     {day.events.length}
                                   </Badge>
                                 ) : null}
                                 {day.unseen_invite_count > 0 ? (
-                                  <Badge color="yellow" size="xs" variant="light">
+                                  <Badge size="xs" variant="transparent" styles={{ root: { backgroundColor: "var(--calendar-attention-coral-badge-bg)", color: "var(--calendar-attention-coral-badge-text)" } }}>
                                     {`+${day.unseen_invite_count}`}
                                   </Badge>
                                 ) : null}
                                 {day.reminder_event_ids.length > 0 ? (
                                   <Badge
-                                    color="blue"
                                     size="xs"
-                                    variant="light"
+                                    variant="transparent"
+                                    styles={{ root: { backgroundColor: "var(--calendar-scheduled-badge-bg)", color: "var(--calendar-scheduled-badge-text)" } }}
                                     style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
                                   >
                                     <IconClock size={12} />
@@ -856,10 +851,10 @@ export default function AdminStaffCalendarPage() {
                                     >
                                       <Group gap={6} wrap="nowrap" align="center">
                                         {isReminder ? (
-                                          <IconClock size={12} color="var(--mantine-color-blue-6)" />
+                                          <IconClock size={12} color="var(--calendar-scheduled-bar)" />
                                         ) : null}
                                         {isUnseen ? (
-                                          <Badge size="xs" color="yellow" variant="light">
+                                          <Badge size="xs" variant="transparent" styles={{ root: { backgroundColor: "var(--calendar-attention-coral-badge-bg)", color: "var(--calendar-attention-coral-badge-text)" } }}>
                                             Нов
                                           </Badge>
                                         ) : null}
@@ -974,7 +969,7 @@ export default function AdminStaffCalendarPage() {
                         style={{
                           ...staffEventChipSurface(isReminder, isUnseen),
                           cursor: "pointer",
-                          padding: "8px 10px",
+                          padding: "var(--space-sm) var(--space-10)",
                         }}
                       >
                         <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
@@ -1178,7 +1173,7 @@ export default function AdminStaffCalendarPage() {
                         variant="subtle"
                         size="xs"
                         onClick={() => setHideCreateMonthPicker(false)}
-                        style={{ background: "#ffffff", boxShadow: "0 4px 18px rgba(0, 0, 0, 0.06)" }}
+                        style={{ background: "var(--bg-card)", boxShadow: "var(--shadow-soft-sm)" }}
                       >
                         Изменить
                       </Button>
@@ -1191,11 +1186,11 @@ export default function AdminStaffCalendarPage() {
                       <Box
                         mt={6}
                         style={{
-                          background: "#ffffff",
-                          borderRadius: 12,
+                          background: "var(--bg-card)",
+                          borderRadius: "var(--radius-md)",
                           border: "1px solid var(--input-border)",
-                          padding: 10,
-                          boxShadow: "0 10px 30px rgba(0, 0, 0, 0.06)",
+                          padding: "var(--space-10)",
+                          boxShadow: "var(--shadow-soft-md)",
                           transition: "transform 0.15s ease",
                         }}
                       >
@@ -1206,7 +1201,7 @@ export default function AdminStaffCalendarPage() {
                             radius="md"
                             onClick={() => setCreateMonthAnchor((m) => m.subtract(1, "month"))}
                             aria-label="Предыдущий месяц"
-                            style={{ background: "#ffffff", boxShadow: "0 4px 18px rgba(0,0,0,0.06)" }}
+                            style={{ background: "var(--bg-card)", boxShadow: "var(--shadow-soft-sm)" }}
                           >
                             {"←"}
                           </ActionIcon>
@@ -1219,7 +1214,7 @@ export default function AdminStaffCalendarPage() {
                             radius="md"
                             onClick={() => setCreateMonthAnchor((m) => m.add(1, "month"))}
                             aria-label="Следующий месяц"
-                            style={{ background: "#ffffff", boxShadow: "0 4px 18px rgba(0,0,0,0.06)" }}
+                            style={{ background: "var(--bg-card)", boxShadow: "var(--shadow-soft-sm)" }}
                           >
                             {"→"}
                           </ActionIcon>
@@ -1249,12 +1244,12 @@ export default function AdminStaffCalendarPage() {
                                   setCreateMonthAnchor(d.startOf("month"));
                                 }}
                                 style={{
-                                  background: "#ffffff",
+                                  background: "var(--bg-card)",
                                   opacity: isThisMonth ? 1 : 0.35,
-                                  boxShadow: isSel ? "0 10px 30px rgba(59, 130, 246, 0.18)" : "0 6px 18px rgba(0,0,0,0.04)",
+                                  boxShadow: isSel ? "var(--shadow-soft-md)" : "var(--shadow-soft-sm)",
                                   transform: isSel ? "translateY(-1px)" : undefined,
                                   transition: "transform 0.12s ease, box-shadow 0.2s ease",
-                                  borderRadius: 10,
+                                  borderRadius: "var(--radius-md)",
                                 }}
                               >
                                 {d.date()}
@@ -1301,9 +1296,9 @@ export default function AdminStaffCalendarPage() {
                             }}
                             styles={{
                               input: {
-                                background: "#ffffff",
-                                borderRadius: 10,
-                                boxShadow: "0 6px 18px rgba(0,0,0,0.04)",
+                                background: "var(--bg-card)",
+                                borderRadius: "var(--radius-md)",
+                                boxShadow: "var(--shadow-soft-sm)",
                               },
                             }}
                           />
@@ -1313,7 +1308,7 @@ export default function AdminStaffCalendarPage() {
                             radius="md"
                             aria-label="Выбрать время начала"
                             onClick={() => setTimePickerKind("start")}
-                            style={{ boxShadow: "0 6px 18px rgba(0,0,0,0.04)" }}
+                            style={{ boxShadow: "var(--shadow-soft-sm)" }}
                           >
                             <IconClock size={18} />
                           </ActionIcon>
@@ -1349,9 +1344,9 @@ export default function AdminStaffCalendarPage() {
                             }}
                             styles={{
                               input: {
-                                background: "#ffffff",
-                                borderRadius: 10,
-                                boxShadow: "0 6px 18px rgba(0,0,0,0.04)",
+                                background: "var(--bg-card)",
+                                borderRadius: "var(--radius-md)",
+                                boxShadow: "var(--shadow-soft-sm)",
                               },
                             }}
                           />
@@ -1361,7 +1356,7 @@ export default function AdminStaffCalendarPage() {
                             radius="md"
                             aria-label="Выбрать время окончания"
                             onClick={() => setTimePickerKind("end")}
-                            style={{ boxShadow: "0 6px 18px rgba(0,0,0,0.04)" }}
+                            style={{ boxShadow: "var(--shadow-soft-sm)" }}
                           >
                             <IconClock size={18} />
                           </ActionIcon>
@@ -1466,8 +1461,8 @@ export default function AdminStaffCalendarPage() {
                 ref={hoursPickerScrollRef}
               style={{
                 height: 220,
-                borderRadius: 12,
-                background: "#ffffff",
+                borderRadius: "var(--radius-md)",
+                background: "var(--bg-card)",
                 border: "1px solid var(--input-border)",
               }}
               onWheel={onWheelHours}
@@ -1486,16 +1481,16 @@ export default function AdminStaffCalendarPage() {
                           applyPickerTime(h, minute5);
                       }}
                       style={{
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                          background: isDisabled ? "#f1f3f5" : isSel ? "rgba(59, 130, 246, 0.15)" : "#ffffff",
+                        padding: "var(--space-10) var(--space-md)",
+                        borderRadius: "var(--radius-md)",
+                          background: isDisabled ? "var(--mantine-color-gray-1)" : isSel ? "var(--primary-light)" : "var(--bg-card)",
                           border: isDisabled
-                            ? "1px solid #e9ecef"
+                            ? "1px solid var(--mantine-color-gray-2)"
                             : isSel
-                              ? "1px solid rgba(59, 130, 246, 0.55)"
+                              ? "1px solid var(--primary)"
                               : "1px solid transparent",
                           cursor: isDisabled ? "not-allowed" : "pointer",
-                          boxShadow: isDisabled ? "none" : isSel ? "0 10px 30px rgba(59, 130, 246, 0.18)" : "0 6px 18px rgba(0,0,0,0.04)",
+                          boxShadow: isDisabled ? "none" : isSel ? "var(--shadow-soft-md)" : "var(--shadow-soft-sm)",
                         transition: "transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease",
                           transform: isDisabled ? undefined : isSel ? "translateY(-1px)" : undefined,
                       }}
@@ -1503,8 +1498,11 @@ export default function AdminStaffCalendarPage() {
                       <Text
                         size="sm"
                         fw={900}
-                        c={isDisabled ? "dimmed" : isSel ? "blue" : "dark"}
-                        style={{ textAlign: "center" }}
+                        c={isDisabled ? "dimmed" : isSel ? undefined : "dark"}
+                        style={{
+                          textAlign: "center",
+                          ...(!isDisabled && isSel ? { color: "var(--primary)" } : {}),
+                        }}
                       >
                         {String(h).padStart(2, "0")}
                       </Text>
@@ -1518,8 +1516,8 @@ export default function AdminStaffCalendarPage() {
               ref={minutesPickerScrollRef}
               style={{
                 height: 220,
-                borderRadius: 12,
-                background: "#ffffff",
+                borderRadius: "var(--radius-md)",
+                background: "var(--bg-card)",
                 border: "1px solid var(--input-border)",
               }}
               onWheel={onWheelMinutes}
@@ -1537,16 +1535,16 @@ export default function AdminStaffCalendarPage() {
                         applyPickerTime(pickerHour, m5);
                       }}
                       style={{
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                        background: isDisabled ? "#f1f3f5" : isSel ? "rgba(59, 130, 246, 0.15)" : "#ffffff",
+                        padding: "var(--space-10) var(--space-md)",
+                        borderRadius: "var(--radius-md)",
+                        background: isDisabled ? "var(--mantine-color-gray-1)" : isSel ? "var(--primary-light)" : "var(--bg-card)",
                         border: isDisabled
-                          ? "1px solid #e9ecef"
+                          ? "1px solid var(--mantine-color-gray-2)"
                           : isSel
-                            ? "1px solid rgba(59, 130, 246, 0.55)"
+                            ? "1px solid var(--primary)"
                             : "1px solid transparent",
                         cursor: isDisabled ? "not-allowed" : "pointer",
-                        boxShadow: isDisabled ? "none" : isSel ? "0 10px 30px rgba(59, 130, 246, 0.18)" : "0 6px 18px rgba(0,0,0,0.04)",
+                        boxShadow: isDisabled ? "none" : isSel ? "var(--shadow-soft-md)" : "var(--shadow-soft-sm)",
                         transition: "transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease",
                         transform: isDisabled ? undefined : isSel ? "translateY(-1px)" : undefined,
                       }}
@@ -1554,8 +1552,11 @@ export default function AdminStaffCalendarPage() {
                       <Text
                         size="sm"
                         fw={900}
-                        c={isDisabled ? "dimmed" : isSel ? "blue" : "dark"}
-                        style={{ textAlign: "center" }}
+                        c={isDisabled ? "dimmed" : isSel ? undefined : "dark"}
+                        style={{
+                          textAlign: "center",
+                          ...(isDisabled || !isSel ? {} : { color: "var(--primary)" }),
+                        }}
                       >
                         {String(m5).padStart(2, "0")}
                       </Text>

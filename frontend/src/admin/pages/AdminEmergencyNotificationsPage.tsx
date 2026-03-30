@@ -17,6 +17,7 @@ import { useMemo } from "react";
 import { ROUTE_PATHS } from "@/routePaths";
 import type { AttentionItem } from "@/api/types";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
+import { SEMANTIC } from "@/shared/semanticUi";
 
 function flattenAttentionFeed(
   data:
@@ -38,9 +39,9 @@ const KIND_LABEL: Record<string, string> = {
   conflict: "Конфликт",
 };
 const KIND_COLOR: Record<string, string> = {
-  follow_up: "indigo",
-  retention_gap: "yellow",
-  conflict: "red",
+  follow_up: SEMANTIC.opsSeverity.info,
+  retention_gap: SEMANTIC.opsSeverity.warning,
+  conflict: SEMANTIC.opsSeverity.critical,
 };
 
 export default function AdminEmergencyNotificationsPage() {

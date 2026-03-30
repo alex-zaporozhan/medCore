@@ -11,6 +11,7 @@ import {
 } from "@/hooks";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import type { Patient } from "@/api/types";
+import { EntityDrawerFieldBlock, EntityDrawerFooterBar } from "@/admin/components/entity/entityDrawerChrome";
 import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
 import {
   Avatar,
@@ -254,64 +255,32 @@ export function PatientEntityDrawer({
           <Stack gap="sm">
             {mode === "view" && patient ? (
               <>
-                <Text size="sm" c="dimmed">Телефон</Text>
-                <Text>{patient.phone}</Text>
-                <Text size="sm" c="dimmed">ФИО</Text>
-                <Text>{patient.full_name ?? "—"}</Text>
-                <Text size="sm" c="dimmed">Email</Text>
-                <Text>{patient.email ?? "—"}</Text>
+                <EntityDrawerFieldBlock label="Телефон">
+                  <Text size="sm">{patient.phone}</Text>
+                </EntityDrawerFieldBlock>
+                <EntityDrawerFieldBlock label="ФИО">
+                  <Text size="sm">{patient.full_name ?? "—"}</Text>
+                </EntityDrawerFieldBlock>
+                <EntityDrawerFieldBlock label="Email">
+                  <Text size="sm">{patient.email ?? "—"}</Text>
+                </EntityDrawerFieldBlock>
                 {dateOfBirth && (
-                  <Text size="sm" c="dimmed">
-                    Дата рождения: {dayjs(dateOfBirth).format("DD.MM.YYYY")}
-                    {showBirthdaySoon && " — Скоро день рождения"}
+                  <EntityDrawerFieldBlock label="Дата рождения">
+                    <Text size="sm">
+                      {dayjs(dateOfBirth).format("DD.MM.YYYY")}
+                      {showBirthdaySoon && " — Скоро день рождения"}
+                    </Text>
+                  </EntityDrawerFieldBlock>
+                )}
+                <EntityDrawerFieldBlock label="Дополнительно">
+                  <Text size="xs" c="dimmed">
+                    Пол, категория, согласия на ПД, источник UTM — при наличии API.
                   </Text>
-                )}
-                <Text size="xs" c="dimmed">
-                  Пол, категория, согласия на ПД, источник UTM — при наличии API.
-                </Text>
-                <Button variant="light" size="xs" onClick={loadAiInsight}>
-                  AI‑обзор
-                </Button>
-                {insightError && (
-                  <QueryErrorAlert error={insightError} title="Не удалось загрузить AI‑обзор" />
-                )}
-                {insightText && (
-                  <Stack gap={4}>
-                    <Text size="sm" c="dimmed">{insightText}</Text>
-                    {insightStatus && <Text size="xs" c="dimmed">{insightStatus}</Text>}
-                  </Stack>
-                )}
-              </>
-            ) : (
-              <>
-                <TextInput
-                  label="Телефон"
-                  value={formPhone}
-                  onChange={(e) => setFormPhone(e.target.value)}
-                  required
-                  disabled={!!patient}
-                />
-                <TextInput
-                  label="ФИО"
-                  value={formFullName}
-                  onChange={(e) => setFormFullName(e.target.value)}
-                />
-                <TextInput
-                  label="Email"
-                  type="email"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                />
-                {dateOfBirth && (
-                  <Text size="sm" c="dimmed">
-                    Дата рождения: {dayjs(dateOfBirth).format("DD.MM.YYYY")}
-                    {showBirthdaySoon && " — Скоро день рождения"}
-                  </Text>
-                )}
-                {patient && (
-                  <>
+                </EntityDrawerFieldBlock>
+                <EntityDrawerFieldBlock label="AI‑обзор">
+                  <Stack gap="xs">
                     <Button variant="light" size="xs" onClick={loadAiInsight}>
-                      AI‑обзор
+                      Загрузить AI‑обзор
                     </Button>
                     {insightError && (
                       <QueryErrorAlert error={insightError} title="Не удалось загрузить AI‑обзор" />
@@ -322,16 +291,63 @@ export function PatientEntityDrawer({
                         {insightStatus && <Text size="xs" c="dimmed">{insightStatus}</Text>}
                       </Stack>
                     )}
-                  </>
-                )}
-                <Group mt="sm">
+                  </Stack>
+                </EntityDrawerFieldBlock>
+              </>
+            ) : (
+              <>
+                <EntityDrawerFieldBlock label="Контактные данные">
+                  <Stack gap="sm">
+                    <TextInput
+                      label="Телефон"
+                      value={formPhone}
+                      onChange={(e) => setFormPhone(e.target.value)}
+                      required
+                      disabled={!!patient}
+                    />
+                    <TextInput
+                      label="ФИО"
+                      value={formFullName}
+                      onChange={(e) => setFormFullName(e.target.value)}
+                    />
+                    <TextInput
+                      label="Email"
+                      type="email"
+                      value={formEmail}
+                      onChange={(e) => setFormEmail(e.target.value)}
+                    />
+                    {dateOfBirth && (
+                      <Text size="sm" c="dimmed">
+                        Дата рождения: {dayjs(dateOfBirth).format("DD.MM.YYYY")}
+                        {showBirthdaySoon && " — Скоро день рождения"}
+                      </Text>
+                    )}
+                    {patient && (
+                      <>
+                        <Button variant="light" size="xs" onClick={loadAiInsight}>
+                          AI‑обзор
+                        </Button>
+                        {insightError && (
+                          <QueryErrorAlert error={insightError} title="Не удалось загрузить AI‑обзор" />
+                        )}
+                        {insightText && (
+                          <Stack gap={4}>
+                            <Text size="sm" c="dimmed">{insightText}</Text>
+                            {insightStatus && <Text size="xs" c="dimmed">{insightStatus}</Text>}
+                          </Stack>
+                        )}
+                      </>
+                    )}
+                  </Stack>
+                </EntityDrawerFieldBlock>
+                <EntityDrawerFooterBar>
                   <Button onClick={handleSave} loading={createMutation.isPending || updateMutation.isPending}>
                     Сохранить
                   </Button>
                   <Button variant="subtle" onClick={onClose}>
                     Отмена
                   </Button>
-                </Group>
+                </EntityDrawerFooterBar>
                 {(createMutation.isError || updateMutation.isError) && (
                   <QueryErrorAlert
                     error={

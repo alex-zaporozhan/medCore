@@ -10,7 +10,16 @@ import { usePatients } from "@/hooks/usePatients";
 import { useServices } from "@/hooks/useServices";
 import { useAdminFormTemplates, useSendFormLink } from "@/hooks";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { AdminDrawer, GlassModal, DataSkeleton, ContextBar, QueryErrorAlert } from "@/shared/ui";
+import {
+  AdminDrawer,
+  GlassModal,
+  DataSkeleton,
+  ContextBar,
+  QueryErrorAlert,
+  AdminDataTableToolbar,
+  AdminDataTableSurface,
+  ADMIN_TABLE_PROPS,
+} from "@/shared/ui";
 import { BookingEntityDrawer } from "@/admin/components/entity/BookingEntityDrawer";
 import {
   ActionIcon,
@@ -21,6 +30,7 @@ import {
   Menu,
   Paper,
   Select,
+  SimpleGrid,
   Skeleton,
   Stack,
   Table,
@@ -33,17 +43,21 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { ROUTE_PATHS } from "@/routePaths";
+import { BOOKING_STATUS_LABEL_RU } from "@/shared/bookingStatusMeta";
 
 const EMPTY_DB_HINT =
   "Если ошибка из-за отсутствия данных в базе — добавьте клинику, врачей или пациентов в соответствующих разделах.";
 
 const STATUS_OPTIONS = [
   { value: "", label: "Любой" },
-  { value: "pending", label: "Ожидает" },
-  { value: "confirmed", label: "Подтверждено" },
-  { value: "completed", label: "Оказано" },
-  { value: "cancelled", label: "Отменено" },
-  { value: "no_show", label: "Неявка" },
+  { value: "registered", label: BOOKING_STATUS_LABEL_RU.registered },
+  { value: "confirmed", label: BOOKING_STATUS_LABEL_RU.confirmed },
+  { value: "pending", label: BOOKING_STATUS_LABEL_RU.pending },
+  { value: "in_progress", label: BOOKING_STATUS_LABEL_RU.in_progress },
+  { value: "completed", label: BOOKING_STATUS_LABEL_RU.completed },
+  { value: "cancelled", label: BOOKING_STATUS_LABEL_RU.cancelled },
+  { value: "no_show", label: BOOKING_STATUS_LABEL_RU.no_show },
+  { value: "awaiting_payment", label: BOOKING_STATUS_LABEL_RU.awaiting_payment },
 ];
 
 export default function AdminBookingsPage() {
@@ -102,33 +116,37 @@ export default function AdminBookingsPage() {
         }
         actions={<Button component={Link} to={ROUTE_PATHS.admin.schedule}>Новая запись</Button>}
       />
-      <Select
-        label="Врач"
-        placeholder="Выберите врача"
-        data={doctorOptions}
-        value={doctorId}
-        onChange={setDoctorId}
-        searchable
-        clearable
-      />
-      <TextInput
-        label="Дата"
-        type="date"
-        value={date}
-        onChange={(e) => setDate(e.target.value || dayjs().format("YYYY-MM-DD"))}
-      />
-      <Select
-        label="Статус"
-        data={STATUS_OPTIONS}
-        value={status ?? ""}
-        onChange={(v) => setStatus(v || null)}
-      />
-      <TextInput
-        label="Телефон пациента"
-        placeholder="+7..."
-        value={patientPhone}
-        onChange={(e) => setPatientPhone(e.target.value)}
-      />
+      <AdminDataTableToolbar>
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+          <Select
+            label="Врач"
+            placeholder="Выберите врача"
+            data={doctorOptions}
+            value={doctorId}
+            onChange={setDoctorId}
+            searchable
+            clearable
+          />
+          <TextInput
+            label="Дата"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value || dayjs().format("YYYY-MM-DD"))}
+          />
+          <Select
+            label="Статус"
+            data={STATUS_OPTIONS}
+            value={status ?? ""}
+            onChange={(v) => setStatus(v || null)}
+          />
+          <TextInput
+            label="Телефон пациента"
+            placeholder="+7..."
+            value={patientPhone}
+            onChange={(e) => setPatientPhone(e.target.value)}
+          />
+        </SimpleGrid>
+      </AdminDataTableToolbar>
 
       {isLoading && <DataSkeleton lines={8} />}
       {isError && (
@@ -145,30 +163,31 @@ export default function AdminBookingsPage() {
         <EmptyStateHint title="Нет записей по выбранным фильтрам" />
       )}
       {!isLoading && !isError && bookings && bookings.length > 0 && (
-        <Table striped verticalSpacing="sm">
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Дата</Table.Th>
-              <Table.Th>Время</Table.Th>
-              <Table.Th>Врач</Table.Th>
-              <Table.Th>Пациент</Table.Th>
-              <Table.Th>Услуга</Table.Th>
-              <Table.Th>Статус</Table.Th>
-              <Table.Th>Действия</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {bookings.map((b) => {
-              const doctor = doctors?.find((d) => d.id === b.doctor_id);
-              const patient = patients?.find((p) => p.id === b.patient_id);
-              const service = services?.find((s) => s.id === b.service_id);
-              const patientLabel = patient
-                ? [patient.phone, patient.full_name].filter(Boolean).join(" — ") || patient.phone
-                : "—";
-              return (
+        <AdminDataTableSurface>
+          <Table {...ADMIN_TABLE_PROPS}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Дата</Table.Th>
+                <Table.Th>Время</Table.Th>
+                <Table.Th>Врач</Table.Th>
+                <Table.Th>Пациент</Table.Th>
+                <Table.Th>Услуга</Table.Th>
+                <Table.Th>Статус</Table.Th>
+                <Table.Th>Действия</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {bookings.map((b) => {
+                const doctor = doctors?.find((d) => d.id === b.doctor_id);
+                const patient = patients?.find((p) => p.id === b.patient_id);
+                const service = services?.find((s) => s.id === b.service_id);
+                const patientLabel = patient
+                  ? [patient.phone, patient.full_name].filter(Boolean).join(" — ") || patient.phone
+                  : "—";
+                return (
               <Table.Tr
                 key={b.id}
-                style={{ cursor: "pointer" }}
+                className="data-table-clickable-row"
                 onClick={() => setSelectedBooking(b)}
               >
                 <Table.Td>{b.appointment_date}</Table.Td>
@@ -261,11 +280,12 @@ export default function AdminBookingsPage() {
                     </Menu.Dropdown>
                   </Menu>
                 </Table.Td>
-              </Table.Tr>
-              );
-            })}
-          </Table.Tbody>
-        </Table>
+                </Table.Tr>
+                );
+              })}
+            </Table.Tbody>
+          </Table>
+        </AdminDataTableSurface>
       )}
 
       <BookingEntityDrawer
@@ -291,6 +311,7 @@ export default function AdminBookingsPage() {
         }
         onCancel={handleCancelBooking}
         isCancelPending={cancelMutation.isPending}
+        onBookingUpdated={(b) => setSelectedBooking(b)}
       />
 
       <GlassModal

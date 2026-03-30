@@ -3,9 +3,22 @@
 from datetime import datetime
 from uuid import UUID
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from src.core.datetime_utils import to_iso8601_utc
+
+
+class OmniMessageAttachmentDto(BaseModel):
+    """Вложение в ленте omni: локальный файл (omni) или мост из PWA-чата (clinic_chat)."""
+
+    id: UUID
+    file_name: str
+    content_type: str
+    size_bytes: int = 0
+    source: Literal["omni", "clinic_chat"] = "omni"
+    conversation_id: UUID | None = None
 
 
 class OmniMessageDto(BaseModel):
@@ -13,6 +26,8 @@ class OmniMessageDto(BaseModel):
     direction: str
     actor_type: str
     content: str
+    message_content_type: str = "TEXT"
+    attachments: list[OmniMessageAttachmentDto] = Field(default_factory=list)
     created_at: datetime | None
     ui_hidden: bool = False
     hidden_reason: str | None = None

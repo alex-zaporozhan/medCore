@@ -8,20 +8,19 @@ import {
   type AiMode,
 } from "@/hooks";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
-import { QueryErrorAlert } from "@/shared/ui";
+import { AdminSettingsSectionCard, QueryErrorAlert } from "@/shared/ui";
 import {
   Button,
   Checkbox,
   Group,
   MultiSelect,
-  Paper,
   Stack,
   Switch,
   Text,
   Textarea,
-  Title,
   Select,
 } from "@mantine/core";
+import { ContextBar } from "@/shared/ui";
 
 const INTENT_OPTIONS = [
   { value: "schedule", label: "Расписание" },
@@ -61,8 +60,8 @@ export default function AdminAiSettingsPage() {
 
   if (!clinicId) {
     return (
-      <Stack>
-        <Title order={3}>AI и ассистент</Title>
+      <Stack className="admin-form-stack">
+        <ContextBar title="AI и ассистент" />
         <Text c="dimmed" size="sm">
           Сначала выберите клинику в шапке.
         </Text>
@@ -72,8 +71,8 @@ export default function AdminAiSettingsPage() {
 
   if (isLoading && !draft) {
     return (
-      <Stack>
-        <Title order={3}>AI и ассистент</Title>
+      <Stack className="admin-form-stack">
+        <ContextBar title="AI и ассистент" />
         <DataSkeleton lines={4} />
       </Stack>
     );
@@ -81,8 +80,8 @@ export default function AdminAiSettingsPage() {
 
   if (isError && !draft) {
     return (
-      <Stack>
-        <Title order={3}>AI и ассистент</Title>
+      <Stack className="admin-form-stack">
+        <ContextBar title="AI и ассистент" />
         <QueryErrorAlert error={loadError} title="Не удалось загрузить настройки AI" />
       </Stack>
     );
@@ -91,17 +90,17 @@ export default function AdminAiSettingsPage() {
   const s = draft;
   if (!s) {
     return (
-      <Stack>
-        <Title order={3}>AI и ассистент</Title>
+      <Stack className="admin-form-stack">
+        <ContextBar title="AI и ассистент" />
         <DataSkeleton lines={4} />
       </Stack>
     );
   }
 
   return (
-    <Stack>
-      <Title order={3}>AI и ассистент</Title>
-      <Paper p="md" radius="md" withBorder>
+    <Stack className="admin-form-stack">
+      <ContextBar title="AI и ассистент" />
+      <AdminSettingsSectionCard title="Статус AI">
         <Stack gap="xs">
           {statusLoading && <DataSkeleton lines={1} />}
           {aiStatus && !statusLoading && (
@@ -126,8 +125,11 @@ export default function AdminAiSettingsPage() {
             </Text>
           )}
         </Stack>
-      </Paper>
-      <Paper p="md" radius="md" withBorder>
+      </AdminSettingsSectionCard>
+      <AdminSettingsSectionCard
+        title="Настройки ассистента"
+        description="Режимы и сценарии для чата с пациентами и админских подсказок."
+      >
         <Stack gap="sm">
           <Switch
             label="Включить AI‑ассистента"
@@ -192,7 +194,7 @@ export default function AdminAiSettingsPage() {
             </Button>
           </Group>
         </Stack>
-      </Paper>
+      </AdminSettingsSectionCard>
     </Stack>
   );
 }

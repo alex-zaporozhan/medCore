@@ -71,7 +71,7 @@ export default function AdminAdministratorsPage() {
         Список администраторов клиники. В чате сохраняется, какой администратор отправил сообщение. Добавьте учётные записи с ФИО и датой рождения для логирования.
       </Text>
 
-      <Paper p="md" withBorder>
+      <Paper p="md" withBorder className="data-toolbar-card">
         <Stack gap="md">
           <Text fw={600} size="sm">Добавить администратора</Text>
           {submitError && (
@@ -115,7 +115,7 @@ export default function AdminAdministratorsPage() {
         </Stack>
       </Paper>
 
-      <Paper p="md" withBorder>
+      <Paper p="md" withBorder className="data-table-card">
         <Text fw={600} size="sm" mb="xs">Список</Text>
         {employmentError && (
           <Alert color="red" mb="sm" onClose={() => setEmploymentError(null)} withCloseButton>
@@ -128,7 +128,7 @@ export default function AdminAdministratorsPage() {
           <Text size="sm" c="dimmed">Нет администраторов. Добавьте первого выше.</Text>
         )}
         {list.length > 0 && (
-          <Table withTableBorder withColumnBorders verticalSpacing="sm">
+          <Table withTableBorder withRowBorders highlightOnHover verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Email</Table.Th>

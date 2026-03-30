@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon,
-  Anchor,
   Box,
   Button,
   Card,
@@ -12,14 +11,12 @@ import {
   Select,
   Stack,
   Text,
-  Textarea,
   TextInput,
 } from "@mantine/core";
 import { useSearchParams } from "react-router-dom";
 import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { useAdminAdmins } from "@/hooks/useAdminAdmins";
 import {
-  downloadStaffChatAttachmentFile,
   useCreateStaffDmRoom,
   useCreateStaffGroupRoom,
   usePostStaffChatMessage,
@@ -32,7 +29,15 @@ import {
 import type { StaffChatRoomResponse } from "@/hooks/useStaffCollab";
 import { getAdminId } from "@/api/client";
 import dayjs from "dayjs";
-import { IconMicrophone, IconPaperclip, IconPhoto } from "@tabler/icons-react";
+import { IconPaperclip, IconPhoto, IconVolume } from "@tabler/icons-react";
+import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
+import { ClinicChatAttachments } from "@/shared/ClinicChatAttachments";
+import { shouldOmitChatBodyForAudioAttachment } from "@/shared/chatMessageBodyDisplay";
+import { EmojiMartPopoverPicker, AppleEmojiOverlayTextarea } from "@/shared/ui";
+import { VoiceNoteRecorderButton } from "@/shared/ui/VoiceNoteRecorderButton";
+import { api } from "@/api/client";
+import { useAdminSession } from "@/hooks/useAdminSession";
+import { ADMIN_CHAT_MESSAGES_REGION, adminChatIncomingBubbleStyle, adminChatOutgoingBubbleStyle } from "@/shared/adminChatChrome";
 
 function staffRoomSelectLabel(r: StaffChatRoomResponse): string {
   const k = r.kind;
@@ -43,13 +48,10 @@ function staffRoomSelectLabel(r: StaffChatRoomResponse): string {
   return r.title || r.id.slice(0, 8);
 }
 
-function formatFileSize(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export default function AdminStaffChatPage() {
+  const { data: adminSession } = useAdminSession();
+  const allowAudioAttachmentDownload = adminSession?.roles?.includes("owner") ?? false;
+
   const [searchParams] = useSearchParams();
   const taskIdFromUrl = searchParams.get("task");
 
@@ -74,6 +76,27 @@ export default function AdminStaffChatPage() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const attachFileRef = useRef<HTMLInputElement>(null);
+  const draftInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const triggerAttachPick = useCallback((accept?: string) => {
+    const el = attachFileRef.current;
+    if (!el) return;
+    el.accept = accept ?? "";
+    el.value = "";
+    el.click();
+  }, []);
+
+  const staffChatSubtitle = (
+    <Text size="sm" c="dimmed" maw={720} lh={1.4}>
+      Внутренний чат клиники (без сторонних мессенджеров). Текст, файлы и{" "}
+      <strong>голосовые</strong> — кнопка микрофона или файл аудио. Видео-кружки не используются.
+    </Text>
+  );
+
+  const getStaffChatAttachmentBlob = useCallback(
+    (attachmentId: string) => api.getBlob(`/v1/admin/staff/attachments/${attachmentId}/file`),
+    []
+  );
 
   const dmMut = useCreateStaffDmRoom();
   const groupMut = useCreateStaffGroupRoom();
@@ -116,9 +139,10 @@ export default function AdminStaffChatPage() {
 
   const onSend = () => {
     const t = draft.trim();
-    if (!t || !roomId) return;
+    if ((!t && !pendingFile) || !roomId) return;
     setAttachError(null);
-    postMut.mutate(t, {
+    const body = t;
+    postMut.mutate(body, {
       onSuccess: async (msg) => {
         setDraft("");
         if (pendingFile) {
@@ -174,7 +198,7 @@ export default function AdminStaffChatPage() {
   if (roomsLoading) {
     return (
       <Stack gap="md">
-        <ContextBar title="Мессенджер персонала" />
+        <ContextBar title="Чат команды" breadcrumbs={staffChatSubtitle} />
         <PageSkeleton variant="cards" cardsCount={2} />
       </Stack>
     );
@@ -183,7 +207,7 @@ export default function AdminStaffChatPage() {
   if (roomsErr) {
     return (
       <Stack gap="md">
-        <ContextBar title="Мессенджер персонала" />
+        <ContextBar title="Чат команды" breadcrumbs={staffChatSubtitle} />
         <QueryErrorAlert error={roomsError} />
       </Stack>
     );
@@ -191,10 +215,7 @@ export default function AdminStaffChatPage() {
 
   return (
     <Stack gap="md" style={{ height: "calc(100vh - 96px)", minHeight: 400 }}>
-      <ContextBar title="Мессенджер персонала" />
-      <Text size="sm" c="dimmed">
-        Внутренний контур, отдельно от чата с клиентом. Личные сообщения, группы и вложения к сообщениям.
-      </Text>
+      <ContextBar title="Чат команды" breadcrumbs={staffChatSubtitle} />
 
       {taskIdFromUrl && taskRoomLoading ? (
         <PageSkeleton variant="table" rows={2} />
@@ -285,43 +306,52 @@ export default function AdminStaffChatPage() {
                   ) : !messages?.length ? (
                     <EmptyState
                       title="Пока пусто"
-                      description="Напишите первое сообщение. Вложение — скрепкой (после отправки текста)."
+                      description="Напишите сообщение или запишите голос (микрофон). Файл или фото — иконками; вложение добавляется к последнему отправленному тексту."
                     />
                   ) : (
-                    <Stack gap="sm">
-                      {messages.map((m) => (
-                        <Card key={m.id} padding="sm" radius="md" withBorder bg="var(--mantine-color-gray-0)">
-                          <Group justify="space-between" mb={4}>
-                            <Text size="sm" fw={600}>
-                              {m.author.full_name?.trim() || "Сотрудник"}
-                            </Text>
-                            <Text size="xs" c="dimmed">
-                              {dayjs(m.created_at).format("DD.MM.YYYY HH:mm")}
-                            </Text>
-                          </Group>
-                          <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                            {m.body}
-                          </Text>
-                          {(m.attachments ?? []).length > 0 ? (
-                            <Stack gap={4} mt="xs">
-                              {(m.attachments ?? []).map((att) => (
-                                <Anchor
-                                  key={att.id}
-                                  component="button"
-                                  type="button"
-                                  size="sm"
-                                  onClick={() =>
-                                    void downloadStaffChatAttachmentFile(att.id, att.file_name)
-                                  }
-                                  style={{ textAlign: "left", cursor: "pointer" }}
-                                >
-                                  {att.file_name} ({formatFileSize(att.size_bytes)})
-                                </Anchor>
-                              ))}
-                            </Stack>
-                          ) : null}
-                        </Card>
-                      ))}
+                    <Stack gap="sm" {...ADMIN_CHAT_MESSAGES_REGION}>
+                      {messages.map((m) => {
+                        const isMine = m.author.id === currentAdminId;
+                        const audioMinW = (m.attachments ?? []).some((a) =>
+                          (a.content_type || "").toLowerCase().startsWith("audio/")
+                        )
+                          ? 280
+                          : undefined;
+                        return (
+                          <Box
+                            key={m.id}
+                            px="xs"
+                            py="xs"
+                            style={{
+                              alignSelf: isMine ? "flex-end" : "flex-start",
+                              maxWidth: "80%",
+                              minWidth: audioMinW,
+                              ...(isMine ? adminChatOutgoingBubbleStyle() : adminChatIncomingBubbleStyle()),
+                            }}
+                          >
+                            <Group justify="space-between" mb={4} wrap="nowrap" gap="xs">
+                              <Text size="sm" fw={600}>
+                                {m.author.full_name?.trim() || "Сотрудник"}
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                {dayjs(m.created_at).format("DD.MM.YYYY HH:mm")}
+                              </Text>
+                            </Group>
+                            {shouldOmitChatBodyForAudioAttachment(m.body, m.attachments ?? []) ? null : (
+                              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                                <AppleEmojiRichText text={m.body} />
+                              </Text>
+                            )}
+                            {(m.attachments ?? []).length > 0 ? (
+                              <ClinicChatAttachments
+                                attachments={m.attachments ?? []}
+                                getBlob={getStaffChatAttachmentBlob}
+                                allowAudioAttachmentDownload={allowAudioAttachmentDownload}
+                              />
+                            ) : null}
+                          </Box>
+                        );
+                      })}
                       <div ref={bottomRef} />
                     </Stack>
                   )}
@@ -335,6 +365,7 @@ export default function AdminStaffChatPage() {
                       const f = e.target.files?.[0] ?? null;
                       setPendingFile(f);
                       setAttachError(null);
+                      e.target.value = "";
                     }}
                   />
                   <Group gap="xs">
@@ -342,7 +373,7 @@ export default function AdminStaffChatPage() {
                       variant="light"
                       size="lg"
                       aria-label="Файл"
-                      onClick={() => attachFileRef.current?.click()}
+                      onClick={() => triggerAttachPick()}
                     >
                       <IconPaperclip size={20} />
                     </ActionIcon>
@@ -350,20 +381,32 @@ export default function AdminStaffChatPage() {
                       variant="light"
                       size="lg"
                       aria-label="Фото"
-                      onClick={() => attachFileRef.current?.click()}
+                      onClick={() => triggerAttachPick("image/*")}
                     >
                       <IconPhoto size={20} />
                     </ActionIcon>
                     <ActionIcon
                       variant="light"
                       size="lg"
-                      color="gray"
-                      aria-label="Аудио (в разработке)"
-                      title="Аудио: глобальный контур записи и хранения — в плане"
-                      disabled
+                      aria-label="Аудио файл"
+                      title="Выбрать аудиофайл (без видео)"
+                      onClick={() => triggerAttachPick("audio/*")}
                     >
-                      <IconMicrophone size={20} />
+                      <IconVolume size={20} />
                     </ActionIcon>
+                    <VoiceNoteRecorderButton
+                      disabled={postMut.isPending || uploadMut.isPending}
+                      onError={(msg) => setAttachError(msg)}
+                      onRecorded={(file) => {
+                        setAttachError(null);
+                        setPendingFile(file);
+                      }}
+                    />
+                    <EmojiMartPopoverPicker
+                      actionIconProps={{ variant: "light", size: "lg", color: "gray" }}
+                      onPick={(native) => setDraft((prev) => prev + native)}
+                      onInserted={() => draftInputRef.current?.focus()}
+                    />
                     {pendingFile ? (
                       <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>
                         {pendingFile.name}
@@ -375,7 +418,8 @@ export default function AdminStaffChatPage() {
                       {attachError}
                     </Text>
                   ) : null}
-                  <Textarea
+                  <AppleEmojiOverlayTextarea
+                    ref={draftInputRef}
                     placeholder="Сообщение…"
                     minRows={2}
                     value={draft}
@@ -391,13 +435,14 @@ export default function AdminStaffChatPage() {
                     <Button
                       onClick={onSend}
                       loading={postMut.isPending || uploadMut.isPending}
-                      disabled={!draft.trim()}
+                      disabled={!draft.trim() && !pendingFile}
                     >
                       Отправить
                     </Button>
                   </Group>
                   <Text size="xs" c="dimmed">
-                    Ctrl+Enter — отправить. Файл к последнему отправленному сообщению.
+                    Ctrl+Enter — отправить. Голос — микрофоном или файлом аудио; вложение к последнему отправленному
+                    сообщению.
                   </Text>
                 </Stack>
               </>

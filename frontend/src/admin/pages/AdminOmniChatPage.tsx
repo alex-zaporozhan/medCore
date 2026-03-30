@@ -9,6 +9,7 @@ import {
   useOmniQuickReplies,
   usePatchOmniChat,
   useSendAdminOmniMessage,
+  useSendAdminOmniMessageWithFile,
   useUpdateOmniChatAiMode,
   useHideAdminOmniMessage,
   OMNI_CHAT_AI_MODES,
@@ -77,16 +78,30 @@ import {
   IconRobot,
   IconUser,
   IconDotsVertical,
+  IconPaperclip,
+  IconPhoto,
 } from "@tabler/icons-react";
 import { useHotkeys } from "@mantine/hooks";
 import { GlassModal } from "@/shared/ui/GlassModal";
 import { Textarea } from "@mantine/core";
-import { getAdminId } from "@/api/client";
+import { AppleEmojiOverlayTextarea } from "@/shared/ui";
+import { api, getAdminId } from "@/api/client";
 import { useAiFeatures, getAiFeatureTooltip } from "@/shared/aiFeatures";
 import { useEffectiveAiFeatureGate } from "@/hooks/useEffectiveAiFeatureGate";
 import { logUiEvent } from "@/shared/uiEvents";
 import { useAvailableAiTools } from "@/hooks/useAvailableAiTools";
+import {
+  ADMIN_CHAT_MESSAGES_REGION,
+  adminChatOmniClientInboundBubbleStyle,
+  adminChatOmniHiddenBubbleStyle,
+  adminChatOmniOutboundBubbleStyle,
+} from "@/shared/adminChatChrome";
 import { SEMANTIC } from "@/shared/semanticUi";
+import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
+import { OmniMessageRichBody } from "@/shared/OmniMessageRichBody";
+import { useAdminSession } from "@/hooks/useAdminSession";
+import { EmojiMartPopoverPicker } from "@/shared/ui/EmojiMartPopoverPicker";
+import { VoiceNoteRecorderButton } from "@/shared/ui/VoiceNoteRecorderButton";
 
 function omniChatListStatusColor(status: string): string {
   const s = String(status).toUpperCase();
@@ -156,8 +171,12 @@ function omniChatStatusTooltip(status: string): string {
 type OmniInspectorTab = "client" | "forms" | "timeline" | "ai";
 
 const OMNI_INSPECTOR_COLLAPSED_KEY = "admin_omni_inspector_collapsed";
+const MAX_OMNI_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 export default function AdminOmniChatPage() {
+  const { data: adminSession } = useAdminSession();
+  const allowAudioAttachmentDownload = adminSession?.roles?.includes("owner") ?? false;
+
   const { currentClinicId } = useAdminClinic();
   const aiFeatures = useAiFeatures(currentClinicId ?? null);
   const crmStageFeature = aiFeatures.get("omni.tools.crm_suggest_next_stage");
@@ -174,6 +193,11 @@ export default function AdminOmniChatPage() {
   const [search, setSearch] = useState("");
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [messageText, setMessageText] = useState("");
+  const [pendingOmniFile, setPendingOmniFile] = useState<File | null>(null);
+  const [omniAttachError, setOmniAttachError] = useState<string | null>(null);
+  const omniFileInputRef = useRef<HTMLInputElement>(null);
+  const [omniFileAccept, setOmniFileAccept] = useState("*");
+  const messageComposerRef = useRef<HTMLTextAreaElement>(null);
   /** Явный выбор канала при нескольких каналах в треде (сбрасывается при смене чата). */
   const [replyChannelPick, setReplyChannelPick] = useState<string | null>(null);
   const [showOnlyWaiting, setShowOnlyWaiting] = useState(false);
@@ -317,6 +341,7 @@ export default function AdminOmniChatPage() {
     );
 
   const sendMessage = useSendAdminOmniMessage();
+  const sendOmniWithFile = useSendAdminOmniMessageWithFile();
   const updateAiMode = useUpdateOmniChatAiMode();
   const hideMessage = useHideAdminOmniMessage();
 
@@ -324,10 +349,56 @@ export default function AdminOmniChatPage() {
     setReplyChannelPick(null);
     setReplyToMessage(null);
     setMessageContextMenu(null);
+    setPendingOmniFile(null);
+    setOmniAttachError(null);
   }, [selectedChatId]);
 
+  const getClinicChatBlob = useCallback(
+    (conversationId: string, attachmentId: string) =>
+      api.getBlob(`/v1/admin/chat/conversations/${conversationId}/attachments/${attachmentId}/file`),
+    []
+  );
+
+  const getOmniBlobForMessage = useCallback(
+    (messageId: string, attachmentId: string) => {
+      if (!selectedChatId) return Promise.reject(new Error("no chat"));
+      return api.getBlob(
+        `/v1/admin/omni-chats/${selectedChatId}/messages/${messageId}/attachments/${attachmentId}/file`
+      );
+    },
+    [selectedChatId]
+  );
+
   const handleSend = () => {
-    if (!selectedChatId || !messageText.trim()) return;
+    if (!selectedChatId) return;
+    if (!messageText.trim() && !pendingOmniFile) return;
+    const reply_channel_id =
+      replyChannelOptions.length > 1 && effectiveReplyChannelId ? effectiveReplyChannelId : undefined;
+
+    if (pendingOmniFile) {
+      if (pendingOmniFile.size > MAX_OMNI_UPLOAD_BYTES) {
+        setOmniAttachError("Файл больше 5 МБ");
+        return;
+      }
+      setOmniAttachError(null);
+      sendOmniWithFile.mutate(
+        {
+          chatId: selectedChatId,
+          body: messageText.trim(),
+          file: pendingOmniFile,
+          reply_channel_id,
+        },
+        {
+          onSuccess: () => {
+            setMessageText("");
+            setPendingOmniFile(null);
+            setReplyToMessage(null);
+          },
+        }
+      );
+      return;
+    }
+
     const payload: {
       chatId: string;
       content: string;
@@ -336,8 +407,8 @@ export default function AdminOmniChatPage() {
       chatId: selectedChatId,
       content: messageText.trim(),
     };
-    if (replyChannelOptions.length > 1 && effectiveReplyChannelId) {
-      payload.reply_channel_id = effectiveReplyChannelId;
+    if (reply_channel_id) {
+      payload.reply_channel_id = reply_channel_id;
     }
     sendMessage.mutate(payload, {
       onSuccess: () => {
@@ -399,7 +470,7 @@ export default function AdminOmniChatPage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   useHotkeys([
     ["mod+J", () => { searchInputRef.current?.focus(); }],
-    ["mod+Enter", () => { if (selectedChatId && messageText.trim()) handleSend(); }],
+    ["mod+Enter", () => { if (selectedChatId && (messageText.trim() || pendingOmniFile)) handleSend(); }],
     ["Escape", () => { setFormDrawerOpen(false); setTaskDrawerOpen(false); }],
     ["mod+b", () => { if (selectedChatId && patientId && currentClinicId) handleOpenBookingModal(); }],
     /** Правая панель «Рабочий центр»: свернуть/развернуть (как левое меню). Не срабатывает в полях ввода. */
@@ -619,7 +690,7 @@ export default function AdminOmniChatPage() {
                 styles={(theme) => ({
                   root: {
                     backgroundColor: theme.colors.dark[0],
-                    padding: 2,
+                    padding: "var(--space-2)",
                     borderRadius: theme.radius.sm,
                   },
                   label: { fontWeight: 600, fontSize: theme.fontSizes.xs },
@@ -712,11 +783,11 @@ export default function AdminOmniChatPage() {
                         p={6}
                         style={{
                           cursor: "pointer",
-                          borderRadius: 6,
+                          borderRadius: "var(--radius-sm)",
                           minWidth: 0,
                           width: "100%",
                           backgroundColor:
-                            selectedChatId === c.chat_id ? "rgba(15, 23, 42, 0.06)" : "transparent",
+                            selectedChatId === c.chat_id ? "var(--dark-alpha-06)" : "transparent",
                           border:
                             selectedChatId === c.chat_id
                               ? "1px solid var(--divider)"
@@ -863,10 +934,10 @@ export default function AdminOmniChatPage() {
                                   variant="dot"
                                   color={
                                     String(chatDetail.status).toUpperCase() === "OPEN"
-                                      ? "teal"
+                                      ? SEMANTIC.status.success
                                       : String(chatDetail.status).toUpperCase() === "CLOSED"
                                         ? "gray"
-                                        : "yellow"
+                                        : SEMANTIC.opsSeverity.warning
                                   }
                                   radius="xs"
                                 >
@@ -878,7 +949,7 @@ export default function AdminOmniChatPage() {
                                   </Text>
                                 ) : null}
                                 {chatDetail.assignee_name ? (
-                                  <Badge size="xs" variant="light" color="indigo" radius="xs">
+                                  <Badge size="xs" variant="light" color="brand" radius="xs">
                                     {chatDetail.assignee_name}
                                   </Badge>
                                 ) : (
@@ -932,7 +1003,7 @@ export default function AdminOmniChatPage() {
                       scrollbarSize={6}
                       offsetScrollbars
                       viewportRef={omniMessagesViewportRef}
-                      style={{ flex: 1, minHeight: 0, padding: "20px" }}
+                      style={{ flex: 1, minHeight: 0, padding: "var(--space-20)" }}
                     >
                       <Stack gap={0} pb={0}>
                         {hasNextPage ? (
@@ -1056,9 +1127,9 @@ export default function AdminOmniChatPage() {
                                     <Box
                                       p="xs"
                                       style={{
-                                        borderRadius: 8,
-                                        background: "rgba(59, 130, 246, 0.06)",
-                                        border: "1px solid rgba(59, 130, 246, 0.25)",
+                                        borderRadius: "var(--radius-md)",
+                                        background: "var(--primary-alpha-06)",
+                                        border: "1px solid var(--primary-alpha-25)",
                                         maxWidth: 360,
                                       }}
                                     >
@@ -1073,9 +1144,9 @@ export default function AdminOmniChatPage() {
                                     <Box
                                       p="xs"
                                       style={{
-                                        borderRadius: 8,
-                                        background: "rgba(15, 23, 42, 0.02)",
-                                        border: "1px solid rgba(148, 163, 184, 0.4)",
+                                        borderRadius: "var(--radius-md)",
+                                        background: "var(--dark-alpha-02)",
+                                        border: "1px solid var(--muted-alpha-40)",
                                         maxWidth: 360,
                                       }}
                                     >
@@ -1202,7 +1273,7 @@ export default function AdminOmniChatPage() {
                       {messagesInitialLoading ? (
                         <DataSkeleton lines={3} />
                       ) : (
-                        <Stack gap={0} align="stretch">
+                        <Stack gap={0} align="stretch" {...ADMIN_CHAT_MESSAGES_REGION}>
                           {mergedMessages.map((m, index) => {
                             const prev = index > 0 ? mergedMessages[index - 1] : null;
                             const metaChannel =
@@ -1215,17 +1286,14 @@ export default function AdminOmniChatPage() {
                             const timeLabel = m.created_at
                               ? new Date(m.created_at).toLocaleString()
                               : "";
-                            const bubbleBg = m.ui_hidden
-                              ? "rgba(148, 163, 184, 0.2)"
-                              : outbound
-                                ? "var(--mantine-color-indigo-6)"
-                                : "#ffffff";
-                            const bubbleFg =
-                              m.ui_hidden || !outbound ? "var(--mantine-color-dark-8)" : "#ffffff";
+                            const bubbleFg = m.ui_hidden || !outbound ? "var(--mantine-color-dark-8)" : "var(--text-on-primary)";
                             const sameAuthorAsPrev =
                               !!prev &&
                               prev.direction === m.direction &&
                               prev.actor_type === m.actor_type;
+                            const hasAudioAttachment = (m.attachments ?? []).some((a) =>
+                              (a.content_type || "").toLowerCase().startsWith("audio/")
+                            );
                             return (
                               <Stack
                                 key={m.id}
@@ -1253,15 +1321,12 @@ export default function AdminOmniChatPage() {
                                   style={{
                                     position: "relative",
                                     maxWidth: "min(85%, 520px)",
-                                    borderRadius: "var(--mantine-radius-md)",
-                                    boxShadow: "var(--mantine-shadow-xs)",
-                                    backgroundColor: bubbleBg,
-                                    border:
-                                      m.ui_hidden || outbound
-                                        ? m.ui_hidden
-                                          ? "1px solid var(--mantine-color-gray-3)"
-                                          : undefined
-                                        : "1px solid var(--mantine-color-gray-2)",
+                                    minWidth: hasAudioAttachment ? 280 : undefined,
+                                    ...(m.ui_hidden
+                                      ? adminChatOmniHiddenBubbleStyle()
+                                      : outbound
+                                        ? adminChatOmniOutboundBubbleStyle()
+                                        : adminChatOmniClientInboundBubbleStyle()),
                                     opacity: m.ui_hidden ? 0.9 : 1,
                                   }}
                                 >
@@ -1274,9 +1339,16 @@ export default function AdminOmniChatPage() {
                                       size="sm"
                                       lh={1.55}
                                       p="10px 14px"
+                                      component="div"
                                       style={{ wordBreak: "break-word", color: bubbleFg }}
                                     >
-                                      {m.content}
+                                      <OmniMessageRichBody
+                                        content={m.content || ""}
+                                        attachments={m.attachments ?? []}
+                                        getClinicChatBlob={getClinicChatBlob}
+                                        getOmniBlob={(aid) => getOmniBlobForMessage(m.id, aid)}
+                                        allowAudioAttachmentDownload={allowAudioAttachmentDownload}
+                                      />
                                     </Text>
                                   )}
                                 </Box>
@@ -1304,7 +1376,7 @@ export default function AdminOmniChatPage() {
                     </ScrollArea>
                     <Box
                       p="md"
-                      bg="white"
+                      bg="var(--mantine-color-body)"
                       style={{
                         flexShrink: 0,
                         borderTop: "1px solid var(--mantine-color-gray-2)",
@@ -1318,8 +1390,8 @@ export default function AdminOmniChatPage() {
                               <Text size="xs" c="dimmed">
                                 Ответ на {replyToMessage.actorType === "CLIENT" ? "сообщение клиента" : "сообщение клиники"}
                               </Text>
-                              <Text size="xs" lineClamp={1}>
-                                {replyToMessage.content}
+                              <Text size="xs" lineClamp={1} component="div" style={{ minWidth: 0 }}>
+                                <AppleEmojiRichText text={replyToMessage.content || ""} emojiEm={1} />
                               </Text>
                             </Stack>
                             <ActionIcon
@@ -1333,6 +1405,44 @@ export default function AdminOmniChatPage() {
                             </ActionIcon>
                           </Group>
                         </Paper>
+                      ) : null}
+                      <input
+                        ref={omniFileInputRef}
+                        type="file"
+                        style={{ display: "none" }}
+                        accept={omniFileAccept}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null;
+                          e.target.value = "";
+                          setOmniAttachError(null);
+                          if (!f) return;
+                          if (f.size > MAX_OMNI_UPLOAD_BYTES) {
+                            setOmniAttachError("Файл больше 5 МБ");
+                            return;
+                          }
+                          setPendingOmniFile(f);
+                        }}
+                      />
+                      {pendingOmniFile ? (
+                        <Text size="xs" c="dimmed">
+                          К отправке: {pendingOmniFile.name}{" "}
+                          <Text
+                            component="button"
+                            type="button"
+                            span
+                            c="red.7"
+                            ml="xs"
+                            style={{ cursor: "pointer", border: "none", background: "none", font: "inherit" }}
+                            onClick={() => setPendingOmniFile(null)}
+                          >
+                            Убрать
+                          </Text>
+                        </Text>
+                      ) : null}
+                      {omniAttachError ? (
+                        <Text size="xs" c="red">
+                          {omniAttachError}
+                        </Text>
                       ) : null}
                       <Group gap="xs" align="flex-end" wrap="nowrap">
                         <Menu shadow="md" width={280} position="top-start">
@@ -1379,7 +1489,51 @@ export default function AdminOmniChatPage() {
                             ))}
                           </Menu.Dropdown>
                         </Menu>
-                        <Textarea
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          size="lg"
+                          aria-label="Документ"
+                          onClick={() => {
+                            setOmniFileAccept(
+                              ".pdf,.doc,.docx,.txt,.xlsx,.xls,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
+                            );
+                            queueMicrotask(() => omniFileInputRef.current?.click());
+                          }}
+                        >
+                          <IconPaperclip size={20} />
+                        </ActionIcon>
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          size="lg"
+                          aria-label="Изображение"
+                          onClick={() => {
+                            setOmniFileAccept("image/*");
+                            queueMicrotask(() => omniFileInputRef.current?.click());
+                          }}
+                        >
+                          <IconPhoto size={20} />
+                        </ActionIcon>
+                        <VoiceNoteRecorderButton
+                          disabled={!selectedChatId || sendOmniWithFile.isPending || sendMessage.isPending}
+                          onError={(msg) => setOmniAttachError(msg)}
+                          onRecorded={(file) => {
+                            setOmniAttachError(null);
+                            if (file.size > MAX_OMNI_UPLOAD_BYTES) {
+                              setOmniAttachError("Файл больше 5 МБ");
+                              return;
+                            }
+                            setPendingOmniFile(file);
+                          }}
+                        />
+                        <EmojiMartPopoverPicker
+                          actionIconProps={{ variant: "subtle", color: "gray", size: "lg" }}
+                          onPick={(native) => setMessageText((prev) => prev + native)}
+                          onInserted={() => messageComposerRef.current?.focus()}
+                        />
+                        <AppleEmojiOverlayTextarea
+                          ref={messageComposerRef}
                           autosize
                           minRows={1}
                           maxRows={6}
@@ -1401,8 +1555,8 @@ export default function AdminOmniChatPage() {
                           color="indigo"
                           variant="filled"
                           onClick={handleSend}
-                          disabled={!messageText.trim() || !selectedChatId}
-                          loading={sendMessage.isPending}
+                          disabled={(!messageText.trim() && !pendingOmniFile) || !selectedChatId}
+                          loading={sendMessage.isPending || sendOmniWithFile.isPending}
                           aria-label="Отправить сообщение"
                         >
                           <IconSend size={18} />

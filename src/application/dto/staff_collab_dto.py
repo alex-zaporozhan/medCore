@@ -28,6 +28,7 @@ class StaffFeedPostResponse(BaseModel):
     created_at: datetime
     comments_count: int = 0
     likes_count: int = 0
+    liked_by_me: bool = False
     attachments: list[StaffAttachmentBrief] = Field(default_factory=list)
 
 
@@ -46,10 +47,17 @@ class StaffFeedCommentResponse(BaseModel):
     body: str
     author: NamedAdminBrief
     created_at: datetime
+    parent_comment_id: UUID | None = None
+    in_reply_to: NamedAdminBrief | None = None
+    attachments: list[StaffAttachmentBrief] = Field(default_factory=list)
 
 
 class StaffFeedCommentCreate(BaseModel):
-    body: str = Field(..., min_length=1, max_length=8000)
+    body: str = Field(default="", max_length=8000)
+    parent_comment_id: UUID | None = Field(
+        None,
+        description="Ответ на комментарий в том же посте; в UI показывается как «Имя, — …»",
+    )
 
 
 class StaffChatRoomResponse(BaseModel):
@@ -68,7 +76,7 @@ class StaffChatMessageResponse(BaseModel):
 
 
 class StaffChatMessageCreate(BaseModel):
-    body: str = Field(..., min_length=1, max_length=8000)
+    body: str = Field(default="", max_length=8000)
 
 
 class StaffCalendarEventResponse(BaseModel):

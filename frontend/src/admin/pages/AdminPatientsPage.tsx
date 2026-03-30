@@ -1,6 +1,13 @@
 import { usePatients, useAdminFormTemplates, useSendFormLink, useDeletePatient, useAdminSession } from "@/hooks";
 import { ContextBar } from "@/shared/ui/ContextBar";
-import { EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
+import {
+  EmptyState,
+  PageSkeleton,
+  QueryErrorAlert,
+  AdminDataTableToolbar,
+  AdminDataTableSurface,
+  ADMIN_TABLE_PROPS,
+} from "@/shared/ui";
 import { ActionIcon, Alert, Button, Group, HoverCard, Menu, Modal, Select, Stack, Table, Text, TextInput } from "@mantine/core";
 import { AdminDrawer } from "@/shared/ui";
 import { IconDotsVertical, IconEdit, IconSend, IconTrash, IconUserPlus } from "@tabler/icons-react";
@@ -87,22 +94,26 @@ export default function AdminPatientsPage() {
   return (
     <Stack>
       <ContextBar title="Пациенты" actions={<Button onClick={openCreate}>Добавить пациента</Button>} />
-      <TextInput label="Телефон" placeholder="+7..." value={phone} onChange={(e) => setPhone(e.target.value)} />
-      <TextInput label="ФИО" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-      <Group grow align="flex-end">
-        <TextInput
-          label="Визит с (дата)"
-          type="date"
-          value={visitFrom}
-          onChange={(e) => setVisitFrom(e.currentTarget.value)}
-        />
-        <TextInput
-          label="Визит по (дата)"
-          type="date"
-          value={visitTo}
-          onChange={(e) => setVisitTo(e.currentTarget.value)}
-        />
-      </Group>
+      <AdminDataTableToolbar>
+        <Stack gap="sm">
+          <TextInput label="Телефон" placeholder="+7..." value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <TextInput label="ФИО" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          <Group grow align="flex-end">
+            <TextInput
+              label="Визит с (дата)"
+              type="date"
+              value={visitFrom}
+              onChange={(e) => setVisitFrom(e.currentTarget.value)}
+            />
+            <TextInput
+              label="Визит по (дата)"
+              type="date"
+              value={visitTo}
+              onChange={(e) => setVisitTo(e.currentTarget.value)}
+            />
+          </Group>
+        </Stack>
+      </AdminDataTableToolbar>
       {(visitFrom || visitTo) && !currentClinicId ? (
         <Text size="sm" c="orange">
           Для фильтра по датам визита выберите клинику в шапке.
@@ -127,18 +138,19 @@ export default function AdminPatientsPage() {
       )}
 
       {patients && patients.length > 0 && (
-        <Table striped verticalSpacing="sm">
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Телефон</Table.Th>
-              <Table.Th>ФИО</Table.Th>
-              <Table.Th>Email</Table.Th>
-              <Table.Th>Действия</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {patients.map((p) => (
-              <Table.Tr key={p.id}>
+        <AdminDataTableSurface>
+          <Table {...ADMIN_TABLE_PROPS}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Телефон</Table.Th>
+                <Table.Th>ФИО</Table.Th>
+                <Table.Th>Email</Table.Th>
+                <Table.Th>Действия</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {patients.map((p) => (
+              <Table.Tr key={p.id} className="data-table-clickable-row">
                 <Table.Td>{p.phone}</Table.Td>
                 <Table.Td>
                   <HoverCard openDelay={300} width={240} shadow="md">
@@ -197,9 +209,10 @@ export default function AdminPatientsPage() {
                   </Menu>
                 </Table.Td>
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </AdminDataTableSurface>
       )}
 
       <PatientEntityDrawer
