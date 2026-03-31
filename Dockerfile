@@ -1,4 +1,4 @@
-# Default: Docker Hub. For flaky docker.io mirrors use:
+# Default: docker.io. If your docker.io mirror/proxy is flaky, override base image registry:
 #   docker build --build-arg PYTHON_BUILDER_IMAGE=public.ecr.aws/docker/library/python:3.11-slim -t dental-booking-backend:local .
 ARG PYTHON_BUILDER_IMAGE=python:3.11-slim
 FROM ${PYTHON_BUILDER_IMAGE} AS builder

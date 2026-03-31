@@ -30,11 +30,11 @@ Backend (FastAPI) + frontend (Vite/React) для записи в стомато�
 - **Security (Trivy FS)** (`.github/workflows/security-trivy.yml`) — уязвимости в зависимостях (CRITICAL).
 - **DR restore drill** (`.github/workflows/restore-drill.yml`) — `pg_dump` / `pg_restore` и сверка `alembic_version` (по расписанию и вручную).
 
-**Жесткий gate для Docker Hub**: workflow `docker-images` публикует образы только после green шагов `backend-tests` (ruff, tenant audit, mypy, gitleaks, pip-audit, pytest), `frontend-tests` и `e2e-frontend-pages`.
+**CI/CD образы (GHCR через Jenkins)**: публикация Docker-образов и деплой выполняются Jenkins pipeline (`Jenkinsfile`) после зелёного gate. Runbook: `docs/operations/JENKINS_GHCR_RUNBOOK.md`.
 
 ### Образы Docker
 
-Workflow **docker-images** пушит только immutable-теги `:${{ github.sha }}`. **Trivy FS** в CI дополняет (не заменяет) скан **слоёв образа** в реестре — по политике SME и @LEAD.
+Jenkins пушит минимум immutable-теги `:<git_sha>` (и при желании `:main`). Для деплоя предпочтительно использовать **digest**. **Trivy FS** в CI дополняет (не заменяет) скан **слоёв образа** в реестре — по политике SME и @LEAD.
 
 ### Локальный pre-push gate (блокирует push при любой ошибке)
 
