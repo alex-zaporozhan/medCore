@@ -259,6 +259,8 @@ export default function ChatPage() {
         opened={clearModalOpen}
         onClose={() => setClearModalOpen(false)}
         title="Очистить мои сообщения"
+        centered
+        size="sm"
       >
         <Stack>
           <Text size="sm">

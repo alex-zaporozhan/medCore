@@ -229,6 +229,18 @@ else:
                 prepayment_amount=500,
             )
             session.add(clinic)
+            from src.domain.entities.task_stream import TaskStream
+
+            session.add(
+                TaskStream(
+                    clinic_id=clinic_id,
+                    name="Общее",
+                    slug="general",
+                    sort_order=0,
+                    is_archived=False,
+                    theme={},
+                )
+            )
             doctor = Doctor(
                 id=doctor_id,
                 clinic_id=clinic_id,

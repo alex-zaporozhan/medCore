@@ -14,6 +14,7 @@ const links = [
   { to: ROUTE_PATHS.admin.styling, label: "Оформление приложения для пациента" },
   { to: ROUTE_PATHS.admin.stickers, label: "Стикеры" },
   { to: ROUTE_PATHS.admin.notificationPolicy, label: "Политика уведомлений" },
+  { to: ROUTE_PATHS.admin.rightsPolicies, label: "Права и политики доступа (RBAC)" },
   { to: ROUTE_PATHS.admin.clientReference, label: "Справочник для клиента" },
   { to: ROUTE_PATHS.admin.discounts, label: "Скидки и акции" },
   { to: ROUTE_PATHS.admin.forms, label: "Цифровые формы" },

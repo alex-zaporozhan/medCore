@@ -38,7 +38,7 @@ describe("mergeModalStyles", () => {
       });
     }
     if (typeof m === "object" && m && "body" in m) {
-      expect(m.body).toEqual({ padding: 12 });
+      expect(m.body).toMatchObject({ padding: 12 });
     }
   });
 

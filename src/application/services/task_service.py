@@ -62,13 +62,21 @@ class TaskService:
         attention_kind: str | None = None,
         attention_ref_id: UUID | None = None,
         trace_id: str | None = None,
+        stream_id: UUID | None = None,
+        tag_ids: list[UUID] | None = None,
     ) -> Task:
         ids: list[UUID] = list(assignee_ids) if assignee_ids else []
         if not ids and assignee_id is not None:
             ids = [assignee_id]
         primary = ids[0] if ids else None
+        resolved_stream = stream_id
+        if resolved_stream is None:
+            resolved_stream = await self._repo.get_default_task_stream_id(clinic_id)
+        if resolved_stream is None:
+            raise ValueError("NO_TASK_STREAM_FOR_CLINIC")
         task = Task(
             clinic_id=clinic_id,
+            stream_id=resolved_stream,
             title=title,
             description=description,
             status=status,
@@ -90,6 +98,9 @@ class TaskService:
         created = await self._repo.create_task(task)
         if ids:
             await self._repo.replace_task_assignees(created.id, ids)
+        ttags = list(dict.fromkeys(tag_ids or []))
+        if ttags:
+            await self._repo.replace_task_tags(created.id, ttags)
         tasks_created_total.labels(
             clinic_bucket=clinic_bucket_label(created.clinic_id),
             source=created.source,
@@ -240,6 +251,16 @@ class TaskService:
         else:
             await self._repo.replace_task_assignees(task_id, [])
         return saved
+
+    async def set_task_stream(self, task_id: UUID, stream_id: UUID) -> Task:
+        task = await self._require_task(task_id)
+        task.stream_id = stream_id
+        return await self._repo.save_task(task)
+
+    async def set_task_tags(self, task_id: UUID, tag_ids: list[UUID]) -> Task:
+        await self._require_task(task_id)
+        await self._repo.replace_task_tags(task_id, list(dict.fromkeys(tag_ids)))
+        return await self._require_task(task_id)
 
     async def set_task_assignees(self, task_id: UUID, admin_ids: list[UUID]) -> Task:
         """Полная замена списка исполнителей; первый в списке — primary assignee_id."""

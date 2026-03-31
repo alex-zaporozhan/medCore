@@ -13,6 +13,9 @@
 #
 # Сборка: ошибка dockerhub1.beget.com + 127.0.0.1:12334 — см. docs/DOCKER_INFRA_PASSPORT.md §6.1
 # (прокси в Docker Desktop и/или registry-mirrors; отключение VPN это не сбрасывает).
+#
+# env_file с required: false — Docker Compose v2.24+ (Docker Desktop). Если файла нет, compose не падает.
+# Секреты для приложения: скопируйте .env.example → .env или задайте SECRET_KEY / JWT_SECRET_KEY в окружении хоста.
 
 services:
   db:
@@ -64,8 +67,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SECRET_KEY: ${SECRET_KEY:-docker-compose-dev-secret-key-change-me-32chars}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-docker-compose-dev-jwt-secret-key-32chars}
     env_file:
-      - .env
+      - path: .env
+        required: false
     depends_on:
       db:
         condition: service_healthy
@@ -87,8 +93,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SECRET_KEY: ${SECRET_KEY:-docker-compose-dev-secret-key-change-me-32chars}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-docker-compose-dev-jwt-secret-key-32chars}
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       # Persist staff feed/chat attachments across container recreate/rebuild.
       - staff_uploads:/app/data/staff_chat_uploads
@@ -117,8 +126,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SECRET_KEY: ${SECRET_KEY:-docker-compose-dev-secret-key-change-me-32chars}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-docker-compose-dev-jwt-secret-key-32chars}
     env_file:
-      - .env
+      - path: .env
+        required: false
     depends_on:
       migrations:
         condition: service_completed_successfully
@@ -139,8 +151,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SECRET_KEY: ${SECRET_KEY:-docker-compose-dev-secret-key-change-me-32chars}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-docker-compose-dev-jwt-secret-key-32chars}
     env_file:
-      - .env
+      - path: .env
+        required: false
     depends_on:
       migrations:
         condition: service_completed_successfully
@@ -159,7 +174,8 @@ services:
     ports:
       - "3010:80"
     env_file:
-      - ./frontend/.env
+      - path: ./frontend/.env
+        required: false
     depends_on:
       - backend
     restart: unless-stopped

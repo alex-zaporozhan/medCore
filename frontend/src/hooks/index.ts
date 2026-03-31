@@ -64,6 +64,16 @@ export {
   useCreateAdminMutation,
   usePatchAdminEmploymentMutation,
 } from "./useAdminAdmins";
+export {
+  useCreateStaffDirectoryAdminMutation,
+  useCreateStaffProfessionCategoryMutation,
+  usePatchStaffProfessionCategoryMutation,
+  useDeleteStaffProfessionCategoryMutation,
+  usePatchStaffDirectoryAdminMutation,
+  useStaffDirectoryAdmins,
+  useStaffProfessionCategories,
+} from "./useStaffDirectory";
+export type { StaffDirectoryAdminRow, StaffProfessionCategoryRow } from "./useStaffDirectory";
 export type { AdminUserRow } from "./useAdminAdmins";
 export { useAdminSession } from "./useAdminSession";
 export type { AdminSessionPayload } from "./useAdminSession";
@@ -76,6 +86,8 @@ export {
   useClaimAdminTaskMutation,
   useUpdateAdminTaskStatusMutation,
   useUpdateAdminTaskMetaMutation,
+  usePatchAdminTaskAssigneesMutation,
+  usePatchAdminTaskDueMutation,
   useReorderAdminTasksMutation,
   useBulkUpdateAdminTaskStatusMutation,
   useTaskTransitions,
@@ -84,6 +96,14 @@ export {
   useInviteTaskCalendarParticipants,
   useTaskComments,
   usePostTaskComment,
+  useTaskBoardsQuery,
+  useReplaceTaskBoardColumnsMutation,
+  useCreatePersonalTaskBoardMutation,
+  useTaskStreamsQuery,
+  useTaskTagsQuery,
+  useCreateTaskStreamMutation,
+  useCreateTaskTagMutation,
+  usePatchAdminTaskStreamTagsMutation,
 } from "./useAdminTasks";
 export type {
   AdminTaskRow,
@@ -92,6 +112,10 @@ export type {
   TaskTransitionRow,
   TaskCalendarEventContextRow,
   TaskCalendarParticipantAckRow,
+  TaskBoardRow,
+  TaskBoardColumnRow,
+  TaskStreamRow,
+  TaskTagRow,
 } from "./useAdminTasks";
 export { useAdminTaskDetails } from "./useAdminTaskDetails";
 export {
@@ -243,6 +267,18 @@ export {
   useAdminReportsRevenue,
   useOwnerDashboard,
 } from "./useAdminReports";
+export {
+  useRbacCatalog,
+  useRbacUsers,
+  useRbacPolicies,
+  useRbacAudit,
+  useCreateClinicRole,
+  useDeleteClinicRole,
+  usePatchRolePermissions,
+  usePatchUserRoles,
+  usePatchUserPermissions,
+  usePatchRbacPolicies,
+} from "./useAdminRbacManagement";
 export {
   useAdminOmniChats,
   useAdminOmniChatDetail,

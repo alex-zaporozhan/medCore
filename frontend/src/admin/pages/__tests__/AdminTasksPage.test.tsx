@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import AdminTasksPage from "../AdminTasksPage";
 import { appTheme } from "@/theme";
 
@@ -20,10 +21,51 @@ const mockAdmins = [
   { id: "admin-2", full_name: "Doctor Admin", email: "doctor@test.local" },
 ];
 
+const STATUS_ORDER_MOCK = [
+  "open",
+  "in_progress",
+  "on_hold",
+  "review",
+  "done",
+  "cancelled",
+] as const;
+
+const mockStreams = [
+  {
+    id: "stream-general",
+    clinic_id: "clinic-1",
+    name: "Общее",
+    slug: "general",
+    sort_order: 0,
+    is_archived: false,
+    theme: { page_tint: "none" as const },
+  },
+];
+
+const mockTags: { id: string; clinic_id: string; name: string; color: string | null }[] = [];
+
+const mockBoards = [
+  {
+    id: "board-default",
+    clinic_id: "clinic-1",
+    name: "Основная",
+    kind: "clinic_wide",
+    owner_admin_id: null,
+    columns: STATUS_ORDER_MOCK.map((s, i) => ({
+      id: `col-${s}`,
+      sort_order: i + 1,
+      mapped_status: s,
+      label: null,
+    })),
+  },
+];
+
 const mockTasks = [
   {
     id: "task-1",
     clinic_id: "clinic-1",
+    stream_id: "stream-general",
+    tag_ids: [] as string[],
     title: "Overdue task",
     description: null,
     status: "open",
@@ -41,6 +83,8 @@ const mockTasks = [
   {
     id: "task-2",
     clinic_id: "clinic-1",
+    stream_id: "stream-general",
+    tag_ids: [] as string[],
     title: "Second open task",
     description: null,
     status: "open",
@@ -58,6 +102,8 @@ const mockTasks = [
   {
     id: "task-3",
     clinic_id: "clinic-1",
+    stream_id: "stream-general",
+    tag_ids: [] as string[],
     title: "Review task",
     description: null,
     status: "review",
@@ -119,6 +165,17 @@ vi.mock("@/hooks", () => ({
     data: mockTasks,
     isLoading: false,
   }),
+  useTaskStreamsQuery: () => ({
+    data: mockStreams,
+    isLoading: false,
+  }),
+  useTaskTagsQuery: () => ({
+    data: mockTags,
+    isLoading: false,
+  }),
+  useCreateTaskStreamMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateTaskTagMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  usePatchAdminTaskStreamTagsMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useAdminTasksMyFocus: () => ({ data: [] }),
   useCreateAdminTaskMutation: () => ({ mutate: mutateCreate, isPending: false }),
   useClaimAdminTaskMutation: () => ({ mutate: mutateClaim, isPending: false }),
@@ -132,6 +189,21 @@ vi.mock("@/hooks", () => ({
   useInviteTaskCalendarParticipants: () => ({ mutate: mutateInvite, isPending: false }),
   useTaskComments: () => ({ data: [], isLoading: false }),
   usePostTaskComment: () => ({ mutate: mutateComment, isPending: false }),
+  useTaskBoardsQuery: () => ({ data: mockBoards, isLoading: false }),
+  useReplaceTaskBoardColumnsMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreatePersonalTaskBoardMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  usePatchAdminTaskAssigneesMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  usePatchAdminTaskDueMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useAdminSession: () => ({
+    data: {
+      permissions: [
+        "manage_tasks",
+        "assign_tasks",
+        "tasks.change_status",
+        "tasks.manage_clinic_board",
+      ],
+    },
+  }),
 }));
 
 const testQueryClient = new QueryClient({
@@ -144,11 +216,13 @@ const testQueryClient = new QueryClient({
 function renderPage() {
   testQueryClient.clear();
   return render(
-    <QueryClientProvider client={testQueryClient}>
-      <MantineProvider theme={appTheme} defaultColorScheme="light">
-        <AdminTasksPage />
-      </MantineProvider>
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={testQueryClient}>
+        <MantineProvider theme={appTheme} defaultColorScheme="light">
+          <AdminTasksPage />
+        </MantineProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 

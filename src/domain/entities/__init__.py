@@ -7,6 +7,11 @@ from src.domain.entities.permission import Permission  # noqa: F401
 from src.domain.entities.role_permission import RolePermission  # noqa: F401
 from src.domain.entities.user_role import UserRole  # noqa: F401
 from src.domain.entities.task import Task  # noqa: F401
+from src.domain.entities.task_stream import TaskStream  # noqa: F401
+from src.domain.entities.task_tag_definition import TaskTagDefinition  # noqa: F401
+from src.domain.entities.task_task_tag import TaskTaskTag  # noqa: F401
+from src.domain.entities.task_board import TaskBoard  # noqa: F401
+from src.domain.entities.task_board_column import TaskBoardColumn  # noqa: F401
 from src.domain.entities.task_assignee import TaskAssignee  # noqa: F401
 from src.domain.entities.task_comment import TaskComment  # noqa: F401
 from src.domain.entities.task_status_transition import TaskStatusTransition  # noqa: F401
@@ -49,3 +54,8 @@ from src.domain.entities.erp_aggregate_coverage_watermark import (  # noqa: F401
     ErpAggregateCoverageWatermark,
 )
 from src.domain.entities.omni_quick_reply import OmniQuickReply  # noqa: F401
+from src.domain.entities.staff_feed_post_ack import StaffFeedPostAck  # noqa: F401
+from src.domain.entities.user_permission_grant import UserPermissionGrant  # noqa: F401
+from src.domain.entities.rbac_audit_log import RbacAuditLog  # noqa: F401
+from src.domain.entities.organization import Organization  # noqa: F401
+from src.domain.entities.staff_profession_category import StaffProfessionCategory  # noqa: F401

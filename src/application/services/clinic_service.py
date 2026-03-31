@@ -3,6 +3,7 @@
 import logging
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.dto.clinic_dto import (
@@ -13,6 +14,8 @@ from src.application.dto.clinic_dto import (
 )
 from src.core.encryption import encrypt_plaintext
 from src.domain.entities.clinic import Clinic
+from src.domain.entities.organization import Organization
+from src.domain.entities.task_stream import TaskStream
 from src.domain.interfaces.repositories.clinic_repository import ClinicRepository
 from src.infrastructure.database.clinic_repo_impl import ClinicRepositoryImpl
 from src.application.services.business_lexicon_service import build_business_lexicon
@@ -46,13 +49,32 @@ class ClinicService:
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize service with database session."""
+        self._session = session
         self.repository: ClinicRepository = ClinicRepositoryImpl(session)
 
     async def create_clinic(self, data: ClinicCreate) -> ClinicRead:
         """Create a new clinic."""
         payload = data.model_dump(exclude_none=True)
+        org_res = await self._session.execute(select(Organization).order_by(Organization.created_at.asc()).limit(1))
+        org = org_res.scalar_one_or_none()
+        if org is None:
+            org = Organization(name="Default organization")
+            self._session.add(org)
+            await self._session.flush()
         clinic = Clinic(**payload)
+        clinic.organization_id = org.id
         clinic = await self.repository.create(clinic)
+        self._session.add(
+            TaskStream(
+                clinic_id=clinic.id,
+                name="Общее",
+                slug="general",
+                sort_order=0,
+                is_archived=False,
+                theme={},
+            )
+        )
+        await self._session.flush()
         logger.info("Clinic created via service", extra={"clinic_id": str(clinic.id)})
         lexicon = build_business_lexicon(clinic)
         dto = ClinicRead.model_validate(clinic)

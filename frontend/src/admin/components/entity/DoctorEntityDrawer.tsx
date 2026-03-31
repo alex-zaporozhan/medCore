@@ -1,6 +1,6 @@
 import type { Doctor } from "@/api/types";
 import { EntityDrawerFieldBlock, EntityDrawerFooterBar } from "@/admin/components/entity/entityDrawerChrome";
-import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
+import { AdminDrawer, GlassModal, QueryErrorAlert } from "@/shared/ui";
 import {
   Avatar,
   Button,
@@ -44,6 +44,7 @@ export interface DoctorEntityDrawerProps {
   onSaved?: () => void;
   /** При открытии карточки (например из ссылки) — вкладка по умолчанию: profile | schedule | payroll | services */
   initialTab?: string | null;
+  presentation?: "modal" | "drawer";
 }
 
 export function DoctorEntityDrawer({
@@ -53,6 +54,7 @@ export function DoctorEntityDrawer({
   mode,
   onSaved,
   initialTab,
+  presentation = "modal",
 }: DoctorEntityDrawerProps) {
   const { currentClinicId } = useAdminClinic();
   const [activeTab, setActiveTab] = useState<string | null>("profile");
@@ -161,15 +163,8 @@ export function DoctorEntityDrawer({
         ? "Редактировать врача"
         : doctor?.full_name ?? "";
 
-  return (
-    <AdminDrawer
-      position="right"
-      size="lg"
-      opened={opened}
-      onClose={onClose}
-      title={title}
-      styles={{ body: { paddingTop: 0 } }}
-    >
+  const inner = (
+    <>
       {doctor && (mode === "view" || mode === "edit") && (
         <Stack gap="md" mb="md">
           <Group justify="space-between">
@@ -437,6 +432,37 @@ export function DoctorEntityDrawer({
           )}
         </Tabs.Panel>
       </Tabs>
+    </>
+  );
+
+  if (presentation === "modal") {
+    return (
+      <GlassModal
+        opened={opened}
+        onClose={onClose}
+        title={title}
+        size="xl"
+        padding="lg"
+        styles={{
+          body: { maxHeight: "min(78vh, 720px)", overflowY: "auto", paddingTop: 12 },
+          header: { marginBottom: 8, paddingBottom: 0 },
+        }}
+      >
+        {inner}
+      </GlassModal>
+    );
+  }
+
+  return (
+    <AdminDrawer
+      position="right"
+      size="lg"
+      opened={opened}
+      onClose={onClose}
+      title={title}
+      styles={{ body: { paddingTop: 0 } }}
+    >
+      {inner}
     </AdminDrawer>
   );
 }

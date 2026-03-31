@@ -23,6 +23,14 @@ export interface StaffFeedPostResponse {
   comments_count: number;
   likes_count: number;
   liked_by_me?: boolean;
+  acknowledged_by_me?: boolean;
+  acknowledged_count?: number;
+  audience_total?: number;
+  is_announcement?: boolean;
+  requires_ack?: boolean;
+  priority_level?: "normal" | "priority" | "critical";
+  audience_roles?: string[];
+  audience_admin_ids?: string[];
   attachments?: StaffAttachmentBrief[];
 }
 
@@ -146,10 +154,23 @@ export function useStaffFeedPosts(limit = 30) {
 export function useCreateStaffFeedPost() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { title?: string | null; body: string }) =>
+    mutationFn: (payload: {
+      title?: string | null;
+      body: string;
+      is_announcement?: boolean;
+      requires_ack?: boolean;
+      priority_level?: "normal" | "priority" | "critical";
+      audience_roles?: string[];
+      audience_admin_ids?: string[];
+    }) =>
       api.post<StaffFeedPostResponse>(`/v1/admin/staff/feed/posts`, {
         title: payload.title?.trim() ? payload.title.trim() : null,
         body: payload.body,
+        is_announcement: Boolean(payload.is_announcement),
+        requires_ack: Boolean(payload.requires_ack),
+        priority_level: payload.priority_level ?? "normal",
+        audience_roles: payload.audience_roles ?? [],
+        audience_admin_ids: payload.audience_admin_ids ?? [],
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
@@ -170,6 +191,27 @@ export function useToggleStaffFeedPostLike() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
     },
+  });
+}
+
+export interface StaffFeedAckStatusRow {
+  admin_id: string;
+  admin_name: string | null;
+  acknowledged_at: string | null;
+}
+
+export interface StaffFeedPostAckStatusResponse {
+  post_id: string;
+  acknowledged: StaffFeedAckStatusRow[];
+  pending: StaffFeedAckStatusRow[];
+}
+
+export function useStaffFeedPostAckStatus(postId: string | null) {
+  return useQuery({
+    queryKey: ["staff-collab", "feed-post-ack-status", postId] as const,
+    queryFn: () =>
+      api.get<StaffFeedPostAckStatusResponse>(`/v1/admin/staff/feed/posts/${postId}/ack-status`),
+    enabled: !!postId,
   });
 }
 

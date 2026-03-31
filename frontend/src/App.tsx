@@ -35,6 +35,7 @@ import AdminFormsPage from "@/admin/pages/AdminFormsPage";
 import AdminNotificationPolicyPage from "@/admin/pages/AdminNotificationPolicyPage";
 import AdminAgreementsPage from "@/admin/pages/AdminAgreementsPage";
 import AdminSettingsPage from "@/admin/pages/AdminSettingsPage";
+import AdminRightsPoliciesPage from "@/admin/pages/AdminRightsPoliciesPage";
 import AdminPaymentGatewayPage from "@/admin/pages/AdminPaymentGatewayPage";
 import AdminLoginPage from "@/admin/pages/AdminLoginPage";
 import AdminAdministratorsPage from "@/admin/pages/AdminAdministratorsPage";
@@ -115,6 +116,7 @@ const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
   discounts: AdminDiscountsPage,
   "notification-policy": AdminNotificationPolicyPage,
   agreements: AdminAgreementsPage,
+  "rights-policies": AdminRightsPoliciesPage,
 };
 
 const PATIENT_APP_PAGE_BY_SEGMENT: Record<PatientAppSegment, ComponentType> = {

@@ -24,11 +24,21 @@ export const queryKeys = {
   adminTasks: {
     /** Префикс для invalidateQueries — все списки задач админки */
     prefix: ["admin-tasks"] as const,
-    list: () => ["admin-tasks"] as const,
+    list: (streamId?: string | null, tagIds?: string[]) =>
+      ["admin-tasks", streamId ?? "all", ...(tagIds?.length ? [tagIds.slice().sort().join(",")] : [])] as const,
     myFocus: (adminId: string | null) => ["admin-tasks", "my-focus", adminId] as const,
     ai: () => ["admin-tasks", "ai"] as const,
     /** GET /v1/admin/tasks?status=open — виджет в Omni Chat */
     open: () => ["admin-tasks", "open"] as const,
+  },
+  adminTaskBoards: {
+    list: () => ["admin-task-boards"] as const,
+  },
+  adminTaskStreams: {
+    list: () => ["admin-task-streams"] as const,
+  },
+  adminTaskTags: {
+    list: () => ["admin-task-tags"] as const,
   },
   adminAdmins: {
     list: () => ["admin-admins"] as const,
@@ -62,6 +72,22 @@ export const queryKeys = {
     clinicSettings: (clinicId: string | null) =>
       ["admin", "clinics", clinicId, "ai-settings"] as const,
     status: () => ["admin", "ai-status"] as const,
+  },
+  rbac: {
+    prefix: ["admin-rbac"] as const,
+    catalog: (effectiveClinicId?: string | null) =>
+      ["admin-rbac", "catalog", effectiveClinicId ?? "jwt"] as const,
+    users: (effectiveClinicId?: string | null) =>
+      ["admin-rbac", "users", effectiveClinicId ?? "jwt"] as const,
+    policies: (effectiveClinicId?: string | null) =>
+      ["admin-rbac", "policies", effectiveClinicId ?? "jwt"] as const,
+    audit: (limit: number, effectiveClinicId?: string | null) =>
+      ["admin-rbac", "audit", limit, effectiveClinicId ?? "jwt"] as const,
+  },
+  staffDirectory: {
+    professionCategories: (clinicId: string | null) =>
+      ["staff-directory", "profession-categories", clinicId] as const,
+    admins: (clinicId: string | null) => ["staff-directory", "admins", clinicId] as const,
   },
   /** CRM / Kanban — единый префикс для инвалидации списков лидов. */
   crm: {

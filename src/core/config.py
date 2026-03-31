@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # ERP admin dashboard JSON cache (A9); invalidated after aggregate refresh.
     erp_dashboard_cache_enabled: bool = True
     erp_dashboard_cache_ttl_seconds: int = 60
+    # Staff directory (profession categories JSON list).
+    staff_directory_cache_enabled: bool = True
+    staff_directory_cache_ttl_seconds: int = 120
 
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:5173"

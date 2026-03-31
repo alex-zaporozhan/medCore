@@ -208,11 +208,18 @@ function parseFastApiErrorBody(bodyText: string): ParsedApiFailureBody {
     } else if (json.detail && typeof json.detail === "object") {
       const d = json.detail as {
         message?: string;
+        detail?: string;
         code?: string;
         trace_id?: string;
         details?: Record<string, unknown>;
       };
-      rawMessage = d.message || rawMessage;
+      const nestedText =
+        typeof d.message === "string" && d.message.trim()
+          ? d.message
+          : typeof d.detail === "string" && d.detail.trim()
+            ? d.detail
+            : "";
+      rawMessage = nestedText || rawMessage;
       code = d.code ?? json.code;
       traceId = d.trace_id;
       details =
@@ -463,10 +470,19 @@ async function requestBlob(path: string, token?: string | null): Promise<Blob> {
 export const api = {
   get: <T>(path: string, token?: string | null) =>
     request<T>(path, { method: "GET" }, token),
-  post: <T>(path: string, body?: object, token?: string | null) =>
+  post: <T>(
+    path: string,
+    body?: object,
+    token?: string | null,
+    extraHeaders?: Record<string, string>
+  ) =>
     request<T>(
       path,
-      { method: "POST", body: body ? JSON.stringify(body) : undefined },
+      {
+        method: "POST",
+        body: body ? JSON.stringify(body) : undefined,
+        headers: extraHeaders,
+      },
       token
     ),
   postFormData: <T>(path: string, formData: FormData, token?: string | null) =>
@@ -480,8 +496,12 @@ export const api = {
       { method: "PUT", body: body ? JSON.stringify(body) : undefined },
       token
     ),
-  delete: <T>(path: string, token?: string | null) =>
-    request<T>(path, { method: "DELETE" }, token),
+  delete: <T>(
+    path: string,
+    token?: string | null,
+    extraHeaders?: Record<string, string>
+  ) =>
+    request<T>(path, { method: "DELETE", headers: extraHeaders }, token),
   patch: <T>(path: string, body?: object, token?: string | null) =>
     request<T>(
       path,
@@ -493,12 +513,14 @@ export const api = {
 export function authApi(token: string | null) {
   return {
     get: <T>(path: string) => api.get<T>(path, token),
-    post: <T>(path: string, body?: object) => api.post<T>(path, body, token),
+    post: <T>(path: string, body?: object, extraHeaders?: Record<string, string>) =>
+      api.post<T>(path, body, token, extraHeaders),
     postFormData: <T>(path: string, formData: FormData) =>
       api.postFormData<T>(path, formData, token),
     getBlob: (path: string) => api.getBlob(path, token),
     put: <T>(path: string, body?: object) => api.put<T>(path, body, token),
-    delete: <T>(path: string) => api.delete<T>(path, token),
+    delete: <T>(path: string, extraHeaders?: Record<string, string>) =>
+      api.delete<T>(path, token, extraHeaders),
     patch: <T>(path: string, body?: object) => api.patch<T>(path, body, token),
   };
 }

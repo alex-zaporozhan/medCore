@@ -290,6 +290,8 @@ export default function AdminPatientsPage() {
         opened={patientToDelete !== null}
         onClose={() => setPatientToDelete(null)}
         title="Удалить пациента?"
+        centered
+        size="sm"
       >
         <Stack gap="md">
           <Text size="sm">

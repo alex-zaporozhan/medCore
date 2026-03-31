@@ -10,6 +10,7 @@ export { AdminSettingsSectionCard } from "./AdminSettingsSectionCard";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { PageSkeleton, type PageSkeletonProps } from "./PageSkeleton";
 export { GlassModal } from "./GlassModal";
+export { CompactMonthPicker, type CompactMonthPickerProps, type CompactMonthPickerSize } from "./CompactMonthPicker";
 export { AdminDrawer } from "./AdminDrawer";
 export {
   SHELL_OVERLAY_PROPS,

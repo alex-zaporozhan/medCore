@@ -207,7 +207,7 @@ export default function LoginPage() {
                     checked={consentPd}
                     onChange={(e) => setConsentPd(e.currentTarget.checked)}
                   />
-                  <Modal opened={policyOpened} onClose={closePolicy} title="Политика обработки ПД" size="lg">
+                  <Modal opened={policyOpened} onClose={closePolicy} title="Политика обработки ПД" size="lg" centered>
                     <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
                       {agreement?.pd_agreement_text || "Текст политики не задан. Обратитесь в клинику."}
                     </Text>
