@@ -52,6 +52,10 @@ PERMISSIONS: Final[list[PermissionDef]] = [
     PermissionDef("view_tasks", "Просмотр задач"),
     PermissionDef("manage_tasks", "Создание и изменение задач"),
     PermissionDef("assign_tasks", "Назначение задач другим пользователям"),
+    PermissionDef(
+        "tasks.manage_clinic_board",
+        "Изменение общей доски Kanban клиники (порядок колонок); личные доски — по manage_tasks",
+    ),
     PermissionDef("tasks.change_status", "Смена статуса задач"),
     PermissionDef("tasks.unblock", "Снятие блокировки задач"),
     PermissionDef("tasks.bulk_status", "Массовая смена статуса задач"),
@@ -103,6 +107,14 @@ PERMISSIONS: Final[list[PermissionDef]] = [
         "omni.inbox.manage",
         "Омниканал: назначение диалогов, статусы, быстрые ответы",
     ),
+    PermissionDef(
+        "rbac.manage",
+        "Управление ролями, персональными правами и политиками доступа",
+    ),
+    PermissionDef(
+        "manage_staff_directory",
+        "Каталог персонала: категории профессий и учётные записи сотрудников клиники",
+    ),
 ]
 
 
@@ -124,6 +136,7 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "view_tasks",
         "manage_tasks",
         "assign_tasks",
+        "tasks.manage_clinic_board",
         "tasks.change_status",
         "tasks.unblock",
         "tasks.bulk_status",
@@ -144,6 +157,7 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "manage_staff_collab",
         "invite_staff_calendar_participants",
         "omni.inbox.manage",
+        "manage_staff_directory",
         # SR5 (QA_ARCH W7): managers may review ERP owner reports + attribution read-only.
         "erp.owner_reports.read",
         "attribution.reports.read",
@@ -171,6 +185,8 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "manage_staff_collab",
         "invite_staff_calendar_participants",
         "omni.inbox.manage",
+        "rbac.manage",
+        "manage_staff_directory",
     ],
     # Doctor: minimal read-only access to tasks (scoped by visibility rules).
     "doctor": [
@@ -183,4 +199,10 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
 
 
 ALL_PERMISSION_CODES: Final[set[str]] = {p.code for p in PERMISSIONS}
+
+# System role codes used in global seed; clinic-scoped custom roles must not reuse these codes.
+SYSTEM_ROLE_CODES: Final[frozenset[str]] = frozenset({"owner", "manager", "admin", "doctor"})
+
+# Presets for "create clinic role" UI: copy permission set from these matrix entries (not `owner`).
+ROLE_PRESET_SOURCE_CODES: Final[tuple[str, ...]] = ("manager", "admin", "doctor")
 

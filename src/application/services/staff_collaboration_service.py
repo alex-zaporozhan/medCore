@@ -56,10 +56,13 @@ from src.domain.entities.staff_chat_room_member import StaffChatRoomMember
 from src.domain.entities.staff_feed_comment import StaffFeedComment
 from src.domain.entities.staff_feed_comment_attachment import StaffFeedCommentAttachment
 from src.domain.entities.staff_feed_post import StaffFeedPost
+from src.domain.entities.staff_feed_post_ack import StaffFeedPostAck
 from src.domain.entities.staff_feed_post_attachment import StaffFeedPostAttachment
 from src.domain.entities.staff_feed_post_like import StaffFeedPostLike
 from src.domain.entities.task import Task
 from src.domain.entities.task_assignee import TaskAssignee
+from src.domain.entities.role import Role
+from src.domain.entities.user_role import UserRole
 
 GENERAL_ROOM_KIND = "GENERAL"
 DM_KIND = "DM"
@@ -429,8 +432,83 @@ class StaffCollaborationService:
         )
         return {row[0] for row in res.all()}
 
+    async def _feed_posts_acked_by_admin(
+        self, post_ids: list[UUID], admin_id: UUID | None
+    ) -> set[UUID]:
+        if not post_ids or admin_id is None:
+            return set()
+        res = await self._session.execute(
+            select(StaffFeedPostAck.post_id).where(
+                StaffFeedPostAck.post_id.in_(post_ids),
+                StaffFeedPostAck.admin_id == admin_id,
+            )
+        )
+        return {row[0] for row in res.all()}
+
+    async def _admin_role_codes(self, clinic_id: UUID, admin_id: UUID | None) -> set[str]:
+        if admin_id is None:
+            return set()
+        res = await self._session.execute(
+            select(Role.code)
+            .select_from(UserRole)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(
+                UserRole.clinic_id == clinic_id,
+                UserRole.user_id == admin_id,
+            )
+        )
+        return {str(row[0]) for row in res.all() if row[0]}
+
+    @staticmethod
+    def _is_post_visible_to_admin(post: StaffFeedPost, admin_id: UUID | None, role_codes: set[str]) -> bool:
+        role_scope = {str(x) for x in (post.audience_roles or []) if x}
+        admin_scope = {str(x) for x in (post.audience_admin_ids or []) if x}
+        if not role_scope and not admin_scope:
+            return True
+        if admin_id is not None and str(admin_id) in admin_scope:
+            return True
+        return bool(role_scope.intersection(role_codes))
+
+    async def _resolve_target_admin_ids(self, clinic_id: UUID, post: StaffFeedPost) -> set[UUID]:
+        role_scope = {str(x) for x in (post.audience_roles or []) if x}
+        admin_scope = {str(x) for x in (post.audience_admin_ids or []) if x}
+        all_active_stmt = select(AdminUser.id).where(
+            AdminUser.clinic_id == clinic_id,
+            AdminUser.deleted_at.is_(None),
+            AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+        )
+        if not role_scope and not admin_scope:
+            res = await self._session.execute(all_active_stmt)
+            return set(res.scalars().all())
+        target_ids: set[UUID] = set()
+        if admin_scope:
+            exp = await self._session.execute(
+                all_active_stmt.where(AdminUser.id.in_([UUID(x) for x in admin_scope]))
+            )
+            target_ids.update(exp.scalars().all())
+        if role_scope:
+            rr = await self._session.execute(
+                select(UserRole.user_id)
+                .select_from(UserRole)
+                .join(Role, Role.id == UserRole.role_id)
+                .join(AdminUser, AdminUser.id == UserRole.user_id)
+                .where(
+                    UserRole.clinic_id == clinic_id,
+                    Role.code.in_(list(role_scope)),
+                    AdminUser.deleted_at.is_(None),
+                    AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+                )
+            )
+            target_ids.update(rr.scalars().all())
+        return target_ids
+
     async def list_feed_posts(
-        self, clinic_id: UUID, *, viewer_admin_id: UUID | None = None, limit: int = 30
+        self,
+        clinic_id: UUID,
+        *,
+        viewer_admin_id: UUID | None = None,
+        viewer_role_codes: set[str] | None = None,
+        limit: int = 30,
     ) -> list[StaffFeedPostResponse]:
         res = await self._session.execute(
             select(StaffFeedPost)
@@ -442,9 +520,15 @@ class StaffCollaborationService:
             .limit(limit)
         )
         posts = list(res.scalars().all())
+        role_codes = viewer_role_codes if viewer_role_codes is not None else await self._admin_role_codes(
+            clinic_id,
+            viewer_admin_id,
+        )
+        posts = [p for p in posts if self._is_post_visible_to_admin(p, viewer_admin_id, role_codes)]
         liked_ids = await self._feed_posts_liked_by_admin(
             [p.id for p in posts], viewer_admin_id
         )
+        acked_ids = await self._feed_posts_acked_by_admin([p.id for p in posts], viewer_admin_id)
         out: list[StaffFeedPostResponse] = []
         for post in posts:
             cnt_res = await self._session.execute(
@@ -460,6 +544,13 @@ class StaffCollaborationService:
                 .where(StaffFeedPostLike.post_id == post.id)
             )
             lc = int(like_cnt_res.scalar_one() or 0)
+            ack_cnt_res = await self._session.execute(
+                select(func.count())
+                .select_from(StaffFeedPostAck)
+                .where(StaffFeedPostAck.post_id == post.id)
+            )
+            ac = int(ack_cnt_res.scalar_one() or 0)
+            audience_total = len(await self._resolve_target_admin_ids(clinic_id, post))
 
             author = await self._admin_brief(post.author_admin_id)
             att_res = await self._session.execute(
@@ -486,6 +577,14 @@ class StaffCollaborationService:
                     comments_count=cc,
                     likes_count=lc,
                     liked_by_me=post.id in liked_ids,
+                    acknowledged_by_me=post.id in acked_ids,
+                    acknowledged_count=ac,
+                    audience_total=audience_total,
+                    is_announcement=post.is_announcement,
+                    requires_ack=post.requires_ack,
+                    priority_level=post.priority_level,
+                    audience_roles=[str(x) for x in (post.audience_roles or []) if x],
+                    audience_admin_ids=[UUID(x) for x in (post.audience_admin_ids or []) if x],
                     attachments=atts,
                 )
             )
@@ -506,6 +605,11 @@ class StaffCollaborationService:
             author_admin_id=author_admin_id,
             title=title,
             body=data.body.strip(),
+            is_announcement=bool(data.is_announcement),
+            requires_ack=bool(data.requires_ack),
+            priority_level=data.priority_level.strip() if data.priority_level else "normal",
+            audience_roles=[str(x) for x in (data.audience_roles or []) if x],
+            audience_admin_ids=[str(x) for x in (data.audience_admin_ids or []) if x],
         )
         self._session.add(post)
         await self._session.flush()
@@ -519,6 +623,14 @@ class StaffCollaborationService:
             comments_count=0,
             likes_count=0,
             liked_by_me=False,
+            acknowledged_by_me=False,
+            acknowledged_count=0,
+            audience_total=0,
+            is_announcement=post.is_announcement,
+            requires_ack=post.requires_ack,
+            priority_level=post.priority_level,
+            audience_roles=[str(x) for x in (post.audience_roles or []) if x],
+            audience_admin_ids=[UUID(x) for x in (post.audience_admin_ids or []) if x],
             attachments=[],
         )
 
@@ -741,6 +853,88 @@ class StaffCollaborationService:
         lc = int(like_cnt_res.scalar_one() or 0)
         return liked, lc
 
+    async def acknowledge_feed_post(
+        self,
+        clinic_id: UUID,
+        post_id: UUID,
+        admin_id: UUID,
+        *,
+        viewer_role_codes: set[str] | None = None,
+    ) -> tuple[bool, int] | None:
+        chk = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        post = chk.scalar_one_or_none()
+        if post is None:
+            return None
+        role_codes = viewer_role_codes if viewer_role_codes is not None else await self._admin_role_codes(
+            clinic_id,
+            admin_id,
+        )
+        if not self._is_post_visible_to_admin(post, admin_id, role_codes):
+            return None
+        like_chk = await self._session.execute(
+            select(StaffFeedPostAck).where(
+                StaffFeedPostAck.post_id == post_id,
+                StaffFeedPostAck.admin_id == admin_id,
+            )
+        )
+        ack_row = like_chk.scalar_one_or_none()
+        if ack_row is None:
+            self._session.add(
+                StaffFeedPostAck(
+                    id=uuid.uuid4(),
+                    clinic_id=clinic_id,
+                    post_id=post_id,
+                    admin_id=admin_id,
+                )
+            )
+            acknowledged = True
+        else:
+            acknowledged = True
+        await self._session.flush()
+        ack_cnt_res = await self._session.execute(
+            select(func.count())
+            .select_from(StaffFeedPostAck)
+            .where(StaffFeedPostAck.post_id == post_id)
+        )
+        return acknowledged, int(ack_cnt_res.scalar_one() or 0)
+
+    async def feed_post_ack_status(self, clinic_id: UUID, post_id: UUID) -> tuple[list[tuple[UUID, str | None, datetime | None]], list[tuple[UUID, str | None, datetime | None]]] | None:
+        res = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        post = res.scalar_one_or_none()
+        if post is None:
+            return None
+        target_ids = await self._resolve_target_admin_ids(clinic_id, post)
+        if not target_ids:
+            return [], []
+        admins_res = await self._session.execute(
+            select(AdminUser.id, AdminUser.full_name).where(AdminUser.id.in_(list(target_ids)))
+        )
+        names = {row[0]: row[1] for row in admins_res.all()}
+        ack_res = await self._session.execute(
+            select(StaffFeedPostAck.admin_id, StaffFeedPostAck.created_at).where(
+                StaffFeedPostAck.post_id == post_id,
+                StaffFeedPostAck.admin_id.in_(list(target_ids)),
+            )
+        )
+        ack_map = {row[0]: row[1] for row in ack_res.all()}
+        acknowledged = [(aid, names.get(aid), ack_map.get(aid)) for aid in target_ids if aid in ack_map]
+        pending = [(aid, names.get(aid), None) for aid in target_ids if aid not in ack_map]
+        acknowledged.sort(key=lambda x: (x[1] or "", str(x[0])))
+        pending.sort(key=lambda x: (x[1] or "", str(x[0])))
+        return acknowledged, pending
+
     async def update_feed_post(
         self,
         clinic_id: UUID,
@@ -851,6 +1045,14 @@ class StaffCollaborationService:
             comments_count=cc,
             likes_count=lc,
             liked_by_me=post_id in liked_ids,
+            acknowledged_by_me=False,
+            acknowledged_count=0,
+            audience_total=0,
+            is_announcement=post.is_announcement,
+            requires_ack=post.requires_ack,
+            priority_level=post.priority_level,
+            audience_roles=[str(x) for x in (post.audience_roles or []) if x],
+            audience_admin_ids=[UUID(x) for x in (post.audience_admin_ids or []) if x],
             attachments=atts,
         )
 

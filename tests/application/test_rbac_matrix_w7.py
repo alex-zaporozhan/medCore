@@ -17,3 +17,7 @@ def test_manager_lacks_global_finance_mutations():
     m = set(ROLE_PERMISSIONS["manager"])
     assert "manage_finance" not in m
     assert "manage_payroll" not in m
+
+
+def test_owner_has_rbac_manage_permission():
+    assert "rbac.manage" in set(ROLE_PERMISSIONS["owner"])

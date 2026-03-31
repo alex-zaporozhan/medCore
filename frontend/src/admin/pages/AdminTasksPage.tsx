@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from "react";
 import {
   ActionIcon,
   Avatar,
@@ -18,6 +18,7 @@ import {
   Select,
   MultiSelect,
   Box,
+  SimpleGrid,
   Paper,
   Alert,
   Tooltip,
@@ -34,8 +35,12 @@ import {
   IconAlertTriangle,
   IconLock,
   IconLockOpen,
+  IconChevronUp,
+  IconChevronDown,
+  IconLayoutKanban,
+  IconPlus,
 } from "@tabler/icons-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
 import {
   GlassModal,
@@ -43,6 +48,7 @@ import {
   AdminDataTableSurface,
   AppleEmojiOverlayTextarea,
   EmojiMartPopoverPicker,
+  CompactMonthPicker,
 } from "@/shared/ui";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { SEMANTIC } from "@/shared/semanticUi";
@@ -73,9 +79,20 @@ import {
   useInviteTaskCalendarParticipants,
   useTaskComments,
   usePostTaskComment,
+  usePatchAdminTaskAssigneesMutation,
+  usePatchAdminTaskDueMutation,
+  useAdminSession,
+  useTaskBoardsQuery,
+  useReplaceTaskBoardColumnsMutation,
+  useCreatePersonalTaskBoardMutation,
+  useTaskStreamsQuery,
+  useTaskTagsQuery,
+  useCreateTaskStreamMutation,
+  useCreateTaskTagMutation,
+  usePatchAdminTaskStreamTagsMutation,
 } from "@/hooks";
 import type { AdminTaskRow, AdminUserRow } from "@/hooks";
-import { getAdminId } from "@/api/client";
+import { ApiErrorWithCode, getAdminId } from "@/api/client";
 import {
   DndContext,
   PointerSensor,
@@ -105,6 +122,11 @@ const KANBAN_WIP_LIMITS: Record<string, number> = {
   on_hold: 6,
   review: 6,
 };
+
+function streamPageTintKey(theme: Record<string, unknown> | undefined): string {
+  const v = theme?.page_tint;
+  return typeof v === "string" && v !== "none" ? v : "none";
+}
 
 /** Имена личных исполнителей: assignee_ids или legacy assignee_id. */
 function taskAssigneeIdList(task: AdminTaskRow): string[] {
@@ -330,7 +352,13 @@ export default function AdminTasksPage() {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<string | null>("medium");
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
-  const [dueDate, setDueDate] = useState("");
+  const [dueDayIso, setDueDayIso] = useState(() => dayjs().format("YYYY-MM-DD"));
+  const [dueTimeStr, setDueTimeStr] = useState(() => dayjs().format("HH:mm"));
+  const [taskDueMonth, setTaskDueMonth] = useState(() => dayjs().startOf("month"));
+  const dueDate = useMemo(
+    () => (dueDayIso && dueTimeStr ? `${dueDayIso}T${dueTimeStr}` : ""),
+    [dueDayIso, dueTimeStr]
+  );
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [filterAssignee, setFilterAssignee] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState<string | null>(null);
@@ -343,9 +371,40 @@ export default function AdminTasksPage() {
   >([]);
   const [dragError, setDragError] = useState<string | null>(null);
   const [bulkResultMessage, setBulkResultMessage] = useState<string | null>(null);
+  const [detailAssigneeDraft, setDetailAssigneeDraft] = useState<string[]>([]);
+  const [detailDueDayIso, setDetailDueDayIso] = useState("");
+  const [detailDueTimeStr, setDetailDueTimeStr] = useState("");
+  const [detailModalApiError, setDetailModalApiError] = useState<string | null>(null);
+  const [assigneeAuditComment, setAssigneeAuditComment] = useState(true);
+  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
+  const [boardColumnModalOpened, setBoardColumnModalOpened] = useState(false);
+  const [columnDraft, setColumnDraft] = useState<{ mapped_status: string; label: string | null }[]>([]);
+  const [newPersonalBoardName, setNewPersonalBoardName] = useState("");
+  const boardInitRef = useRef(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedStreamId, setSelectedStreamId] = useState<string | null>(null);
+  const [streamFilterInitialized, setStreamFilterInitialized] = useState(false);
+  const [filterTagIds, setFilterTagIds] = useState<string[]>([]);
+  const [createStreamId, setCreateStreamId] = useState<string | null>(null);
+  const [createTagIds, setCreateTagIds] = useState<string[]>([]);
+  const [newStreamModalOpened, setNewStreamModalOpened] = useState(false);
+  const [newStreamName, setNewStreamName] = useState("");
+  const [newTagModalOpened, setNewTagModalOpened] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [detailStreamDraft, setDetailStreamDraft] = useState<string | null>(null);
+  const [detailTagDraft, setDetailTagDraft] = useState<string[]>([]);
 
   const currentAdminId = getAdminId();
-  const { data: tasks = [], isLoading } = useAdminTasksList();
+  const { data: adminSession } = useAdminSession();
+  const { data: taskStreams = [], isLoading: streamsLoading } = useTaskStreamsQuery();
+  const { data: taskTags = [], isLoading: tagsLoading } = useTaskTagsQuery();
+  const {
+    data: tasks = [],
+    isLoading: tasksLoading,
+  } = useAdminTasksList(
+    { streamId: selectedStreamId, tagIds: filterTagIds },
+    { enabled: streamFilterInitialized }
+  );
   const taskChatTitle = useMemo(() => {
     if (!taskChatId) return "";
     return tasks.find((t) => t.id === taskChatId)?.title ?? "";
@@ -373,10 +432,28 @@ export default function AdminTasksPage() {
     [detailTaskId, tasks]
   );
 
+  useEffect(() => {
+    if (!detailTask) {
+      setDetailStreamDraft(null);
+      setDetailTagDraft([]);
+      return;
+    }
+    setDetailStreamDraft(detailTask.stream_id);
+    setDetailTagDraft([...(detailTask.tag_ids ?? [])]);
+  }, [detailTask?.id, detailTask?.stream_id, detailTask?.tag_ids]);
+
   const createTaskMutation = useCreateAdminTaskMutation();
   const claimMutation = useClaimAdminTaskMutation();
   const updateStatusMutation = useUpdateAdminTaskStatusMutation();
   const updateTaskMetaMutation = useUpdateAdminTaskMetaMutation();
+  const patchAssigneesMutation = usePatchAdminTaskAssigneesMutation();
+  const patchDueMutation = usePatchAdminTaskDueMutation();
+  const { data: taskBoards = [], isLoading: boardsLoading } = useTaskBoardsQuery();
+  const replaceBoardColumnsMutation = useReplaceTaskBoardColumnsMutation();
+  const createPersonalBoardMutation = useCreatePersonalTaskBoardMutation();
+  const createStreamMutation = useCreateTaskStreamMutation();
+  const createTagMutation = useCreateTaskTagMutation();
+  const patchStreamTagsMutation = usePatchAdminTaskStreamTagsMutation();
   const reorderTasksMutation = useReorderAdminTasksMutation();
   const bulkUpdateMutation = useBulkUpdateAdminTaskStatusMutation();
   const { data: wipPolicies = KANBAN_WIP_LIMITS } = useTaskWipPolicies();
@@ -391,12 +468,177 @@ export default function AdminTasksPage() {
   }, [tasks]);
 
   useEffect(() => {
+    if (streamsLoading || streamFilterInitialized) return;
+    const q = searchParams.get("stream");
+    if (q === "all") {
+      setSelectedStreamId(null);
+    } else if (q && taskStreams.some((s) => s.id === q)) {
+      setSelectedStreamId(q);
+    } else if (taskStreams.length > 0) {
+      try {
+        const saved = localStorage.getItem("adminTasksStreamId");
+        if (saved === "all") setSelectedStreamId(null);
+        else if (saved && taskStreams.some((s) => s.id === saved)) setSelectedStreamId(saved);
+        else {
+          const g = taskStreams.find((s) => s.slug === "general");
+          setSelectedStreamId(g?.id ?? taskStreams[0]?.id ?? null);
+        }
+      } catch {
+        const g = taskStreams.find((s) => s.slug === "general");
+        setSelectedStreamId(g?.id ?? taskStreams[0]?.id ?? null);
+      }
+    } else {
+      setSelectedStreamId(null);
+    }
+    setStreamFilterInitialized(true);
+  }, [streamsLoading, taskStreams, searchParams, streamFilterInitialized]);
+
+  useEffect(() => {
+    if (!streamFilterInitialized) return;
+    const sp = new URLSearchParams(searchParams);
+    if (selectedStreamId) sp.set("stream", selectedStreamId);
+    else sp.set("stream", "all");
+    const next = sp.toString();
+    if (next !== searchParams.toString()) {
+      setSearchParams(sp, { replace: true });
+    }
+    try {
+      localStorage.setItem("adminTasksStreamId", selectedStreamId ?? "all");
+    } catch {
+      /* ignore */
+    }
+  }, [selectedStreamId, streamFilterInitialized, searchParams, setSearchParams]);
+
+  const activeStream = useMemo(
+    () => taskStreams.find((s) => s.id === selectedStreamId),
+    [taskStreams, selectedStreamId]
+  );
+
+  useEffect(() => {
+    if (!createOpened) return;
+    const def =
+      selectedStreamId ??
+      taskStreams.find((s) => s.slug === "general")?.id ??
+      taskStreams[0]?.id ??
+      null;
+    if (def) setCreateStreamId(def);
+  }, [createOpened, selectedStreamId, taskStreams]);
+
+  useEffect(() => {
     if (!detailTask) {
       setBlockedReasonDraft("");
       return;
     }
     setBlockedReasonDraft(detailTask.blocked_reason ?? "");
   }, [detailTask?.id, detailTask?.blocked_reason]);
+
+  const detailAssigneeServerSig = detailTask
+    ? JSON.stringify([...taskAssigneeIdList(detailTask)].sort())
+    : "";
+  useEffect(() => {
+    if (!detailTask) {
+      setDetailAssigneeDraft([]);
+      return;
+    }
+    setDetailAssigneeDraft(taskAssigneeIdList(detailTask));
+  }, [detailTask?.id, detailAssigneeServerSig]);
+
+  useEffect(() => {
+    if (!detailTask) {
+      setDetailDueDayIso("");
+      setDetailDueTimeStr("");
+      return;
+    }
+    if (!detailTask.due_at) {
+      setDetailDueDayIso("");
+      setDetailDueTimeStr("");
+      return;
+    }
+    const d = dayjs(detailTask.due_at);
+    setDetailDueDayIso(d.format("YYYY-MM-DD"));
+    setDetailDueTimeStr(d.format("HH:mm"));
+  }, [detailTask?.id, detailTask?.due_at]);
+
+  const canEditAssignees =
+    adminSession?.permissions?.includes("manage_tasks") ||
+    adminSession?.permissions?.includes("assign_tasks");
+
+  const canPatchTaskFields =
+    Boolean(adminSession?.permissions?.includes("manage_tasks")) ||
+    Boolean(adminSession?.permissions?.includes("assign_tasks")) ||
+    Boolean(adminSession?.permissions?.includes("tasks.change_status"));
+
+  const canManageBoards = adminSession?.permissions?.includes("manage_tasks");
+  const canEditClinicBoardLayout = Boolean(
+    adminSession?.permissions?.includes("tasks.manage_clinic_board")
+  );
+
+  useEffect(() => {
+    if (!taskBoards.length || boardInitRef.current) return;
+    const saved = typeof localStorage !== "undefined" ? localStorage.getItem("adminKanbanBoardId") : null;
+    if (saved && taskBoards.some((b) => b.id === saved)) {
+      setSelectedBoardId(saved);
+    } else {
+      const clinicWide = taskBoards.find((b) => b.kind === "clinic_wide");
+      setSelectedBoardId((clinicWide ?? taskBoards[0]).id);
+    }
+    boardInitRef.current = true;
+  }, [taskBoards]);
+
+  useEffect(() => {
+    if (selectedBoardId && typeof localStorage !== "undefined") {
+      localStorage.setItem("adminKanbanBoardId", selectedBoardId);
+    }
+  }, [selectedBoardId]);
+
+  const selectedBoard = useMemo(
+    () => taskBoards.find((b) => b.id === selectedBoardId),
+    [taskBoards, selectedBoardId]
+  );
+
+  const canEditSelectedBoardColumns = useMemo(() => {
+    if (!selectedBoard || !canManageBoards) return false;
+    if (selectedBoard.kind === "personal") {
+      return selectedBoard.owner_admin_id === currentAdminId;
+    }
+    return canEditClinicBoardLayout;
+  }, [selectedBoard, canManageBoards, canEditClinicBoardLayout, currentAdminId]);
+
+  const detailDueComposite = useMemo(
+    () => (detailDueDayIso && detailDueTimeStr ? `${detailDueDayIso}T${detailDueTimeStr}` : ""),
+    [detailDueDayIso, detailDueTimeStr]
+  );
+
+  const detailDueInPast = useMemo(() => {
+    if (!detailDueDayIso || !detailDueTimeStr) return false;
+    const wall = dayjs(`${detailDueDayIso}T${detailDueTimeStr}`);
+    return wall.isValid() && wall.isBefore(dayjs().startOf("day"));
+  }, [detailDueDayIso, detailDueTimeStr]);
+
+  const detailDueUnchanged = useMemo(() => {
+    if (!detailTask) return true;
+    if (!detailTask.due_at) {
+      return !detailDueComposite;
+    }
+    if (!detailDueComposite) return false;
+    const cur = dayjs(detailTask.due_at);
+    return cur.format("YYYY-MM-DD") === detailDueDayIso && cur.format("HH:mm") === detailDueTimeStr;
+  }, [detailTask, detailDueComposite, detailDueDayIso, detailDueTimeStr]);
+
+  const assigneeListUnchanged = useMemo(() => {
+    if (!detailTask) return true;
+    const cur = [...taskAssigneeIdList(detailTask)].sort().join(",");
+    const next = [...detailAssigneeDraft].sort().join(",");
+    return cur === next;
+  }, [detailTask, detailAssigneeDraft]);
+
+  const detailContextUnchanged = useMemo(() => {
+    if (!detailTask || detailStreamDraft === null) return true;
+    const tagsEq =
+      JSON.stringify([...(detailTask.tag_ids ?? [])].sort()) ===
+      JSON.stringify([...detailTagDraft].sort());
+    return detailTask.stream_id === detailStreamDraft && tagsEq;
+  }, [detailTask, detailStreamDraft, detailTagDraft]);
 
   useEffect(() => {
     if (!dragError) return;
@@ -416,14 +658,32 @@ export default function AdminTasksPage() {
     }
   }, [inviteEventId, taskCalendarContext]);
 
+  useEffect(() => {
+    if (!createOpened) return;
+    const now = dayjs();
+    setDueDayIso(now.format("YYYY-MM-DD"));
+    setDueTimeStr(now.format("HH:mm"));
+    setTaskDueMonth(now.startOf("month"));
+  }, [createOpened]);
+
+  const createDueInPast = useMemo(() => {
+    if (!dueDayIso || !dueTimeStr) return false;
+    const wall = dayjs(`${dueDayIso}T${dueTimeStr}`);
+    return wall.isValid() && wall.isBefore(dayjs().startOf("day"));
+  }, [dueDayIso, dueTimeStr]);
+
   const handleCreate = () => {
     if (!title.trim()) return;
+    if (!createStreamId) return;
     if (assigneeIds.length === 0 || !dueDate) return;
+    if (createDueInPast) return;
     createTaskMutation.mutate(
       {
         title: title.trim(),
         description: description.trim() || null,
         priority: priority ?? "medium",
+        stream_id: createStreamId ?? undefined,
+        tag_ids: createTagIds.length ? createTagIds : undefined,
         assignee_ids: assigneeIds,
         due_at: dueDate ? new Date(dueDate).toISOString() : null,
       },
@@ -434,7 +694,11 @@ export default function AdminTasksPage() {
           setDescription("");
           setPriority("medium");
           setAssigneeIds([]);
-          setDueDate("");
+          setCreateTagIds([]);
+          const n = dayjs();
+          setDueDayIso(n.format("YYYY-MM-DD"));
+          setDueTimeStr(n.format("HH:mm"));
+          setTaskDueMonth(n.startOf("month"));
         },
       }
     );
@@ -446,6 +710,18 @@ export default function AdminTasksPage() {
   }));
 
   const statusColumns = useMemo(() => {
+    if (selectedBoard?.columns?.length) {
+      return selectedBoard.columns
+        .slice()
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((c) => ({
+          id: c.mapped_status,
+          label:
+            (c.label && c.label.trim()) ||
+            STATUS_META[c.mapped_status] ||
+            c.mapped_status.replace(/_/g, " "),
+        }));
+    }
     const discovered = Array.from(new Set(tasks.map((t) => t.status).filter(Boolean)));
     const ordered = STATUS_ORDER.filter((s) => discovered.includes(s));
     const extras = discovered.filter((s) => !STATUS_ORDER.includes(s as (typeof STATUS_ORDER)[number])).sort();
@@ -453,7 +729,7 @@ export default function AdminTasksPage() {
       id,
       label: STATUS_META[id] ?? id.replace(/_/g, " "),
     }));
-  }, [tasks]);
+  }, [tasks, selectedBoard]);
 
   const needsApprovalTaskIds = useMemo(() => {
     return new Set(
@@ -497,6 +773,16 @@ export default function AdminTasksPage() {
       return true;
     });
   }, [tasks, onlyNeedsMyApproval, needsApprovalTaskIds, filterAssignee, filterPriority, filterDue]);
+
+  const moveColumnDraft = useCallback((i: number, dir: -1 | 1) => {
+    setColumnDraft((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }, []);
 
   const tasksByStatus = (list: AdminTaskRow[]) => {
     const m: Record<string, AdminTaskRow[]> = {};
@@ -635,7 +921,7 @@ export default function AdminTasksPage() {
     );
   };
 
-  if (isLoading) {
+  if (streamsLoading || tagsLoading || !streamFilterInitialized || boardsLoading || tasksLoading) {
     return (
       <Stack>
         <ContextBar title="Задачи" />
@@ -645,7 +931,12 @@ export default function AdminTasksPage() {
   }
 
   return (
-    <Stack>
+    <Box
+      className="admin-tasks-context"
+      data-page-tint={streamPageTintKey(activeStream?.theme)}
+      style={{ borderRadius: "var(--radius-md)", minHeight: "100%" }}
+    >
+      <Stack>
       <ContextBar
         title="Задачи"
         actions={
@@ -655,16 +946,120 @@ export default function AdminTasksPage() {
         }
       />
 
+      <ScrollArea type="scroll" scrollbars="x" offsetScrollbars>
+        <Group gap="xs" wrap="nowrap" pb="xs">
+          <Button
+            size="xs"
+            variant={selectedStreamId === null ? "filled" : "light"}
+            onClick={() => setSelectedStreamId(null)}
+          >
+            Все потоки
+          </Button>
+          {taskStreams.map((s) => (
+            <Button
+              key={s.id}
+              size="xs"
+              variant={selectedStreamId === s.id ? "filled" : "light"}
+              onClick={() => setSelectedStreamId(s.id)}
+            >
+              {s.name}
+            </Button>
+          ))}
+          {canManageBoards ? (
+            <Button
+              size="xs"
+              variant="default"
+              leftSection={<IconPlus size={14} />}
+              onClick={() => {
+                setNewStreamName("");
+                setNewStreamModalOpened(true);
+              }}
+            >
+              Новый поток
+            </Button>
+          ) : null}
+        </Group>
+      </ScrollArea>
+
       <AdminDataTableToolbar>
         <Group gap="xs" wrap="wrap" justify="space-between">
           <Group gap="xs" wrap="wrap">
-            <Button
+            <Select
               size="xs"
-              variant={onlyNeedsMyApproval ? "filled" : "light"}
-              onClick={() => setOnlyNeedsMyApproval((v) => !v)}
-            >
-              Ждут моего подтверждения ({needsApprovalTaskIds.size})
-            </Button>
+              leftSection={<IconLayoutKanban size={14} />}
+              placeholder="Доска"
+              data={taskBoards.map((b) => ({
+                value: b.id,
+                label: b.kind === "personal" ? `${b.name} (личная)` : b.name,
+              }))}
+              value={selectedBoardId}
+              onChange={(v) => setSelectedBoardId(v ?? null)}
+              w={240}
+            />
+            {canEditSelectedBoardColumns ? (
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() => {
+                  if (!selectedBoard) return;
+                  const sorted = [...selectedBoard.columns].sort((a, b) => a.sort_order - b.sort_order);
+                  setColumnDraft(
+                    sorted.map((c) => ({
+                      mapped_status: c.mapped_status,
+                      label: c.label,
+                    }))
+                  );
+                  setBoardColumnModalOpened(true);
+                }}
+              >
+                Порядок колонок
+              </Button>
+            ) : null}
+            {canManageBoards ? (
+              <>
+                <TextInput
+                  size="xs"
+                  placeholder="Новая личная доска"
+                  value={newPersonalBoardName}
+                  onChange={(e) => setNewPersonalBoardName(e.currentTarget.value)}
+                  w={200}
+                />
+                <Button
+                  size="xs"
+                  variant="default"
+                  disabled={!newPersonalBoardName.trim()}
+                  loading={createPersonalBoardMutation.isPending}
+                  onClick={() => {
+                    const n = newPersonalBoardName.trim();
+                    if (!n) return;
+                    createPersonalBoardMutation.mutate(n, {
+                      onSuccess: (row) => {
+                        setNewPersonalBoardName("");
+                        setSelectedBoardId(row.id);
+                      },
+                    });
+                  }}
+                >
+                  Создать
+                </Button>
+              </>
+            ) : null}
+            <Button.Group>
+              <Button
+                size="xs"
+                variant={!onlyNeedsMyApproval ? "filled" : "default"}
+                onClick={() => setOnlyNeedsMyApproval(false)}
+              >
+                Все задачи
+              </Button>
+              <Button
+                size="xs"
+                variant={onlyNeedsMyApproval ? "filled" : "default"}
+                onClick={() => setOnlyNeedsMyApproval(true)}
+              >
+                Ждут подтверждения ({needsApprovalTaskIds.size})
+              </Button>
+            </Button.Group>
             <Select
               size="xs"
               placeholder="Исполнитель"
@@ -700,6 +1095,29 @@ export default function AdminTasksPage() {
               onChange={(v) => setFilterDue(v ?? "all")}
               w={150}
             />
+            <MultiSelect
+              size="xs"
+              placeholder="Теги (все выбранные)"
+              data={taskTags.map((t) => ({ value: t.id, label: t.name }))}
+              value={filterTagIds}
+              onChange={setFilterTagIds}
+              clearable
+              searchable
+              w={220}
+            />
+            {canManageBoards ? (
+              <Button
+                size="xs"
+                variant="light"
+                leftSection={<IconPlus size={14} />}
+                onClick={() => {
+                  setNewTagName("");
+                  setNewTagModalOpened(true);
+                }}
+              >
+                Новый тег
+              </Button>
+            ) : null}
           </Group>
           <Group gap="xs" wrap="wrap">
             <Select
@@ -730,6 +1148,18 @@ export default function AdminTasksPage() {
       {bulkResultMessage ? (
         <Alert color={SEMANTIC.opsSeverity.info} icon={<IconAlertTriangle size={16} />} variant="light">
           {bulkResultMessage}
+        </Alert>
+      ) : null}
+      {onlyNeedsMyApproval ? (
+        <Alert color="blue" icon={<IconAlertTriangle size={16} />} variant="light">
+          <Group justify="space-between" wrap="wrap" gap="xs">
+            <Text size="sm">
+              Показаны только задачи, ожидающие вашего подтверждения. Остальные скрыты фильтром.
+            </Text>
+            <Button size="xs" variant="light" onClick={() => setOnlyNeedsMyApproval(false)}>
+              Показать все задачи
+            </Button>
+          </Group>
         </Alert>
       ) : null}
 
@@ -799,9 +1229,17 @@ export default function AdminTasksPage() {
             {filteredTasks.length === 0 ? (
               <AdminDataTableSurface>
                 <EmptyState
-                  title="Нет задач"
-                  description="Создайте первую задачу или примите задачу от AI в работу."
-                  action={{ label: "Создать задачу", onClick: () => setCreateOpened(true) }}
+                  title={onlyNeedsMyApproval ? "Нет задач в очереди подтверждений" : "Нет задач"}
+                  description={
+                    onlyNeedsMyApproval
+                      ? "В этом режиме список пуст. Переключитесь на «Все задачи» или ослабьте фильтры исполнителя, приоритета и срока."
+                      : "Создайте первую задачу или примите задачу от AI в работу."
+                  }
+                  action={
+                    onlyNeedsMyApproval
+                      ? { label: "Показать все задачи", onClick: () => setOnlyNeedsMyApproval(false) }
+                      : { label: "Создать задачу", onClick: () => setCreateOpened(true) }
+                  }
                 />
               </AdminDataTableSurface>
             ) : (
@@ -884,11 +1322,17 @@ export default function AdminTasksPage() {
         onClose={() => {
           setDetailTaskId(null);
           setDetailCommentDraft("");
+          setDetailModalApiError(null);
         }}
         title={detailTask ? detailTask.title : "Задача"}
       >
         {detailTask ? (
           <Stack gap="md">
+            {detailModalApiError ? (
+              <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />}>
+                {detailModalApiError}
+              </Alert>
+            ) : null}
             <Box
               p="md"
               style={{
@@ -914,10 +1358,238 @@ export default function AdminTasksPage() {
                 </Text>
               )}
               <Text size="xs" mt="xs" style={{ color: taskStatusTextColors(detailTask.status).meta }}>
-                Срок: {detailTask.due_at ? dayjs(detailTask.due_at).format("DD.MM.YYYY HH:mm") : "—"} · Исполнители:{" "}
-                {formatTaskAssigneeLine(detailTask, admins) || detailTask.role_assignee || "—"}
+                Срок: {detailTask.due_at ? dayjs(detailTask.due_at).format("DD.MM.YYYY HH:mm") : "—"}
+                {!canEditAssignees
+                  ? ` · Исполнители: ${formatTaskAssigneeLine(detailTask, admins) || detailTask.role_assignee || "—"}`
+                  : null}
               </Text>
             </Box>
+            {canEditAssignees ? (
+              <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
+                <Stack gap="xs">
+                  <Text size="sm" fw={600}>
+                    Исполнители
+                  </Text>
+                  <MultiSelect
+                    label="Назначение и делегирование"
+                    description="Первый в списке — основной исполнитель. Можно добавить или убрать любого сотрудника клиники."
+                    placeholder="Выберите одного или нескольких"
+                    data={adminOptions}
+                    value={detailAssigneeDraft}
+                    onChange={setDetailAssigneeDraft}
+                    searchable
+                    hidePickedOptions
+                    clearable
+                  />
+                  <Checkbox
+                    label="Добавить служебную запись в комментарии об изменении состава"
+                    checked={assigneeAuditComment}
+                    onChange={(e) => setAssigneeAuditComment(e.currentTarget.checked)}
+                  />
+                  <Group justify="flex-end">
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() => detailTask && setDetailAssigneeDraft(taskAssigneeIdList(detailTask))}
+                      disabled={assigneeListUnchanged}
+                    >
+                      Сбросить
+                    </Button>
+                    <Button
+                      size="xs"
+                      onClick={() => {
+                        if (!detailTask || assigneeListUnchanged) return;
+                        setDetailModalApiError(null);
+                        patchAssigneesMutation.mutate(
+                          { taskId: detailTask.id, assignee_ids: detailAssigneeDraft },
+                          {
+                            onSuccess: () => {
+                              setDetailModalApiError(null);
+                              if (assigneeAuditComment) {
+                                postDetailComment.mutate("Системное событие: обновлён состав исполнителей.");
+                              }
+                            },
+                            onError: (e) => {
+                              setDetailModalApiError(
+                                e instanceof ApiErrorWithCode
+                                  ? e.message
+                                  : "Не удалось сохранить исполнителей"
+                              );
+                            },
+                          }
+                        );
+                      }}
+                      loading={patchAssigneesMutation.isPending}
+                      disabled={assigneeListUnchanged}
+                    >
+                      Сохранить исполнителей
+                    </Button>
+                  </Group>
+                </Stack>
+              </Card>
+            ) : null}
+            {canManageBoards ? (
+              <Card
+                withBorder
+                p="sm"
+                style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}
+              >
+                <Stack gap="xs">
+                  <Text size="sm" fw={600}>
+                    Поток и теги
+                  </Text>
+                  <Select
+                    label="Поток"
+                    placeholder="Выберите поток"
+                    data={taskStreams
+                      .filter((s) => !s.is_archived)
+                      .map((s) => ({ value: s.id, label: s.name }))}
+                    value={detailStreamDraft}
+                    onChange={(v) => setDetailStreamDraft(v)}
+                    searchable
+                  />
+                  <MultiSelect
+                    label="Теги"
+                    placeholder="Необязательно"
+                    data={taskTags.map((t) => ({ value: t.id, label: t.name }))}
+                    value={detailTagDraft}
+                    onChange={setDetailTagDraft}
+                    searchable
+                    clearable
+                  />
+                  <Group justify="flex-end">
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() => {
+                        if (!detailTask) return;
+                        setDetailStreamDraft(detailTask.stream_id);
+                        setDetailTagDraft([...(detailTask.tag_ids ?? [])]);
+                      }}
+                      disabled={detailContextUnchanged}
+                    >
+                      Сбросить
+                    </Button>
+                    <Button
+                      size="xs"
+                      onClick={() => {
+                        if (!detailTask || detailStreamDraft === null || detailContextUnchanged) return;
+                        setDetailModalApiError(null);
+                        patchStreamTagsMutation.mutate(
+                          {
+                            taskId: detailTask.id,
+                            stream_id: detailStreamDraft,
+                            tag_ids: detailTagDraft,
+                          },
+                          {
+                            onSuccess: () => setDetailModalApiError(null),
+                            onError: (e) => {
+                              setDetailModalApiError(
+                                e instanceof ApiErrorWithCode
+                                  ? e.message
+                                  : "Не удалось сохранить поток и теги"
+                              );
+                            },
+                          }
+                        );
+                      }}
+                      loading={patchStreamTagsMutation.isPending}
+                      disabled={detailContextUnchanged || detailStreamDraft === null}
+                    >
+                      Сохранить поток и теги
+                    </Button>
+                  </Group>
+                </Stack>
+              </Card>
+            ) : null}
+            {canPatchTaskFields ? (
+              <Card
+                withBorder
+                p="sm"
+                style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}
+              >
+                <Stack gap="xs">
+                  <Text size="sm" fw={600}>
+                    Срок выполнения
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Дата и время по локальному времени браузера; на сервере действует политика «не раньше сегодняшнего
+                    календарного дня (UTC)».
+                  </Text>
+                  <Group align="flex-end" gap="md" wrap="wrap">
+                    <TextInput
+                      label="Дата"
+                      type="date"
+                      value={detailDueDayIso}
+                      onChange={(e) => setDetailDueDayIso(e.currentTarget.value)}
+                      styles={{ root: { minWidth: 160 } }}
+                    />
+                    <TextInput
+                      label="Время"
+                      type="time"
+                      value={detailDueTimeStr}
+                      onChange={(e) => setDetailDueTimeStr(e.currentTarget.value)}
+                      styles={{ root: { minWidth: 120 } }}
+                    />
+                  </Group>
+                  {detailDueInPast ? (
+                    <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
+                      Выбранный срок в прошлом — сервер отклонит сохранение.
+                    </Alert>
+                  ) : null}
+                  <Group justify="flex-end" wrap="wrap">
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() => {
+                        if (!detailTask) return;
+                        setDetailModalApiError(null);
+                        patchDueMutation.mutate(
+                          { taskId: detailTask.id, due_at: null },
+                          {
+                            onSuccess: () => setDetailModalApiError(null),
+                            onError: (e) => {
+                              setDetailModalApiError(
+                                e instanceof ApiErrorWithCode ? e.message : "Не удалось сбросить срок"
+                              );
+                            },
+                          }
+                        );
+                      }}
+                      loading={patchDueMutation.isPending}
+                      disabled={!detailTask.due_at}
+                    >
+                      Без срока
+                    </Button>
+                    <Button
+                      size="xs"
+                      onClick={() => {
+                        if (!detailTask || !detailDueComposite || detailDueUnchanged || detailDueInPast) return;
+                        setDetailModalApiError(null);
+                        patchDueMutation.mutate(
+                          {
+                            taskId: detailTask.id,
+                            due_at: new Date(detailDueComposite).toISOString(),
+                          },
+                          {
+                            onSuccess: () => setDetailModalApiError(null),
+                            onError: (e) => {
+                              setDetailModalApiError(
+                                e instanceof ApiErrorWithCode ? e.message : "Не удалось сохранить срок"
+                              );
+                            },
+                          }
+                        );
+                      }}
+                      loading={patchDueMutation.isPending}
+                      disabled={!detailDueComposite || detailDueUnchanged || detailDueInPast}
+                    >
+                      Сохранить срок
+                    </Button>
+                  </Group>
+                </Stack>
+              </Card>
+            ) : null}
             <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
               <Stack gap="xs">
                 <Group justify="space-between" wrap="wrap">
@@ -1261,57 +1933,315 @@ export default function AdminTasksPage() {
         opened={createOpened}
         onClose={() => setCreateOpened(false)}
         title="Новая задача"
+        styles={{
+          content: { maxHeight: "min(92vh, 900px)", display: "flex", flexDirection: "column" },
+          // Scroll is handled by Mantine Modal body (global CSS),
+          // footer below is sticky to keep actions accessible.
+          body: { padding: 0 },
+        }}
       >
-        <Stack>
-          <TextInput
-            label="Заголовок задачи"
-            placeholder="Например: Перезвонить пациенту по отменённой записи"
-            value={title}
-            onChange={(e) => setTitle(e.currentTarget.value)}
-            required
-          />
-          <Textarea
-            label="Описание"
-            placeholder="Добавьте детали, ссылки, ID брони/лида и т.д."
-            minRows={3}
-            value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
-          />
-          <Select
-            label="Приоритет"
-            data={[
-              { value: "low", label: "Низкий" },
-              { value: "medium", label: "Средний" },
-              { value: "high", label: "Высокий" },
-              { value: "urgent", label: "Срочно" },
-            ]}
-            value={priority}
-            onChange={setPriority}
-          />
-          <MultiSelect
-            label="Исполнители"
-            placeholder="Выберите одного или нескольких"
-            data={adminOptions}
-            value={assigneeIds}
-            onChange={setAssigneeIds}
-            required
-            searchable
-            hidePickedOptions
-          />
-          <TextInput
-            label="Срок"
-            type="datetime-local"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.currentTarget.value)}
-            required
-          />
+        <Stack gap="sm" p="md" pb="xl">
+          {createDueInPast ? (
+            <Alert color="orange" title="Срок в прошлом">
+              Выберите сегодняшнюю дату или позже — иначе создание на сервере будет отклонено.
+            </Alert>
+          ) : null}
+
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+            <Stack gap="sm">
+              <TextInput
+                label="Заголовок задачи"
+                placeholder="Например: Перезвонить пациенту по отменённой записи"
+                value={title}
+                onChange={(e) => setTitle(e.currentTarget.value)}
+                required
+              />
+              <Textarea
+                label="Описание"
+                placeholder="Добавьте детали, ссылки, ID брони/лида и т.д."
+                minRows={6}
+                value={description}
+                onChange={(e) => setDescription(e.currentTarget.value)}
+              />
+              <MultiSelect
+                label="Исполнители"
+                placeholder="Выберите одного или нескольких"
+                data={adminOptions}
+                value={assigneeIds}
+                onChange={setAssigneeIds}
+                required
+                searchable
+                hidePickedOptions
+                comboboxProps={{ withinPortal: true }}
+              />
+            </Stack>
+
+            <Stack gap="sm">
+              <Select
+                label="Приоритет"
+                data={[
+                  { value: "low", label: "Низкий" },
+                  { value: "medium", label: "Средний" },
+                  { value: "high", label: "Высокий" },
+                  { value: "urgent", label: "Срочно" },
+                ]}
+                value={priority}
+                onChange={setPriority}
+              />
+              <Select
+                label="Поток"
+                placeholder="Обязательно"
+                required
+                data={taskStreams
+                  .filter((s) => !s.is_archived)
+                  .map((s) => ({ value: s.id, label: s.name }))}
+                value={createStreamId}
+                onChange={(v) => setCreateStreamId(v)}
+                searchable
+                comboboxProps={{ withinPortal: true }}
+              />
+              <Group gap="xs" wrap="nowrap" align="flex-end">
+                <MultiSelect
+                  style={{ flex: 1, minWidth: 0 }}
+                  label="Теги"
+                  placeholder="Необязательно"
+                  data={taskTags.map((t) => ({ value: t.id, label: t.name }))}
+                  value={createTagIds}
+                  onChange={setCreateTagIds}
+                  searchable
+                  clearable
+                  comboboxProps={{ withinPortal: true }}
+                />
+                {canManageBoards ? (
+                  <Button
+                    size="xs"
+                    variant="light"
+                    mb={4}
+                    leftSection={<IconPlus size={14} />}
+                    onClick={() => {
+                      setNewTagName("");
+                      setNewTagModalOpened(true);
+                    }}
+                  >
+                    Тег
+                  </Button>
+                ) : null}
+              </Group>
+
+              <Stack gap={6}>
+                <Text size="sm" fw={700}>
+                  Срок
+                </Text>
+                <Group align="flex-start" gap="md" wrap="wrap">
+                  <CompactMonthPicker
+                    value={dueDayIso}
+                    onChange={(iso) => {
+                      setDueDayIso(iso);
+                      setTaskDueMonth(dayjs(iso).startOf("month"));
+                    }}
+                    monthAnchor={taskDueMonth}
+                    onMonthAnchorChange={setTaskDueMonth}
+                    size="compact"
+                  />
+                  <TextInput
+                    label="Время"
+                    type="time"
+                    value={dueTimeStr}
+                    onChange={(e) => setDueTimeStr(e.currentTarget.value)}
+                    required
+                    styles={{ root: { minWidth: 120 } }}
+                  />
+                </Group>
+              </Stack>
+            </Stack>
+          </SimpleGrid>
+        </Stack>
+
+        <Box
+          p="md"
+          pt="sm"
+          style={{
+            position: "sticky",
+            bottom: 0,
+            borderTop: "1px solid var(--mantine-color-gray-3)",
+            background: "var(--overlay-glass-surface)",
+            zIndex: 2,
+          }}
+        >
           <Group justify="flex-end">
+            <Button variant="default" onClick={() => setCreateOpened(false)}>
+              Отмена
+            </Button>
             <Button
               onClick={handleCreate}
               loading={createTaskMutation.isPending}
-              disabled={!title.trim() || assigneeIds.length === 0 || !dueDate}
+              disabled={
+                !title.trim() ||
+                !createStreamId ||
+                assigneeIds.length === 0 ||
+                !dueDate ||
+                createDueInPast
+              }
             >
               Создать
+            </Button>
+          </Group>
+        </Box>
+      </GlassModal>
+
+      <GlassModal
+        size="sm"
+        centered
+        opened={newStreamModalOpened}
+        onClose={() => setNewStreamModalOpened(false)}
+        title="Новый поток"
+      >
+        <Stack gap="sm">
+          <TextInput
+            label="Название"
+            placeholder="Например: Дизайн"
+            value={newStreamName}
+            onChange={(e) => setNewStreamName(e.currentTarget.value)}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setNewStreamModalOpened(false)}>
+              Отмена
+            </Button>
+            <Button
+              loading={createStreamMutation.isPending}
+              disabled={!newStreamName.trim()}
+              onClick={() => {
+                const name = newStreamName.trim();
+                if (!name) return;
+                createStreamMutation.mutate(
+                  { name },
+                  {
+                    onSuccess: (row) => {
+                      setNewStreamModalOpened(false);
+                      setNewStreamName("");
+                      setSelectedStreamId(row.id);
+                    },
+                  }
+                );
+              }}
+            >
+              Создать
+            </Button>
+          </Group>
+        </Stack>
+      </GlassModal>
+
+      <GlassModal
+        size="sm"
+        centered
+        opened={newTagModalOpened}
+        onClose={() => setNewTagModalOpened(false)}
+        title="Новый тег"
+      >
+        <Stack gap="sm">
+          <TextInput
+            label="Название"
+            placeholder="Например: Филиал А"
+            value={newTagName}
+            onChange={(e) => setNewTagName(e.currentTarget.value)}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setNewTagModalOpened(false)}>
+              Отмена
+            </Button>
+            <Button
+              loading={createTagMutation.isPending}
+              disabled={!newTagName.trim()}
+              onClick={() => {
+                const name = newTagName.trim();
+                if (!name) return;
+                createTagMutation.mutate(
+                  { name },
+                  {
+                    onSuccess: (row) => {
+                      setNewTagModalOpened(false);
+                      setNewTagName("");
+                      if (createOpened) {
+                        setCreateTagIds((prev) => [...prev, row.id]);
+                      } else {
+                        setFilterTagIds((prev) => Array.from(new Set([...prev, row.id])));
+                      }
+                    },
+                  }
+                );
+              }}
+            >
+              Создать
+            </Button>
+          </Group>
+        </Stack>
+      </GlassModal>
+
+      <GlassModal
+        size="md"
+        centered
+        opened={boardColumnModalOpened}
+        onClose={() => setBoardColumnModalOpened(false)}
+        title="Порядок колонок Kanban"
+      >
+        <Stack gap="sm">
+          <Text size="xs" c="dimmed">
+            Подпись пустая — стандартное имя статуса. Должны присутствовать все статусы (как на сервере).
+          </Text>
+          {columnDraft.map((col, i) => (
+            <Group key={`${col.mapped_status}-${i}`} justify="space-between" wrap="nowrap" align="flex-start">
+              <Text size="xs" w={130} ff="monospace">
+                {col.mapped_status}
+              </Text>
+              <TextInput
+                size="xs"
+                placeholder={STATUS_META[col.mapped_status] ?? col.mapped_status}
+                value={col.label ?? ""}
+                onChange={(e) => {
+                  const v = e.currentTarget.value;
+                  setColumnDraft((prev) =>
+                    prev.map((c, idx) =>
+                      idx === i ? { ...c, label: v.trim() ? v : null } : c
+                    )
+                  );
+                }}
+                style={{ flex: 1, minWidth: 0 }}
+              />
+              <ActionIcon
+                size="sm"
+                variant="light"
+                aria-label="Выше"
+                onClick={() => moveColumnDraft(i, -1)}
+                disabled={i === 0}
+              >
+                <IconChevronUp size={16} />
+              </ActionIcon>
+              <ActionIcon
+                size="sm"
+                variant="light"
+                aria-label="Ниже"
+                onClick={() => moveColumnDraft(i, 1)}
+                disabled={i === columnDraft.length - 1}
+              >
+                <IconChevronDown size={16} />
+              </ActionIcon>
+            </Group>
+          ))}
+          <Group justify="flex-end" mt="sm">
+            <Button variant="default" onClick={() => setBoardColumnModalOpened(false)}>
+              Отмена
+            </Button>
+            <Button
+              loading={replaceBoardColumnsMutation.isPending}
+              onClick={() => {
+                if (!selectedBoardId) return;
+                replaceBoardColumnsMutation.mutate(
+                  { boardId: selectedBoardId, columns: columnDraft },
+                  { onSuccess: () => setBoardColumnModalOpened(false) }
+                );
+              }}
+            >
+              Сохранить
             </Button>
           </Group>
         </Stack>
@@ -1395,7 +2325,8 @@ export default function AdminTasksPage() {
           </Group>
         </Stack>
       </GlassModal>
-    </Stack>
+      </Stack>
+    </Box>
   );
 }
 

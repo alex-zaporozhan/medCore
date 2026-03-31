@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { useClinics } from "@/hooks";
+import { useClinics, useAdminSession } from "@/hooks";
 import type { Clinic, BusinessLexicon } from "@/api/types";
 import { getBoundAdminClinicId } from "@/api/client";
 
@@ -30,17 +30,27 @@ interface AdminClinicProviderProps {
 export function AdminClinicProvider({ children }: AdminClinicProviderProps) {
   const location = useLocation();
   const { data, isLoading, error } = useClinics();
+  const { data: adminSession } = useAdminSession();
   const [currentClinicId, setCurrentClinicIdState] = useState<string | null>(null);
   const [boundClinicId, setBoundClinicId] = useState<string | null>(null);
 
   const clinics = data ?? [];
-  const isClinicScopeLocked = !!boundClinicId;
+  const accessibleIds = adminSession?.accessible_clinic_ids ?? [];
+  const ownerMulti =
+    (adminSession?.roles ?? []).includes("owner") && accessibleIds.length > 1;
+
+  const isClinicScopeLocked = Boolean(boundClinicId) && !ownerMulti;
 
   useEffect(() => {
     setBoundClinicId(getBoundAdminClinicId());
   }, [location.pathname, clinics]);
 
   const selectableClinics = (() => {
+    if (ownerMulti && accessibleIds.length > 0) {
+      const allowed = new Set(accessibleIds);
+      const hit = clinics.filter((c) => allowed.has(c.id));
+      if (hit.length) return hit;
+    }
     if (!boundClinicId) return clinics;
     const hit = clinics.filter((c) => c.id === boundClinicId);
     if (hit.length) return hit;
@@ -70,13 +80,22 @@ export function AdminClinicProvider({ children }: AdminClinicProviderProps) {
     }
   }, [clinics, location.pathname]);
 
-  const setCurrentClinicId = useCallback((id: string | null) => {
-    const bound = getBoundAdminClinicId();
-    if (bound && id !== null && id !== bound) {
-      return;
-    }
-    setCurrentClinicIdState(id);
-  }, []);
+  const setCurrentClinicId = useCallback(
+    (id: string | null) => {
+      const bound = getBoundAdminClinicId();
+      const allowed = new Set(adminSession?.accessible_clinic_ids ?? []);
+      if (
+        bound &&
+        id !== null &&
+        id !== bound &&
+        !(ownerMulti && allowed.has(id))
+      ) {
+        return;
+      }
+      setCurrentClinicIdState(id);
+    },
+    [adminSession?.accessible_clinic_ids, ownerMulti]
+  );
 
   return (
     <AdminClinicContext.Provider

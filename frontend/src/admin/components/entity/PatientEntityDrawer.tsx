@@ -12,7 +12,7 @@ import {
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import type { Patient } from "@/api/types";
 import { EntityDrawerFieldBlock, EntityDrawerFooterBar } from "@/admin/components/entity/entityDrawerChrome";
-import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
+import { AdminDrawer, GlassModal, QueryErrorAlert } from "@/shared/ui";
 import {
   Avatar,
   Badge,
@@ -61,6 +61,8 @@ interface PatientEntityDrawerProps {
   onSaved?: () => void;
   /** Теги пациента (VIP, Должник, Склонен к отменам) — при наличии API */
   tags?: PatientTags;
+  /** Центрированная модалка или боковая панель */
+  presentation?: "modal" | "drawer";
 }
 
 export function PatientEntityDrawer({
@@ -71,6 +73,7 @@ export function PatientEntityDrawer({
   initialForm,
   onSaved,
   tags: tagsProp,
+  presentation = "modal",
 }: PatientEntityDrawerProps) {
   const { currentClinicId } = useAdminClinic();
   const [activeTab, setActiveTab] = useState<string | null>("main");
@@ -167,15 +170,8 @@ export function PatientEntityDrawer({
         ? "Редактировать пациента"
         : displayName;
 
-  return (
-    <AdminDrawer
-      position="right"
-      size="lg"
-      opened={opened}
-      onClose={onClose}
-      title={title}
-      styles={{ body: { paddingTop: 0 } }}
-    >
+  const inner = (
+    <>
       {(mode === "view" || mode === "edit") && patient && (
         <Stack gap="md" mb="md">
           <Group justify="space-between" wrap="nowrap">
@@ -489,6 +485,8 @@ export function PatientEntityDrawer({
                 title="Добавить члена семьи"
                 opened={familyModalOpen}
                 onClose={() => setFamilyModalOpen(false)}
+                centered
+                zIndex={400}
               >
                 <Stack gap="sm">
                   <Select
@@ -569,6 +567,37 @@ export function PatientEntityDrawer({
           </Stack>
         </Tabs.Panel>
       </Tabs>
+    </>
+  );
+
+  if (presentation === "modal") {
+    return (
+      <GlassModal
+        opened={opened}
+        onClose={onClose}
+        title={title}
+        size="xl"
+        padding="lg"
+        styles={{
+          body: { maxHeight: "min(78vh, 720px)", overflowY: "auto", paddingTop: 12 },
+          header: { marginBottom: 8, paddingBottom: 0 },
+        }}
+      >
+        {inner}
+      </GlassModal>
+    );
+  }
+
+  return (
+    <AdminDrawer
+      position="right"
+      size="lg"
+      opened={opened}
+      onClose={onClose}
+      title={title}
+      styles={{ body: { paddingTop: 0 } }}
+    >
+      {inner}
     </AdminDrawer>
   );
 }

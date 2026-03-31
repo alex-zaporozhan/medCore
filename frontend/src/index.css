@@ -200,6 +200,30 @@
   --calendar-system-meta: #475569;
   --calendar-system-badge-bg: #e2e8f0;
   --calendar-system-badge-text: #475569;
+
+  /*
+   * Календарь персонала /admin/calendar (LEAD) — спокойная палитра: серый, крем, едва зелёный.
+   * Не трогает --calendar-* для расписания врачей (ScheduleCalendarGrid).
+   */
+  --staff-cal-chip-default-bg: #f4f6f8;
+  --staff-cal-chip-default-bar: #94a3b8;
+  --staff-cal-chip-reminder-bg: #fffdf6;
+  --staff-cal-chip-reminder-bar: #c9b896;
+  --staff-cal-chip-unseen-bg: #f2f7f4;
+  --staff-cal-chip-unseen-bar: #8fb3a0;
+  --staff-cal-chip-title: #0f1419;
+  --staff-cal-badge-count-bg: #e8eef3;
+  --staff-cal-badge-count-text: #4a5f73;
+  --staff-cal-badge-unseen-bg: #eef4f0;
+  --staff-cal-badge-unseen-text: #3d5a4a;
+  --staff-cal-badge-reminder-bg: #f5f0e6;
+  --staff-cal-badge-reminder-text: #5c5340;
+  --staff-cal-day-hover-bg: rgba(28, 46, 69, 0.045);
+  --staff-cal-day-flash-bg: #fffbf0;
+  --staff-cal-day-flash-outline: rgba(180, 160, 110, 0.45);
+  --staff-cal-time-selected-bg: #eef2f6;
+  --staff-cal-time-selected-border: rgba(28, 46, 69, 0.22);
+  --staff-cal-time-selected-text: #1c2e45;
 }
 
 /* —— Inputs: чёткая граница + фокус graphite —— */
@@ -255,6 +279,17 @@
   backdrop-filter: blur(10px);
   background: var(--overlay-glass-surface);
   box-shadow: var(--shadow-soft-md);
+  /* Critical: long modals must not clip content / hide footer actions */
+  max-height: min(92vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+
+.mantine-Modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Sticky context / таблицы — ARCH §2.5 */
@@ -410,4 +445,152 @@ body {
   --font-size: 14px;
   height: min(380px, 52vh);
   width: min(100vw - 32px, 360px);
+}
+
+/* Расписание: лёгкий сдвиг при смене дня (вперёд / назад) */
+@keyframes scheduleCalendarSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--schedule-slide, 1) * 14px));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.schedule-calendar-day-enter {
+  animation: scheduleCalendarSlideIn 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* —— /admin/calendar: премиум-сетка, hover дня, модалки —— */
+.staff-cal-page .staff-cal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft-sm);
+}
+
+.staff-cal-month-shell {
+  background: var(--bg-card);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft-sm);
+  overflow: hidden;
+}
+
+.staff-cal-month-shell .mantine-Table-thead .mantine-Table-tr {
+  background: linear-gradient(180deg, rgba(28, 46, 69, 0.03), rgba(28, 46, 69, 0.01));
+}
+
+.staff-cal-month-shell .mantine-Table-th {
+  border-bottom: 1px solid var(--divider);
+  padding-top: var(--space-sm);
+  padding-bottom: var(--space-sm);
+}
+
+.staff-cal-month-shell .mantine-Table-td {
+  border-color: rgba(226, 230, 234, 0.9);
+}
+
+.staff-cal-day-cell {
+  position: relative;
+  transition:
+    background-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  border-radius: var(--radius-sm);
+}
+
+.staff-cal-day-cell:not(.staff-cal-day-cell--flash):hover {
+  background-color: var(--staff-cal-day-hover-bg) !important;
+  box-shadow: inset 0 0 0 1px var(--primary-alpha-08);
+  transform: translateY(-1px);
+}
+
+.staff-cal-day-cell--flash {
+  background-color: var(--staff-cal-day-flash-bg) !important;
+  outline: 2px solid var(--staff-cal-day-flash-outline);
+  outline-offset: -1px;
+}
+
+.staff-cal-day-cell--flash:hover {
+  box-shadow: inset 0 0 0 1px var(--primary-alpha-12);
+}
+
+.staff-cal-modal-content.mantine-Modal-content {
+  border: 1px solid rgba(226, 230, 234, 0.95);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  /* Keep rounded corners; body is responsible for scrolling. */
+  overflow: hidden;
+  max-height: min(92vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+
+.staff-cal-modal-content .mantine-Modal-header {
+  border-bottom: 1px solid var(--divider);
+  padding-top: var(--space-lg);
+  padding-bottom: var(--space-md);
+}
+
+.staff-cal-modal-content .mantine-Modal-body {
+  padding-top: var(--space-md);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.staff-cal-time-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary-alpha-12) transparent;
+}
+
+.staff-cal-time-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.staff-cal-time-scroll::-webkit-scrollbar-thumb {
+  background: var(--primary-alpha-12);
+  border-radius: 999px;
+}
+
+.staff-cal-time-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.staff-cal-event-chip {
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease;
+}
+
+.staff-cal-event-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft-sm);
+}
+
+/* Task streams: subtle header tint per semantic context (preset keys from API theme.page_tint). */
+.admin-tasks-context[data-page-tint="subtle_gray"] {
+  background: linear-gradient(180deg, rgba(120, 128, 140, 0.1) 0%, transparent 160px);
+}
+.admin-tasks-context[data-page-tint="subtle_violet"] {
+  background: linear-gradient(180deg, rgba(124, 58, 237, 0.08) 0%, transparent 160px);
+}
+.admin-tasks-context[data-page-tint="subtle_blue"] {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08) 0%, transparent 160px);
+}
+.admin-tasks-context[data-page-tint="subtle_green"] {
+  background: linear-gradient(180deg, rgba(5, 150, 105, 0.08) 0%, transparent 160px);
+}
+.admin-tasks-context[data-page-tint="subtle_amber"] {
+  background: linear-gradient(180deg, rgba(217, 119, 6, 0.09) 0%, transparent 160px);
 }

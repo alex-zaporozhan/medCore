@@ -29,6 +29,14 @@ class StaffFeedPostResponse(BaseModel):
     comments_count: int = 0
     likes_count: int = 0
     liked_by_me: bool = False
+    acknowledged_by_me: bool = False
+    acknowledged_count: int = 0
+    audience_total: int = 0
+    is_announcement: bool = False
+    requires_ack: bool = False
+    priority_level: str = "normal"
+    audience_roles: list[str] = Field(default_factory=list)
+    audience_admin_ids: list[UUID] = Field(default_factory=list)
     attachments: list[StaffAttachmentBrief] = Field(default_factory=list)
 
 
@@ -40,6 +48,11 @@ class StaffFeedPostLikeResponse(BaseModel):
 class StaffFeedPostCreate(BaseModel):
     title: str | None = Field(None, max_length=500)
     body: str = Field(..., min_length=1, max_length=16000)
+    is_announcement: bool = False
+    requires_ack: bool = False
+    priority_level: str = Field("normal", pattern="^(normal|priority|critical)$")
+    audience_roles: list[str] = Field(default_factory=list)
+    audience_admin_ids: list[UUID] = Field(default_factory=list)
 
 
 class StaffFeedCommentResponse(BaseModel):
@@ -58,6 +71,18 @@ class StaffFeedCommentCreate(BaseModel):
         None,
         description="Ответ на комментарий в том же посте; в UI показывается как «Имя, — …»",
     )
+
+
+class StaffFeedAckStatusRow(BaseModel):
+    admin_id: UUID
+    admin_name: str | None = None
+    acknowledged_at: datetime | None = None
+
+
+class StaffFeedPostAckStatusResponse(BaseModel):
+    post_id: UUID
+    acknowledged: list[StaffFeedAckStatusRow] = Field(default_factory=list)
+    pending: list[StaffFeedAckStatusRow] = Field(default_factory=list)
 
 
 class StaffChatRoomResponse(BaseModel):

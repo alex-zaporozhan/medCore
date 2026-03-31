@@ -1,5 +1,4 @@
 import { useAdminReportsDashboardByClinics } from "@/hooks/useAdminReports";
-import { useAttentionFeed } from "@/hooks/useAttentionFeed";
 import {
   useCreateStaffFeedPost,
   useStaffFeedPosts,
@@ -49,7 +48,6 @@ import { Link } from "react-router-dom";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { ROUTE_PATHS } from "@/routePaths";
 import { SEMANTIC } from "@/shared/semanticUi";
-import type { AttentionFeed, AttentionItem } from "@/api/types";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import {
@@ -72,13 +70,6 @@ import {
 
 const BACKEND_HINT =
   "Если данные не загружаются, проверьте, что бэкенд запущен на порту 8000 (см. docs/RUN_SERVICES.md).";
-
-function flattenAttentionFeed(
-  data: AttentionFeed | undefined,
-): AttentionItem[] {
-  if (!data) return [];
-  return [...data.follow_up, ...data.retention_gap, ...data.conflicts];
-}
 
 const metricCardShell = {
   bg: "white" as const,
@@ -509,7 +500,6 @@ export default function AdminDashboardPage() {
       selectedClinicIds.length > 0 ? selectedClinicIds : null
     );
 
-  const { data: attentionData } = useAttentionFeed(currentClinicId ?? null);
   const { data: staffPosts, isLoading: staffPostsLoading } = useStaffFeedPosts(20);
   const createPost = useCreateStaffFeedPost();
   const { data: revenueHunter } = useRevenueHunterSaved(currentClinicId ?? null);
@@ -521,10 +511,12 @@ export default function AdminDashboardPage() {
     ((adminSession?.permissions?.includes("view_marketing_analytics") ?? false) &&
       (adminSession?.permissions?.includes("view_finance") ?? false));
 
-  const attentionItems = useMemo(() => flattenAttentionFeed(attentionData), [attentionData]);
   const unreadAttentionCount = useMemo(
-    () => attentionItems.filter((i) => i.status === "new").length,
-    [attentionItems]
+    () =>
+      (staffPosts ?? []).filter(
+        (post) => post.is_announcement && post.requires_ack && !post.acknowledged_by_me
+      ).length,
+    [staffPosts]
   );
   const hasUnreadAttention = unreadAttentionCount > 0;
 

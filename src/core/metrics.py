@@ -392,6 +392,12 @@ task_bulk_status_total = Counter(  # type: ignore[call-arg]
     ["clinic_bucket", "to_status", "outcome"],
 )
 
+task_context_admin_events_total = Counter(  # type: ignore[call-arg]
+    "task_context_admin_events_total",
+    "Task streams/tags admin: lifecycle, PATCH task context, list-filter validation failures.",
+    ["clinic_bucket", "event"],
+)
+
 # ------------------------------------------------------------------------------
 # CRM funnel / lifecycle metrics (CRM_EVENTS_007)
 # ------------------------------------------------------------------------------

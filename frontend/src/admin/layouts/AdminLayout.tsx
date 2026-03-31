@@ -60,7 +60,7 @@ import { useAiAgent } from "@/hooks/useAiAgent";
 import { useAiFeatures, getAiFeatureBadgeColor, getAiFeatureStatusText, getAiFeatureTooltip } from "@/shared/aiFeatures";
 import { logUiEvent } from "@/shared/uiEvents";
 import { ROUTE_PATHS } from "@/routePaths";
-import { ADMIN_PERM_PATIENTS_PII_READ } from "@/shared/adminPermissions";
+import { ADMIN_PERM_PATIENTS_PII_READ, ADMIN_PERM_RBAC_MANAGE } from "@/shared/adminPermissions";
 import { SEMANTIC } from "@/shared/semanticUi";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { BOX_HIDDEN_ADMIN_PATHS, isBoxEdition } from "@/config/edition";
@@ -121,7 +121,8 @@ const navGroups: { title: string; items: NavItem[] }[] = [
       { to: ROUTE_PATHS.admin.patients, label: "Пациенты", icon: IconUserCircle },
       { to: ROUTE_PATHS.admin.services, label: "Услуги", icon: IconClipboardList },
       { to: ROUTE_PATHS.admin.clinics, label: "Клиники", icon: IconBuilding },
-      { to: ROUTE_PATHS.admin.administrators, label: "Администраторы", icon: IconShield },
+      { to: ROUTE_PATHS.admin.administrators, label: "Персонал", icon: IconShield },
+      { to: ROUTE_PATHS.admin.rightsPolicies, label: "Права и политики", icon: IconShield },
     ],
   },
 ];
@@ -129,12 +130,13 @@ const navGroups: { title: string; items: NavItem[] }[] = [
 function navGroupsVisible(
   groups: typeof navGroups,
   canPatientsPii: boolean,
+  canRbacManage: boolean,
 ): typeof navGroups {
-  if (canPatientsPii) return groups;
   return groups.map((g) => ({
     ...g,
     items: g.items.filter((item) => {
-      if ("to" in item && item.to === ROUTE_PATHS.admin.patients) return false;
+      if ("to" in item && item.to === ROUTE_PATHS.admin.patients && !canPatientsPii) return false;
+      if ("to" in item && item.to === ROUTE_PATHS.admin.rightsPolicies && !canRbacManage) return false;
       return true;
     }),
   }));
@@ -186,11 +188,13 @@ export default function AdminLayout() {
   const { data: adminSession } = useAdminSession();
   const canPatientsPii =
     adminSession?.permissions?.includes(ADMIN_PERM_PATIENTS_PII_READ) ?? false;
+  const canRbacManage =
+    adminSession?.permissions?.includes(ADMIN_PERM_RBAC_MANAGE) ?? false;
   const boxEdition = isBoxEdition();
   const sidebarNavGroups = useMemo(
     () =>
-      navGroupsForBoxEdition(navGroupsVisible(navGroups, canPatientsPii), boxEdition),
-    [canPatientsPii, boxEdition],
+      navGroupsForBoxEdition(navGroupsVisible(navGroups, canPatientsPii, canRbacManage), boxEdition),
+    [canPatientsPii, canRbacManage, boxEdition],
   );
 
   const clinicOptions =
@@ -565,6 +569,7 @@ export default function AdminLayout() {
           </Group>
         }
         size="md"
+        centered
       >
         <Stack gap="md">
           <Text size="xs" c="dimmed">

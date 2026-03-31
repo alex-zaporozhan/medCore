@@ -52,7 +52,21 @@ type ModalStylesFn = (
 ) => Record<string, unknown> | undefined;
 
 const shellModalBase = {
-  content: { ...SHELL_MODAL_CONTENT_STYLE },
+  content: {
+    ...SHELL_MODAL_CONTENT_STYLE,
+    // Ensure footer-like sections can be fixed inside body.
+    display: "flex",
+    flexDirection: "column",
+    // Guardrail: never allow modal to exceed viewport.
+    maxHeight: "min(92vh, 900px)",
+  },
+  // Mantine modal body must be scrollable; otherwise long forms hide actions.
+  body: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: "auto",
+    overscrollBehavior: "contain",
+  },
 };
 
 /** Merge glass modal content + overlay-related sections with user `styles` (object or Mantine callback). */

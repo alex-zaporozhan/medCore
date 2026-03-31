@@ -24,7 +24,8 @@ describe("queryKeys", () => {
 
   it("adminTasks: open и list — разные ключи", () => {
     expect(queryKeys.adminTasks.open()).toEqual(["admin-tasks", "open"]);
-    expect(queryKeys.adminTasks.list()).toEqual(["admin-tasks"]);
+    expect(queryKeys.adminTasks.list()).toEqual(["admin-tasks", "all"]);
+    expect(queryKeys.adminTasks.list("s1", ["a", "b"])).toEqual(["admin-tasks", "s1", "a,b"]);
   });
 
   it("adminAi: clinicSettings включает clinicId", () => {

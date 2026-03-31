@@ -31,6 +31,8 @@ from src.application.dto.staff_collab_dto import (
     StaffFeedPostCreate,
     StaffFeedPostResponse,
     StaffFeedPostLikeResponse,
+    StaffFeedPostAckStatusResponse,
+    StaffFeedAckStatusRow,
     StaffRoomCreateDm,
     StaffRoomCreateGroup,
     StaffRoomInviteCreate,
@@ -345,7 +347,10 @@ async def list_staff_feed_posts(
     context: AdminContext = Depends(require_active_clinic_admin),
 ) -> list[StaffFeedPostResponse]:
     return await _svc(session).list_feed_posts(
-        _clinic_id(context), viewer_admin_id=context.user_id, limit=limit
+        _clinic_id(context),
+        viewer_admin_id=context.user_id,
+        viewer_role_codes=set(context.roles),
+        limit=limit,
     )
 
 
@@ -353,16 +358,22 @@ async def list_staff_feed_posts(
     "/feed/posts",
     response_model=StaffFeedPostResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permissions("manage_staff_collab"))],
 )
 async def create_staff_feed_post(
     data: StaffFeedPostCreate,
     session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(get_request_context),
+    context: AdminContext = Depends(require_active_clinic_admin),
 ) -> StaffFeedPostResponse:
     cid = _clinic_id(context)
     if context.user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    # Default policy: all active admin users can publish except doctor role.
+    # Owner may override via RBAC by granting manage_staff_collab to a specific role/user.
+    if "manage_staff_collab" not in context.permissions and "doctor" in set(context.roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Публикация объявлений для роли врача отключена",
+        )
     return await _svc(session).create_feed_post(cid, context.user_id, data)
 
 
@@ -445,11 +456,43 @@ async def toggle_staff_feed_post_like(
     cid = _clinic_id(context)
     if context.user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
-    toggled = await _svc(session).toggle_feed_post_like(cid, post_id, context.user_id)
+    toggled = await _svc(session).acknowledge_feed_post(
+        cid,
+        post_id,
+        context.user_id,
+        viewer_role_codes=set(context.roles),
+    )
     if toggled is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
     liked, likes_count = toggled
     return StaffFeedPostLikeResponse(liked=liked, likes_count=likes_count)
+
+
+@router.get(
+    "/feed/posts/{post_id}/ack-status",
+    response_model=StaffFeedPostAckStatusResponse,
+)
+async def get_staff_feed_post_ack_status(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(require_active_clinic_admin),
+) -> StaffFeedPostAckStatusResponse:
+    cid = _clinic_id(context)
+    rows = await _svc(session).feed_post_ack_status(cid, post_id)
+    if rows is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
+    acknowledged_rows, pending_rows = rows
+    return StaffFeedPostAckStatusResponse(
+        post_id=post_id,
+        acknowledged=[
+            StaffFeedAckStatusRow(admin_id=aid, admin_name=name, acknowledged_at=acked_at)
+            for aid, name, acked_at in acknowledged_rows
+        ],
+        pending=[
+            StaffFeedAckStatusRow(admin_id=aid, admin_name=name, acknowledged_at=None)
+            for aid, name, _ in pending_rows
+        ],
+    )
 
 
 @router.post(

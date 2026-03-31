@@ -1,6 +1,6 @@
 import type { Booking, DoctorSlot } from "@/api/types";
 import type { CSSProperties } from "react";
-import { Anchor, Badge, Box, Group, Table, Text } from "@mantine/core";
+import { Anchor, Badge, Box, Group, Table, Text, UnstyledButton } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
@@ -36,6 +36,10 @@ export interface ScheduleCalendarGridProps {
     time: string;
   }) => void;
   onEmptySlotClick?: (payload: { doctorId: string; time: string }) => void;
+  /** Если задано — клик по ФИО открывает модалку, без перехода в «Пациенты» */
+  onPatientProfileClick?: (booking: Booking) => void;
+  /** Если задано — клик по имени врача в шапке открывает модалку расписания */
+  onDoctorHeaderClick?: (doctorId: string) => void;
 }
 
 function timeStr(t: string): string {
@@ -303,6 +307,8 @@ export function ScheduleCalendarGrid({
   onBookingClick,
   onReschedule,
   onEmptySlotClick,
+  onPatientProfileClick,
+  onDoctorHeaderClick,
 }: ScheduleCalendarGridProps) {
   const getPatientLabel = (booking: Booking) => {
     const raw =
@@ -355,18 +361,30 @@ export function ScheduleCalendarGrid({
               </Table.Th>
               {doctors.map((d) => (
                 <Table.Th key={d.id}>
-                  <Anchor
-                    component={Link}
-                    to={`${ROUTE_PATHS.admin.doctors}?doctor_id=${d.id}&doctor_tab=schedule`}
-                    size="sm"
-                    fw={600}
-                    c="gray.8"
-                    underline="hover"
-                    lineClamp={2}
-                    style={{ lineHeight: 1.3 }}
-                  >
-                    {d.name}
-                  </Anchor>
+                  {onDoctorHeaderClick ? (
+                    <UnstyledButton
+                      type="button"
+                      onClick={() => onDoctorHeaderClick(d.id)}
+                      style={{ width: "100%", textAlign: "left" }}
+                    >
+                      <Text size="sm" fw={600} c="gray.8" lineClamp={2} style={{ lineHeight: 1.3 }}>
+                        {d.name}
+                      </Text>
+                    </UnstyledButton>
+                  ) : (
+                    <Anchor
+                      component={Link}
+                      to={`${ROUTE_PATHS.admin.doctors}?doctor_id=${d.id}&doctor_tab=schedule`}
+                      size="sm"
+                      fw={600}
+                      c="gray.8"
+                      underline="hover"
+                      lineClamp={2}
+                      style={{ lineHeight: 1.3 }}
+                    >
+                      {d.name}
+                    </Anchor>
+                  )}
                 </Table.Th>
               ))}
             </Table.Tr>
@@ -442,22 +460,49 @@ export function ScheduleCalendarGrid({
                                 </Badge>
                               )}
                               <Group gap={6} wrap="nowrap" align="center">
-                                <Anchor
-                                  component={Link}
-                                  to={`${ROUTE_PATHS.admin.patients}?patient_id=${booking.patient_id}`}
-                                  size="sm"
-                                  fw={600}
-                                  lineClamp={1}
-                                  underline="hover"
-                                  style={{
-                                    flex: 1,
-                                    minWidth: 0,
-                                    color: tc?.primary,
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {getPatientLabel(booking)}
-                                </Anchor>
+                                {onPatientProfileClick ? (
+                                  <Text
+                                    component="button"
+                                    type="button"
+                                    size="sm"
+                                    fw={600}
+                                    lineClamp={1}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onPatientProfileClick(booking);
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      minWidth: 0,
+                                      color: tc?.primary,
+                                      background: "none",
+                                      border: "none",
+                                      padding: 0,
+                                      cursor: "pointer",
+                                      textAlign: "left",
+                                      font: "inherit",
+                                    }}
+                                  >
+                                    {getPatientLabel(booking)}
+                                  </Text>
+                                ) : (
+                                  <Anchor
+                                    component={Link}
+                                    to={`${ROUTE_PATHS.admin.patients}?patient_id=${booking.patient_id}`}
+                                    size="sm"
+                                    fw={600}
+                                    lineClamp={1}
+                                    underline="hover"
+                                    style={{
+                                      flex: 1,
+                                      minWidth: 0,
+                                      color: tc?.primary,
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {getPatientLabel(booking)}
+                                  </Anchor>
+                                )}
                                 {booking.notes?.trim() ? (
                                   <IconMessageCircle
                                     size={14}

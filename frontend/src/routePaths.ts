@@ -49,6 +49,7 @@ export const ROUTE_PATHS = {
     discounts: "/admin/discounts",
     notificationPolicy: "/admin/notification-policy",
     agreements: "/admin/agreements",
+    rightsPolicies: "/admin/rights-policies",
   },
   patient: {
     home: "/app",
@@ -109,6 +110,7 @@ export const ADMIN_SHELL_ROUTE_SEGMENTS = [
   "discounts",
   "notification-policy",
   "agreements",
+  "rights-policies",
 ] as const;
 
 export type AdminShellSegment = (typeof ADMIN_SHELL_ROUTE_SEGMENTS)[number];

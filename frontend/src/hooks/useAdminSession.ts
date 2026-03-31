@@ -6,6 +6,8 @@ export interface AdminSessionPayload {
   clinic_id: string;
   permissions: string[];
   roles: string[];
+  organization_id?: string | null;
+  accessible_clinic_ids?: string[];
 }
 
 /** RBAC снимок для UI (лента, staff collab): после логина инвалидируйте ключ `queryKeys.adminSession()`. */
