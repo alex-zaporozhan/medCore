@@ -12,7 +12,7 @@ from src.application.dto.staff_directory_dto import (
     StaffProfessionCategoryRead,
 )
 from src.application.services.rbac_user_roles_write import (
-    replace_user_roles_for_clinic,
+    replace_user_roles_for_users_in_clinic,
 )
 from src.application.services.staff_directory_cache import invalidate_staff_profession_categories_cache
 from src.domain.entities.admin_user import AdminUser
@@ -130,19 +130,25 @@ class StaffDirectoryService:
                 AdminUser.deleted_at.is_(None),
             )
         )
-        for (uid,) in res.all():
-            await replace_user_roles_for_clinic(
-                self._session,
-                clinic_id=clinic_id,
-                user_id=uid,
-                role_codes=template_codes,
-                actor_admin_id=actor_admin_id,
-                audit_action="staff.category_roles.sync",
-                entity_type="admin_user",
-                entity_id=str(uid),
-                note=None,
-                preserve_owner_role=True,
-            )
+        user_ids = [uid for (uid,) in res.all() if uid is not None]
+        if not user_ids:
+            return
+        await replace_user_roles_for_users_in_clinic(
+            self._session,
+            clinic_id=clinic_id,
+            user_ids=user_ids,
+            role_codes=template_codes,
+            actor_admin_id=actor_admin_id,
+            audit_action="staff.category_roles.sync",
+            entity_type="admin_user",
+            entity_id=str(category_id),
+            note=f"category_id={category_id}",
+            preserve_owner_role=True,
+            audit_after_payload_extra={
+                "category_id": str(category_id),
+                "template_codes": sorted(list(dict.fromkeys(template_codes))),
+            },
+        )
 
     async def soft_delete_profession_category(self, clinic_id: UUID, category_id: UUID) -> bool:
         from src.core.datetime_utils import utc_now
@@ -159,7 +165,10 @@ class StaffDirectoryService:
             return False
         await self._session.execute(
             update(AdminUser)
-            .where(AdminUser.profession_category_id == category_id)
+            .where(
+                AdminUser.clinic_id == clinic_id,
+                AdminUser.profession_category_id == category_id,
+            )
             .values(profession_category_id=None)
         )
         row.deleted_at = utc_now()
