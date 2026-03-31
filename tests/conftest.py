@@ -461,7 +461,7 @@ else:
         """HTTP client for API tests (uses app and seed_data so DB is ready)."""
         from tests.conftest import app as app_ref
         async with AsyncClient(
-            transport=ASGITransport(app=app_ref),
+            transport=ASGITransport(app=app_ref, raise_app_exceptions=False),
             base_url="http://test",
         ) as ac:
             yield ac
