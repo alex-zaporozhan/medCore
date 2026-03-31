@@ -19,3 +19,6 @@ staff_feed_comments
 staff_chat_room_members
 staff_calendar_event_participants
 waitlist_notifications
+organizations
+task_board_columns
+task_task_tags
