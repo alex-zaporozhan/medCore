@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 
 from src.api.v1.router import api_router
@@ -151,37 +152,84 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """Unify HTTPException into {detail, code, trace_id?} envelope.
-
-    Many clients (front/TanStack) can consume `code` when present, but they
-    can also fall back to string `detail`.
-    """
+    """Unify HTTPException into {detail, code, trace_id?} envelope."""
     trace_id = getattr(request.state, "trace_id", None)
 
-    detail = exc.detail
-    detail_code: str | None = None
-    if isinstance(detail, dict):
-        raw = detail.get("code")
-        if isinstance(raw, str) and raw.strip():
-            detail_code = raw.strip()
+    def _snake_code(s: str) -> str:
+        raw = (s or "").strip()
+        if not raw:
+            return ""
+        # Normalize to SNAKE_CASE
+        import re
+
+        raw = raw.replace("-", "_").replace(" ", "_")
+        raw = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", raw)
+        raw = re.sub(r"__+", "_", raw)
+        return raw.upper()
+
+    # Prefer machine code from dict detail.
+    code_from_detail: str | None = None
+    msg_from_detail: str | None = None
+    if isinstance(exc.detail, dict):
+        raw_code = exc.detail.get("code")
+        if isinstance(raw_code, str) and raw_code.strip():
+            code_from_detail = _snake_code(raw_code)
+        raw_msg = exc.detail.get("message") or exc.detail.get("detail")
+        if isinstance(raw_msg, str) and raw_msg.strip():
+            msg_from_detail = raw_msg.strip()
 
     status_code_to_code: dict[int, str] = {
-        401: "unauthorized",
-        403: "forbidden",
-        404: "not_found",
-        409: "conflict",
-        422: "validation_error",
-        429: "rate_limited",
+        400: "BAD_REQUEST",
+        401: "UNAUTHORIZED",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        409: "CONFLICT",
+        422: "VALIDATION_ERROR",
+        429: "RATE_LIMITED",
     }
-    code = detail_code or status_code_to_code.get(exc.status_code) or "http_error"
+    code = code_from_detail or status_code_to_code.get(exc.status_code) or "HTTP_ERROR"
+    code = _snake_code(code) or "HTTP_ERROR"
 
-    body: dict = {
-        "detail": detail,
-        "code": code,
-    }
+    # Always return detail as string for client consistency.
+    detail_str: str
+    if msg_from_detail:
+        detail_str = msg_from_detail
+    elif isinstance(exc.detail, str):
+        detail_str = exc.detail
+    else:
+        # Avoid leaking structured payloads; those should go to logs, not to client.
+        detail_str = "Ошибка"
+
+    body: dict = {"detail": detail_str, "code": code}
     if trace_id:
         body["trace_id"] = trace_id
     return JSONResponse(status_code=exc.status_code, content=body)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Normalize FastAPI/Pydantic validation errors to the same envelope."""
+    trace_id = getattr(request.state, "trace_id", None)
+
+    # `exc.errors()` may contain non-JSON-serializable objects in `ctx` (e.g. ValueError instances).
+    # Keep a stable, JSON-safe shape for clients and logs.
+    safe_errors: list[dict] = []
+    for e in exc.errors():
+        if not isinstance(e, dict):
+            safe_errors.append({"message": str(e)})
+            continue
+        e2 = dict(e)
+        e2.pop("ctx", None)
+        safe_errors.append(e2)
+
+    body: dict = {
+        "detail": "Некорректные данные запроса",
+        "code": "VALIDATION_ERROR",
+        "errors": safe_errors,
+    }
+    if trace_id:
+        body["trace_id"] = trace_id
+    return JSONResponse(status_code=422, content=body)
 
 # Include API router
 app.include_router(api_router, prefix=settings.api_v1_prefix)
@@ -191,6 +239,15 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok", "service": settings.app_name}
+
+
+@app.get("/health/s3")
+async def health_s3():
+    """Probe S3-compatible storage (medical files)."""
+    from src.infrastructure.storage.s3_storage import MedicalFilesStorage
+
+    storage = MedicalFilesStorage()
+    return storage.health_check()
 
 
 @app.get("/health/replica")
