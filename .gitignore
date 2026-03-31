@@ -34,7 +34,8 @@ ENV/
 *~
 
 # Docs
-/docs
+# Docs are part of the repo (runbooks, passports, artifacts).
+# Do not ignore the whole directory; ignore only bulky/derived outputs if needed.
 .cursorrules
 .cursorignore
 /docs_archives

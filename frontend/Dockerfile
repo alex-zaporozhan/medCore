@@ -1,4 +1,4 @@
-# Default: Docker Hub (works with standard daemon/proxy). Override if needed:
+# Default: docker.io (works with standard daemon/proxy). Override if needed:
 #   docker build --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:20-alpine -t dental-booking-frontend:local .
 ARG NODE_IMAGE=node:20-alpine
 FROM ${NODE_IMAGE} AS build
