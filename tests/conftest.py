@@ -27,6 +27,7 @@ Run from project root: poetry run pytest tests/
 - TRUNCATE runs only when the DB name contains "test". Never point at production.
 """
 import os
+import asyncio
 import subprocess
 import sys
 import uuid
@@ -284,11 +285,12 @@ else:
                 )
             )
             from src.api.v1.routers.admin_auth import hash_password
+            admin_email = f"admin-{uuid.uuid4().hex[:10]}@test-clinic.local"
             session.add(
                 AdminUser(
                     id=admin_id,
                     clinic_id=clinic_id,
-                    email="admin@test-clinic.local",
+                    email=admin_email,
                     password_hash=hash_password("password123"),
                     full_name="Test Admin",
                 )
@@ -357,11 +359,12 @@ else:
                 p = pr.scalar_one_or_none()
                 if p:
                     session.add(RolePermission(role_id=doctor_role_id, permission_id=p.id))
+            doctor_email = f"doctor-{uuid.uuid4().hex[:10]}@test-clinic.local"
             session.add(
                 AdminUser(
                     id=doctor_admin_id,
                     clinic_id=clinic_id,
-                    email="doctor@test-clinic.local",
+                    email=doctor_email,
                     password_hash=hash_password("password123"),
                     full_name="Test Doctor",
                 )
@@ -383,6 +386,8 @@ else:
             "patient_id": patient_id,
             "admin_id": admin_id,
             "doctor_admin_id": doctor_admin_id,
+            "admin_email": admin_email,
+            "doctor_email": doctor_email,
             "date": tomorrow,
         }
 
@@ -426,7 +431,7 @@ else:
         Kept function-scoped; rate limit for admin login is disabled in TESTING=1 (config) to avoid 429 in full suite."""
         r = await client.post(
             "/api/v1/admin/auth/login",
-            json={"email": "admin@test-clinic.local", "password": "password123"},
+            json={"email": seed_data["admin_email"], "password": "password123"},
         )
         assert r.status_code == 200, r.text
         data = r.json()
@@ -441,7 +446,7 @@ else:
         """Clinic user with role `doctor` (no ``patients.pii.read``)."""
         r = await client.post(
             "/api/v1/admin/auth/login",
-            json={"email": "doctor@test-clinic.local", "password": "password123"},
+            json={"email": seed_data["doctor_email"], "password": "password123"},
         )
         assert r.status_code == 200, r.text
         data = r.json()
@@ -462,7 +467,7 @@ else:
             yield ac
 
     @pytest.fixture
-    async def db_session(init_db, seed_data):
+    def db_session(request, init_db, seed_data):
         """
         Async SQLAlchemy session for service-layer tests.
 
@@ -470,8 +475,25 @@ else:
         """
         from src.infrastructure.database import base as db_base
 
-        async with db_base.AsyncSessionLocal() as session:
-            # Note: do not force rollback in fixture finalizer. On Windows/Proactor loop
-            # some environments close the loop before async-generator teardown runs,
-            # which makes rollback fail with "Event loop is closed".
-            yield session
+        session = db_base.AsyncSessionLocal()
+
+        async def _aclose() -> None:
+            await session.close()
+
+        def _finalizer() -> None:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    raise RuntimeError("event loop is closed")
+                loop.run_until_complete(_aclose())
+            except Exception:
+                # Pytest teardown order on Windows can close the main loop before fixture finalizers.
+                # Best-effort close on a fresh loop to avoid suite failures.
+                loop = asyncio.new_event_loop()
+                try:
+                    loop.run_until_complete(_aclose())
+                finally:
+                    loop.close()
+
+        request.addfinalizer(_finalizer)
+        return session
