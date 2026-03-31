@@ -488,7 +488,7 @@ async def patch_omni_chat(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    if body.assignee_admin_id is not None:
+    if "assignee_admin_id" in body.model_fields_set:
         if body.assignee_admin_id:
             res = await session.execute(
                 select(AdminUser).where(
@@ -503,7 +503,7 @@ async def patch_omni_chat(
                     detail="assignee_admin_id is not a valid admin for this clinic",
                 )
         chat.assignee_admin_id = body.assignee_admin_id
-    if body.status is not None:
+    if "status" in body.model_fields_set and body.status is not None:
         chat.status = body.status
     await session.flush()
 
