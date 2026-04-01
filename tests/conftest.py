@@ -204,7 +204,23 @@ else:
             )
         tables = ",".join(f'"{t}"' for t in Base.metadata.tables)
         async with db_base.engine.begin() as conn:
-            await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+            # TRUNCATE ... CASCADE takes ACCESS EXCLUSIVE locks on many tables.
+            # If any other session holds locks (e.g., local dev server, psql, another pytest run),
+            # Postgres can wait "forever" which makes the pre-push gate look hung.
+            # Fail fast with a helpful message instead of hanging.
+            await conn.execute(text("SET lock_timeout = '5s'"))
+            await conn.execute(text("SET statement_timeout = '120s'"))
+            try:
+                await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+            except Exception as e:
+                msg = str(e).lower()
+                if "lock timeout" in msg or "canceling statement due to lock timeout" in msg:
+                    pytest.fail(
+                        "Test DB cleanup is blocked by another connection holding locks. "
+                        "Stop local services connected to the test DB (uvicorn/celery/psql/other pytest), "
+                        "then re-run tests/push."
+                    )
+                raise
         yield
 
     @pytest.fixture(scope="session")
