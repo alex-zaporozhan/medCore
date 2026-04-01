@@ -28,7 +28,9 @@ jobs:
           scan-type: fs
           scan-ref: "."
           severity: CRITICAL
-          exit-code: "1"
+          # On PR we report findings but do not block merge (review/triage happens in PR).
+          # On push to main/master we stay strict and fail on CRITICAL.
+          exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
           ignore-unfixed: true
           # Python/Box focus: не сканируем дерево npm (отдельный контур frontend-ci / registry).
           skip-dirs: "frontend/node_modules,.venv"
