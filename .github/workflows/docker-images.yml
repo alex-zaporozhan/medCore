@@ -1,10 +1,9 @@
 name: Legacy: CI (tests) + Docker images (disabled; Jenkins+GHCR is primary)
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  # Jenkins is the source of truth for image build/publish.
+  # Keep this workflow manual-only to avoid duplicate image pipelines.
+  workflow_dispatch: {}
 
 permissions:
   contents: read
