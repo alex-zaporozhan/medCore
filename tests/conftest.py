@@ -52,7 +52,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key")
 os.environ["TESTING"] = "1"
 
-# Load .env from project root so DATABASE_URL/REDIS_URL exist when not set in shell
+# Load .env from project root so DATABASE_URL_TEST/REDIS_URL_TEST exist when not set in shell
 _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 if os.path.isfile(_env_path):
     with open(_env_path, encoding="utf-8") as f:
@@ -65,17 +65,14 @@ if os.path.isfile(_env_path):
                 if k and os.environ.get(k) is None:
                     os.environ[k] = v
 
-if os.environ.get("DATABASE_URL_TEST"):
-    os.environ["DATABASE_URL"] = os.environ["DATABASE_URL_TEST"]
-else:
-    # Use same credentials as DATABASE_URL but database=dental_booking_test
-    base_url = os.environ.get("DATABASE_URL", "")
-    if base_url and "dental_booking_test" not in base_url:
-        parsed = urlparse(base_url)
-        new_url = f"{parsed.scheme}://{parsed.netloc}/dental_booking_test"
-        if parsed.query:
-            new_url += "?" + parsed.query
-        os.environ["DATABASE_URL"] = new_url
+_db_test_url = os.environ.get("DATABASE_URL_TEST")
+if not _db_test_url:
+    pytest.fail(
+        "DATABASE_URL_TEST is required for tests to run reliably. "
+        "Set it in your shell or in .env, e.g. "
+        "DATABASE_URL_TEST=postgresql+asyncpg://postgres:pass@localhost:5432/dental_booking_test"
+    )
+os.environ["DATABASE_URL"] = _db_test_url
 if os.environ.get("REDIS_URL_TEST"):
     os.environ["REDIS_URL"] = os.environ["REDIS_URL_TEST"]
 
@@ -155,7 +152,7 @@ else:
             if "invalidpassworderror" in type(e).__name__.lower() or "password" in err_s:
                 pytest.skip(
                     "Cannot connect to test DB (invalid password). "
-                    "Set DATABASE_URL (or DATABASE_URL_TEST) to your test DB, e.g. same as .env but database=dental_booking_test."
+                    "Set DATABASE_URL_TEST to your test DB, e.g. database=dental_booking_test."
                 )
             if "does not exist" in err_s and "database" in err_s:
                 pytest.skip(
@@ -183,7 +180,7 @@ else:
 
     def _test_db_name_ok():
         """Ensure we do not TRUNCATE production. Only allow DB name containing 'test'."""
-        url = os.environ.get("DATABASE_URL", "")
+        url = os.environ.get("DATABASE_URL_TEST", "") or os.environ.get("DATABASE_URL", "")
         if not url:
             return False
         path = urlparse(url).path or ""
@@ -198,10 +195,10 @@ else:
         from sqlalchemy import text
         from src.infrastructure.database import base as db_base
         if not _test_db_name_ok():
-            pytest.fail(
-                "Refusing to TRUNCATE: DATABASE_URL database name must contain 'test' (e.g. dental_booking_test). "
-                "Set DATABASE_URL_TEST=postgresql+asyncpg://user:pass@host:5432/dental_booking_test"
-            )
+                pytest.fail(
+                    "Refusing to TRUNCATE: DATABASE_URL_TEST database name must contain 'test' (e.g. dental_booking_test). "
+                    "Set DATABASE_URL_TEST=postgresql+asyncpg://user:pass@host:5432/dental_booking_test"
+                )
         tables = ",".join(f'"{t}"' for t in Base.metadata.tables)
         async with db_base.engine.begin() as conn:
             # TRUNCATE ... CASCADE takes ACCESS EXCLUSIVE locks on many tables.
