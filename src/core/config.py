@@ -228,6 +228,22 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
+    def _normalize_api_prefixes(self) -> "Settings":
+        """
+        FastAPI requires router prefixes to start with '/'.
+
+        Some environments may provide API_V1_PREFIX without the leading slash (e.g. "api/v1"),
+        which breaks app import and test collection.
+        """
+        p = (self.api_v1_prefix or "").strip()
+        if not p:
+            p = "/api/v1"
+        if not p.startswith("/"):
+            p = "/" + p
+        object.__setattr__(self, "api_v1_prefix", p)
+        return self
+
+    @model_validator(mode="after")
     def _disable_admin_login_rate_limit_in_tests(self) -> "Settings":
         """In tests (TESTING=1), disable admin login rate limit to avoid 429 in full suite."""
         if os.environ.get("TESTING") == "1":
