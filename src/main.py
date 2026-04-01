@@ -233,6 +233,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 # Include API router
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+if settings.api_v1_prefix != "/api/v1":
+    # Compatibility alias: many clients/tests assume /api/v1 regardless of env config.
+    app.include_router(api_router, prefix="/api/v1")
 
 
 @app.get("/health")
