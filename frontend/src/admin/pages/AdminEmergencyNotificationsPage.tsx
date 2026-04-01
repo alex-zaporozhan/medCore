@@ -1,139 +1,449 @@
-/**
- * Экстренные уведомления (бывш. «лента внимания»): только сюда, не на главной ленте.
- */
-import { useAttentionFeed } from "@/hooks/useAttentionFeed";
-import { PageSkeleton, EmptyState, ContextBar, QueryErrorAlert } from "@/shared/ui";
+import { useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
   Card,
   Group,
-  ScrollArea,
+  Modal,
+  MultiSelect,
+  Select,
   Stack,
   Text,
+  Textarea,
+  Divider,
+  Alert,
 } from "@mantine/core";
-import { Link } from "react-router-dom";
-import { useMemo } from "react";
-import { ROUTE_PATHS } from "@/routePaths";
-import type { AttentionItem } from "@/api/types";
-import { useAdminClinic } from "@/contexts/AdminClinicContext";
+import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
+import { useAdminSession } from "@/hooks/useAdminSession";
+import { useAdminAdmins } from "@/hooks/useAdminAdmins";
+import {
+  useAddStaffFeedComment,
+  useCreateStaffFeedPost,
+  useStaffAnnouncementPublishPolicy,
+  useUpdateStaffAnnouncementPublishPolicy,
+  useStaffFeedComments,
+  useUpdateStaffFeedComment,
+  useDeleteStaffFeedComment,
+  useStaffFeedPostAckStatus,
+  useStaffAnnouncements,
+  useAckStaffFeedPost,
+} from "@/hooks/useStaffCollab";
+import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
+import { PersonNameLink } from "@/shared/ui";
+import { ApiErrorWithCode, getAdminId } from "@/api/client";
+import { ActionIcon, Menu } from "@mantine/core";
+import { IconDots, IconTrash, IconEdit } from "@tabler/icons-react";
 
-function flattenAttentionFeed(
-  data:
-    | { follow_up: AttentionItem[]; retention_gap: AttentionItem[]; conflicts: AttentionItem[] }
-    | undefined
-): AttentionItem[] {
-  if (!data) return [];
-  const all = [
-    ...data.follow_up.map((i) => ({ ...i, kind: "follow_up" as const })),
-    ...data.retention_gap.map((i) => ({ ...i, kind: "retention_gap" as const })),
-    ...data.conflicts.map((i) => ({ ...i, kind: "conflict" as const })),
-  ];
-  return all.sort((a, b) => a.priority - b.priority);
+function canPublish(session: { roles: string[]; permissions: string[] } | undefined) {
+  return Boolean(session);
 }
 
-const KIND_LABEL: Record<string, string> = {
-  follow_up: "Перезвонить",
-  retention_gap: "Давно не был",
-  conflict: "Конфликт",
-};
-const KIND_COLOR: Record<string, string> = {
-  follow_up: "indigo",
-  retention_gap: "yellow",
-  conflict: "red",
-};
+function priorityColor(v?: string) {
+  if (v === "critical") return "red";
+  if (v === "priority") return "orange";
+  return "gray";
+}
+
+function CommentList({ postId }: { postId: string }) {
+  const { data: comments = [] } = useStaffFeedComments(postId);
+  const [text, setText] = useState("");
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const addMut = useAddStaffFeedComment(postId);
+  const updateMut = useUpdateStaffFeedComment(postId);
+  const deleteMut = useDeleteStaffFeedComment(postId);
+  const { data: session } = useAdminSession();
+  const myId = getAdminId();
+  const canModerate =
+    Boolean(session?.roles?.includes("owner")) ||
+    Boolean(session?.permissions?.includes("staff.feed.comments.moderate"));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState<string>("");
+  const [err, setErr] = useState<string | null>(null);
+  const options = comments.map((c) => ({
+    value: c.id,
+    label: c.author.full_name?.trim() || "Сотрудник",
+  }));
+  return (
+    <Stack gap={6}>
+      {err ? (
+        <Alert color="red" title="Ошибка" onClose={() => setErr(null)} withCloseButton>
+          {err}
+        </Alert>
+      ) : null}
+      {comments.map((c) => (
+        <Card key={c.id} withBorder padding="xs">
+          <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+            <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+              <Text size="xs" c="dimmed">
+                <PersonNameLink kind="staff" id={c.author.id} label={c.author.full_name} size="xs" />
+              </Text>
+              {c.deleted_at ? (
+                <Text size="sm" c="dimmed" style={{ textDecoration: "line-through", whiteSpace: "pre-wrap" }}>
+                  <AppleEmojiRichText text={c.body || "Удалено"} />
+                </Text>
+              ) : editingId === c.id ? (
+                <Stack gap="xs">
+                  <Textarea minRows={2} value={editText} onChange={(e) => setEditText(e.currentTarget.value)} />
+                  <Group justify="flex-end" gap="xs">
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      onClick={() => {
+                        setEditingId(null);
+                        setEditText("");
+                      }}
+                      disabled={updateMut.isPending}
+                    >
+                      Отмена
+                    </Button>
+                    <Button
+                      size="xs"
+                      onClick={async () => {
+                        if (!editText.trim()) return;
+                        setErr(null);
+                        try {
+                          await updateMut.mutateAsync({ commentId: c.id, body: editText.trim() });
+                          setEditingId(null);
+                          setEditText("");
+                        } catch (e) {
+                          setErr(e instanceof ApiErrorWithCode ? e.message : "Не удалось сохранить комментарий");
+                        }
+                      }}
+                      loading={updateMut.isPending}
+                    >
+                      Сохранить
+                    </Button>
+                  </Group>
+                </Stack>
+              ) : (
+                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                  <AppleEmojiRichText text={c.body} />
+                </Text>
+              )}
+            </Stack>
+            {!c.deleted_at && (c.author.id === myId || canModerate) ? (
+              <Menu position="bottom-end" withinPortal>
+                <Menu.Target>
+                  <ActionIcon size="sm" variant="subtle" aria-label="Действия">
+                    <IconDots size={16} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {c.author.id === myId ? (
+                    <Menu.Item
+                      leftSection={<IconEdit size={14} />}
+                      onClick={() => {
+                        setErr(null);
+                        setEditingId(c.id);
+                        setEditText(c.body ?? "");
+                      }}
+                    >
+                      Редактировать
+                    </Menu.Item>
+                  ) : null}
+                  <Menu.Item
+                    color="red"
+                    leftSection={<IconTrash size={14} />}
+                    disabled={deleteMut.isPending}
+                    onClick={async () => {
+                      const ok = window.confirm("Удалить комментарий?");
+                      if (!ok) return;
+                      setErr(null);
+                      try {
+                        await deleteMut.mutateAsync(c.id);
+                      } catch (e) {
+                        setErr(e instanceof ApiErrorWithCode ? e.message : "Не удалось удалить комментарий");
+                      }
+                    }}
+                  >
+                    Удалить
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            ) : null}
+          </Group>
+        </Card>
+      ))}
+      <Select
+        placeholder="Ответить всем или конкретному"
+        value={replyTo}
+        onChange={setReplyTo}
+        data={[{ value: "", label: "Ответить всем" }, ...options]}
+      />
+      <Textarea
+        minRows={2}
+        placeholder="Комментарий (текст + emoji)"
+        value={text}
+        onChange={(e) => setText(e.currentTarget.value)}
+      />
+      <Group justify="flex-end">
+        <Button
+          size="xs"
+          onClick={() => {
+            if (!text.trim()) return;
+            addMut.mutate({
+              body: text.trim(),
+              parent_comment_id: replyTo ? replyTo : null,
+            });
+            setText("");
+            setReplyTo(null);
+          }}
+          loading={addMut.isPending}
+        >
+          Отправить
+        </Button>
+      </Group>
+    </Stack>
+  );
+}
 
 export default function AdminEmergencyNotificationsPage() {
-  const { currentClinicId } = useAdminClinic();
-  const { data: attentionData, isLoading, isError, error } = useAttentionFeed(currentClinicId ?? null);
-  const attentionItems = useMemo(() => flattenAttentionFeed(attentionData), [attentionData]);
+  const { data, isLoading, isError, error } = useStaffAnnouncements(50);
+  const { data: session } = useAdminSession();
+  const { data: admins = [] } = useAdminAdmins();
+  const createMut = useCreateStaffFeedPost();
+  const ackMut = useAckStaffFeedPost();
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [audienceRoles, setAudienceRoles] = useState<string[]>([]);
+  const [audienceAdmins, setAudienceAdmins] = useState<string[]>([]);
+  const [priority, setPriority] = useState<"normal" | "priority" | "critical">("normal");
+  const [ackStatusPostId, setAckStatusPostId] = useState<string | null>(null);
+  const { data: ackStatus } = useStaffFeedPostAckStatus(ackStatusPostId);
+
+  const posts = useMemo(() => data ?? [], [data]);
+  const allowCreate = canPublish(session);
+  const canManagePolicy = Boolean(session?.permissions?.includes("rbac.manage"));
+  const { data: policyData } = useStaffAnnouncementPublishPolicy();
+  const updatePolicyMut = useUpdateStaffAnnouncementPublishPolicy();
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [denyRoles, setDenyRoles] = useState<string[]>([]);
+  const [denyAdmins, setDenyAdmins] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!canManagePolicy) return;
+    const policies = policyData?.policies ?? [];
+    const roles = policies
+      .filter((p) => p.scope_type === "role" && p.can_publish === false)
+      .map((p) => p.scope_value);
+    const users = policies
+      .filter((p) => p.scope_type === "user" && p.can_publish === false)
+      .map((p) => p.scope_value);
+    setDenyRoles(roles);
+    setDenyAdmins(users);
+  }, [canManagePolicy, policyData?.policies]);
 
   if (isLoading) {
     return (
       <Stack gap="md">
-        <ContextBar title="Приоритетные сообщения" />
+        <ContextBar title="Стена объявлений" />
         <PageSkeleton variant="table" rows={4} />
       </Stack>
     );
   }
-
   if (isError) {
     return (
       <Stack gap="md">
-        <ContextBar title="Приоритетные сообщения" />
+        <ContextBar title="Стена объявлений" />
         <QueryErrorAlert error={error} />
       </Stack>
     );
   }
 
   return (
-    <Stack gap="lg">
-      <ContextBar title="Приоритетные сообщения" />
-      <Text size="sm" c="dimmed">
-        Приоритетные сообщения (отмена совещания, перенос пациентов при болезни врача и т.п.) — отдельно от главной ленты
-        новостей. Дальше этот канал будет связан с системой персональных оповещений администратора.
-      </Text>
-      {attentionItems.length === 0 ? (
-        <EmptyState
-          title="Нет экстренных элементов"
-          description="Когда появятся события из CRM, конфликтов слотов или напоминаний, они отобразятся здесь."
-          action={{
-            label: "На ленту",
-            onClick: () => {
-              window.location.assign(ROUTE_PATHS.admin.dashboard);
-            },
-          }}
-        />
-      ) : (
-        <ScrollArea h={560} type="scroll">
+    <Stack gap="md">
+      <ContextBar title="Стена объявлений" />
+      {canManagePolicy ? (
+        <Card withBorder>
           <Stack gap="xs">
-            {attentionItems.map((item) => (
-              <Card
-                key={`${item.kind}-${item.id}`}
-                withBorder
-                radius="md"
-                padding="sm"
-                bg="white"
-                styles={{ root: { borderColor: "var(--mantine-color-gray-3)" } }}
+            <Text fw={600}>Права на публикацию объявлений</Text>
+            <Text size="sm" c="dimmed">
+              По умолчанию публиковать могут все сотрудники. Здесь можно запретить по роли или точечно по человеку.
+            </Text>
+            {policyError ? (
+              <Alert color="red" title="Ошибка" onClose={() => setPolicyError(null)} withCloseButton>
+                {policyError}
+              </Alert>
+            ) : null}
+            <Group grow align="flex-end">
+              <MultiSelect
+                label="Запретить по ролям"
+                data={[
+                  { value: "manager", label: "Менеджер" },
+                  { value: "admin", label: "Администратор" },
+                  { value: "doctor", label: "Врач/мастер" },
+                ]}
+                value={denyRoles}
+                onChange={setDenyRoles}
+                placeholder="Пусто = без запретов"
+              />
+              <MultiSelect
+                label="Запретить конкретным сотрудникам"
+                data={admins.map((a) => ({ value: a.id, label: a.full_name?.trim() || a.email }))}
+                value={denyAdmins}
+                onChange={setDenyAdmins}
+                placeholder="Пусто = без запретов"
+              />
+            </Group>
+            <Group justify="flex-end">
+              <Button
+                variant="light"
+                onClick={async () => {
+                  setPolicyError(null);
+                  try {
+                    const payload = [
+                      ...denyRoles.map((r) => ({
+                        scope_type: "role" as const,
+                        scope_value: r,
+                        can_publish: false,
+                      })),
+                      ...denyAdmins.map((id) => ({
+                        scope_type: "user" as const,
+                        scope_value: id,
+                        can_publish: false,
+                      })),
+                    ];
+                    await updatePolicyMut.mutateAsync(payload);
+                  } catch (e) {
+                    setPolicyError(e instanceof Error ? e.message : "Не удалось сохранить политику");
+                  }
+                }}
+                loading={updatePolicyMut.isPending}
               >
+                Сохранить политику
+              </Button>
+            </Group>
+          </Stack>
+        </Card>
+      ) : null}
+
+      <Divider />
+      {allowCreate ? (
+        <Card withBorder>
+          <Stack gap="xs">
+            <Text size="sm" c="dimmed">
+              Публикация объявления для всех или выбранных сотрудников.
+            </Text>
+            <Textarea placeholder="Заголовок" minRows={1} value={title} onChange={(e) => setTitle(e.currentTarget.value)} />
+            <Textarea placeholder="Текст объявления" minRows={3} value={body} onChange={(e) => setBody(e.currentTarget.value)} />
+            <Group grow>
+              <MultiSelect
+                label="По категориям персонала"
+                data={[
+                  { value: "owner", label: "Владелец" },
+                  { value: "manager", label: "Менеджер" },
+                  { value: "admin", label: "Администратор" },
+                  { value: "doctor", label: "Врач/мастер" },
+                ]}
+                value={audienceRoles}
+                onChange={setAudienceRoles}
+                placeholder="Пусто = всем"
+              />
+              <MultiSelect
+                label="Индивидуально"
+                data={admins.map((a) => ({ value: a.id, label: a.full_name?.trim() || a.email }))}
+                value={audienceAdmins}
+                onChange={setAudienceAdmins}
+                placeholder="Дополнительно"
+              />
+              <Select
+                label="Приоритет"
+                value={priority}
+                onChange={(v) => setPriority((v as "normal" | "priority" | "critical") || "normal")}
+                data={[
+                  { value: "normal", label: "Обычный" },
+                  { value: "priority", label: "Приоритет" },
+                  { value: "critical", label: "Критично" },
+                ]}
+              />
+            </Group>
+            <Group justify="flex-end">
+              <Button
+                onClick={() => {
+                  if (!body.trim()) return;
+                  createMut.mutate({
+                    title: title.trim() || "Объявление",
+                    body: body.trim(),
+                    is_announcement: true,
+                    requires_ack: true,
+                    priority_level: priority,
+                    audience_roles: audienceRoles,
+                    audience_admin_ids: audienceAdmins,
+                  });
+                  setTitle("");
+                  setBody("");
+                  setAudienceRoles([]);
+                  setAudienceAdmins([]);
+                  setPriority("normal");
+                }}
+                loading={createMut.isPending}
+              >
+                Опубликовать
+              </Button>
+            </Group>
+          </Stack>
+        </Card>
+      ) : null}
+
+      {posts.length === 0 ? (
+        <EmptyState title="Нет объявлений" description="Опубликованные рабочие объявления появятся здесь." />
+      ) : (
+        <Stack gap="sm">
+          {posts.map((post) => (
+            <Card key={post.id} withBorder style={!post.acknowledged_by_me ? { boxShadow: "0 0 0 2px rgba(250, 82, 82, 0.25)" } : undefined}>
+              <Stack gap="xs">
                 <Group justify="space-between" align="flex-start">
-                  <Stack gap={4}>
-                    <Text fw={600} size="sm" truncate>
-                      {item.patient_full_name || item.patient_phone || item.title}
-                    </Text>
+                  <Stack gap={2}>
+                    <Text fw={600}>{post.title || "Объявление"}</Text>
                     <Text size="xs" c="dimmed">
-                      {item.description}
+                      {post.author.full_name || "Сотрудник"} · {new Date(post.created_at).toLocaleString()}
                     </Text>
-                    <Group gap="xs">
-                      <Badge size="xs" color={KIND_COLOR[item.kind] ?? "gray"}>
-                        {KIND_LABEL[item.kind] ?? item.kind}
-                      </Badge>
-                      {item.due_at && (
-                        <Text size="xs" c="dimmed">
-                          Срок: {new Date(item.due_at).toLocaleString()}
-                        </Text>
-                      )}
-                    </Group>
                   </Stack>
+                  <Group gap={6}>
+                    <Badge color={priorityColor(post.priority_level)}>{post.priority_level || "normal"}</Badge>
+                    <Badge variant="light">
+                      {post.acknowledged_count ?? 0}/{post.audience_total ?? 0}
+                    </Badge>
+                  </Group>
+                </Group>
+                <Text size="sm">
+                  <AppleEmojiRichText text={post.body} />
+                </Text>
+                <Group>
                   <Button
                     size="xs"
-                    variant="light"
-                    color="indigo"
-                    component={Link}
-                    to={
-                      item.conversation_id
-                        ? `${ROUTE_PATHS.admin.omniChat}?conversation=${item.conversation_id}`
-                        : ROUTE_PATHS.admin.dashboard
-                    }
+                    variant={post.acknowledged_by_me ? "subtle" : "filled"}
+                    color={post.acknowledged_by_me ? "gray" : "red"}
+                    onClick={() => ackMut.mutate(post.id)}
+                    disabled={Boolean(post.acknowledged_by_me)}
                   >
-                    Взять в работу
+                    Ознакомился
+                  </Button>
+                  <Button size="xs" variant="light" onClick={() => setAckStatusPostId(post.id)}>
+                    Кто ознакомился
                   </Button>
                 </Group>
-              </Card>
-            ))}
-          </Stack>
-        </ScrollArea>
+                <CommentList postId={post.id} />
+              </Stack>
+            </Card>
+          ))}
+        </Stack>
       )}
+
+      <Modal opened={Boolean(ackStatusPostId)} onClose={() => setAckStatusPostId(null)} title="Статус ознакомления" centered>
+        <Stack gap="xs">
+          <Text size="sm" fw={600}>Ознакомились</Text>
+          {(ackStatus?.acknowledged ?? []).map((r) => (
+            <Text key={r.admin_id} size="sm">
+              {(r.admin_name || r.admin_id)} {r.acknowledged_at ? `· ${new Date(r.acknowledged_at).toLocaleString()}` : ""}
+            </Text>
+          ))}
+          <Text size="sm" fw={600} mt="sm">Не ознакомились</Text>
+          {(ackStatus?.pending ?? []).map((r) => (
+            <Text key={r.admin_id} size="sm">{r.admin_name || r.admin_id}</Text>
+          ))}
+        </Stack>
+      </Modal>
     </Stack>
   );
 }

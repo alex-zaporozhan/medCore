@@ -114,8 +114,9 @@ export default function LoyaltyPage() {
                       padding="md"
                       radius="lg"
                       style={{
-                        background: "linear-gradient(135deg, var(--mantine-color-blue-7) 0%, var(--mantine-color-cyan-7) 100%)",
-                        color: "white",
+                        background:
+                          "linear-gradient(135deg, var(--mantine-color-indigo-7) 0%, var(--mantine-color-blue-7) 100%)",
+                        color: "var(--text-on-primary)",
                         border: "none",
                       }}
                     >

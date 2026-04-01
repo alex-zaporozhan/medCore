@@ -9,28 +9,35 @@ import {
   useDoctors,
   useAdminClinicServices,
   usePatients,
+  usePatient,
+  useDoctor,
   type CreateAdminBookingPayload,
 } from "@/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { ScheduleCalendarGrid } from "@/admin/components/ScheduleCalendarGrid";
 import { WaitlistPanel } from "@/admin/components/WaitlistPanel";
 import { BookingEntityDrawer } from "@/admin/components/entity/BookingEntityDrawer";
-import { EmptyState, GlassModal, DataSkeleton, ContextBar, QueryErrorAlert } from "@/shared/ui";
+import { EmptyState, GlassModal, DataSkeleton, ContextBar, QueryErrorAlert, CompactMonthPicker } from "@/shared/ui";
+import { PatientEntityDrawer } from "@/admin/components/entity/PatientEntityDrawer";
+import { DoctorEntityDrawer } from "@/admin/components/entity/DoctorEntityDrawer";
 import {
+  ActionIcon,
+  Box,
   Button,
   Group,
   MultiSelect,
+  Popover,
   Select,
   Stack,
   Text,
   TextInput,
 } from "@mantine/core";
 import dayjs from "dayjs";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
 import type { ComboboxItem } from "@mantine/core";
-import { IconCalendarEvent } from "@tabler/icons-react";
+import { IconCalendarEvent, IconChevronLeft, IconChevronRight, IconCalendar } from "@tabler/icons-react";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { ClinicSelector } from "@/admin/components/ClinicSelector";
 import { SEMANTIC } from "@/shared/semanticUi";
@@ -191,6 +198,15 @@ export default function SchedulePage() {
   const queryClient = useQueryClient();
   const cancelBookingMutation = useCancelBookingAdmin();
   const [createSlot, setCreateSlot] = useState<{ doctorId: string; time: string } | null>(null);
+  const [patientModalId, setPatientModalId] = useState<string | null>(null);
+  const [doctorModalId, setDoctorModalId] = useState<string | null>(null);
+  const [datePickerOpened, setDatePickerOpened] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState(() => dayjs().startOf("month"));
+  const prevDateStrRef = useRef(dateStr);
+  const [scheduleSlideSign, setScheduleSlideSign] = useState(1);
+
+  const { data: patientModalData } = usePatient(patientModalId);
+  const { data: doctorModalData } = useDoctor(doctorModalId);
   const { data: adminServices } = useAdminClinicServices(currentClinicId);
   const createAdminBooking = useCreateAdminBooking();
   const { data: patientsList } = usePatients({
@@ -258,6 +274,17 @@ export default function SchedulePage() {
     [bookings]
   );
 
+  useEffect(() => {
+    setPickerMonth(dayjs(dateStr).startOf("month"));
+  }, [dateStr]);
+
+  useEffect(() => {
+    const prev = prevDateStrRef.current;
+    if (dayjs(dateStr).isAfter(prev)) setScheduleSlideSign(1);
+    else if (dayjs(dateStr).isBefore(prev)) setScheduleSlideSign(-1);
+    prevDateStrRef.current = dateStr;
+  }, [dateStr]);
+
   const hasInitializedDoctors = useRef(false);
   useEffect(() => {
     if (!doctors?.length) return;
@@ -322,27 +349,33 @@ export default function SchedulePage() {
         searchable
         clearable
       />
-      <Group align="flex-end" gap="md">
-        <TextInput
-          label="Дата"
-          type="date"
-          value={dateStr}
-          onChange={(e) => setDateStr(e.target.value || dayjs().format("YYYY-MM-DD"))}
-        />
-        <Group gap="xs" mb={4}>
+      <Stack gap="xs">
+        <Text size="sm" fw={600}>
+          Дата
+        </Text>
+        <Group align="center" gap="sm" wrap="wrap">
+          <ActionIcon
+            variant="light"
+            size="lg"
+            radius="md"
+            color={SEMANTIC.dateNav.yesterday}
+            aria-label="Предыдущий день"
+            onClick={() => setDateStr(dayjs(dateStr).subtract(1, "day").format("YYYY-MM-DD"))}
+            style={{ boxShadow: "var(--shadow-soft-sm)" }}
+          >
+            <IconChevronLeft size={20} stroke={1.5} />
+          </ActionIcon>
           <Button
             size="xs"
             variant="light"
             color={SEMANTIC.dateNav.yesterday}
-            onClick={() =>
-              setDateStr(dayjs(dateStr).subtract(1, "day").format("YYYY-MM-DD"))
-            }
+            onClick={() => setDateStr(dayjs(dateStr).subtract(1, "day").format("YYYY-MM-DD"))}
           >
             Вчера
           </Button>
           <Button
             size="xs"
-            variant="light"
+            variant="filled"
             color={SEMANTIC.dateNav.today}
             onClick={() => setDateStr(dayjs().format("YYYY-MM-DD"))}
           >
@@ -352,14 +385,59 @@ export default function SchedulePage() {
             size="xs"
             variant="light"
             color={SEMANTIC.dateNav.tomorrow}
-            onClick={() =>
-              setDateStr(dayjs(dateStr).add(1, "day").format("YYYY-MM-DD"))
-            }
+            onClick={() => setDateStr(dayjs(dateStr).add(1, "day").format("YYYY-MM-DD"))}
           >
             Завтра
           </Button>
+          <ActionIcon
+            variant="light"
+            size="lg"
+            radius="md"
+            color={SEMANTIC.dateNav.tomorrow}
+            aria-label="Следующий день"
+            onClick={() => setDateStr(dayjs(dateStr).add(1, "day").format("YYYY-MM-DD"))}
+            style={{ boxShadow: "var(--shadow-soft-sm)" }}
+          >
+            <IconChevronRight size={20} stroke={1.5} />
+          </ActionIcon>
+          <Popover
+            position="bottom-start"
+            shadow="md"
+            opened={datePickerOpened}
+            onChange={setDatePickerOpened}
+            withArrow
+            closeOnClickOutside
+            withinPortal
+          >
+            <Popover.Target>
+              <Button
+                variant="default"
+                size="sm"
+                leftSection={<IconCalendar size={18} stroke={1.5} />}
+                onClick={() => setDatePickerOpened((o) => !o)}
+                style={{
+                  boxShadow: "var(--shadow-soft-sm)",
+                  border: "1px solid var(--input-border)",
+                }}
+              >
+                {dayjs(dateStr).format("DD MMM YYYY")}
+              </Button>
+            </Popover.Target>
+            <Popover.Dropdown p="sm">
+              <CompactMonthPicker
+                value={dateStr}
+                onChange={(iso) => {
+                  setDateStr(iso);
+                  setDatePickerOpened(false);
+                }}
+                monthAnchor={pickerMonth}
+                onMonthAnchorChange={setPickerMonth}
+                size="compact"
+              />
+            </Popover.Dropdown>
+          </Popover>
         </Group>
-      </Group>
+      </Stack>
 
       {doctorsLoading && <DataSkeleton lines={3} />}
       {doctorIds.length > 0 && scheduleLoading && <DataSkeleton lines={6} />}
@@ -390,20 +468,28 @@ export default function SchedulePage() {
                 }}
               />
             )}
-            <ScheduleCalendarGrid
-              doctors={gridDoctors}
-              date={aggregatedSchedule.date}
-              times={aggregatedSchedule.times.map((t) => String(t).slice(0, 5))}
-              byDoctor={aggregatedSchedule.by_doctor}
-              bookings={bookingsForGrid}
-              patientNameMap={patientNameMap}
-              serviceNameMap={serviceNameMap}
-              onBookingClick={(booking) => setSelectedBooking(booking)}
-              onReschedule={handleRescheduleDrag}
-              onEmptySlotClick={({ doctorId, time }) =>
-                setCreateSlot({ doctorId, time })
-              }
-            />
+            <Box
+              key={dateStr}
+              className="schedule-calendar-day-enter"
+              style={{ ["--schedule-slide" as string]: scheduleSlideSign } as CSSProperties}
+            >
+              <ScheduleCalendarGrid
+                doctors={gridDoctors}
+                date={aggregatedSchedule.date}
+                times={aggregatedSchedule.times.map((t) => String(t).slice(0, 5))}
+                byDoctor={aggregatedSchedule.by_doctor}
+                bookings={bookingsForGrid}
+                patientNameMap={patientNameMap}
+                serviceNameMap={serviceNameMap}
+                onBookingClick={(booking) => setSelectedBooking(booking)}
+                onReschedule={handleRescheduleDrag}
+                onEmptySlotClick={({ doctorId, time }) =>
+                  setCreateSlot({ doctorId, time })
+                }
+                onPatientProfileClick={(b) => setPatientModalId(b.patient_id)}
+                onDoctorHeaderClick={(id) => setDoctorModalId(id)}
+              />
+            </Box>
             <WaitlistPanel
               clinicId={currentClinicId}
               doctorId={doctorIds[0]}
@@ -518,7 +604,24 @@ export default function SchedulePage() {
         onEditTimeChange={setEditTime}
         onEditDoctorIdChange={setEditDoctorId}
         scheduleShareUrl={scheduleShareUrl}
-        onBookingNotesSaved={(b) => setSelectedBooking(b)}
+        onBookingUpdated={(b) => setSelectedBooking(b)}
+      />
+
+      <PatientEntityDrawer
+        opened={patientModalId !== null && Boolean(patientModalData)}
+        onClose={() => setPatientModalId(null)}
+        patient={patientModalData ?? null}
+        mode="view"
+        presentation="modal"
+      />
+
+      <DoctorEntityDrawer
+        opened={doctorModalId !== null && Boolean(doctorModalData)}
+        onClose={() => setDoctorModalId(null)}
+        doctor={doctorModalData ?? null}
+        mode="view"
+        initialTab="schedule"
+        presentation="modal"
       />
 
       <GlassModal

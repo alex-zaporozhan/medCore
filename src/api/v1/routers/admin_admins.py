@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.domain.entities.clinic import Clinic
+
 from src.api.v1.dependencies import get_session
 from src.api.v1.routers.admin_auth import get_current_admin, hash_password
 from src.application.services.staff_collaboration_service import StaffCollaborationService
@@ -24,6 +26,8 @@ class AdminRead(BaseModel):
     full_name: str | None
     birth_date: str | None
     employment_status: str
+    profession_category_id: str | None = None
+    profession_category_name: str | None = None
 
 
 class AdminCreate(BaseModel):
@@ -62,6 +66,8 @@ async def list_admins(
             full_name=a.full_name,
             birth_date=a.birth_date.isoformat() if a.birth_date else None,
             employment_status=a.employment_status,
+            profession_category_id=str(a.profession_category_id) if a.profession_category_id else None,
+            profession_category_name=None,
         )
         for a in admins
     ]
@@ -89,8 +95,11 @@ async def create_admin(
             birth_date = date.fromisoformat(data.birth_date)
         except ValueError:
             pass
+    cres = await session.execute(select(Clinic).where(Clinic.id == current_admin.clinic_id))
+    clinic = cres.scalar_one_or_none()
     admin = AdminUser(
         clinic_id=current_admin.clinic_id,
+        organization_id=clinic.organization_id if clinic else None,
         email=email,
         password_hash=hash_password(data.password),
         full_name=data.full_name.strip() or None,
@@ -106,6 +115,8 @@ async def create_admin(
         full_name=admin.full_name,
         birth_date=admin.birth_date.isoformat() if admin.birth_date else None,
         employment_status=admin.employment_status,
+        profession_category_id=str(admin.profession_category_id) if admin.profession_category_id else None,
+        profession_category_name=None,
     )
 
 
@@ -117,6 +128,8 @@ def _to_admin_read(a: AdminUser) -> AdminRead:
         full_name=a.full_name,
         birth_date=a.birth_date.isoformat() if a.birth_date else None,
         employment_status=a.employment_status,
+        profession_category_id=str(a.profession_category_id) if a.profession_category_id else None,
+        profession_category_name=None,
     )
 
 

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 
@@ -24,14 +24,17 @@ from src.application.dto.task_dto import (
 )
 from src.application.services.staff_collaboration_service import StaffCollaborationService
 from src.application.services.task_service import TaskService
-from src.core.metrics import task_bulk_status_total
+from src.core.metrics import task_bulk_status_total, task_context_admin_events_total
 from src.core.prometheus_labels import clinic_bucket_label
-from src.domain.entities.admin_user import AdminUser
+from src.domain.entities.admin_user import EMPLOYMENT_ACTIVE, AdminUser
 from src.domain.entities.staff_calendar_event import StaffCalendarEvent
 from src.domain.entities.staff_calendar_event_invitation import StaffCalendarEventInvitation
 from src.domain.entities.staff_calendar_event_participant import StaffCalendarEventParticipant
 from src.domain.entities.task import Task
 from src.domain.entities.task_assignee import TaskAssignee
+from src.domain.entities.task_stream import TaskStream
+from src.domain.entities.task_tag_definition import TaskTagDefinition
+from src.domain.entities.task_task_tag import TaskTaskTag
 from src.domain.entities.task_comment import TaskComment
 from src.domain.entities.task_status_transition import TaskStatusTransition
 from src.domain.interfaces.repositories.task_repository import TaskRepository
@@ -46,6 +49,135 @@ router = APIRouter(
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _due_at_calendar_not_in_past(due_at: datetime | None) -> None:
+    """Reject due dates before today (UTC calendar day)."""
+    if due_at is None:
+        return
+    dt = due_at
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    if dt.date() < _utc_now().date():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=err_payload(
+                "Срок не может быть в прошлом (по календарному дню UTC)",
+                "DUE_AT_IN_PAST",
+                field="due_at",
+            ),
+        )
+
+
+async def _ensure_assignee_admins_in_clinic(
+    session: AsyncSession,
+    clinic_id: UUID,
+    admin_ids: list[UUID],
+) -> None:
+    if not admin_ids:
+        return
+    unique = list(dict.fromkeys(admin_ids))
+    res = await session.execute(
+        select(AdminUser.id).where(
+            AdminUser.id.in_(unique),
+            AdminUser.clinic_id == clinic_id,
+            AdminUser.deleted_at.is_(None),
+            AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+        )
+    )
+    found = set(res.scalars().all())
+    if found != set(unique):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err_payload(
+                "Исполнители должны быть активными сотрудниками этой клиники",
+                "ASSIGNEE_INVALID",
+                field="assignee_ids",
+            ),
+        )
+
+
+async def _ensure_task_stream_belongs_to_clinic(
+    session: AsyncSession, clinic_id: UUID, stream_id: UUID
+) -> None:
+    """List filter: stream must exist for this clinic (archived allowed)."""
+    res = await session.execute(
+        select(TaskStream.id).where(
+            TaskStream.id == stream_id,
+            TaskStream.clinic_id == clinic_id,
+        )
+    )
+    if res.scalar_one_or_none() is None:
+        task_context_admin_events_total.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id),
+            event="list_reject_bad_stream",
+        ).inc()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err_payload(
+                "Поток не найден в этой клинике",
+                "STREAM_NOT_IN_CLINIC",
+                field="stream_id",
+            ),
+        )
+
+
+async def _ensure_task_stream_active(
+    session: AsyncSession, clinic_id: UUID, stream_id: UUID
+) -> None:
+    res = await session.execute(
+        select(TaskStream).where(
+            TaskStream.id == stream_id,
+            TaskStream.clinic_id == clinic_id,
+            TaskStream.is_archived.is_(False),
+        )
+    )
+    if res.scalar_one_or_none() is None:
+        task_context_admin_events_total.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id),
+            event="reject_inactive_stream",
+        ).inc()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=err_payload(
+                "Поток не найден или архивирован",
+                "STREAM_INVALID",
+                field="stream_id",
+            ),
+        )
+
+
+async def _ensure_task_tags_in_clinic(
+    session: AsyncSession, clinic_id: UUID, tag_ids: list[UUID]
+) -> None:
+    if not tag_ids:
+        return
+    uniq = list(dict.fromkeys(tag_ids))
+    res = await session.execute(
+        select(func.count())
+        .select_from(TaskTagDefinition)
+        .where(
+            TaskTagDefinition.id.in_(uniq),
+            TaskTagDefinition.clinic_id == clinic_id,
+        )
+    )
+    cnt = int(res.scalar_one() or 0)
+    if cnt != len(uniq):
+        task_context_admin_events_total.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id),
+            event="reject_bad_tags",
+        ).inc()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=err_payload(
+                "Один или несколько тегов не принадлежат клинике",
+                "TAG_INVALID",
+                field="tag_ids",
+            ),
+        )
+
 
 WIP_LIMITS: dict[str, int] = {
     "open": 8,
@@ -68,7 +200,7 @@ def _ensure_operation_permission(
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail=err_payload("Forbidden", "FORBIDDEN"),
+        detail=err_payload("Недостаточно прав", "FORBIDDEN"),
     )
 
 
@@ -78,7 +210,7 @@ def _ensure_all_permissions(context: AdminContext, *codes: str) -> None:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail=err_payload("Forbidden", "FORBIDDEN"),
+        detail=err_payload("Недостаточно прав", "FORBIDDEN"),
     )
 
 
@@ -164,7 +296,10 @@ async def _task_visible_to_context(
 async def _task_response(session: AsyncSession, task: Task) -> TaskResponse:
     repo: TaskRepository = TaskRepositoryImpl(session)
     m = await repo.list_assignee_ids_for_task_ids([task.id])
-    return task_entity_to_response(task, assignee_ids=m.get(task.id, []))
+    tm = await repo.list_tag_ids_for_task_ids([task.id])
+    return task_entity_to_response(
+        task, assignee_ids=m.get(task.id, []), tag_ids=tm.get(task.id, [])
+    )
 
 
 @router.get(
@@ -187,6 +322,11 @@ async def list_tasks(
         None,
         description="Filter by linked attention item id (underlying entity id from attention feed)",
     ),
+    stream_id: UUID | None = Query(None, description="Filter by task stream (semantic context)"),
+    tag_ids: list[UUID] = Query(
+        default_factory=list,
+        description="Repeat param; task must have all listed tags (AND)",
+    ),
     session: AsyncSession = Depends(get_session),
     context: AdminContext = Depends(get_request_context),
 ) -> list[TaskResponse]:
@@ -194,6 +334,11 @@ async def list_tasks(
     clinic_id = context.clinic_id
     if clinic_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clinic context is required")
+
+    if stream_id is not None:
+        await _ensure_task_stream_belongs_to_clinic(session, clinic_id, stream_id)
+    if tag_ids:
+        await _ensure_task_tags_in_clinic(session, clinic_id, list(dict.fromkeys(tag_ids)))
 
     stmt = select(Task).where(Task.clinic_id == clinic_id)
     if _is_doctor_only(context) and context.user_id:
@@ -231,6 +376,18 @@ async def list_tasks(
         stmt = stmt.where(Task.attention_kind == attention_kind)
     if attention_ref_id:
         stmt = stmt.where(Task.attention_ref_id == attention_ref_id)
+    if stream_id:
+        stmt = stmt.where(Task.stream_id == stream_id)
+    if tag_ids:
+        uniq_tags = list(dict.fromkeys(tag_ids))
+        stmt = stmt.where(
+            Task.id.in_(
+                select(TaskTaskTag.task_id)
+                .where(TaskTaskTag.tag_id.in_(uniq_tags))
+                .group_by(TaskTaskTag.task_id)
+                .having(func.count(func.distinct(TaskTaskTag.tag_id)) == len(uniq_tags))
+            )
+        )
     stmt = stmt.order_by(Task.status.asc(), Task.rank.asc(), Task.due_at.asc().nullslast(), Task.created_at.desc())
 
     result = await session.execute(stmt)
@@ -239,7 +396,13 @@ async def list_tasks(
         return []
     repo = TaskRepositoryImpl(session)
     amap = await repo.list_assignee_ids_for_task_ids([t.id for t in tasks])
-    return [task_entity_to_response(t, assignee_ids=amap.get(t.id, [])) for t in tasks]
+    tmap = await repo.list_tag_ids_for_task_ids([t.id for t in tasks])
+    return [
+        task_entity_to_response(
+            t, assignee_ids=amap.get(t.id, []), tag_ids=tmap.get(t.id, [])
+        )
+        for t in tasks
+    ]
 
 
 @router.post(
@@ -343,23 +506,43 @@ async def create_task(
         assignee_ids = list(data.assignee_ids)
     elif data.assignee_id is not None:
         assignee_ids = [data.assignee_id]
+    if assignee_ids:
+        await _ensure_assignee_admins_in_clinic(session, clinic_id, assignee_ids)
+    if data.stream_id is not None:
+        await _ensure_task_stream_active(session, clinic_id, data.stream_id)
+    if data.tag_ids:
+        await _ensure_task_tags_in_clinic(session, clinic_id, list(data.tag_ids))
+    _due_at_calendar_not_in_past(data.due_at)
     service = _get_task_service(session)
-    task = await service.create_task(
-        clinic_id=clinic_id,
-        title=data.title.strip(),
-        description=data.description,
-        priority=priority,
-        creator_id=context.user_id,
-        assignee_id=data.assignee_id,
-        assignee_ids=assignee_ids,
-        role_assignee=data.role_assignee,
-        due_at=data.due_at,
-        booking_id=data.booking_id,
-        patient_id=data.patient_id,
-        lead_id=data.lead_id,
-        inventory_product_id=data.inventory_product_id,
-        source="manual",
-    )
+    try:
+        task = await service.create_task(
+            clinic_id=clinic_id,
+            title=data.title.strip(),
+            description=data.description,
+            priority=priority,
+            creator_id=context.user_id,
+            assignee_id=data.assignee_id,
+            assignee_ids=assignee_ids,
+            role_assignee=data.role_assignee,
+            due_at=data.due_at,
+            booking_id=data.booking_id,
+            patient_id=data.patient_id,
+            lead_id=data.lead_id,
+            inventory_product_id=data.inventory_product_id,
+            source="manual",
+            stream_id=data.stream_id,
+            tag_ids=list(data.tag_ids) if data.tag_ids else None,
+        )
+    except ValueError as e:
+        if str(e) == "NO_TASK_STREAM_FOR_CLINIC":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=err_payload(
+                    "Для клиники не настроен поток задач; обратитесь к администратору",
+                    "NO_TASK_STREAM",
+                ),
+            ) from e
+        raise
     await StaffCollaborationService(session).sync_task_room_members_for_task(clinic_id, task.id)
     return await _task_response(session, task)
 
@@ -381,6 +564,9 @@ async def update_task(
     if not await _task_visible_to_context(task, context, session):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
+    if data.due_at is not None:
+        _due_at_calendar_not_in_past(data.due_at)
+
     reassigned = False
     if data.status is not None:
         _ensure_operation_permission(context, specific="tasks.change_status")
@@ -397,7 +583,7 @@ async def update_task(
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=err_payload(
-                        "WIP limit exceeded for target status",
+                        "Превышен лимит задач в целевой колонке (WIP)",
                         "WIP_LIMIT_EXCEEDED",
                         field="status",
                     ),
@@ -412,16 +598,16 @@ async def update_task(
             )
         except ValueError as e:
             code = str(e)
-            detail = "Workflow rule violation"
+            detail = "Нарушение правил перехода статуса"
             if code == "TASK_BLOCKED":
-                detail = "Task is blocked; cannot move to done"
+                detail = "Задача заблокирована; нельзя перевести в «Выполнено»"
             if code == "CHECKLIST_REQUIRED":
-                detail = "Checklist must be completed before done"
+                detail = "Сначала отметьте чеклист завершения"
             if code == "SYSTEM_COMMENT_RATE_LIMITED":
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=err_payload(
-                        "Too many system transition messages in a short period",
+                        "Слишком много служебных сообщений о переходах за короткое время",
                         "RATE_LIMIT_EXCEEDED",
                     ),
                 )
@@ -429,10 +615,31 @@ async def update_task(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=err_payload(detail, code, field="status"),
             )
+    if data.stream_id is not None:
+        _ensure_operation_permission(context, specific="manage_tasks")
+        await _ensure_task_stream_active(session, task.clinic_id, data.stream_id)
+        task = await service.set_task_stream(task_id, data.stream_id)
+        if context.clinic_id is not None:
+            task_context_admin_events_total.labels(
+                clinic_bucket=clinic_bucket_label(context.clinic_id),
+                event="task_stream_updated",
+            ).inc()
+    if data.tag_ids is not None:
+        _ensure_operation_permission(context, specific="manage_tasks")
+        await _ensure_task_tags_in_clinic(session, task.clinic_id, list(data.tag_ids))
+        task = await service.set_task_tags(task_id, list(data.tag_ids))
+        if context.clinic_id is not None:
+            task_context_admin_events_total.labels(
+                clinic_bucket=clinic_bucket_label(context.clinic_id),
+                event="task_tags_updated",
+            ).inc()
     if data.assignee_ids is not None:
+        await _ensure_assignee_admins_in_clinic(session, task.clinic_id, list(data.assignee_ids))
         task = await service.set_task_assignees(task_id, list(data.assignee_ids))
         reassigned = True
     elif data.assignee_id is not None or data.role_assignee is not None:
+        if data.assignee_id is not None:
+            await _ensure_assignee_admins_in_clinic(session, task.clinic_id, [data.assignee_id])
         task = await service.reassign_task(
             task_id=task_id,
             assignee_id=data.assignee_id,
@@ -505,7 +712,7 @@ async def create_task_comment(
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=err_payload(
-                    "Comment rate limit exceeded for this task",
+                    "Превышен лимит комментариев к этой задаче",
                     "RATE_LIMIT_EXCEEDED",
                 ),
             )

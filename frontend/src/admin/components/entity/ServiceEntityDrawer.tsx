@@ -1,4 +1,5 @@
 import type { AdminServiceRead } from "@/api/types";
+import { EntityDrawerFieldBlock, EntityDrawerFooterBar } from "@/admin/components/entity/entityDrawerChrome";
 import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
 import {
   Button,
@@ -188,55 +189,59 @@ export function ServiceEntityDrawer({
 
         <Tabs.Panel value="description" pt="md">
           <Stack gap="sm">
-            <TextInput
-              label="Название"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              disabled={mode === "view"}
-            />
-            <Select
-              label="Категория"
-              data={CATEGORIES}
-              value={category}
-              onChange={setCategory}
-              searchable
-              disabled={mode === "view"}
-            />
-            <TextInput
-              label="Описание"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={mode === "view"}
-            />
-            <Group grow>
-              <NumberInput
-                label="Цена, ₽"
-                min={0}
-                value={price}
-                onChange={(v) => setPrice(typeof v === "number" ? v : undefined)}
-                disabled={mode === "view"}
-              />
-              <NumberInput
-                label="Длительность, мин"
-                min={1}
-                max={600}
-                value={duration}
-                onChange={(v) => setDuration(typeof v === "number" ? v : undefined)}
-                disabled={mode === "view"}
-              />
-            </Group>
-            <Switch
-              label="Услуга активна"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.currentTarget.checked)}
-              disabled={mode === "view"}
-            />
-            <Text size="xs" c="dimmed">
-              Цвет в календаре — при наличии API.
-            </Text>
+            <EntityDrawerFieldBlock label="Описание и параметры">
+              <Stack gap="sm">
+                <TextInput
+                  label="Название"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  disabled={mode === "view"}
+                />
+                <Select
+                  label="Категория"
+                  data={CATEGORIES}
+                  value={category}
+                  onChange={setCategory}
+                  searchable
+                  disabled={mode === "view"}
+                />
+                <TextInput
+                  label="Описание"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  disabled={mode === "view"}
+                />
+                <Group grow>
+                  <NumberInput
+                    label="Цена, ₽"
+                    min={0}
+                    value={price}
+                    onChange={(v) => setPrice(typeof v === "number" ? v : undefined)}
+                    disabled={mode === "view"}
+                  />
+                  <NumberInput
+                    label="Длительность, мин"
+                    min={1}
+                    max={600}
+                    value={duration}
+                    onChange={(v) => setDuration(typeof v === "number" ? v : undefined)}
+                    disabled={mode === "view"}
+                  />
+                </Group>
+                <Switch
+                  label="Услуга активна"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.currentTarget.checked)}
+                  disabled={mode === "view"}
+                />
+                <Text size="xs" c="dimmed">
+                  Цвет в календаре — при наличии API.
+                </Text>
+              </Stack>
+            </EntityDrawerFieldBlock>
             {mode !== "view" && (
-              <Group mt="sm">
+              <EntityDrawerFooterBar>
                 <Button
                   onClick={handleSave}
                   loading={createMutation.isPending || updateMutation.isPending}
@@ -246,7 +251,7 @@ export function ServiceEntityDrawer({
                 <Button variant="subtle" onClick={onClose}>
                   Отмена
                 </Button>
-              </Group>
+              </EntityDrawerFooterBar>
             )}
             {(createMutation.isError || updateMutation.isError) && (
               <QueryErrorAlert

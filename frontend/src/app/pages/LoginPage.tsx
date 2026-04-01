@@ -116,11 +116,12 @@ export default function LoginPage() {
     <Center h="100%">
       <Paper
         radius="lg"
-        shadow="md"
+        shadow="sm"
         p="xl"
         maw={420}
         w="100%"
         withBorder
+        className="data-toolbar-card"
       >
         <Stack gap="sm">
           <Title order={2}>{mode === "login" ? "Вход в личный кабинет" : "Регистрация в клинике"}</Title>
@@ -206,7 +207,7 @@ export default function LoginPage() {
                     checked={consentPd}
                     onChange={(e) => setConsentPd(e.currentTarget.checked)}
                   />
-                  <Modal opened={policyOpened} onClose={closePolicy} title="Политика обработки ПД" size="lg">
+                  <Modal opened={policyOpened} onClose={closePolicy} title="Политика обработки ПД" size="lg" centered>
                     <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
                       {agreement?.pd_agreement_text || "Текст политики не задан. Обратитесь в клинику."}
                     </Text>

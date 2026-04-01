@@ -72,7 +72,7 @@ export default function FeedPage() {
                         aspectRatio: "9/16",
                         background: s.media_url
                           ? `center/cover url(${s.media_url})`
-                          : "var(--mantine-color-gray-3)",
+                          : "var(--bg-card-soft)",
                         minHeight: 160,
                       }}
                     />
@@ -119,7 +119,7 @@ export default function FeedPage() {
                         maxWidth: "100%",
                         aspectRatio: "16/9",
                         objectFit: "cover",
-                        borderRadius: 12,
+                        borderRadius: "var(--radius-md)",
                       }}
                     />
                   )}
@@ -132,7 +132,7 @@ export default function FeedPage() {
                         maxWidth: "100%",
                         aspectRatio: "16/9",
                         objectFit: "cover",
-                        borderRadius: 12,
+                        borderRadius: "var(--radius-md)",
                       }}
                     />
                   )}
@@ -147,7 +147,7 @@ export default function FeedPage() {
                             width: 110,
                             aspectRatio: "4/3",
                             objectFit: "cover",
-                            borderRadius: 10,
+                            borderRadius: "var(--radius-md)",
                           }}
                         />
                       ))}
@@ -162,7 +162,7 @@ export default function FeedPage() {
                         maxWidth: "100%",
                         aspectRatio: "16/9",
                         objectFit: "cover",
-                        borderRadius: 10,
+                        borderRadius: "var(--radius-md)",
                       }}
                     />
                   )}

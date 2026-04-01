@@ -5,15 +5,19 @@
  */
 
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { AdminDrawer, ContextBar } from "@/shared/ui";
+import {
+  ADMIN_TABLE_PROPS,
+  AdminDataTableSurface,
+  AdminDataTableToolbar,
+  AdminDrawer,
+  ContextBar,
+} from "@/shared/ui";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import {
   Badge,
   Button,
-  Card,
   Grid,
   Group,
-  Paper,
   Select,
   Stack,
   Table,
@@ -146,7 +150,7 @@ export default function AdminRetentionPage() {
             Когорты для персональных офферов. Каскад: WhatsApp → Push через 24ч → SMS для VIP.
           </Text>
           {segmentsLoading ? (
-            <Paper p="md" withBorder>
+            <AdminDataTableSurface>
               <Stack gap="xs">
                 {[1, 2, 3, 4].map((i) => (
                   <Group key={i} gap="md">
@@ -159,7 +163,7 @@ export default function AdminRetentionPage() {
                   </Group>
                 ))}
               </Stack>
-            </Paper>
+            </AdminDataTableSurface>
           ) : !segments?.length ? (
             <EmptyState
               title="Нет сегментов"
@@ -170,7 +174,7 @@ export default function AdminRetentionPage() {
             <Grid>
               {segments.map((seg) => (
                 <Grid.Col key={seg.id} span={{ base: 12, sm: 6, md: 3 }}>
-                  <Card withBorder padding="md" radius="md">
+                  <AdminDataTableSurface>
                     <Group justify="space-between" mb="xs">
                       <Text fw={600} size="sm">
                         {seg.name}
@@ -193,7 +197,7 @@ export default function AdminRetentionPage() {
                     >
                       Сгенерировать офферы
                     </Button>
-                  </Card>
+                  </AdminDataTableSurface>
                 </Grid.Col>
               ))}
             </Grid>
@@ -202,7 +206,7 @@ export default function AdminRetentionPage() {
 
         <Tabs.Panel value="waterfall" pt="md">
           <Stack gap="md">
-            <Card withBorder padding="md">
+            <AdminDataTableToolbar>
               <Title order={5} mb="xs">
                 Омниканальный каскад (Waterfall)
               </Title>
@@ -223,7 +227,7 @@ export default function AdminRetentionPage() {
                   SMS для VIP
                 </Badge>
               </Group>
-            </Card>
+            </AdminDataTableToolbar>
 
             <Title order={5}>ROI кампаний (воронка до кассы)</Title>
             {roiLoading ? (
@@ -237,7 +241,7 @@ export default function AdminRetentionPage() {
                 action={{ label: "Создать кампанию", onClick: () => {} }}
               />
             ) : (
-              <Table withTableBorder withColumnBorders>
+              <Table withTableBorder {...ADMIN_TABLE_PROPS}>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Кампания</Table.Th>

@@ -207,6 +207,7 @@ class OmnichannelChatService:
         content: str,
         channel_id: UUID | None = None,
         source_metadata: dict | None = None,
+        content_type: str = "TEXT",
     ) -> Message:
         """Create inbound client message and update chat state."""
         msg = Message(
@@ -215,7 +216,7 @@ class OmnichannelChatService:
             channel_id=channel_id,
             direction="INBOUND",
             actor_type="CLIENT",
-            content_type="TEXT",
+            content_type=(content_type or "TEXT")[:32],
             content=content,
             source_metadata=source_metadata or {},
         )
@@ -259,6 +260,9 @@ class OmnichannelChatService:
         content: str,
         channel_id: UUID | None = None,
         sender_admin_id: UUID | None = None,
+        *,
+        source_metadata: dict | None = None,
+        content_type: str = "TEXT",
     ) -> Message:
         """Create outbound message from HUMAN_ADMIN / AI / SYSTEM and update chat."""
         msg = Message(
@@ -268,8 +272,9 @@ class OmnichannelChatService:
             sender_admin_id=sender_admin_id if actor_type == "HUMAN_ADMIN" else None,
             direction="OUTBOUND",
             actor_type=actor_type,
-            content_type="TEXT",
+            content_type=(content_type or "TEXT")[:32],
             content=content,
+            source_metadata=source_metadata or {},
         )
         msg = await self.messages.create(msg)
         created_at = msg.created_at.replace(tzinfo=None) if getattr(msg, "created_at", None) and msg.created_at.tzinfo else msg.created_at

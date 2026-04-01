@@ -13,8 +13,8 @@ export const SEMANTIC = {
   /** Кнопки навигации по дате в расписании (вчера / сегодня / завтра) */
   dateNav: {
     yesterday: "gray",
-    today: "indigo",
-    tomorrow: "teal",
+    today: "brand",
+    tomorrow: "yellow",
   },
   /** AI / RAG — палитра `ai` в теме (не путать с графитовым primary) */
   ai: {
@@ -25,6 +25,15 @@ export const SEMANTIC = {
     warning: "orange",
     danger: "red",
     neutral: "gray",
+  },
+  /**
+   * Ops / attention surfaces (Tasks, Omni, Emergency): Swiss §3.6.2a — critical/warning/info,
+   * без смешения с brand-ink для «декоративного» chrome.
+   */
+  opsSeverity: {
+    critical: "red",
+    warning: "yellow",
+    info: "blue",
   },
   /**
    * Кнопки: один смысл — один оттенок; без «радужного» chrome.

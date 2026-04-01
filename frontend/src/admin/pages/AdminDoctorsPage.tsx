@@ -3,7 +3,8 @@ import { ContextBar } from "@/shared/ui/ContextBar";
 import { EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { ActionIcon, Button, HoverCard, Menu, Stack, Table, Text } from "@mantine/core";
 import { IconDotsVertical, IconEdit, IconStethoscope, IconTrash } from "@tabler/icons-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { DoctorEntityDrawer } from "@/admin/components/entity/DoctorEntityDrawer";
 import type { Doctor } from "@/api/types";
@@ -11,6 +12,13 @@ import { useQueryClient } from "@tanstack/react-query";
 
 export default function AdminDoctorsPage() {
   const { currentClinicId } = useAdminClinic();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const doctorIdFocus = searchParams.get("doctor_id");
+  const doctorTabRaw = searchParams.get("doctor_tab");
+  const doctorTabFocus =
+    doctorTabRaw && ["profile", "schedule", "payroll", "services"].includes(doctorTabRaw)
+      ? doctorTabRaw
+      : undefined;
   const { data: doctors, isLoading, isError, error } = useDoctors({
     clinic_id: currentClinicId ?? undefined,
   });
@@ -20,6 +28,12 @@ export default function AdminDoctorsPage() {
     mode: "create" | "edit" | "view";
     doctor: Doctor | null;
   } | null>(null);
+
+  useEffect(() => {
+    if (!doctorIdFocus || !doctors?.length) return;
+    const d = doctors.find((x) => x.id === doctorIdFocus);
+    if (d) setDoctorDrawer({ mode: "view", doctor: d });
+  }, [doctorIdFocus, doctors]);
 
   const openCreate = () => setDoctorDrawer({ mode: "create", doctor: null });
   const openEdit = (d: Doctor) => setDoctorDrawer({ mode: "edit", doctor: d });
@@ -126,9 +140,18 @@ export default function AdminDoctorsPage() {
 
       <DoctorEntityDrawer
         opened={doctorDrawer !== null}
-        onClose={() => setDoctorDrawer(null)}
+        onClose={() => {
+          setDoctorDrawer(null);
+          if (searchParams.get("doctor_id")) {
+            const next = new URLSearchParams(searchParams);
+            next.delete("doctor_id");
+            next.delete("doctor_tab");
+            setSearchParams(next);
+          }
+        }}
         doctor={doctorDrawer?.doctor ?? null}
         mode={doctorDrawer?.mode ?? "view"}
+        initialTab={doctorTabFocus}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ["doctors"] })}
       />
     </Stack>

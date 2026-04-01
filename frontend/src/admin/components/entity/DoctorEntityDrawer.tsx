@@ -1,5 +1,6 @@
 import type { Doctor } from "@/api/types";
-import { AdminDrawer, QueryErrorAlert } from "@/shared/ui";
+import { EntityDrawerFieldBlock, EntityDrawerFooterBar } from "@/admin/components/entity/entityDrawerChrome";
+import { AdminDrawer, GlassModal, QueryErrorAlert } from "@/shared/ui";
 import {
   Avatar,
   Button,
@@ -15,15 +16,23 @@ import {
   Switch,
   Table,
   Skeleton,
+  Textarea,
 } from "@mantine/core";
 import { IconDotsVertical, IconPrinter, IconCopy, IconTrash } from "@tabler/icons-react";
 import { useWorkingHours, useAbsence } from "@/hooks/useDoctorScheduleConfig";
 import { usePayrollPolicies, useSalaryTransactions } from "@/hooks/useErpPayroll";
 import { useAdminClinicServices } from "@/hooks/useAdminClinicServices";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { useCreateDoctor, useUpdateDoctor } from "@/hooks";
+import {
+  useAdminPublicDoctorProfileByDoctor,
+  useCreateAdminPublicDoctorProfileMutation,
+  usePatchAdminPublicDoctorProfileMutation,
+  useCreateDoctor,
+  useUpdateDoctor,
+} from "@/hooks";
 import { SPECIALIST_ROLE_OPTIONS } from "@/api/types";
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 
 const WEEKDAY_LABELS: Record<number, string> = {
   0: "Вс",
@@ -41,6 +50,9 @@ export interface DoctorEntityDrawerProps {
   doctor: Doctor | null;
   mode: "view" | "create" | "edit";
   onSaved?: () => void;
+  /** При открытии карточки (например из ссылки) — вкладка по умолчанию: profile | schedule | payroll | services */
+  initialTab?: string | null;
+  presentation?: "modal" | "drawer";
 }
 
 export function DoctorEntityDrawer({
@@ -49,8 +61,10 @@ export function DoctorEntityDrawer({
   doctor,
   mode,
   onSaved,
+  initialTab,
+  presentation = "modal",
 }: DoctorEntityDrawerProps) {
-  const { currentClinicId } = useAdminClinic();
+  const { clinics, currentClinicId } = useAdminClinic();
   const [activeTab, setActiveTab] = useState<string | null>("profile");
 
   const [fullName, setFullName] = useState("");
@@ -75,6 +89,33 @@ export function DoctorEntityDrawer({
   const createMutation = useCreateDoctor();
   const updateMutation = useUpdateDoctor();
 
+  const clinicSlug =
+    clinics.find((c) => c.id === currentClinicId)?.clinic_slug?.trim() || null;
+
+  const publicProfileQuery = useAdminPublicDoctorProfileByDoctor(
+    opened ? currentClinicId : null,
+    opened ? doctor?.id ?? null : null
+  );
+  const createPublicProfile = useCreateAdminPublicDoctorProfileMutation(
+    currentClinicId ?? ""
+  );
+  const patchPublicProfile = usePatchAdminPublicDoctorProfileMutation(
+    currentClinicId ?? ""
+  );
+
+  const [publicDoctorSlug, setPublicDoctorSlug] = useState("");
+  const [publicIsPublished, setPublicIsPublished] = useState(false);
+  const [publicPhotoUrl, setPublicPhotoUrl] = useState("");
+  const [publicShortBio, setPublicShortBio] = useState("");
+  const [publicAboutMd, setPublicAboutMd] = useState("");
+  const [publicSlugTouched, setPublicSlugTouched] = useState(false);
+
+  const normalizedPublicDoctorSlug = publicDoctorSlug.trim().toLowerCase();
+  const publicSlugValid =
+    normalizedPublicDoctorSlug.length >= 3 &&
+    normalizedPublicDoctorSlug.length <= 120 &&
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedPublicDoctorSlug);
+
   const doctorPolicy = payrollPolicies?.find(
     (p) => p.doctor_id === doctor?.id
   );
@@ -82,6 +123,11 @@ export function DoctorEntityDrawer({
     adminServices?.filter((item) =>
       item.doctors.some((d) => d.doctor_id === doctor?.id)
     ) ?? [];
+
+  useEffect(() => {
+    if (!opened || !doctor) return;
+    setActiveTab(initialTab || "profile");
+  }, [opened, doctor?.id, initialTab]);
 
   useEffect(() => {
     if (doctor) {
@@ -104,6 +150,25 @@ export function DoctorEntityDrawer({
       setSpecialistRoleCustomName("");
     }
   }, [doctor]);
+
+  useEffect(() => {
+    if (!opened) return;
+    if (!doctor) return;
+    const p = publicProfileQuery.data;
+    if (!p) {
+      setPublicDoctorSlug("");
+      setPublicIsPublished(false);
+      setPublicPhotoUrl("");
+      setPublicShortBio("");
+      setPublicAboutMd("");
+      return;
+    }
+    setPublicDoctorSlug(p.doctor_slug ?? "");
+    setPublicIsPublished(Boolean(p.is_published));
+    setPublicPhotoUrl(p.public_photo_url ?? "");
+    setPublicShortBio(p.short_bio ?? "");
+    setPublicAboutMd(p.about_md ?? "");
+  }, [opened, doctor?.id, publicProfileQuery.data]);
 
   const handleSave = () => {
     const rolePayload = {
@@ -145,6 +210,33 @@ export function DoctorEntityDrawer({
     }
   };
 
+  const handleSavePublicProfile = async () => {
+    if (!currentClinicId || !doctor?.id) return;
+    setPublicSlugTouched(true);
+    if (!publicSlugValid) return;
+    const body: Record<string, unknown> = {
+      doctor_slug: normalizedPublicDoctorSlug,
+      is_published: publicIsPublished,
+      public_photo_url: publicPhotoUrl || null,
+      short_bio: publicShortBio || null,
+      about_md: publicAboutMd || null,
+    };
+    const existing = publicProfileQuery.data;
+    if (!existing) {
+      await createPublicProfile.mutateAsync({
+        doctor_id: doctor.id,
+        ...body,
+      });
+      await publicProfileQuery.refetch();
+      return;
+    }
+    await patchPublicProfile.mutateAsync({
+      profileId: existing.id,
+      body,
+    });
+    await publicProfileQuery.refetch();
+  };
+
   const title =
     mode === "create"
       ? "Новый врач"
@@ -152,15 +244,8 @@ export function DoctorEntityDrawer({
         ? "Редактировать врача"
         : doctor?.full_name ?? "";
 
-  return (
-    <AdminDrawer
-      position="right"
-      size="lg"
-      opened={opened}
-      onClose={onClose}
-      title={title}
-      styles={{ body: { paddingTop: 0 } }}
-    >
+  const inner = (
+    <>
       {doctor && (mode === "view" || mode === "edit") && (
         <Stack gap="md" mb="md">
           <Group justify="space-between">
@@ -206,75 +291,80 @@ export function DoctorEntityDrawer({
           <Tabs.Tab value="schedule">Расписание</Tabs.Tab>
           <Tabs.Tab value="payroll">Зарплата</Tabs.Tab>
           <Tabs.Tab value="services">Услуги</Tabs.Tab>
+          <Tabs.Tab value="public">Публичная карточка</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="profile" pt="md">
           <Stack gap="sm">
-            <TextInput
-              label="ФИО"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-              disabled={mode === "view"}
-            />
-            <TextInput
-              label="Специализация"
-              value={specialization}
-              onChange={(e) => setSpecialization(e.target.value)}
-              disabled={mode === "view"}
-            />
-            <TextInput
-              label="Фото (URL)"
-              value={photoUrl}
-              onChange={(e) => setPhotoUrl(e.target.value)}
-              disabled={mode === "view"}
-            />
-            <Group grow>
-              <NumberInput
-                label="Рейтинг"
-                min={0}
-                max={5}
-                step={0.1}
-                value={rating}
-                decimalScale={1}
-                onChange={(v) => setRating(typeof v === "number" ? v : undefined)}
-                disabled={mode === "view"}
-              />
-              <NumberInput
-                label="Стаж (лет)"
-                min={0}
-                max={60}
-                value={experienceYears}
-                onChange={(v) => setExperienceYears(typeof v === "number" ? v : undefined)}
-                disabled={mode === "view"}
-              />
-            </Group>
-            <Select
-              label="Роль специалиста"
-              data={SPECIALIST_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              value={specialistRole}
-              onChange={(v) => setSpecialistRole(v ?? "doctor")}
-              disabled={mode === "view"}
-            />
-            {specialistRole === "other" && (
-              <TextInput
-                label="Своя роль"
-                value={specialistRoleCustomName}
-                onChange={(e) => setSpecialistRoleCustomName(e.target.value)}
-                disabled={mode === "view"}
-              />
-            )}
-            <Switch
-              label="Активен и доступен для записи"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.currentTarget.checked)}
-              disabled={mode === "view"}
-            />
-            <Text size="xs" c="dimmed">
-              Цвет в календаре — при наличии API.
-            </Text>
+            <EntityDrawerFieldBlock label="Профиль">
+              <Stack gap="sm">
+                <TextInput
+                  label="ФИО"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                  disabled={mode === "view"}
+                />
+                <TextInput
+                  label="Специализация"
+                  value={specialization}
+                  onChange={(e) => setSpecialization(e.target.value)}
+                  disabled={mode === "view"}
+                />
+                <TextInput
+                  label="Фото (URL)"
+                  value={photoUrl}
+                  onChange={(e) => setPhotoUrl(e.target.value)}
+                  disabled={mode === "view"}
+                />
+                <Group grow>
+                  <NumberInput
+                    label="Рейтинг"
+                    min={0}
+                    max={5}
+                    step={0.1}
+                    value={rating}
+                    decimalScale={1}
+                    onChange={(v) => setRating(typeof v === "number" ? v : undefined)}
+                    disabled={mode === "view"}
+                  />
+                  <NumberInput
+                    label="Стаж (лет)"
+                    min={0}
+                    max={60}
+                    value={experienceYears}
+                    onChange={(v) => setExperienceYears(typeof v === "number" ? v : undefined)}
+                    disabled={mode === "view"}
+                  />
+                </Group>
+                <Select
+                  label="Роль специалиста"
+                  data={SPECIALIST_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                  value={specialistRole}
+                  onChange={(v) => setSpecialistRole(v ?? "doctor")}
+                  disabled={mode === "view"}
+                />
+                {specialistRole === "other" && (
+                  <TextInput
+                    label="Своя роль"
+                    value={specialistRoleCustomName}
+                    onChange={(e) => setSpecialistRoleCustomName(e.target.value)}
+                    disabled={mode === "view"}
+                  />
+                )}
+                <Switch
+                  label="Активен и доступен для записи"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.currentTarget.checked)}
+                  disabled={mode === "view"}
+                />
+                <Text size="xs" c="dimmed">
+                  Цвет в календаре — при наличии API.
+                </Text>
+              </Stack>
+            </EntityDrawerFieldBlock>
             {mode !== "view" && (
-              <Group mt="sm">
+              <EntityDrawerFooterBar>
                 <Button
                   onClick={handleSave}
                   loading={createMutation.isPending || updateMutation.isPending}
@@ -284,7 +374,7 @@ export function DoctorEntityDrawer({
                 <Button variant="subtle" onClick={onClose}>
                   Отмена
                 </Button>
-              </Group>
+              </EntityDrawerFooterBar>
             )}
             {(createMutation.isError || updateMutation.isError) && (
               <QueryErrorAlert
@@ -423,7 +513,141 @@ export function DoctorEntityDrawer({
             </Table>
           )}
         </Tabs.Panel>
+
+        <Tabs.Panel value="public" pt="md">
+          {!doctor ? (
+            <Text size="sm" c="dimmed">
+              Сохраните врача, чтобы настроить публичную карточку.
+            </Text>
+          ) : (
+            <Stack gap="sm">
+              <EntityDrawerFieldBlock label="Публичная карточка врача">
+                <Stack gap="sm">
+                  {publicProfileQuery.isLoading ? <Skeleton height={90} /> : null}
+                  <TextInput
+                    label="Slug врача (для URL)"
+                    value={publicDoctorSlug}
+                    onChange={(e) => {
+                      setPublicDoctorSlug(e.target.value);
+                      setPublicSlugTouched(true);
+                    }}
+                    placeholder="ivan-ivanov"
+                    disabled={mode === "view"}
+                    required
+                    error={
+                      publicSlugTouched && !publicSlugValid
+                        ? "Только латиница/цифры/дефисы, 3–120 символов"
+                        : null
+                    }
+                  />
+                  <Switch
+                    label="Опубликовано"
+                    checked={publicIsPublished}
+                    onChange={(e) => setPublicIsPublished(e.currentTarget.checked)}
+                    disabled={mode === "view"}
+                  />
+                  <TextInput
+                    label="Фото (URL) для публичной карточки"
+                    value={publicPhotoUrl}
+                    onChange={(e) => setPublicPhotoUrl(e.target.value)}
+                    disabled={mode === "view"}
+                  />
+                  <TextInput
+                    label="Короткое описание"
+                    value={publicShortBio}
+                    onChange={(e) => setPublicShortBio(e.target.value)}
+                    disabled={mode === "view"}
+                  />
+                  <Textarea
+                    label="О враче (Markdown)"
+                    value={publicAboutMd}
+                    onChange={(e) => setPublicAboutMd(e.target.value)}
+                    disabled={mode === "view"}
+                    minRows={6}
+                  />
+                  <Group justify="space-between">
+                    <Text size="xs" c="dimmed">
+                      URL предпросмотра появится при наличии `clinic_slug`.
+                    </Text>
+                    <Button
+                      component={Link}
+                      to={
+                        clinicSlug && publicSlugValid
+                          ? `/${encodeURIComponent(clinicSlug)}/doctors/${encodeURIComponent(
+                              normalizedPublicDoctorSlug
+                            )}`
+                          : "#"
+                      }
+                      target="_blank"
+                      variant="light"
+                      disabled={!clinicSlug || !publicSlugValid || !publicIsPublished}
+                    >
+                      Открыть публичную страницу
+                    </Button>
+                  </Group>
+                </Stack>
+              </EntityDrawerFieldBlock>
+
+              {mode !== "view" && (
+                <EntityDrawerFooterBar>
+                  <Button
+                    onClick={handleSavePublicProfile}
+                    loading={createPublicProfile.isPending || patchPublicProfile.isPending}
+                    disabled={!currentClinicId || publicProfileQuery.isLoading || !publicSlugValid}
+                  >
+                    Сохранить публичную карточку
+                  </Button>
+                </EntityDrawerFooterBar>
+              )}
+
+              {(publicProfileQuery.isError ||
+                createPublicProfile.isError ||
+                patchPublicProfile.isError) && (
+                <QueryErrorAlert
+                  error={
+                    (createPublicProfile.isError && createPublicProfile.error) ||
+                    (patchPublicProfile.isError && patchPublicProfile.error) ||
+                    (publicProfileQuery.isError && publicProfileQuery.error) ||
+                    null
+                  }
+                  title="Не удалось загрузить/сохранить публичную карточку"
+                />
+              )}
+            </Stack>
+          )}
+        </Tabs.Panel>
       </Tabs>
+    </>
+  );
+
+  if (presentation === "modal") {
+    return (
+      <GlassModal
+        opened={opened}
+        onClose={onClose}
+        title={title}
+        size="xl"
+        padding="lg"
+        styles={{
+          body: { maxHeight: "min(78vh, 720px)", overflowY: "auto", paddingTop: 12 },
+          header: { marginBottom: 8, paddingBottom: 0 },
+        }}
+      >
+        {inner}
+      </GlassModal>
+    );
+  }
+
+  return (
+    <AdminDrawer
+      position="right"
+      size="lg"
+      opened={opened}
+      onClose={onClose}
+      title={title}
+      styles={{ body: { paddingTop: 0 } }}
+    >
+      {inner}
     </AdminDrawer>
   );
 }

@@ -10,14 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.application.services.integration_gateway_service import IntegrationGatewayService
 from src.application.services.omnichannel_chat_service import OmnichannelChatService
 from src.application.services.webchat_push_manager import get_webchat_push_manager
+from src.application.services.turnstile_service import verify_turnstile
 from src.core.config import settings
 from src.core.datetime_utils import to_iso8601_utc
 from src.domain.entities.clinic import Clinic
 from src.infrastructure.database.base import get_db
+from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
+from src.core.metrics import auth_captcha_required_total, auth_captcha_verified_total
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["integrations"])
+router = APIRouter(prefix="", tags=["integrations"])
 
 
 async def _get_default_business_account_id(session: AsyncSession) -> UUID:
@@ -94,6 +97,7 @@ async def webchat_inbound_message(
     request: Request,
     payload: dict,
     db: AsyncSession = Depends(get_db),
+    rate_limiter=Depends(get_rate_limiter),
 ):
     """Public endpoint for Web-chat widget to send messages.
 
@@ -103,6 +107,26 @@ async def webchat_inbound_message(
     - message_id?: str
     - timestamp?: ISO string
     """
+    client_ip = request.client.host if request.client else "unknown"
+    if settings.turnstile_enabled:
+        try:
+            await rate_limiter.check_or_raise(
+                key=f"rate:webchat_msg:captcha_soft:ip:{client_ip}",
+                limit=settings.rate_webchat_message_captcha_soft_ip_limit,
+                window=settings.rate_webchat_message_window_seconds,
+            )
+        except RateLimitExceeded:
+            auth_captcha_required_total.labels(reason="webchat_soft_limit").inc()
+            vr = await verify_turnstile(payload.get("turnstile_token"), remote_ip=client_ip)
+            auth_captcha_verified_total.labels(status="ok" if vr.ok else "denied").inc()
+            if not vr.ok:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "code": "CAPTCHA_REQUIRED",
+                        "site_key": settings.turnstile_site_key,
+                    },
+                ) from None
     service = IntegrationGatewayService(
         session=db,
         business_account_id=await _get_default_business_account_id(db),

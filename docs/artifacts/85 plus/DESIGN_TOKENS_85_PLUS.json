@@ -1,0 +1,239 @@
+{
+  "meta": {
+    "name": "design_tokens_85_plus",
+    "version": "1.5.3",
+    "source": "frontend/src/theme.ts + frontend/src/index.css (`--calendar-*` для слотов календаря; `cardBorder`/`cardShadow` — паритет с `--calendar-card-*`)",
+    "mode": "enterprise-light-admin-first",
+    "palette": "Swiss Slate / Ink",
+    "canonicalDoc": "docs/artifacts/85 plus/DESIGN_ENTERPRISE_85_PLUS_CONCEPT.md §3.6"
+  },
+  "typography": {
+    "fontFamily": {
+      "base": "Inter, system-ui, -apple-system, sans-serif"
+    },
+    "fontSize": {
+      "xs": "12px",
+      "sm": "14px",
+      "md": "16px",
+      "lg": "18px",
+      "xl": "20px",
+      "2xl": "24px",
+      "3xl": "28px"
+    },
+    "lineHeight": {
+      "tight": 1.3,
+      "normal": 1.45,
+      "relaxed": 1.6
+    },
+    "fontWeight": {
+      "regular": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700
+    }
+  },
+  "color": {
+    "surface": {
+      "main": "#f4f6f8",
+      "card": "#ffffff",
+      "cardSoft": "#eef1f4",
+      "sidebar": "#ffffff",
+      "hover": "#eef1f4"
+    },
+    "text": {
+      "primary": "#0f1419",
+      "secondary": "#5c6d7a",
+      "onPrimary": "#ffffff"
+    },
+    "primary": {
+      "50": "#e8eef3",
+      "100": "#dce4eb",
+      "200": "#c5d4e0",
+      "300": "#9eb0be",
+      "400": "#6b7f90",
+      "500": "#4a5f73",
+      "600": "#1c2e45",
+      "700": "#152338",
+      "800": "#0f1a28",
+      "900": "#0a1018"
+    },
+    "neutral": {
+      "50": "#f4f6f8",
+      "100": "#eef1f4",
+      "200": "#e2e6ea",
+      "300": "#d0d7de",
+      "400": "#c5ccd4",
+      "500": "#9aa8b3",
+      "600": "#6b7f90",
+      "700": "#5c6d7a",
+      "800": "#3d4f5c",
+      "900": "#0f1419"
+    },
+    "semantic": {
+      "success": "#065f46",
+      "successBg": "#ecfdf5",
+      "warning": "#b45309",
+      "warningBg": "#fffbeb",
+      "danger": "#b42318",
+      "dangerText": "#7f1d1d",
+      "dangerBg": "#fef2f2",
+      "info": "#3b82f6",
+      "ai": "#7c3aed"
+    },
+    "calendar": {
+      "sourceHtml": "docs/design/DESIGN_PALETTE_SPECTRUM_SWATCHES.html (Swiss — календарь)",
+      "sourceMapping": "docs/artifacts/85 plus/DESIGN_CALENDAR_SEMANTIC_MAPPING.md",
+      "sourceScheduleSemantics": "docs/artifacts/85 plus/DESIGN_SCHEDULE_MODAL_SEMANTICS_85_PLUS.md",
+      "cssPrefix": "--calendar-",
+      "cardBorder": "rgba(15, 20, 25, 0.07)",
+      "cardShadow": "0 1px 2px rgba(15, 20, 25, 0.05), 0 2px 8px rgba(15, 20, 25, 0.04)",
+      "cssVarCardBorder": "--calendar-card-border",
+      "cssVarCardShadow": "--calendar-card-shadow",
+      "completed": {
+        "label": "Завершено — архив / ink",
+        "cardBg": "#f4f6f8",
+        "cardBgAlt": "#eef1f4",
+        "bar": "#1c2e45",
+        "title": "#0f1419",
+        "meta": "#5c6d7a",
+        "badgeBg": "#e8eef3",
+        "badgeText": "#1c2e45"
+      },
+      "inProgress": {
+        "label": "На приёме — изумруд",
+        "cardBg": "#d1fae5",
+        "bar": "#059669",
+        "title": "#065f46",
+        "meta": "#047857",
+        "badgeBg": "#ecfdf5",
+        "badgeText": "#065f46",
+        "badgeBorder": "#a7f3d0"
+      },
+      "neutral": {
+        "label": "Пустой слот / нейтраль без записи",
+        "cardBg": "#ffffff",
+        "bar": "#8a9faf",
+        "title": "#0f1419",
+        "meta": "#5c6d7a",
+        "badgeBg": "#e8eef3",
+        "badgeText": "#4a5f73"
+      },
+      "scheduled": {
+        "label": "Ожидает (pending) / «Занято» — персиковый янтарь (опция H)",
+        "cardBg": "#fffef8",
+        "cardBgAlt": "#ffedd5",
+        "bar": "#ea580c",
+        "title": "#0f1419",
+        "meta": "#5c6d7a",
+        "badgeBg": "#fed7aa",
+        "badgeText": "#1c2e45"
+      },
+      "attention": {
+        "label": "Служебное внимание — slate (редко)",
+        "cardBg": "#f8fafc",
+        "bar": "#4a5f73",
+        "title": "#0f1419",
+        "meta": "#5c6d7a",
+        "badgeBg": "#e8eef3",
+        "badgeText": "#4a5f73"
+      },
+      "attentionCoral": {
+        "label": "События «новое для меня» — пудровый коралл (не pending записи)",
+        "cardBg": "#fff5f5",
+        "bar": "#fb7185",
+        "badgeBg": "#ffe4e6",
+        "badgeText": "#9d174d"
+      },
+      "attentionDenim": {
+        "label": "Подтверждено (confirmed) — slate-denim",
+        "cardBg": "#f5f7fa",
+        "bar": "#5b7c9a"
+      },
+      "attentionIce": {
+        "label": "Staff: напоминание",
+        "cardBg": "#f0f9ff",
+        "bar": "#0284c7",
+        "badgeBg": "#e0f2fe",
+        "badgeText": "#0369a1"
+      },
+      "negative": {
+        "label": "Вишня N1 — отмена / неявка",
+        "cardBg": "#f7f1f3",
+        "bar": "#9f1239",
+        "title": "#881337",
+        "meta": "#6b1a2e",
+        "badgeBg": "#fce8ee",
+        "badgeText": "#881337"
+      },
+      "negativePlum": {
+        "label": "Слива N2 — альтернатива",
+        "cardBg": "#f3f0f7",
+        "bar": "#6b2d5c",
+        "title": "#4c1d42"
+      },
+      "system": {
+        "label": "Служебное",
+        "cardBg": "#eef2f7",
+        "bar": "#64748b",
+        "title": "#334155",
+        "meta": "#475569",
+        "badgeBg": "#e2e8f0",
+        "badgeText": "#475569"
+      },
+      "draftCompletedGreen": {
+        "label": "Черновик: зелёный completed — см. swatch HTML §1 черновик",
+        "cardBg": "#ecfdf5",
+        "bar": "#065f46",
+        "title": "#065f46"
+      }
+    }
+  },
+  "spacing": {
+    "xs": "4px",
+    "sm": "8px",
+    "md": "12px",
+    "lg": "16px",
+    "xl": "24px",
+    "2xl": "32px"
+  },
+  "radius": {
+    "xs": "4px",
+    "sm": "6px",
+    "md": "10px",
+    "lg": "16px"
+  },
+  "shadow": {
+    "xs": "0 1px 2px rgba(15, 20, 25, 0.05)",
+    "sm": "0 1px 2px rgba(15,20,25,0.05), 0 4px 12px rgba(15,20,25,0.06)",
+    "md": "0 4px 8px rgba(15,20,25,0.06), 0 16px 40px rgba(15,20,25,0.08)",
+    "lg": "0 10px 15px -3px rgba(15,20,25,0.07), 0 4px 6px -2px rgba(15,20,25,0.05)",
+    "xl": "0 20px 25px -5px rgba(15,20,25,0.08), 0 10px 10px -5px rgba(15,20,25,0.04)"
+  },
+  "interaction": {
+    "focusRing": "0 0 0 3px rgba(28, 46, 69, 0.22)",
+    "transitionFast": "120ms ease",
+    "transitionDefault": "180ms ease",
+    "transitionSlow": "240ms ease",
+    "disabledOpacity": 0.5
+  },
+  "componentContracts": {
+    "contextBar": {
+      "sticky": true,
+      "zIndex": 5,
+      "surface": "glass-light"
+    },
+    "table": {
+      "rowBorders": true,
+      "highlightOnHover": true,
+      "numericStyle": "tabular-nums"
+    },
+    "modal": {
+      "overlayBlur": 10,
+      "overlayOpacity": 0.08
+    },
+    "drawer": {
+      "surfaceOpacity": 0.96,
+      "borderColorToken": "neutral.200"
+    }
+  }
+}

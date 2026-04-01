@@ -1,22 +1,27 @@
 """Admin API for omnichannel chats (Phase 3, without AI)."""
 
 import logging
+import uuid
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
+from starlette.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import AdminContext, get_session, require_permissions
+from src.api.v1.chat_attachment_disposition import clinic_chat_attachment_content_disposition
+from src.api.v1.dependencies import AdminContext, get_request_context, get_session, require_permissions
 from src.api.v1.routers.admin_auth import get_current_admin, get_current_admin_sse
 from src.core.config import settings
+from src.core.context import RequestContext
 from src.application.dto.omnichannel_chat_dto import (
     HideOmniMessageRequest,
     OmniChatDetailDto,
     OmniChatListItemDto,
     OmniChatsResponse,
+    OmniMessageAttachmentDto,
     OmniMessageDto,
     OmniMessagesResponse,
     OmniQuickReplyCreateRequest,
@@ -32,6 +37,14 @@ from src.application.services.lead_service import LeadService
 from src.application.services.omnichannel_outbound_dispatcher import (
     OmnichannelOutboundDispatcher,
 )
+from src.application.services.omni_media_storage import (
+    CLINIC_CHAT_BRIDGE_META_KEY,
+    OMNI_FILES_META_KEY,
+    allowed_omni_upload_mime,
+    find_omni_file_meta,
+    read_omni_file_bytes,
+    save_omni_upload,
+)
 from src.domain.entities.admin_user import AdminUser
 from src.domain.entities.omnichannel_channel import Channel as OmniChannel
 from src.domain.entities.omnichannel_chat import Chat as OmniChat
@@ -45,6 +58,57 @@ from src.infrastructure.realtime.omni_pubsub import OMNI_EVENTS_CHANNEL_PREFIX
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/omni-chats", tags=["admin-omni-chat"])
+
+
+def _attachments_from_omni_entity(m: OmniMessage) -> list[OmniMessageAttachmentDto]:
+    out: list[OmniMessageAttachmentDto] = []
+    raw = getattr(m, "source_metadata", None)
+    if not isinstance(raw, dict):
+        return out
+    files = raw.get(OMNI_FILES_META_KEY)
+    if isinstance(files, list):
+        for item in files:
+            if not isinstance(item, dict):
+                continue
+            try:
+                aid = UUID(str(item["id"]))
+            except (KeyError, ValueError, TypeError):
+                continue
+            out.append(
+                OmniMessageAttachmentDto(
+                    id=aid,
+                    file_name=str(item.get("file_name") or "file")[:500],
+                    content_type=str(item.get("content_type") or "application/octet-stream")[:128],
+                    size_bytes=int(item.get("size_bytes") or 0),
+                    source="omni",
+                )
+            )
+    bridge = raw.get(CLINIC_CHAT_BRIDGE_META_KEY)
+    if isinstance(bridge, dict):
+        conv_raw = bridge.get("conversation_id")
+        conv_id: UUID | None
+        try:
+            conv_id = UUID(str(conv_raw)) if conv_raw else None
+        except (ValueError, TypeError):
+            conv_id = None
+        for item in bridge.get("attachments") or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                aid = UUID(str(item["id"]))
+            except (KeyError, ValueError, TypeError):
+                continue
+            out.append(
+                OmniMessageAttachmentDto(
+                    id=aid,
+                    file_name=str(item.get("file_name") or "file")[:500],
+                    content_type=str(item.get("content_type") or "application/octet-stream")[:128],
+                    size_bytes=int(item.get("size_bytes") or 0),
+                    source="clinic_chat",
+                    conversation_id=conv_id,
+                )
+            )
+    return out
 
 
 def _omni_message_to_dto(
@@ -68,6 +132,8 @@ def _omni_message_to_dto(
         direction=m.direction,
         actor_type=m.actor_type,
         content=m.content,
+        message_content_type=(getattr(m, "content_type", None) or "TEXT")[:32],
+        attachments=_attachments_from_omni_entity(m),
         created_at=m.created_at,
         ui_hidden=getattr(m, "ui_hidden", False),
         hidden_reason=getattr(m, "hidden_reason", None),
@@ -422,7 +488,7 @@ async def patch_omni_chat(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Chat not found",
         )
-    if body.assignee_admin_id is not None:
+    if "assignee_admin_id" in body.model_fields_set:
         if body.assignee_admin_id:
             res = await session.execute(
                 select(AdminUser).where(
@@ -437,7 +503,7 @@ async def patch_omni_chat(
                     detail="assignee_admin_id is not a valid admin for this clinic",
                 )
         chat.assignee_admin_id = body.assignee_admin_id
-    if body.status is not None:
+    if "status" in body.model_fields_set and body.status is not None:
         chat.status = body.status
     await session.flush()
 
@@ -562,6 +628,174 @@ async def send_admin_omni_message(
         channels_map[resolved_row.id] = resolved_row.type
 
     return _omni_message_to_dto(msg, channels_map)
+
+
+@router.post(
+    "/{chat_id}/messages/upload",
+    response_model=OmniMessageDto,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"description": "Invalid file type or empty file"},
+        404: {"description": "Chat not found"},
+        413: {"description": "File too large"},
+        429: {"description": "Rate limit"},
+    },
+)
+async def send_admin_omni_message_upload(
+    chat_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+    rate_limiter=Depends(get_rate_limiter),
+    body: str = Form(""),
+    file: UploadFile = File(...),
+    reply_channel_id: str | None = Form(None),
+) -> OmniMessageDto:
+    """Исходящее сообщение с файлом (изображение, документ, аудио) в omnichannel."""
+    try:
+        await rate_limiter.check_or_raise(
+            key=f"rate:omni:send:admin:{current_admin.id}",
+            limit=settings.rate_admin_omni_send_per_admin_limit,
+            window=settings.rate_admin_omni_send_window_seconds,
+        )
+    except RateLimitExceeded:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "OMNI_SEND_RATE_LIMITED",
+                "message": "Слишком много исходящих сообщений. Подождите и повторите.",
+            },
+        ) from None
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
+    if len(raw) > settings.staff_chat_max_attachment_bytes:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Файл слишком большой")
+    ct = (file.content_type or "application/octet-stream").split(";")[0].strip()
+    if not allowed_omni_upload_mime(ct):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недопустимый тип файла для omnichannel",
+        )
+
+    business_account_id: UUID = current_admin.clinic_id
+    service = OmnichannelChatService(session)
+    dispatcher = OmnichannelOutboundDispatcher(session)
+
+    chat = await service.get_chat_for_business(business_account_id, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+    rid: UUID | None = None
+    if reply_channel_id and reply_channel_id.strip():
+        try:
+            rid = UUID(reply_channel_id.strip())
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid reply_channel_id",
+            ) from e
+
+    resolved_channel_id = await resolve_reply_channel_id_for_admin(
+        session,
+        clinic_id=business_account_id,
+        chat=chat,
+        reply_channel_id=rid,
+    )
+
+    # Подпись опциональна; вложение в meta — без плейсхолдеров в тексте.
+    caption = (body or "").strip()[:2000]
+
+    att_id = uuid.uuid4()
+    rel = save_omni_upload(
+        business_account_id,
+        att_id,
+        file.filename or "file",
+        raw,
+    )
+    meta = {
+        OMNI_FILES_META_KEY: [
+            {
+                "id": str(att_id),
+                "file_name": (file.filename or "file")[:500],
+                "content_type": ct[:128],
+                "size_bytes": len(raw),
+                "storage_rel": rel,
+            }
+        ]
+    }
+
+    msg = await service.append_outbound_message(
+        chat=chat,
+        actor_type="HUMAN_ADMIN",
+        content=caption,
+        channel_id=resolved_channel_id,
+        sender_admin_id=current_admin.id,
+        source_metadata=meta,
+        content_type="MEDIA",
+    )
+
+    await dispatcher.dispatch_to_channel(msg)
+
+    ch_res = await session.execute(
+        select(OmniChannel).where(OmniChannel.id == resolved_channel_id).limit(1)
+    )
+    resolved_row = ch_res.scalar_one_or_none()
+    channels_map: dict[UUID, str] = {}
+    if resolved_row:
+        channels_map[resolved_row.id] = resolved_row.type
+
+    return _omni_message_to_dto(msg, channels_map)
+
+
+@router.get("/{chat_id}/messages/{message_id}/attachments/{attachment_id}/file")
+async def download_omni_message_attachment(
+    chat_id: UUID,
+    message_id: UUID,
+    attachment_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+    request_context: RequestContext = Depends(get_request_context),
+) -> Response:
+    """Скачать файл, прикреплённый к исходящему/внутреннему omni-сообщению (не для моста PWA)."""
+    business_account_id: UUID = current_admin.clinic_id
+    service = OmnichannelChatService(session)
+    chat = await service.get_chat_for_business(business_account_id, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+    msg = await session.get(OmniMessage, message_id)
+    if msg is None or msg.chat_id != chat.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+
+    meta = find_omni_file_meta(getattr(msg, "source_metadata", None), attachment_id)
+    if meta is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+
+    rel = meta.get("storage_rel")
+    if not rel or not isinstance(rel, str):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+
+    payload = read_omni_file_bytes(rel)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File missing on disk")
+
+    fname = str(meta.get("file_name") or "file")
+    media_type = str(meta.get("content_type") or "application/octet-stream")
+    if media_type.lower().startswith("audio/"):
+        allow_audio = request_context.user_type == "admin" and "owner" in request_context.roles
+        disp = clinic_chat_attachment_content_disposition(
+            media_type,
+            fname,
+            allow_audio_as_attachment=allow_audio,
+        )
+    else:
+        disp = f'inline; filename="{fname.replace(chr(34), chr(39))[:200]}"'
+    return Response(
+        content=payload,
+        media_type=media_type,
+        headers={"Content-Disposition": disp},
+    )
 
 
 @router.post("/{chat_id}/ai-mode", status_code=status.HTTP_204_NO_CONTENT, response_model=None)

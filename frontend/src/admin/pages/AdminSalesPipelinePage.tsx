@@ -26,7 +26,6 @@ import {
   Checkbox,
   Flex,
   Group,
-  Paper,
   ScrollArea,
   Stack,
   Text,
@@ -58,7 +57,7 @@ import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useAiFeatures, getAiFeatureTooltip } from "@/shared/aiFeatures";
 import { logUiEvent } from "@/shared/uiEvents";
 import { useAvailableAiTools } from "@/hooks/useAvailableAiTools";
-import { AiFeatureBadge } from "@/shared/ui";
+import { AdminDataTableSurface, AdminDataTableToolbar, AiFeatureBadge } from "@/shared/ui";
 import {
   buildSemanticMapFromResolved,
   buildStageIdToSemantic,
@@ -151,10 +150,10 @@ function KanbanColumn({
       gap="xs"
       style={{
         minHeight: 120,
-        borderRadius: 8,
-        padding: 8,
-        background: isOver ? "var(--primary-light, rgba(59, 130, 246, 0.08))" : undefined,
-        border: isOver ? "2px dashed var(--primary, #3b82f6)" : undefined,
+        borderRadius: "var(--radius-md)",
+        padding: "var(--space-sm)",
+        background: isOver ? "var(--primary-alpha-08)" : undefined,
+        border: isOver ? "2px dashed var(--primary)" : undefined,
       }}
     >
       <Group gap="xs" wrap="nowrap">
@@ -200,19 +199,19 @@ function KanbanColumn({
                     p="sm"
                     mb={6}
                     style={{
-                      borderRadius: 10,
+                      borderRadius: "var(--radius-md)",
                       border:
                         selectedLeadId === lead.id
-                          ? "2px solid var(--primary, #3b82f6)"
+                          ? "2px solid var(--primary)"
                           : isLeadRotting(lead.created_at)
                             ? "1px solid var(--mantine-color-orange-6)"
-                            : "1px solid var(--divider, rgba(148, 163, 184, 0.4))",
+                            : "1px solid var(--divider)",
                       background:
                         selectedLeadId === lead.id
-                          ? "rgba(59, 130, 246, 0.08)"
+                          ? "var(--primary-alpha-08)"
                           : isLeadRotting(lead.created_at)
-                            ? "rgba(253, 126, 20, 0.06)"
-                            : "rgba(15, 23, 42, 0.02)",
+                            ? "var(--orange-alpha-06)"
+                            : "var(--dark-alpha-02)",
                       cursor: "grab",
                       contentVisibility: "auto",
                     }}
@@ -513,7 +512,8 @@ export default function AdminSalesPipelinePage() {
       <ThreeColumnLayout
         preset="wide-center"
         left={
-          <Stack gap="sm" p="xs">
+          <AdminDataTableToolbar>
+          <Stack gap="sm">
             <Text size="sm" fw={500}>
               Фильтры и выбор воронки
             </Text>
@@ -567,9 +567,10 @@ export default function AdminSalesPipelinePage() {
               включении запрос смены стадии уходит с enforce — сервер отклонит недопустимый переход.
             </Text>
           </Stack>
+          </AdminDataTableToolbar>
         }
         center={
-          <Paper p="sm" radius="md" withBorder>
+          <AdminDataTableSurface>
             {semanticDragBlock ? (
               <Alert color="orange" mb="sm" onClose={() => setSemanticDragBlock(null)} withCloseButton>
                 {semanticDragBlock}
@@ -608,10 +609,10 @@ export default function AdminSalesPipelinePage() {
                 </DndContext>
               </ScrollArea>
             )}
-          </Paper>
+          </AdminDataTableSurface>
         }
         right={
-          <Paper p="md" radius="md" withBorder>
+          <AdminDataTableSurface>
             {!selectedLeadId ? (
               <EmptyStateHint
                 title="Выберите лид"
@@ -756,9 +757,9 @@ export default function AdminSalesPipelinePage() {
                     <Box
                       p="xs"
                       style={{
-                        borderRadius: 8,
-                        background: "rgba(59, 130, 246, 0.06)",
-                        border: "1px solid rgba(59, 130, 246, 0.25)",
+                        borderRadius: "var(--radius-md)",
+                        background: "var(--primary-alpha-06)",
+                        border: "1px solid var(--primary-alpha-25)",
                       }}
                     >
                       <Text size="xs" c="dimmed" mb={4}>
@@ -772,9 +773,9 @@ export default function AdminSalesPipelinePage() {
                     <Box
                       p="xs"
                       style={{
-                        borderRadius: 8,
-                        background: "rgba(15, 23, 42, 0.02)",
-                        border: "1px solid rgba(148, 163, 184, 0.4)",
+                        borderRadius: "var(--radius-md)",
+                        background: "var(--dark-alpha-02)",
+                        border: "1px solid var(--muted-alpha-40)",
                       }}
                     >
                       <Text size="xs" c="dimmed">
@@ -936,9 +937,9 @@ export default function AdminSalesPipelinePage() {
                             key={note.id}
                             p="xs"
                             style={{
-                              borderRadius: 8,
-                              background: "rgba(15, 23, 42, 0.02)",
-                              border: "1px solid rgba(148, 163, 184, 0.4)",
+                              borderRadius: "var(--radius-md)",
+                              background: "var(--dark-alpha-02)",
+                              border: "1px solid var(--muted-alpha-40)",
                             }}
                           >
                             <Text size="sm">{note.text}</Text>
@@ -968,7 +969,7 @@ export default function AdminSalesPipelinePage() {
                 </Stack>
               </Stack>
             )}
-          </Paper>
+          </AdminDataTableSurface>
         }
       />
     </Stack>

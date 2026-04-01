@@ -1,12 +1,18 @@
 """Task entity for operational task management."""
 
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import String, Text, ForeignKey, Index, TIMESTAMP, func, Boolean, Integer
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.infrastructure.database.base import Base
+
+if TYPE_CHECKING:
+    from src.domain.entities.task_stream import TaskStream
 
 
 class Task(Base):
@@ -17,6 +23,9 @@ class Task(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     clinic_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clinics.id"), nullable=False, index=True
+    )
+    stream_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("task_streams.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -85,6 +94,8 @@ class Task(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+    stream: Mapped["TaskStream"] = relationship("TaskStream", back_populates="tasks")
 
     __table_args__ = (
         Index("idx_tasks_clinic_status", "clinic_id", "status"),

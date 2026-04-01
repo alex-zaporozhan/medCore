@@ -94,7 +94,7 @@ export default function AdminKnowledgePage() {
                       p="sm"
                       style={{
                         border: "1px solid var(--mantine-color-gray-3)",
-                        borderRadius: 8,
+                        borderRadius: "var(--radius-md)",
                         background: "var(--mantine-color-body)",
                       }}
                     >

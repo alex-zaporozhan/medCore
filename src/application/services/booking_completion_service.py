@@ -35,7 +35,7 @@ from src.core.patient_messages import (
     BOOKING_NOT_FOUND,
     BOOKING_ONLY_PENDING_CONFIRMED_COMPLETED,
 )
-from src.domain.entities.booking import Booking, BookingStatus
+from src.domain.entities.booking import Booking, BookingStatus, coerce_booking_status
 from src.application.services.booking_status_service import BookingStatusService
 from src.application.services.forms_service import FormsService
 from src.domain.interfaces.repositories.booking_repository import BookingRepository
@@ -51,6 +51,10 @@ from src.core.metrics import (  # no-op fallback when prometheus_client is absen
     business_chain_booking_erp_step_duration_seconds,
     business_chain_booking_erp_total,
 )
+
+
+def _booking_status_str(status: BookingStatus | str) -> str:
+    return coerce_booking_status(status).value
 
 
 logger = logging.getLogger(__name__)
@@ -167,6 +171,8 @@ class BookingCompletionService:
         )
 
         booking = await self.booking_repository.get_by_id(booking_id)
+        if booking:
+            booking.status = coerce_booking_status(booking.status)
         if not booking or booking.clinic_id != actor.clinic_id:
             clinic_label = str(actor.clinic_id) if actor.clinic_id else "unknown"
             booking_completion_attempts_total.labels(
@@ -209,7 +215,12 @@ class BookingCompletionService:
                 error_message=BOOKING_NOT_FOUND,
             )
 
-        if booking.status not in {BookingStatus.CONFIRMED, BookingStatus.PENDING}:
+        if booking.status not in {
+            BookingStatus.CONFIRMED,
+            BookingStatus.PENDING,
+            BookingStatus.REGISTERED,
+            BookingStatus.IN_PROGRESS,
+        }:
             clinic_label = str(booking.clinic_id)
             booking_completion_attempts_total.labels(
                 clinic_bucket=clinic_bucket_label(clinic_label),
@@ -246,7 +257,7 @@ class BookingCompletionService:
             return BookingCompletionResult(
                 success=False,
                 booking_id=booking.id,
-                final_status=booking.status,
+                final_status=_booking_status_str(booking.status),
                 error_code="invalid_status",
                 error_message=BOOKING_ONLY_PENDING_CONFIRMED_COMPLETED,
             )
@@ -308,7 +319,7 @@ class BookingCompletionService:
             return BookingCompletionResult(
                 success=False,
                 booking_id=booking.id,
-                final_status=booking.status.value,
+                final_status=_booking_status_str(booking.status),
                 erp_summary=None,
                 loyalty_summary=None,
                 warnings=[],
@@ -681,7 +692,7 @@ class BookingCompletionService:
         return BookingCompletionResult(
             success=True,
             booking_id=booking.id,
-            final_status=booking.status.value,
+            final_status=_booking_status_str(booking.status),
             erp_summary=erp_summary,
             loyalty_summary=loyalty_summary,
             warnings=[],
@@ -766,7 +777,7 @@ class BookingCompletionService:
         return BookingCompletionResult(
             success=False,
             booking_id=booking.id,
-            final_status=booking.status.value,
+            final_status=_booking_status_str(booking.status),
             erp_summary=None,
             loyalty_summary=loyalty_summary,
             warnings=[],
@@ -872,7 +883,7 @@ class BookingCompletionService:
         return BookingCompletionResult(
             success=False,
             booking_id=booking.id,
-            final_status=booking.status.value,
+            final_status=_booking_status_str(booking.status),
             erp_summary=erp_summary,
             loyalty_summary=None,
             warnings=[],
@@ -940,7 +951,7 @@ class BookingCompletionService:
         return BookingCompletionResult(
             success=False,
             booking_id=booking.id,
-            final_status=booking.status.value,
+            final_status=_booking_status_str(booking.status),
             erp_summary=erp_summary,
             loyalty_summary=None,
             warnings=[],

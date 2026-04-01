@@ -28,22 +28,36 @@ import { useEffect, useMemo, useState } from "react";
 import type { ApiErrorWithCode } from "@/api/client";
 import { getBookingErrorMessage } from "@/shared/errors";
 import { ROUTE_PATHS } from "@/routePaths";
+import { useLocation } from "react-router-dom";
 
 const CLINIC_STORAGE_KEY = "app.selectedClinicId";
 
 export default function BookingWizardPage() {
   const { accessToken, patientId } = usePatientAuth();
+  const location = useLocation();
   const [step, setStep] = useState(0);
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [dateStr, setDateStr] = useState(dayjs().format("YYYY-MM-DD"));
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [prefillClinicDone, setPrefillClinicDone] = useState(false);
+  const [prefillDoctorDone, setPrefillDoctorDone] = useState(false);
 
   const { data: clinics } = useClinics();
 
   useEffect(() => {
     if (!clinics?.length) return;
+    const sp = new URLSearchParams(location.search);
+    const qsClinicId = sp.get("clinic_id");
+    if (!prefillClinicDone && qsClinicId && clinics.some((c) => c.id === qsClinicId)) {
+      setSelectedClinicId(qsClinicId);
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem(CLINIC_STORAGE_KEY, qsClinicId);
+      }
+      setPrefillClinicDone(true);
+      return;
+    }
     const saved = typeof localStorage !== "undefined" ? localStorage.getItem(CLINIC_STORAGE_KEY) : null;
     if (saved && clinics.some((c) => c.id === saved)) {
       setSelectedClinicId(saved);
@@ -52,7 +66,7 @@ export default function BookingWizardPage() {
     if (clinics.length === 1) {
       setSelectedClinicId(clinics[0].id);
     }
-  }, [clinics]);
+  }, [clinics, location.search, prefillClinicDone]);
 
   const multiClinic = (clinics?.length ?? 0) > 1;
   const clinicStep = 0;
@@ -70,6 +84,12 @@ export default function BookingWizardPage() {
     enabled: !!clinicId,
   });
   const { data: schedule, isLoading: scheduleLoading } = useDoctorSchedule(doctorId, dateStr, clinicId);
+
+  useEffect(() => {
+    // clinic changed (including prefill) → allow doctor prefill to re-run and clear slot
+    setPrefillDoctorDone(false);
+    setSelectedSlot(null);
+  }, [clinicId]);
 
   const createBooking = useCreatePatientBooking(accessToken);
   const createPayment = useCreatePayment(accessToken);
@@ -128,6 +148,26 @@ export default function BookingWizardPage() {
           selectedService.doctor_ids.includes(d.id)
       )
       .map((d) => ({ value: d.id, label: d.full_name })) ?? [];
+
+  useEffect(() => {
+    if (!clinicId) return;
+    if (!doctors?.length) return;
+    const sp = new URLSearchParams(location.search);
+    const qsDoctorId = sp.get("doctor_id");
+    if (prefillDoctorDone) return;
+    if (!qsDoctorId) return;
+    const hit = doctors.find((d) => d.id === qsDoctorId);
+    if (!hit) {
+      setPrefillDoctorDone(true);
+      return;
+    }
+    if (hit.clinic_id !== clinicId) {
+      setPrefillDoctorDone(true);
+      return;
+    }
+    setDoctorId(qsDoctorId);
+    setPrefillDoctorDone(true);
+  }, [clinicId, doctors, location.search, prefillDoctorDone]);
 
   const slots = schedule?.slots?.filter((s) => s.is_available) ?? [];
   const selectedSlotObj = selectedSlot
@@ -251,6 +291,7 @@ export default function BookingWizardPage() {
             onChange={(v) => {
               setServiceId(v);
               setDoctorId(null);
+              setSelectedSlot(null);
             }}
             disabled={!clinicId}
           />
@@ -283,9 +324,12 @@ export default function BookingWizardPage() {
                         cursor: "pointer",
                         borderWidth: isSelected ? 2 : 1,
                         borderColor: isSelected ? "var(--mantine-color-primary-6)" : undefined,
-                        backgroundColor: isSelected ? "var(--mantine-color-primary-light)" : undefined,
+                        backgroundColor: isSelected ? "var(--primary-light)" : undefined,
                       }}
-                      onClick={() => setDoctorId(d.id)}
+                      onClick={() => {
+                        setDoctorId(d.id);
+                        setSelectedSlot(null);
+                      }}
                     >
                       <Stack align="center" gap="xs">
                         <Avatar src={d.photo_url ?? undefined} size="lg" radius="xl" color="primary">

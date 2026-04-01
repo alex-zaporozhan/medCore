@@ -15,6 +15,7 @@ from src.api.v1.dependencies import AdminContext, get_session, require_permissio
 from src.core.config import settings
 from src.core.security import create_access_token, parse_access_token
 from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
+from src.domain.entities.clinic import Clinic
 from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,8 @@ class AdminSessionResponse(BaseModel):
     clinic_id: str
     permissions: list[str]
     roles: list[str]
+    organization_id: str | None = None
+    accessible_clinic_ids: list[str] = Field(default_factory=list)
 
 
 def hash_password(password: str) -> str:
@@ -113,24 +116,6 @@ async def admin_login(
     )
 
 
-@router.get("/session", response_model=AdminSessionResponse)
-async def admin_session(
-    admin_ctx: AdminContext = Depends(require_permissions()),
-) -> AdminSessionResponse:
-    """Права и роли текущего администратора (без отдельной проверки permission — любой валидный admin JWT)."""
-    cid = admin_ctx.clinic_id
-    if cid is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Требуется контекст клиники",
-        )
-    return AdminSessionResponse(
-        clinic_id=str(cid),
-        permissions=sorted(admin_ctx.permissions),
-        roles=sorted(admin_ctx.roles),
-    )
-
-
 def get_current_admin_dependency():
     """Dependency that extracts Bearer token and returns AdminUser."""
     from fastapi import Depends, Header
@@ -173,6 +158,43 @@ def get_current_admin_dependency():
 
 
 get_current_admin = get_current_admin_dependency()
+
+
+@router.get("/session", response_model=AdminSessionResponse)
+async def admin_session(
+    admin_ctx: AdminContext = Depends(require_permissions()),
+    session: AsyncSession = Depends(get_session),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> AdminSessionResponse:
+    """Права и роли текущего администратора (без отдельной проверки permission — любой валидный admin JWT)."""
+    cid = admin_ctx.clinic_id
+    if cid is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Требуется контекст клиники",
+        )
+    accessible: list[str] = [str(cid)]
+    org_id: str | None = None
+    if current_admin.organization_id and "owner" in set(admin_ctx.roles):
+        org_id = str(current_admin.organization_id)
+        res = await session.execute(
+            select(Clinic.id)
+            .where(
+                Clinic.organization_id == current_admin.organization_id,
+                Clinic.deleted_at.is_(None),
+            )
+            .order_by(Clinic.name.asc())
+        )
+        accessible = [str(r[0]) for r in res.all()]
+    elif current_admin.organization_id:
+        org_id = str(current_admin.organization_id)
+    return AdminSessionResponse(
+        clinic_id=str(cid),
+        permissions=sorted(admin_ctx.permissions),
+        roles=sorted(admin_ctx.roles),
+        organization_id=org_id,
+        accessible_clinic_ids=accessible,
+    )
 
 
 def get_current_admin_sse_dependency():

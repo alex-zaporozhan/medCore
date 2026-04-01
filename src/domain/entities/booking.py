@@ -1,5 +1,7 @@
 """Booking entity model."""
 
+from __future__ import annotations
+
 import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -30,6 +32,8 @@ class BookingStatus(str, Enum):
     """
 
     PENDING = "pending"
+    # Reception / LEAD: пациент отмечен на ресепшене (до или параллельно подтверждению).
+    REGISTERED = "registered"
     CONFIRMED = "confirmed"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
@@ -47,6 +51,13 @@ class BookingStatus(str, Enum):
     ERROR = "error"
     INCONSISTENT = "inconsistent"
     AWAITING_PAYMENT = "awaiting_payment"
+
+
+def coerce_booking_status(status: BookingStatus | str) -> BookingStatus:
+    """ORM may return status as str from some loads; normalize for comparisons and transitions."""
+    if isinstance(status, BookingStatus):
+        return status
+    return BookingStatus(str(status))
 
 
 class Booking(Base):

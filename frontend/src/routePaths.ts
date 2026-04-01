@@ -12,6 +12,8 @@ export const ROUTE_PATHS = {
     dashboard: "/admin",
     /** Внутренний staff/collab чат клиники (не омниканальный инбокс пациентов). */
     staffChat: "/admin/staff-chat",
+    /** Личный кабинет сотрудника: фото + «о себе». */
+    me: "/admin/me",
     staffCalendar: "/admin/calendar",
     knowledge: "/admin/knowledge",
     clinics: "/admin/clinics",
@@ -49,6 +51,7 @@ export const ROUTE_PATHS = {
     discounts: "/admin/discounts",
     notificationPolicy: "/admin/notification-policy",
     agreements: "/admin/agreements",
+    rightsPolicies: "/admin/rights-policies",
   },
   patient: {
     home: "/app",
@@ -73,6 +76,7 @@ export const ROUTE_PATHS = {
  */
 export const ADMIN_SHELL_ROUTE_SEGMENTS = [
   "staff-chat",
+  "me",
   "calendar",
   "knowledge",
   "clinics",
@@ -109,6 +113,7 @@ export const ADMIN_SHELL_ROUTE_SEGMENTS = [
   "discounts",
   "notification-policy",
   "agreements",
+  "rights-policies",
 ] as const;
 
 export type AdminShellSegment = (typeof ADMIN_SHELL_ROUTE_SEGMENTS)[number];

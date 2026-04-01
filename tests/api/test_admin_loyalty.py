@@ -4,6 +4,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
+from uuid import UUID
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,8 @@ from src.application.services.loyalty_service import (
     PurchaseSubscriptionInput,
     UseSubscriptionForBookingInput,
 )
+from src.domain.entities.booking import Booking, BookingStatus
+from src.domain.entities.payment import Payment
 from src.domain.entities.subscription_package import SubscriptionPackage
 
 
@@ -33,14 +36,45 @@ async def test_subscription_usages_list_by_patient(
     client: AsyncClient,
     admin_auth: dict,
     db_session: AsyncSession,
+    seed_data: dict,
 ) -> None:
     """GET /admin/loyalty/subscription-usages returns usages for given patient."""
-    clinic_id = uuid4()
-    patient_id = uuid4()
+    clinic_id = UUID(admin_auth["clinic_id"])
+    patient_id = UUID(str(seed_data["patient_id"]))
     booking_id = uuid4()
     payment_id = uuid4()
 
     loyalty_service = LoyaltyService(db_session)
+
+    booking = Booking(
+        id=booking_id,
+        clinic_id=clinic_id,
+        patient_id=patient_id,
+        doctor_id=UUID(str(seed_data["doctor_id"])),
+        service_id=UUID(str(seed_data["service_id"])),
+        appointment_date=datetime.now(timezone.utc).date(),
+        appointment_time=datetime.now(timezone.utc).time().replace(second=0, microsecond=0),
+        status=BookingStatus.PENDING,
+        prepayment_amount=Decimal("0.00"),
+        payment_id=None,
+        paid_by_subscription=False,
+        notes=None,
+        erp_processed=False,
+        erp_error_code=None,
+    )
+    db_session.add(booking)
+    payment = Payment(
+        id=payment_id,
+        clinic_id=clinic_id,
+        booking_id=booking_id,
+        provider="test",
+        provider_payment_id=f"test-{payment_id}",
+        amount=Decimal("1000.00"),
+        currency="RUB",
+        status="succeeded",
+        provider_metadata=None,
+    )
+    db_session.add(payment)
 
     package = SubscriptionPackage(
         clinic_id=clinic_id,

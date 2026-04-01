@@ -40,6 +40,35 @@ async def test_admin_patch_booking_notes(client: AsyncClient, admin_auth: dict, 
 
 
 @pytest.mark.asyncio
+async def test_admin_patch_booking_status(client: AsyncClient, admin_auth: dict, seed_data: dict):
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    day = seed_data["date"]
+    r = await client.post(
+        "/api/v1/admin/bookings",
+        headers=headers,
+        json={
+            "clinic_id": str(seed_data["clinic_id"]),
+            "patient_id": str(seed_data["patient_id"]),
+            "doctor_id": str(seed_data["doctor_id"]),
+            "service_id": str(seed_data["service_id"]),
+            "appointment_date": day.isoformat(),
+            "appointment_time": "10:00:00",
+            "status": "pending",
+        },
+    )
+    assert r.status_code == 201, r.text
+    bid = r.json()["id"]
+    assert r.json()["status"] == "pending"
+    r2 = await client.patch(
+        f"/api/v1/admin/bookings/{bid}",
+        headers=headers,
+        json={"status": "confirmed"},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["status"] == "confirmed"
+
+
+@pytest.mark.asyncio
 async def test_patients_list_requires_auth(client: AsyncClient):
     """Без JWT RBAC возвращает 403 (как и для не-админа)."""
     r = await client.get(

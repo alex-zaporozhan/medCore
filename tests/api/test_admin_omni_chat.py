@@ -431,9 +431,15 @@ async def test_admin_omni_send_rate_limit_429(
 ):
     """POST omni messages beyond per-admin limit returns 429 (Redis rate limiter)."""
     from src.core.config import settings
+    from src.infrastructure.database.redis_client import get_redis
 
     monkeypatch.setattr(settings, "rate_admin_omni_send_per_admin_limit", 2)
     monkeypatch.setattr(settings, "rate_admin_omni_send_window_seconds", 60)
+
+    # This suite shares a single admin user across tests; clear the limiter key to avoid
+    # cross-test coupling and flakiness in full runs.
+    redis = await get_redis()
+    await redis.delete(f"rate:omni:send:admin:{admin_auth['admin_id']}")
 
     business_account_id = seed_data["clinic_id"]
     async with db_base.AsyncSessionLocal() as session:

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class NamedAdminBrief(BaseModel):
     id: UUID
     full_name: str | None = None
+    avatar_url: str | None = None
 
 
 class StaffAttachmentBrief(BaseModel):
@@ -28,6 +29,15 @@ class StaffFeedPostResponse(BaseModel):
     created_at: datetime
     comments_count: int = 0
     likes_count: int = 0
+    liked_by_me: bool = False
+    acknowledged_by_me: bool = False
+    acknowledged_count: int = 0
+    audience_total: int = 0
+    is_announcement: bool = False
+    requires_ack: bool = False
+    priority_level: str = "normal"
+    audience_roles: list[str] = Field(default_factory=list)
+    audience_admin_ids: list[UUID] = Field(default_factory=list)
     attachments: list[StaffAttachmentBrief] = Field(default_factory=list)
 
 
@@ -36,9 +46,19 @@ class StaffFeedPostLikeResponse(BaseModel):
     likes_count: int
 
 
+class StaffFeedPostAckResponse(BaseModel):
+    acknowledged: bool
+    acknowledged_count: int
+
+
 class StaffFeedPostCreate(BaseModel):
     title: str | None = Field(None, max_length=500)
     body: str = Field(..., min_length=1, max_length=16000)
+    is_announcement: bool = False
+    requires_ack: bool = False
+    priority_level: str = Field("normal", pattern="^(normal|priority|critical)$")
+    audience_roles: list[str] = Field(default_factory=list)
+    audience_admin_ids: list[UUID] = Field(default_factory=list)
 
 
 class StaffFeedCommentResponse(BaseModel):
@@ -46,10 +66,58 @@ class StaffFeedCommentResponse(BaseModel):
     body: str
     author: NamedAdminBrief
     created_at: datetime
+    updated_at: datetime | None = None
+    parent_comment_id: UUID | None = None
+    in_reply_to: NamedAdminBrief | None = None
+    attachments: list[StaffAttachmentBrief] = Field(default_factory=list)
+    deleted_at: datetime | None = None
+    deleted_by_admin_id: UUID | None = None
 
 
 class StaffFeedCommentCreate(BaseModel):
+    body: str = Field(default="", max_length=8000)
+    parent_comment_id: UUID | None = Field(
+        None,
+        description="Ответ на комментарий в том же посте; в UI показывается как «Имя, — …»",
+    )
+
+
+class StaffFeedCommentUpdate(BaseModel):
     body: str = Field(..., min_length=1, max_length=8000)
+
+
+class StaffAnnouncementPublishPolicyRow(BaseModel):
+    scope_type: str = Field(..., pattern="^(role|user)$")
+    scope_value: str
+    can_publish: bool
+
+
+class StaffAnnouncementPublishPolicyResponse(BaseModel):
+    policies: list[StaffAnnouncementPublishPolicyRow] = Field(default_factory=list)
+
+
+class StaffAnnouncementPublishPolicyAuditRow(BaseModel):
+    id: UUID
+    created_at: datetime
+    actor_admin_id: UUID | None = None
+    actor_name: str | None = None
+    snapshot: dict | None = None
+
+
+class StaffAnnouncementPublishPolicyAuditListResponse(BaseModel):
+    items: list[StaffAnnouncementPublishPolicyAuditRow] = Field(default_factory=list)
+
+
+class StaffFeedAckStatusRow(BaseModel):
+    admin_id: UUID
+    admin_name: str | None = None
+    acknowledged_at: datetime | None = None
+
+
+class StaffFeedPostAckStatusResponse(BaseModel):
+    post_id: UUID
+    acknowledged: list[StaffFeedAckStatusRow] = Field(default_factory=list)
+    pending: list[StaffFeedAckStatusRow] = Field(default_factory=list)
 
 
 class StaffChatRoomResponse(BaseModel):
@@ -57,6 +125,10 @@ class StaffChatRoomResponse(BaseModel):
     kind: str
     title: str
     task_id: UUID | None = None
+    last_message_at: datetime | None = None
+    last_message_preview: str | None = None
+    unread_count: int = 0
+    dm_peer: NamedAdminBrief | None = None
 
 
 class StaffChatMessageResponse(BaseModel):
@@ -68,7 +140,7 @@ class StaffChatMessageResponse(BaseModel):
 
 
 class StaffChatMessageCreate(BaseModel):
-    body: str = Field(..., min_length=1, max_length=8000)
+    body: str = Field(default="", max_length=8000)
 
 
 class StaffCalendarEventResponse(BaseModel):

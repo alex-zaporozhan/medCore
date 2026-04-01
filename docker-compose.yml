@@ -3,12 +3,19 @@
 # задаются только в .env; .env не коммитить (см. .gitignore).
 # Контейнеры приложения получают .env через env_file: - .env
 #
-# Образы приложения (по умолчанию — те же теги, что пушит CI в Docker Hub):
-#   BACKEND_IMAGE=moircreator/dental-booking-backend:latest
-#   FRONTEND_IMAGE=moircreator/dental-booking-frontend:latest
+# Образы приложения:
+# - production/staging: фиксируйте digest (GHCR), например:
+#   BACKEND_IMAGE=ghcr.io/<GHCR_OWNER>/dental-booking-backend@sha256:<immutable_digest>
+#   FRONTEND_IMAGE=ghcr.io/<GHCR_OWNER>/dental-booking-frontend@sha256:<immutable_digest>
 # Локальные имена после `docker compose build` без привязки к Hub — в .env:
 #   BACKEND_IMAGE=dental-booking-backend:local
 #   FRONTEND_IMAGE=dental-booking-frontend:local
+#
+# Сборка: ошибка dockerhub1.beget.com + 127.0.0.1:12334 — см. docs/DOCKER_INFRA_PASSPORT.md §6.1
+# (прокси в Docker Desktop и/или registry-mirrors; отключение VPN это не сбрасывает).
+#
+# env_file с required: false — Docker Compose v2.24+ (Docker Desktop). Если файла нет, compose не падает.
+# Секреты для приложения: скопируйте .env.example → .env или задайте SECRET_KEY / JWT_SECRET_KEY в окружении хоста.
 
 services:
   db:
@@ -52,7 +59,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
+    image: ${BACKEND_IMAGE:-dental-booking-backend:local}
     container_name: dental_booking_migrations
     command: sh -c "python -m alembic -c alembic.ini upgrade head && echo alembic_upgrade_ok"
     environment:
@@ -60,8 +67,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SECRET_KEY: ${SECRET_KEY:-docker-compose-dev-secret-key-change-me-32chars}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-docker-compose-dev-jwt-secret-key-32chars}
     env_file:
-      - .env
+      - path: .env
+        required: false
     depends_on:
       db:
         condition: service_healthy
@@ -70,7 +80,7 @@ services:
     restart: "no"
 
   backend:
-    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
+    image: ${BACKEND_IMAGE:-dental-booking-backend:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -83,8 +93,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SECRET_KEY: ${SECRET_KEY:-docker-compose-dev-secret-key-change-me-32chars}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-docker-compose-dev-jwt-secret-key-32chars}
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       # Persist staff feed/chat attachments across container recreate/rebuild.
       - staff_uploads:/app/data/staff_chat_uploads
@@ -103,7 +116,7 @@ services:
     restart: unless-stopped
 
   celery:
-    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
+    image: ${BACKEND_IMAGE:-dental-booking-backend:local}
     container_name: dental_booking_celery
     command: celery -A src.infrastructure.messaging.celery_app worker --loglevel=info
     healthcheck:
@@ -113,8 +126,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SECRET_KEY: ${SECRET_KEY:-docker-compose-dev-secret-key-change-me-32chars}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-docker-compose-dev-jwt-secret-key-32chars}
     env_file:
-      - .env
+      - path: .env
+        required: false
     depends_on:
       migrations:
         condition: service_completed_successfully
@@ -125,7 +141,7 @@ services:
     restart: unless-stopped
 
   celery-beat:
-    image: ${BACKEND_IMAGE:-moircreator/dental-booking-backend:latest}
+    image: ${BACKEND_IMAGE:-dental-booking-backend:local}
     container_name: dental_booking_celery_beat
     command: celery -A src.infrastructure.messaging.celery_app beat --loglevel=info
     healthcheck:
@@ -135,8 +151,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      SECRET_KEY: ${SECRET_KEY:-docker-compose-dev-secret-key-change-me-32chars}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-docker-compose-dev-jwt-secret-key-32chars}
     env_file:
-      - .env
+      - path: .env
+        required: false
     depends_on:
       migrations:
         condition: service_completed_successfully
@@ -147,7 +166,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${FRONTEND_IMAGE:-moircreator/dental-booking-frontend:latest}
+    image: ${FRONTEND_IMAGE:-dental-booking-frontend:local}
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -155,7 +174,8 @@ services:
     ports:
       - "3010:80"
     env_file:
-      - ./frontend/.env
+      - path: ./frontend/.env
+        required: false
     depends_on:
       - backend
     restart: unless-stopped

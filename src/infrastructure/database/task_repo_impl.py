@@ -10,6 +10,8 @@ from src.domain.entities.task import Task
 from src.domain.entities.task_assignee import TaskAssignee
 from src.domain.entities.task_comment import TaskComment
 from src.domain.entities.task_status_transition import TaskStatusTransition
+from src.domain.entities.task_stream import TaskStream
+from src.domain.entities.task_task_tag import TaskTaskTag
 from src.domain.interfaces.repositories.task_repository import TaskRepository
 
 
@@ -64,6 +66,47 @@ class TaskRepositoryImpl(TaskRepository):
         for task_id, admin_id in res.all():
             out.setdefault(task_id, []).append(admin_id)
         return out
+
+    async def get_default_task_stream_id(self, clinic_id: UUID) -> UUID | None:
+        res = await self._session.execute(
+            select(TaskStream.id).where(
+                TaskStream.clinic_id == clinic_id,
+                TaskStream.slug == "general",
+                TaskStream.is_archived.is_(False),
+            )
+        )
+        sid = res.scalar_one_or_none()
+        if sid is not None:
+            return sid
+        res2 = await self._session.execute(
+            select(TaskStream.id)
+            .where(
+                TaskStream.clinic_id == clinic_id,
+                TaskStream.is_archived.is_(False),
+            )
+            .order_by(TaskStream.sort_order.asc(), TaskStream.name.asc())
+            .limit(1)
+        )
+        return res2.scalar_one_or_none()
+
+    async def list_tag_ids_for_task_ids(self, task_ids: list[UUID]) -> dict[UUID, list[UUID]]:
+        if not task_ids:
+            return {}
+        res = await self._session.execute(
+            select(TaskTaskTag.task_id, TaskTaskTag.tag_id).where(
+                TaskTaskTag.task_id.in_(task_ids)
+            )
+        )
+        out: dict[UUID, list[UUID]] = {tid: [] for tid in task_ids}
+        for task_id, tag_id in res.all():
+            out.setdefault(task_id, []).append(tag_id)
+        return out
+
+    async def replace_task_tags(self, task_id: UUID, tag_ids: list[UUID]) -> None:
+        await self._session.execute(delete(TaskTaskTag).where(TaskTaskTag.task_id == task_id))
+        for tid in tag_ids:
+            self._session.add(TaskTaskTag(task_id=task_id, tag_id=tid))
+        await self._session.flush()
 
     async def add_status_transition(self, transition: TaskStatusTransition) -> TaskStatusTransition:
         self._session.add(transition)

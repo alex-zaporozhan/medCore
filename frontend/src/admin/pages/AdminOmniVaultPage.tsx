@@ -118,14 +118,14 @@ export default function AdminOmniVaultPage() {
                   style={{ cursor: "pointer", aspectRatio: "1", position: "relative" }}
                   onClick={() => setSelectedMedia(item)}
                 >
-                  <div style={{ width: "100%", height: 100, background: "var(--mantine-color-gray-2)", borderRadius: 4 }} />
+                  <div style={{ width: "100%", height: 100, background: "var(--mantine-color-gray-2)", borderRadius: "var(--radius-xs)" }} />
                   {/* Overlay при наведении: аватар клиента, иконка канала, дата (Фаза 5) */}
                   <div
                     style={{
                       position: "absolute",
                       inset: 0,
-                      borderRadius: 4,
-                      background: "rgba(0,0,0,0.5)",
+                      borderRadius: "var(--radius-xs)",
+                      background: "var(--overlay-black-alpha-05)",
                       display: "flex",
                       flexDirection: "column",
                       alignItems: "center",
@@ -297,7 +297,7 @@ export default function AdminOmniVaultPage() {
                 width: "100%",
                 minHeight: 200,
                 background: "var(--mantine-color-gray-2)",
-                borderRadius: 8,
+                borderRadius: "var(--radius-md)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

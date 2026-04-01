@@ -14,6 +14,9 @@ Procedure when matrix evolves:
    - for existing roles: INSERT new role_permissions for new permission codes,
      or run a data migration that syncs from this module (e.g. script that
      reads ROLE_PERMISSIONS and upserts role_permissions).
+   - **Important:** production often uses **global** roles (``roles.clinic_id IS NULL``)
+     from ``seed_rbac_baseline``; link new permissions to those rows as well as
+     per-clinic role copies (see migration ``v2w3x4y5z6_patients_pii_read_global_roles.py``).
 3. Keep require_permissions(...) usage in routers aligned with these codes
    (see DEV_PROMPTS_RBAC_AND_TASKS.md and ARCH_RBAC_AND_TASKS.md).
 """
@@ -46,9 +49,21 @@ PERMISSIONS: Final[list[PermissionDef]] = [
         "patients.pii.read",
         "Просмотр и изменение ПД пациентов (списки, карточки, телефоны); не для роли врача/линейного персонала",
     ),
+    PermissionDef(
+        "patients.medical.read",
+        "Просмотр медицинской карты пациента (визиты, диагнозы, файлы). Отдельно от ПД (PII).",
+    ),
+    PermissionDef(
+        "patients.medical.write",
+        "Изменение медицинской карты пациента (добавление визитов/диагнозов/файлов).",
+    ),
     PermissionDef("view_tasks", "Просмотр задач"),
     PermissionDef("manage_tasks", "Создание и изменение задач"),
     PermissionDef("assign_tasks", "Назначение задач другим пользователям"),
+    PermissionDef(
+        "tasks.manage_clinic_board",
+        "Изменение общей доски Kanban клиники (порядок колонок); личные доски — по manage_tasks",
+    ),
     PermissionDef("tasks.change_status", "Смена статуса задач"),
     PermissionDef("tasks.unblock", "Снятие блокировки задач"),
     PermissionDef("tasks.bulk_status", "Массовая смена статуса задач"),
@@ -85,11 +100,20 @@ PERMISSIONS: Final[list[PermissionDef]] = [
     ),
     PermissionDef(
         "view_staff_collab",
-        "Просмотр ленты персонала, внутреннего чата, календаря и базы знаний",
+        "Внутренний чат, календарь и база знаний. Стена клиники (лента): чтение, лайки и комментарии "
+        "доступны всем активным администраторам клиники и не требуют этого права",
     ),
     PermissionDef(
         "manage_staff_collab",
-        "Публикация в ленту, сообщения в чате персонала, события календаря, статьи БЗ",
+        "Публикация и правка постов на стене, сообщения в чате персонала, календарь, статьи базы знаний",
+    ),
+    PermissionDef(
+        "staff.feed.comments.moderate",
+        "Модерация комментариев в ленте персонала (удаление чужих комментариев)",
+    ),
+    PermissionDef(
+        "staff.announcements.policy.audit.view",
+        "Просмотр журнала изменений политики запретов публикации объявлений",
     ),
     PermissionDef(
         "invite_staff_calendar_participants",
@@ -98,6 +122,14 @@ PERMISSIONS: Final[list[PermissionDef]] = [
     PermissionDef(
         "omni.inbox.manage",
         "Омниканал: назначение диалогов, статусы, быстрые ответы",
+    ),
+    PermissionDef(
+        "rbac.manage",
+        "Управление ролями, персональными правами и политиками доступа",
+    ),
+    PermissionDef(
+        "manage_staff_directory",
+        "Каталог персонала: категории профессий и учётные записи сотрудников клиники",
     ),
 ]
 
@@ -117,9 +149,12 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "view_crm",
         "manage_crm",
         "patients.pii.read",
+        "patients.medical.read",
+        "patients.medical.write",
         "view_tasks",
         "manage_tasks",
         "assign_tasks",
+        "tasks.manage_clinic_board",
         "tasks.change_status",
         "tasks.unblock",
         "tasks.bulk_status",
@@ -138,8 +173,10 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "ai.tasks.run",
         "view_staff_collab",
         "manage_staff_collab",
+        "staff.feed.comments.moderate",
         "invite_staff_calendar_participants",
         "omni.inbox.manage",
+        "manage_staff_directory",
         # SR5 (QA_ARCH W7): managers may review ERP owner reports + attribution read-only.
         "erp.owner_reports.read",
         "attribution.reports.read",
@@ -150,6 +187,8 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "view_crm",
         "manage_crm",
         "patients.pii.read",
+        "patients.medical.read",
+        "patients.medical.write",
         "view_tasks",
         "manage_tasks",
         "assign_tasks",
@@ -167,6 +206,8 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "manage_staff_collab",
         "invite_staff_calendar_participants",
         "omni.inbox.manage",
+        "rbac.manage",
+        "manage_staff_directory",
     ],
     # Doctor: minimal read-only access to tasks (scoped by visibility rules).
     "doctor": [
@@ -174,9 +215,17 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "tasks.change_status",
         "view_staff_collab",
         "manage_staff_collab",
+        "patients.medical.read",
+        "patients.medical.write",
     ],
 }
 
 
 ALL_PERMISSION_CODES: Final[set[str]] = {p.code for p in PERMISSIONS}
+
+# System role codes used in global seed; clinic-scoped custom roles must not reuse these codes.
+SYSTEM_ROLE_CODES: Final[frozenset[str]] = frozenset({"owner", "manager", "admin", "doctor"})
+
+# Presets for "create clinic role" UI: copy permission set from these matrix entries (not `owner`).
+ROLE_PRESET_SOURCE_CODES: Final[tuple[str, ...]] = ("manager", "admin", "doctor")
 

@@ -1,5 +1,7 @@
-# Same base semantics as node:20-alpine; pull via public.ecr.aws to bypass flaky docker.io mirrors.
-FROM public.ecr.aws/docker/library/node:20-alpine AS build
+# Default: docker.io (works with standard daemon/proxy). Override if needed:
+#   docker build --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:20-alpine -t dental-booking-frontend:local .
+ARG NODE_IMAGE=node:20-alpine
+FROM ${NODE_IMAGE} AS build
 
 WORKDIR /app
 

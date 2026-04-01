@@ -184,10 +184,10 @@ export default function HomePage() {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  background: "var(--mantine-color-gray-1)",
-                  borderRadius: 4,
+                  background: "var(--bg-card-soft)",
+                  borderRadius: "var(--radius-xs)",
                   fontSize: 10,
-                  color: "var(--mantine-color-gray-6)",
+                  color: "var(--text-muted)",
                 }}
               >
                 QR

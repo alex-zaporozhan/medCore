@@ -3,6 +3,7 @@
 import logging
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.dto.clinic_dto import (
@@ -13,9 +14,12 @@ from src.application.dto.clinic_dto import (
 )
 from src.core.encryption import encrypt_plaintext
 from src.domain.entities.clinic import Clinic
+from src.domain.entities.organization import Organization
+from src.domain.entities.task_stream import TaskStream
 from src.domain.interfaces.repositories.clinic_repository import ClinicRepository
 from src.infrastructure.database.clinic_repo_impl import ClinicRepositoryImpl
 from src.application.services.business_lexicon_service import build_business_lexicon
+from src.application.services.slug_service import slugify_ascii, validate_slug
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +50,45 @@ class ClinicService:
 
     def __init__(self, session: AsyncSession) -> None:
         """Initialize service with database session."""
+        self._session = session
         self.repository: ClinicRepository = ClinicRepositoryImpl(session)
 
     async def create_clinic(self, data: ClinicCreate) -> ClinicRead:
         """Create a new clinic."""
         payload = data.model_dump(exclude_none=True)
+        raw_slug = payload.get("clinic_slug")
+        if raw_slug:
+            slug = str(raw_slug).strip().lower()
+            if not validate_slug(slug):
+                raise ValueError("invalid_clinic_slug")
+            payload["clinic_slug"] = slug
+        else:
+            # default slug: best-effort from name + short id suffix, ensured unique by index
+            base = slugify_ascii(payload.get("name") or "")
+            payload["clinic_slug"] = base or None
+        org_res = await self._session.execute(select(Organization).order_by(Organization.created_at.asc()).limit(1))
+        org = org_res.scalar_one_or_none()
+        if org is None:
+            org = Organization(name="Default organization")
+            self._session.add(org)
+            await self._session.flush()
         clinic = Clinic(**payload)
+        clinic.organization_id = org.id
         clinic = await self.repository.create(clinic)
+        if not clinic.clinic_slug:
+            clinic.clinic_slug = f"clinic-{str(clinic.id)[:8]}"
+            clinic = await self.repository.update(clinic)
+        self._session.add(
+            TaskStream(
+                clinic_id=clinic.id,
+                name="Общее",
+                slug="general",
+                sort_order=0,
+                is_archived=False,
+                theme={},
+            )
+        )
+        await self._session.flush()
         logger.info("Clinic created via service", extra={"clinic_id": str(clinic.id)})
         lexicon = build_business_lexicon(clinic)
         dto = ClinicRead.model_validate(clinic)
@@ -87,8 +123,19 @@ class ClinicService:
         if clinic is None:
             return None
 
+        old_slug = getattr(clinic, "clinic_slug", None)
         full = data.model_dump(exclude_unset=True)
         update_data = {k: v for k, v in full.items() if v is not None and k != "yookassa_secret_key"}
+        if "clinic_slug" in full:
+            raw = full.get("clinic_slug")
+            if raw is None:
+                # allow clearing
+                update_data["clinic_slug"] = None
+            else:
+                slug = str(raw).strip().lower()
+                if not validate_slug(slug):
+                    raise ValueError("invalid_clinic_slug")
+                update_data["clinic_slug"] = slug
         if "yookassa_secret_key" in full:
             raw = full["yookassa_secret_key"]
             clinic.yookassa_secret_key_encrypted = encrypt_plaintext(raw) if (raw and str(raw).strip()) else None
@@ -98,6 +145,12 @@ class ClinicService:
 
         clinic = await self.repository.update(clinic)
         logger.info("Clinic updated via service", extra={"clinic_id": str(clinic_id)})
+        new_slug = getattr(clinic, "clinic_slug", None)
+        if old_slug != new_slug:
+            logger.info(
+                "clinic_slug_changed",
+                extra={"clinic_id": str(clinic_id), "old_slug": old_slug, "new_slug": new_slug},
+            )
         dto = ClinicRead.model_validate(clinic)
         dto.business_lexicon = build_business_lexicon(clinic)
         dto.payment_options = _build_payment_options(clinic)

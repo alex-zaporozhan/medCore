@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ROUTE_PATHS } from "@/routePaths";
 import { isPatientLoginPath } from "@/routePathUtils";
 import { appTheme } from "@/theme";
+import { applyPwaUpdate, PWA_NEED_REFRESH, PWA_OFFLINE_READY } from "@/pwa/registerPwa";
 
 const SELECTED_CLINIC_KEY = "app.selectedClinicId";
 
@@ -29,7 +30,7 @@ const patientChromeHeader = {
 
 const patientChromeBottom = {
   backgroundColor: "var(--mantine-color-white)",
-  boxShadow: "0 -1px 2px rgba(15, 23, 42, 0.06)",
+  boxShadow: "var(--shadow-soft-sm)",
 } as const;
 
 export default function AppLayout() {
@@ -42,6 +43,7 @@ export default function AppLayout() {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
+  const [pwaUpdateAvailable, setPwaUpdateAvailable] = useState(false);
 
   const selectedClinicId =
     typeof localStorage !== "undefined" ? localStorage.getItem(SELECTED_CLINIC_KEY) : null;
@@ -85,6 +87,28 @@ export default function AppLayout() {
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    function onPwaNeedRefresh() {
+      setPwaUpdateAvailable(true);
+    }
+    function onPwaOfflineReady() {
+      try {
+        if (sessionStorage.getItem("pwa-offline-ready-shown")) return;
+        sessionStorage.setItem("pwa-offline-ready-shown", "1");
+      } catch {
+        return;
+      }
+      // Однократно: shell закэширован, офлайн-страницы доступны из кэша.
+      console.info("[pwa] приложение можно открыть без сети (кэш интерфейса).");
+    }
+    window.addEventListener(PWA_NEED_REFRESH, onPwaNeedRefresh);
+    window.addEventListener(PWA_OFFLINE_READY, onPwaOfflineReady);
+    return () => {
+      window.removeEventListener(PWA_NEED_REFRESH, onPwaNeedRefresh);
+      window.removeEventListener(PWA_OFFLINE_READY, onPwaOfflineReady);
     };
   }, []);
 
@@ -156,6 +180,23 @@ export default function AppLayout() {
         className="app-main-with-bottom-nav app-patient-main"
         style={{ backgroundColor: "var(--bg-main)", minHeight: "100%" }}
       >
+        {pwaUpdateAvailable && (
+          <Alert
+            color="teal"
+            variant="light"
+            style={{ borderRadius: 0, borderBottom: "1px solid var(--divider)" }}
+            title="Доступна новая версия"
+            withCloseButton
+            onClose={() => setPwaUpdateAvailable(false)}
+          >
+            <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+              <Text size="sm">Обновите приложение, чтобы получить исправления и улучшения.</Text>
+              <Button size="xs" onClick={() => applyPwaUpdate()}>
+                Обновить сейчас
+              </Button>
+            </Group>
+          </Alert>
+        )}
         {!isOnline && (
           <Alert
             color="yellow"
