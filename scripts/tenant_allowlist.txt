@@ -22,3 +22,4 @@ waitlist_notifications
 organizations
 task_board_columns
 task_task_tags
+omni_chat_closure_tag_links
