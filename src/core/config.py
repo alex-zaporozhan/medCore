@@ -240,6 +240,8 @@ class Settings(BaseSettings):
             p = "/api/v1"
         if not p.startswith("/"):
             p = "/" + p
+        if len(p) > 1:
+            p = p.rstrip("/")
         object.__setattr__(self, "api_v1_prefix", p)
         return self
 
