@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -10,6 +10,8 @@ import {
   Stack,
   Text,
   Textarea,
+  Divider,
+  Alert,
 } from "@mantine/core";
 import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { useAdminSession } from "@/hooks/useAdminSession";
@@ -17,17 +19,23 @@ import { useAdminAdmins } from "@/hooks/useAdminAdmins";
 import {
   useAddStaffFeedComment,
   useCreateStaffFeedPost,
+  useStaffAnnouncementPublishPolicy,
+  useUpdateStaffAnnouncementPublishPolicy,
   useStaffFeedComments,
+  useUpdateStaffFeedComment,
+  useDeleteStaffFeedComment,
   useStaffFeedPostAckStatus,
-  useStaffFeedPosts,
-  useToggleStaffFeedPostLike,
+  useStaffAnnouncements,
+  useAckStaffFeedPost,
 } from "@/hooks/useStaffCollab";
 import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
+import { PersonNameLink } from "@/shared/ui";
+import { ApiErrorWithCode, getAdminId } from "@/api/client";
+import { ActionIcon, Menu } from "@mantine/core";
+import { IconDots, IconTrash, IconEdit } from "@tabler/icons-react";
 
 function canPublish(session: { roles: string[]; permissions: string[] } | undefined) {
-  if (!session) return false;
-  if (session.permissions.includes("manage_staff_collab")) return true;
-  return !session.roles.includes("doctor");
+  return Boolean(session);
 }
 
 function priorityColor(v?: string) {
@@ -41,20 +49,119 @@ function CommentList({ postId }: { postId: string }) {
   const [text, setText] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const addMut = useAddStaffFeedComment(postId);
+  const updateMut = useUpdateStaffFeedComment(postId);
+  const deleteMut = useDeleteStaffFeedComment(postId);
+  const { data: session } = useAdminSession();
+  const myId = getAdminId();
+  const canModerate =
+    Boolean(session?.roles?.includes("owner")) ||
+    Boolean(session?.permissions?.includes("staff.feed.comments.moderate"));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState<string>("");
+  const [err, setErr] = useState<string | null>(null);
   const options = comments.map((c) => ({
     value: c.id,
     label: c.author.full_name?.trim() || "Сотрудник",
   }));
   return (
     <Stack gap={6}>
+      {err ? (
+        <Alert color="red" title="Ошибка" onClose={() => setErr(null)} withCloseButton>
+          {err}
+        </Alert>
+      ) : null}
       {comments.map((c) => (
         <Card key={c.id} withBorder padding="xs">
-          <Text size="xs" c="dimmed">
-            {c.author.full_name || "Сотрудник"}
-          </Text>
-          <Text size="sm">
-            <AppleEmojiRichText text={c.body} />
-          </Text>
+          <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+            <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+              <Text size="xs" c="dimmed">
+                <PersonNameLink kind="staff" id={c.author.id} label={c.author.full_name} size="xs" />
+              </Text>
+              {c.deleted_at ? (
+                <Text size="sm" c="dimmed" style={{ textDecoration: "line-through", whiteSpace: "pre-wrap" }}>
+                  <AppleEmojiRichText text={c.body || "Удалено"} />
+                </Text>
+              ) : editingId === c.id ? (
+                <Stack gap="xs">
+                  <Textarea minRows={2} value={editText} onChange={(e) => setEditText(e.currentTarget.value)} />
+                  <Group justify="flex-end" gap="xs">
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      onClick={() => {
+                        setEditingId(null);
+                        setEditText("");
+                      }}
+                      disabled={updateMut.isPending}
+                    >
+                      Отмена
+                    </Button>
+                    <Button
+                      size="xs"
+                      onClick={async () => {
+                        if (!editText.trim()) return;
+                        setErr(null);
+                        try {
+                          await updateMut.mutateAsync({ commentId: c.id, body: editText.trim() });
+                          setEditingId(null);
+                          setEditText("");
+                        } catch (e) {
+                          setErr(e instanceof ApiErrorWithCode ? e.message : "Не удалось сохранить комментарий");
+                        }
+                      }}
+                      loading={updateMut.isPending}
+                    >
+                      Сохранить
+                    </Button>
+                  </Group>
+                </Stack>
+              ) : (
+                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                  <AppleEmojiRichText text={c.body} />
+                </Text>
+              )}
+            </Stack>
+            {!c.deleted_at && (c.author.id === myId || canModerate) ? (
+              <Menu position="bottom-end" withinPortal>
+                <Menu.Target>
+                  <ActionIcon size="sm" variant="subtle" aria-label="Действия">
+                    <IconDots size={16} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {c.author.id === myId ? (
+                    <Menu.Item
+                      leftSection={<IconEdit size={14} />}
+                      onClick={() => {
+                        setErr(null);
+                        setEditingId(c.id);
+                        setEditText(c.body ?? "");
+                      }}
+                    >
+                      Редактировать
+                    </Menu.Item>
+                  ) : null}
+                  <Menu.Item
+                    color="red"
+                    leftSection={<IconTrash size={14} />}
+                    disabled={deleteMut.isPending}
+                    onClick={async () => {
+                      const ok = window.confirm("Удалить комментарий?");
+                      if (!ok) return;
+                      setErr(null);
+                      try {
+                        await deleteMut.mutateAsync(c.id);
+                      } catch (e) {
+                        setErr(e instanceof ApiErrorWithCode ? e.message : "Не удалось удалить комментарий");
+                      }
+                    }}
+                  >
+                    Удалить
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            ) : null}
+          </Group>
         </Card>
       ))}
       <Select
@@ -91,11 +198,11 @@ function CommentList({ postId }: { postId: string }) {
 }
 
 export default function AdminEmergencyNotificationsPage() {
-  const { data, isLoading, isError, error } = useStaffFeedPosts(50);
+  const { data, isLoading, isError, error } = useStaffAnnouncements(50);
   const { data: session } = useAdminSession();
   const { data: admins = [] } = useAdminAdmins();
   const createMut = useCreateStaffFeedPost();
-  const ackMut = useToggleStaffFeedPostLike();
+  const ackMut = useAckStaffFeedPost();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [audienceRoles, setAudienceRoles] = useState<string[]>([]);
@@ -104,8 +211,27 @@ export default function AdminEmergencyNotificationsPage() {
   const [ackStatusPostId, setAckStatusPostId] = useState<string | null>(null);
   const { data: ackStatus } = useStaffFeedPostAckStatus(ackStatusPostId);
 
-  const posts = useMemo(() => (data ?? []).filter((p) => p.is_announcement), [data]);
+  const posts = useMemo(() => data ?? [], [data]);
   const allowCreate = canPublish(session);
+  const canManagePolicy = Boolean(session?.permissions?.includes("rbac.manage"));
+  const { data: policyData } = useStaffAnnouncementPublishPolicy();
+  const updatePolicyMut = useUpdateStaffAnnouncementPublishPolicy();
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [denyRoles, setDenyRoles] = useState<string[]>([]);
+  const [denyAdmins, setDenyAdmins] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!canManagePolicy) return;
+    const policies = policyData?.policies ?? [];
+    const roles = policies
+      .filter((p) => p.scope_type === "role" && p.can_publish === false)
+      .map((p) => p.scope_value);
+    const users = policies
+      .filter((p) => p.scope_type === "user" && p.can_publish === false)
+      .map((p) => p.scope_value);
+    setDenyRoles(roles);
+    setDenyAdmins(users);
+  }, [canManagePolicy, policyData?.policies]);
 
   if (isLoading) {
     return (
@@ -127,6 +253,71 @@ export default function AdminEmergencyNotificationsPage() {
   return (
     <Stack gap="md">
       <ContextBar title="Стена объявлений" />
+      {canManagePolicy ? (
+        <Card withBorder>
+          <Stack gap="xs">
+            <Text fw={600}>Права на публикацию объявлений</Text>
+            <Text size="sm" c="dimmed">
+              По умолчанию публиковать могут все сотрудники. Здесь можно запретить по роли или точечно по человеку.
+            </Text>
+            {policyError ? (
+              <Alert color="red" title="Ошибка" onClose={() => setPolicyError(null)} withCloseButton>
+                {policyError}
+              </Alert>
+            ) : null}
+            <Group grow align="flex-end">
+              <MultiSelect
+                label="Запретить по ролям"
+                data={[
+                  { value: "manager", label: "Менеджер" },
+                  { value: "admin", label: "Администратор" },
+                  { value: "doctor", label: "Врач/мастер" },
+                ]}
+                value={denyRoles}
+                onChange={setDenyRoles}
+                placeholder="Пусто = без запретов"
+              />
+              <MultiSelect
+                label="Запретить конкретным сотрудникам"
+                data={admins.map((a) => ({ value: a.id, label: a.full_name?.trim() || a.email }))}
+                value={denyAdmins}
+                onChange={setDenyAdmins}
+                placeholder="Пусто = без запретов"
+              />
+            </Group>
+            <Group justify="flex-end">
+              <Button
+                variant="light"
+                onClick={async () => {
+                  setPolicyError(null);
+                  try {
+                    const payload = [
+                      ...denyRoles.map((r) => ({
+                        scope_type: "role" as const,
+                        scope_value: r,
+                        can_publish: false,
+                      })),
+                      ...denyAdmins.map((id) => ({
+                        scope_type: "user" as const,
+                        scope_value: id,
+                        can_publish: false,
+                      })),
+                    ];
+                    await updatePolicyMut.mutateAsync(payload);
+                  } catch (e) {
+                    setPolicyError(e instanceof Error ? e.message : "Не удалось сохранить политику");
+                  }
+                }}
+                loading={updatePolicyMut.isPending}
+              >
+                Сохранить политику
+              </Button>
+            </Group>
+          </Stack>
+        </Card>
+      ) : null}
+
+      <Divider />
       {allowCreate ? (
         <Card withBorder>
           <Stack gap="xs">

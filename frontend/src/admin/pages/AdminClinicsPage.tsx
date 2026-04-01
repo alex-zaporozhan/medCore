@@ -17,6 +17,7 @@ import { BUSINESS_TYPE_OPTIONS } from "@/api/types";
 interface ClinicFormState {
   id?: string;
   name: string;
+  clinic_slug: string;
   phone: string;
   email: string;
   address: string;
@@ -35,6 +36,7 @@ export default function AdminClinicsPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<ClinicFormState>({
     name: "",
+    clinic_slug: "",
     phone: "",
     email: "",
     address: "",
@@ -51,6 +53,7 @@ export default function AdminClinicsPage() {
     setForm({
       id: clinic.id,
       name: clinic.name,
+      clinic_slug: clinic.clinic_slug ?? "",
       phone: clinic.phone ?? "",
       email: clinic.email ?? "",
       address: clinic.address ?? "",
@@ -66,6 +69,7 @@ export default function AdminClinicsPage() {
   const handleCreate = () => {
     setForm({
       name: "",
+      clinic_slug: "",
       phone: "",
       email: "",
       address: "",
@@ -84,6 +88,7 @@ export default function AdminClinicsPage() {
     try {
       const payload = {
         name: form.name.trim(),
+        clinic_slug: form.clinic_slug.trim() || null,
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,
         address: form.address.trim() || null,
@@ -186,6 +191,14 @@ export default function AdminClinicsPage() {
             value={form.name}
             onChange={(e) =>
               setForm((prev) => ({ ...prev, name: e.target.value }))
+            }
+          />
+          <TextInput
+            label="Slug клиники (для публичных URL)"
+            description="Например: my-clinic. Только латиница, цифры и дефисы."
+            value={form.clinic_slug}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, clinic_slug: e.target.value }))
             }
           />
           <TextInput

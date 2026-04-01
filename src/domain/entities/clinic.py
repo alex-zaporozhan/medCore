@@ -60,6 +60,8 @@ class Clinic(Base):
     #: Внутренний чат персонала: `clinic_isolated` — только сотрудники этой клиники (строка clinics.id).
     #: `network` зарезервировано под сеть салонов (см. docs/architecture/STAFF_CHAT_MULTITENANCY.md).
     staff_chat_scope: Mapped[str] = mapped_column(String(32), nullable=False, server_default="clinic_isolated")
+    #: Public URL slug for client-facing pages (SEO). Unique across the system.
+    clinic_slug: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )

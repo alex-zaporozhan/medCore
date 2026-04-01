@@ -432,6 +432,34 @@ export interface TaskStreamRow {
   theme: Record<string, unknown>;
 }
 
+export type TaskStreamMantineColor =
+  | "gray"
+  | "red"
+  | "pink"
+  | "grape"
+  | "violet"
+  | "indigo"
+  | "blue"
+  | "cyan"
+  | "teal"
+  | "green"
+  | "lime"
+  | "yellow"
+  | "orange";
+
+export type TaskStreamPageTint =
+  | "none"
+  | "subtle_gray"
+  | "subtle_violet"
+  | "subtle_blue"
+  | "subtle_green"
+  | "subtle_amber";
+
+export interface TaskStreamThemeDto {
+  mantine_color?: TaskStreamMantineColor;
+  page_tint?: TaskStreamPageTint;
+}
+
 export interface TaskTagRow {
   id: string;
   clinic_id: string;
@@ -458,6 +486,21 @@ export function useCreateTaskStreamMutation() {
   return useMutation({
     mutationFn: (body: { name: string; slug?: string | null }) =>
       api.post<TaskStreamRow>("/v1/admin/task-streams", body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.adminTaskStreams.list() });
+    },
+  });
+}
+
+export function usePatchTaskStreamMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { streamId: string; name?: string | null; theme?: TaskStreamThemeDto | null; is_archived?: boolean | null }) =>
+      api.patch<TaskStreamRow>(`/v1/admin/task-streams/${args.streamId}`, {
+        ...(args.name !== undefined ? { name: args.name } : {}),
+        ...(args.theme !== undefined ? { theme: args.theme } : {}),
+        ...(args.is_archived !== undefined ? { is_archived: args.is_archived } : {}),
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.adminTaskStreams.list() });
     },

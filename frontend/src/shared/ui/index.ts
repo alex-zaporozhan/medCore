@@ -28,3 +28,6 @@ export { SEMANTIC, type SemanticDateNavKey, type SemanticMetricKey } from "../se
 export { OmniInspectorTabShell, OmniInspectorSection } from "./OmniInspectorShell";
 export { EmojiMartPopoverPicker } from "./EmojiMartPopoverPicker";
 export { AppleEmojiOverlayTextarea } from "./AppleEmojiOverlayTextarea";
+export { PersonNameLink } from "./PersonNameLink";
+export { PersonCardModalHost } from "./PersonCardModalHost";
+export { PersonCardProvider, usePersonCard } from "./PersonCardContext";

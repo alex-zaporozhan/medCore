@@ -23,8 +23,17 @@ class StaffFeedComment(Base):
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    deleted_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("admins.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         Index("ix_staff_feed_comments_post_id", "post_id"),
         Index("ix_staff_feed_comments_parent_comment_id", "parent_comment_id"),
+        Index("ix_staff_feed_comments_deleted_at", "deleted_at"),
     )

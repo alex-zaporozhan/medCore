@@ -55,7 +55,14 @@ from src.domain.entities.erp_aggregate_coverage_watermark import (  # noqa: F401
 )
 from src.domain.entities.omni_quick_reply import OmniQuickReply  # noqa: F401
 from src.domain.entities.staff_feed_post_ack import StaffFeedPostAck  # noqa: F401
+from src.domain.entities.staff_announcement_publish_policy import (  # noqa: F401
+    StaffAnnouncementPublishPolicy,
+)
+from src.domain.entities.staff_announcement_publish_policy_audit import (  # noqa: F401
+    StaffAnnouncementPublishPolicyAudit,
+)
 from src.domain.entities.user_permission_grant import UserPermissionGrant  # noqa: F401
 from src.domain.entities.rbac_audit_log import RbacAuditLog  # noqa: F401
+from src.domain.entities.medical_file_audit_log import MedicalFileAuditLog  # noqa: F401
 from src.domain.entities.organization import Organization  # noqa: F401
 from src.domain.entities.staff_profession_category import StaffProfessionCategory  # noqa: F401

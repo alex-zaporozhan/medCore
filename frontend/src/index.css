@@ -594,3 +594,12 @@ body {
 .admin-tasks-context[data-page-tint="subtle_amber"] {
   background: linear-gradient(180deg, rgba(217, 119, 6, 0.09) 0%, transparent 160px);
 }
+
+/* Hide horizontal scrollbar for stream pager (keep swipe/trackpad). */
+.admin-stream-pager {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.admin-stream-pager::-webkit-scrollbar {
+  height: 0;
+}

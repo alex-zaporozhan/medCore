@@ -39,6 +39,10 @@ import {
   IconChevronDown,
   IconLayoutKanban,
   IconPlus,
+  IconPalette,
+  IconSettings,
+  IconFilter,
+  IconSearch,
 } from "@tabler/icons-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
@@ -49,6 +53,7 @@ import {
   AppleEmojiOverlayTextarea,
   EmojiMartPopoverPicker,
   CompactMonthPicker,
+  PersonNameLink,
 } from "@/shared/ui";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { SEMANTIC } from "@/shared/semanticUi";
@@ -72,7 +77,6 @@ import {
   useUpdateAdminTaskStatusMutation,
   useUpdateAdminTaskMetaMutation,
   useReorderAdminTasksMutation,
-  useBulkUpdateAdminTaskStatusMutation,
   useTaskWipPolicies,
   useTaskTransitions,
   useTaskCalendarContext,
@@ -84,14 +88,14 @@ import {
   useAdminSession,
   useTaskBoardsQuery,
   useReplaceTaskBoardColumnsMutation,
-  useCreatePersonalTaskBoardMutation,
   useTaskStreamsQuery,
   useTaskTagsQuery,
   useCreateTaskStreamMutation,
+  usePatchTaskStreamMutation,
   useCreateTaskTagMutation,
   usePatchAdminTaskStreamTagsMutation,
 } from "@/hooks";
-import type { AdminTaskRow, AdminUserRow } from "@/hooks";
+import type { AdminTaskRow, AdminUserRow, TaskStreamRow, TaskStreamMantineColor, TaskStreamPageTint } from "@/hooks";
 import { ApiErrorWithCode, getAdminId } from "@/api/client";
 import {
   DndContext,
@@ -101,8 +105,10 @@ import {
   useDraggable,
   useDroppable,
   type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
+import { useDebouncedValue } from "@mantine/hooks";
 
 const STATUS_META: Record<string, string> = {
   open: "Открыто",
@@ -128,22 +134,33 @@ function streamPageTintKey(theme: Record<string, unknown> | undefined): string {
   return typeof v === "string" && v !== "none" ? v : "none";
 }
 
+function streamMantineColorKey(theme: Record<string, unknown> | undefined): TaskStreamMantineColor {
+  const v = theme?.mantine_color;
+  const allowed: TaskStreamMantineColor[] = [
+    "gray",
+    "red",
+    "pink",
+    "grape",
+    "violet",
+    "indigo",
+    "blue",
+    "cyan",
+    "teal",
+    "green",
+    "lime",
+    "yellow",
+    "orange",
+  ];
+  return typeof v === "string" && allowed.includes(v as TaskStreamMantineColor)
+    ? (v as TaskStreamMantineColor)
+    : "blue";
+}
+
 /** Имена личных исполнителей: assignee_ids или legacy assignee_id. */
 function taskAssigneeIdList(task: AdminTaskRow): string[] {
   if (task.assignee_ids && task.assignee_ids.length > 0) return task.assignee_ids;
   if (task.assignee_id) return [task.assignee_id];
   return [];
-}
-
-function formatTaskAssigneeLine(task: AdminTaskRow, admins: AdminUserRow[]): string {
-  const ids = taskAssigneeIdList(task);
-  if (ids.length === 0) return "";
-  return ids
-    .map((id) => {
-      const a = admins.find((x) => x.id === id);
-      return a?.full_name || a?.email || id.slice(0, 8);
-    })
-    .join(", ");
 }
 
 function isTimeBomb(dueAt: string | null): boolean {
@@ -177,6 +194,9 @@ function TaskKanbanCard({
   selected,
   onSelect,
   onMoveByKeyboard,
+  canMoveStream,
+  streamOptions,
+  onMoveToStream,
 }: {
   task: AdminTaskRow;
   admins: AdminUserRow[];
@@ -190,6 +210,9 @@ function TaskKanbanCard({
   selected?: boolean;
   onSelect?: (taskId: string, checked: boolean) => void;
   onMoveByKeyboard?: (taskId: string, direction: -1 | 1) => void;
+  canMoveStream?: boolean;
+  streamOptions?: Array<{ value: string; label: string }>;
+  onMoveToStream?: (taskId: string, streamId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
@@ -275,6 +298,36 @@ function TaskKanbanCard({
               <Text size="sm" fw={600} lineClamp={2} style={{ flex: 1, color: tc.title }}>
                 {task.title}
               </Text>
+              {canMoveStream && streamOptions && streamOptions.length > 0 && onMoveToStream ? (
+                <Menu shadow="md" width={260} withinPortal>
+                  <Menu.Target>
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      size="sm"
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label="Переместить в поток"
+                      style={{ flexShrink: 0 }}
+                    >
+                      <IconLayoutKanban size={16} />
+                    </ActionIcon>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Label>Переместить в поток</Menu.Label>
+                    {streamOptions.map((opt) => (
+                      <Menu.Item
+                        key={opt.value}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMoveToStream(task.id, opt.value);
+                        }}
+                      >
+                        {opt.label}
+                      </Menu.Item>
+                    ))}
+                  </Menu.Dropdown>
+                </Menu>
+              ) : null}
             </Group>
             {blocked ? (
               <Tooltip
@@ -363,8 +416,9 @@ export default function AdminTasksPage() {
   const [filterAssignee, setFilterAssignee] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState<string | null>(null);
   const [filterDue, setFilterDue] = useState<string>("all");
+  const [filterQuery, setFilterQuery] = useState("");
+  const [debouncedFilterQuery] = useDebouncedValue(filterQuery, 180);
   const [onlyNeedsMyApproval, setOnlyNeedsMyApproval] = useState(false);
-  const [bulkStatus, setBulkStatus] = useState<string | null>(null);
   const [blockedReasonDraft, setBlockedReasonDraft] = useState("");
   const [auditTrail, setAuditTrail] = useState<
     Array<{ id: string; taskId: string; taskTitle: string; from: string; to: string; at: string }>
@@ -379,7 +433,6 @@ export default function AdminTasksPage() {
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
   const [boardColumnModalOpened, setBoardColumnModalOpened] = useState(false);
   const [columnDraft, setColumnDraft] = useState<{ mapped_status: string; label: string | null }[]>([]);
-  const [newPersonalBoardName, setNewPersonalBoardName] = useState("");
   const boardInitRef = useRef(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedStreamId, setSelectedStreamId] = useState<string | null>(null);
@@ -389,6 +442,9 @@ export default function AdminTasksPage() {
   const [createTagIds, setCreateTagIds] = useState<string[]>([]);
   const [newStreamModalOpened, setNewStreamModalOpened] = useState(false);
   const [newStreamName, setNewStreamName] = useState("");
+  const [streamThemeModalOpened, setStreamThemeModalOpened] = useState(false);
+  const [themeDraftTint, setThemeDraftTint] = useState<TaskStreamPageTint>("none");
+  const [themeDraftColor, setThemeDraftColor] = useState<TaskStreamMantineColor>("blue");
   const [newTagModalOpened, setNewTagModalOpened] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [detailStreamDraft, setDetailStreamDraft] = useState<string | null>(null);
@@ -396,19 +452,20 @@ export default function AdminTasksPage() {
 
   const currentAdminId = getAdminId();
   const { data: adminSession } = useAdminSession();
+  const canManageBoards = Boolean(adminSession?.permissions?.includes("manage_tasks"));
   const { data: taskStreams = [], isLoading: streamsLoading } = useTaskStreamsQuery();
   const { data: taskTags = [], isLoading: tagsLoading } = useTaskTagsQuery();
   const {
-    data: tasks = [],
+    data: allTasks = [],
     isLoading: tasksLoading,
   } = useAdminTasksList(
-    { streamId: selectedStreamId, tagIds: filterTagIds },
+    { streamId: null, tagIds: filterTagIds },
     { enabled: streamFilterInitialized }
   );
   const taskChatTitle = useMemo(() => {
     if (!taskChatId) return "";
-    return tasks.find((t) => t.id === taskChatId)?.title ?? "";
-  }, [taskChatId, tasks]);
+    return allTasks.find((t) => t.id === taskChatId)?.title ?? "";
+  }, [taskChatId, allTasks]);
   const { data: myFocusTasks = [] } = useAdminTasksMyFocus(currentAdminId);
   const { data: admins = [] } = useAdminAdmins();
   const { data: patientsList = [] } = usePatients({ clinic_id: currentClinicId ?? undefined, limit: 500 });
@@ -428,8 +485,8 @@ export default function AdminTasksPage() {
   }, [patientsList]);
 
   const detailTask = useMemo(
-    () => (detailTaskId ? tasks.find((t) => t.id === detailTaskId) : undefined),
-    [detailTaskId, tasks]
+    () => (detailTaskId ? allTasks.find((t) => t.id === detailTaskId) : undefined),
+    [detailTaskId, allTasks]
   );
 
   useEffect(() => {
@@ -445,17 +502,37 @@ export default function AdminTasksPage() {
   const createTaskMutation = useCreateAdminTaskMutation();
   const claimMutation = useClaimAdminTaskMutation();
   const updateStatusMutation = useUpdateAdminTaskStatusMutation();
+  const moveTask = useCallback(
+    (task: AdminTaskRow, toStatus: string) => {
+      if (!task || task.status === toStatus) return;
+      const id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      setAuditTrail((prev) => [
+        { id, taskId: task.id, taskTitle: task.title, from: task.status, to: toStatus, at: new Date().toISOString() },
+        ...prev,
+      ]);
+      updateStatusMutation.mutate({ taskId: task.id, status: toStatus });
+    },
+    [updateStatusMutation]
+  );
   const updateTaskMetaMutation = useUpdateAdminTaskMetaMutation();
   const patchAssigneesMutation = usePatchAdminTaskAssigneesMutation();
   const patchDueMutation = usePatchAdminTaskDueMutation();
   const { data: taskBoards = [], isLoading: boardsLoading } = useTaskBoardsQuery();
   const replaceBoardColumnsMutation = useReplaceTaskBoardColumnsMutation();
-  const createPersonalBoardMutation = useCreatePersonalTaskBoardMutation();
+  // Personal boards creation is intentionally hidden in the new UX; keep API hook unused for now.
   const createStreamMutation = useCreateTaskStreamMutation();
+  const patchStreamMutation = usePatchTaskStreamMutation();
   const createTagMutation = useCreateTaskTagMutation();
   const patchStreamTagsMutation = usePatchAdminTaskStreamTagsMutation();
+  const canMoveTasksAcrossStreams = canManageBoards;
+  const streamMoveOptions = useMemo(
+    () => taskStreams.filter((s) => !s.is_archived).map((s) => ({ value: s.id, label: s.name })),
+    [taskStreams]
+  );
+
   const reorderTasksMutation = useReorderAdminTasksMutation();
-  const bulkUpdateMutation = useBulkUpdateAdminTaskStatusMutation();
+  // Bulk update action is hidden in the new UX; keep hook out until reintroduced.
   const { data: wipPolicies = KANBAN_WIP_LIMITS } = useTaskWipPolicies();
   const { data: detailTransitions = [] } = useTaskTransitions(detailTaskId);
   const { data: taskCalendarContext = [] } = useTaskCalendarContext(detailTaskId);
@@ -464,8 +541,8 @@ export default function AdminTasksPage() {
   const inviteParticipantsMutation = useInviteTaskCalendarParticipants(detailTaskId, inviteEventId);
 
   useEffect(() => {
-    setSelectedTaskIds((prev) => prev.filter((id) => tasks.some((t) => t.id === id)));
-  }, [tasks]);
+    setSelectedTaskIds((prev) => prev.filter((id) => allTasks.some((t) => t.id === id)));
+  }, [allTasks]);
 
   useEffect(() => {
     if (streamsLoading || streamFilterInitialized) return;
@@ -513,6 +590,110 @@ export default function AdminTasksPage() {
     () => taskStreams.find((s) => s.id === selectedStreamId),
     [taskStreams, selectedStreamId]
   );
+
+  useEffect(() => {
+    if (!streamThemeModalOpened) return;
+    const rawTint = activeStream?.theme?.page_tint;
+    const rawColor = activeStream?.theme?.mantine_color;
+    setThemeDraftTint((typeof rawTint === "string" ? (rawTint as TaskStreamPageTint) : "none") ?? "none");
+    setThemeDraftColor((typeof rawColor === "string" ? (rawColor as TaskStreamMantineColor) : "blue") ?? "blue");
+  }, [streamThemeModalOpened, activeStream?.id, activeStream?.theme]);
+
+  const streamPages = useMemo(() => {
+    const pages: Array<{
+      key: string;
+      label: string;
+      streamId: string | null;
+      stream?: TaskStreamRow;
+    }> = [{ key: "all", label: "Все потоки", streamId: null }];
+    taskStreams.forEach((s) => {
+      pages.push({ key: s.id, label: s.name, streamId: s.id, stream: s });
+    });
+    return pages;
+  }, [taskStreams]);
+
+  const activePageIndex = useMemo(() => {
+    if (!selectedStreamId) return 0;
+    const i = streamPages.findIndex((p) => p.streamId === selectedStreamId);
+    return i >= 0 ? i : 0;
+  }, [selectedStreamId, streamPages]);
+
+  const pagerRef = useRef<HTMLDivElement>(null);
+  const skipAutoScrollRef = useRef(false);
+  const pagerScrollTimerRef = useRef<number | null>(null);
+  const pagerLastIdxRef = useRef<number>(-1);
+  const scrollToPage = useCallback((idx: number, behavior: ScrollBehavior = "smooth") => {
+    const el = pagerRef.current;
+    if (!el) return;
+    const clamped = Math.max(0, Math.min(idx, streamPages.length - 1));
+    const target = el.querySelector<HTMLElement>(`[data-stream-page-index="${clamped}"]`);
+    if (!target) return;
+    if (typeof (target as any).scrollIntoView === "function") {
+      target.scrollIntoView({ behavior, inline: "start", block: "nearest" });
+      return;
+    }
+    // JSDOM / embedded: fallback to scrollLeft.
+    const pageWidth = el.clientWidth || 1;
+    const nextLeft = clamped * pageWidth;
+    if (typeof (el as any).scrollTo === "function") {
+      el.scrollTo({ left: nextLeft, behavior });
+      return;
+    }
+    el.scrollLeft = nextLeft;
+  }, [streamPages.length]);
+
+  const handlePagerScroll = useCallback(() => {
+    const el = pagerRef.current;
+    if (!el) return;
+    if (pagerScrollTimerRef.current) window.clearTimeout(pagerScrollTimerRef.current);
+    pagerScrollTimerRef.current = window.setTimeout(() => {
+      const w = el.clientWidth || 1;
+      const idx = Math.max(0, Math.min(streamPages.length - 1, Math.round(el.scrollLeft / w)));
+      if (idx === pagerLastIdxRef.current) return;
+      pagerLastIdxRef.current = idx;
+      skipAutoScrollRef.current = true;
+      setSelectedStreamId(streamPages[idx]?.streamId ?? null);
+      // UX: snap to exact page after swipe settles.
+      window.setTimeout(() => scrollToPage(idx, "smooth"), 140);
+    }, 80);
+  }, [streamPages, streamPages.length, scrollToPage]);
+
+  const navHoverTimerRef = useRef<number | null>(null);
+  const navIntentRef = useRef<"prev" | "next" | null>(null);
+  const scheduleNavIntent = useCallback(
+    (intent: "prev" | "next" | null) => {
+      navIntentRef.current = intent;
+      if (navHoverTimerRef.current) {
+        window.clearTimeout(navHoverTimerRef.current);
+        navHoverTimerRef.current = null;
+      }
+      if (!intent) return;
+      navHoverTimerRef.current = window.setTimeout(() => {
+        const idx = activePageIndex;
+        const nextIdx = intent === "prev" ? idx - 1 : idx + 1;
+        if (nextIdx < 0 || nextIdx >= streamPages.length) return;
+        setSelectedStreamId(streamPages[nextIdx]?.streamId ?? null);
+        scrollToPage(nextIdx);
+      }, 420);
+    },
+    [activePageIndex, scrollToPage, streamPages]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (navHoverTimerRef.current) window.clearTimeout(navHoverTimerRef.current);
+      if (pagerScrollTimerRef.current) window.clearTimeout(pagerScrollTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Sync visual position with URL/state changes, unless it was a user scroll.
+    if (skipAutoScrollRef.current) {
+      skipAutoScrollRef.current = false;
+      return;
+    }
+    scrollToPage(activePageIndex, "auto");
+  }, [activePageIndex, scrollToPage]);
 
   useEffect(() => {
     if (!createOpened) return;
@@ -568,7 +749,7 @@ export default function AdminTasksPage() {
     Boolean(adminSession?.permissions?.includes("assign_tasks")) ||
     Boolean(adminSession?.permissions?.includes("tasks.change_status"));
 
-  const canManageBoards = adminSession?.permissions?.includes("manage_tasks");
+  // moved above (used earlier for stream movement)
   const canEditClinicBoardLayout = Boolean(
     adminSession?.permissions?.includes("tasks.manage_clinic_board")
   );
@@ -709,70 +890,22 @@ export default function AdminTasksPage() {
     label: a.full_name || a.email || a.id.slice(0, 8),
   }));
 
-  const statusColumns = useMemo(() => {
-    if (selectedBoard?.columns?.length) {
-      return selectedBoard.columns
-        .slice()
-        .sort((a, b) => a.sort_order - b.sort_order)
-        .map((c) => ({
-          id: c.mapped_status,
-          label:
-            (c.label && c.label.trim()) ||
-            STATUS_META[c.mapped_status] ||
-            c.mapped_status.replace(/_/g, " "),
-        }));
-    }
-    const discovered = Array.from(new Set(tasks.map((t) => t.status).filter(Boolean)));
-    const ordered = STATUS_ORDER.filter((s) => discovered.includes(s));
-    const extras = discovered.filter((s) => !STATUS_ORDER.includes(s as (typeof STATUS_ORDER)[number])).sort();
-    return [...ordered, ...extras].map((id) => ({
-      id,
-      label: STATUS_META[id] ?? id.replace(/_/g, " "),
-    }));
-  }, [tasks, selectedBoard]);
-
-  const needsApprovalTaskIds = useMemo(() => {
-    return new Set(
-      tasks
-        .filter((t) => t.status === "review" || (t.source?.startsWith("ai") && t.status !== "done" && t.status !== "cancelled"))
-        .filter((t) => {
-          if (!currentAdminId) return true;
-          const assignees = taskAssigneeIdList(t);
-          return assignees.length === 0 || assignees.includes(currentAdminId);
-        })
-        .map((t) => t.id)
-    );
-  }, [tasks, currentAdminId]);
-
-  const approvalQueueTasks = useMemo(() => {
-    return tasks
-      .filter((t) => needsApprovalTaskIds.has(t.id))
-      .slice()
-      .sort((a, b) => {
-        const ra = a.rank ?? Number.MAX_SAFE_INTEGER;
-        const rb = b.rank ?? Number.MAX_SAFE_INTEGER;
-        if (ra !== rb) return ra - rb;
-        return (a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER) - (b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER);
-      });
-  }, [tasks, needsApprovalTaskIds]);
-
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (onlyNeedsMyApproval && !needsApprovalTaskIds.has(t.id)) return false;
-      if (filterAssignee) {
+  const activeNeedsApprovalCount = useMemo(() => {
+    const list = selectedStreamId ? allTasks.filter((t) => t.stream_id === selectedStreamId) : allTasks;
+    const ids = list
+      .filter(
+        (t) =>
+          t.status === "review" ||
+          (t.source?.startsWith("ai") && t.status !== "done" && t.status !== "cancelled")
+      )
+      .filter((t) => {
+        if (!currentAdminId) return true;
         const assignees = taskAssigneeIdList(t);
-        if (!assignees.includes(filterAssignee)) return false;
-      }
-      if (filterPriority && t.priority !== filterPriority) return false;
-      if (filterDue === "today") {
-        if (!t.due_at || !dayjs(t.due_at).isSame(dayjs(), "day")) return false;
-      }
-      if (filterDue === "overdue") {
-        if (!isDueOverdue(t.due_at)) return false;
-      }
-      return true;
-    });
-  }, [tasks, onlyNeedsMyApproval, needsApprovalTaskIds, filterAssignee, filterPriority, filterDue]);
+        return assignees.length === 0 || assignees.includes(currentAdminId);
+      });
+    return ids.length;
+  }, [allTasks, selectedStreamId, currentAdminId]);
+
 
   const moveColumnDraft = useCallback((i: number, dir: -1 | 1) => {
     setColumnDraft((prev) => {
@@ -784,142 +917,18 @@ export default function AdminTasksPage() {
     });
   }, []);
 
-  const tasksByStatus = (list: AdminTaskRow[]) => {
-    const m: Record<string, AdminTaskRow[]> = {};
-    statusColumns.forEach((c) => {
-      m[c.id] = [];
-    });
-    list.forEach((t) => {
-      const key = t.status || "open";
-      if (!m[key]) m[key] = [];
-      m[key].push(t);
-    });
-    Object.keys(m).forEach((status) => {
-      m[status] = m[status].slice().sort((a, b) => {
-        const ra = a.rank ?? Number.MAX_SAFE_INTEGER;
-        const rb = b.rank ?? Number.MAX_SAFE_INTEGER;
-        if (ra !== rb) return ra - rb;
-        return (a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER) - (b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER);
-      });
-    });
-    return m;
-  };
-
-  const columnMap = tasksByStatus(filteredTasks);
-
-  const canMoveToStatus = (task: AdminTaskRow, toStatus: string): { ok: boolean; reason?: string } => {
-    if (toStatus === task.status) return { ok: true };
-    const wipLimit = wipPolicies[toStatus];
-    if (typeof wipLimit === "number") {
-      const currentCount = (columnMap[toStatus] ?? []).length;
-      if (currentCount >= wipLimit) return { ok: false, reason: `WIP-лимит колонки "${STATUS_META[toStatus] ?? toStatus}" исчерпан` };
-    }
-    if (toStatus === "done") {
-      if (!task.checklist_done) return { ok: false, reason: "Перед завершением отметьте checklist в карточке задачи" };
-      if (task.blocked) return { ok: false, reason: "Нельзя завершить заблокированную задачу" };
-    }
-    return { ok: true };
-  };
-
-  const moveTask = (task: AdminTaskRow, toStatus: string) => {
-    const decision = canMoveToStatus(task, toStatus);
-    if (!decision.ok) {
-      setDragError(decision.reason ?? "Переход запрещен");
-      return;
-    }
-    setDragError(null);
-    updateStatusMutation.mutate({ taskId: task.id, status: toStatus });
-    setAuditTrail((prev) => [
-      {
-        id: `${Date.now()}-${task.id}`,
-        taskId: task.id,
-        taskTitle: task.title,
-        from: task.status,
-        to: toStatus,
-        at: new Date().toISOString(),
-      },
-      ...prev,
-    ].slice(0, 40));
-  };
-
-  const handleKanbanDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || typeof over.id !== "string") return;
-    const overId = String(over.id);
-    const status = overId.startsWith("droppable-")
-      ? overId.replace("droppable-", "")
-      : overId.startsWith("task-slot-")
-        ? overId.split("--")[0].replace("task-slot-", "")
-        : "";
-    if (!statusColumns.some((c) => c.id === status)) return;
-    const taskId = String(active.id);
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) return;
-    const hasActiveFilters =
-      onlyNeedsMyApproval || Boolean(filterAssignee) || Boolean(filterPriority) || filterDue !== "all";
-    if (overId.startsWith("task-slot-")) {
-      if (hasActiveFilters) {
-        setDragError("Перестановка внутри колонки доступна только без активных фильтров.");
-        return;
-      }
-      const targetTaskId = overId.split("--")[1];
-      const current = columnMap[status] ?? [];
-      const without = current.filter((x) => x.id !== task.id);
-      const targetIdx = without.findIndex((x) => x.id === targetTaskId);
-      const insertAt = targetIdx >= 0 ? targetIdx : without.length;
-      const next = [...without.slice(0, insertAt), { ...task, status }, ...without.slice(insertAt)];
-      reorderTasksMutation.mutate({
-        status,
-        ordered_task_ids: next.map((item) => item.id),
-      });
-    }
-    if (task.status !== status) moveTask(task, status);
-  };
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
-  );
-
   const handleKeyboardColumnMove = (taskId: string, direction: -1 | 1) => {
-    const task = tasks.find((t) => t.id === taskId);
+    const task = allTasks.find((t) => t.id === taskId);
     if (!task) return;
-    const idx = statusColumns.findIndex((s) => s.id === task.status);
+    // Default fallback ordering for keyboard moves uses global STATUS_ORDER.
+    const idx = STATUS_ORDER.findIndex((s) => s === task.status);
     if (idx < 0) return;
-    const target = statusColumns[idx + direction];
+    const target = STATUS_ORDER[idx + direction];
     if (!target) return;
-    moveTask(task, target.id);
+    updateStatusMutation.mutate({ taskId: task.id, status: target });
   };
 
-  const applyBulkStatus = () => {
-    if (!bulkStatus) return;
-    setBulkResultMessage(null);
-    bulkUpdateMutation.mutate(
-      {
-        task_ids: selectedTaskIds,
-        to_status: bulkStatus,
-      },
-      {
-        onSuccess: (result) => {
-          const appliedCount = result.applied.length;
-          const rejectedCount = result.rejected.length;
-          if (rejectedCount > 0) {
-            const firstReason = result.rejected[0]?.detail;
-            setBulkResultMessage(
-              `Массовая операция завершена частично: успешно ${appliedCount}, отклонено ${rejectedCount}${
-                firstReason ? ` (пример: ${firstReason})` : ""
-              }`
-            );
-          } else {
-            setBulkResultMessage(`Массовая операция выполнена: обновлено ${appliedCount}.`);
-          }
-          if (appliedCount > 0) {
-            setSelectedTaskIds([]);
-            setBulkStatus(null);
-          }
-        },
-      }
-    );
-  };
+  // Bulk status actions were intentionally removed from the main toolbar UX (can be re-added later in Settings).
 
   if (streamsLoading || tagsLoading || !streamFilterInitialized || boardsLoading || tasksLoading) {
     return (
@@ -946,120 +955,97 @@ export default function AdminTasksPage() {
         }
       />
 
-      <ScrollArea type="scroll" scrollbars="x" offsetScrollbars>
-        <Group gap="xs" wrap="nowrap" pb="xs">
-          <Button
-            size="xs"
-            variant={selectedStreamId === null ? "filled" : "light"}
-            onClick={() => setSelectedStreamId(null)}
-          >
-            Все потоки
-          </Button>
-          {taskStreams.map((s) => (
-            <Button
-              key={s.id}
-              size="xs"
-              variant={selectedStreamId === s.id ? "filled" : "light"}
-              onClick={() => setSelectedStreamId(s.id)}
-            >
-              {s.name}
-            </Button>
-          ))}
-          {canManageBoards ? (
-            <Button
-              size="xs"
-              variant="default"
-              leftSection={<IconPlus size={14} />}
-              onClick={() => {
-                setNewStreamName("");
-                setNewStreamModalOpened(true);
-              }}
-            >
-              Новый поток
-            </Button>
-          ) : null}
-        </Group>
-      </ScrollArea>
-
       <AdminDataTableToolbar>
-        <Group gap="xs" wrap="wrap" justify="space-between">
+        <Group gap="xs" wrap="wrap" justify="space-between" align="flex-end">
           <Group gap="xs" wrap="wrap">
-            <Select
-              size="xs"
-              leftSection={<IconLayoutKanban size={14} />}
-              placeholder="Доска"
-              data={taskBoards.map((b) => ({
-                value: b.id,
-                label: b.kind === "personal" ? `${b.name} (личная)` : b.name,
-              }))}
-              value={selectedBoardId}
-              onChange={(v) => setSelectedBoardId(v ?? null)}
-              w={240}
-            />
-            {canEditSelectedBoardColumns ? (
-              <Button
-                size="xs"
-                variant="light"
-                onClick={() => {
-                  if (!selectedBoard) return;
-                  const sorted = [...selectedBoard.columns].sort((a, b) => a.sort_order - b.sort_order);
-                  setColumnDraft(
-                    sorted.map((c) => ({
-                      mapped_status: c.mapped_status,
-                      label: c.label,
-                    }))
-                  );
-                  setBoardColumnModalOpened(true);
-                }}
-              >
-                Порядок колонок
-              </Button>
-            ) : null}
-            {canManageBoards ? (
-              <>
-                <TextInput
-                  size="xs"
-                  placeholder="Новая личная доска"
-                  value={newPersonalBoardName}
-                  onChange={(e) => setNewPersonalBoardName(e.currentTarget.value)}
-                  w={200}
-                />
-                <Button
-                  size="xs"
-                  variant="default"
-                  disabled={!newPersonalBoardName.trim()}
-                  loading={createPersonalBoardMutation.isPending}
-                  onClick={() => {
-                    const n = newPersonalBoardName.trim();
-                    if (!n) return;
-                    createPersonalBoardMutation.mutate(n, {
-                      onSuccess: (row) => {
-                        setNewPersonalBoardName("");
-                        setSelectedBoardId(row.id);
-                      },
-                    });
-                  }}
-                >
-                  Создать
-                </Button>
-              </>
-            ) : null}
             <Button.Group>
               <Button
                 size="xs"
-                variant={!onlyNeedsMyApproval ? "filled" : "default"}
-                onClick={() => setOnlyNeedsMyApproval(false)}
+                variant="default"
+                onClick={() => {
+                  if (activePageIndex <= 0) return;
+                  const next = Math.max(0, activePageIndex - 1);
+                  setSelectedStreamId(streamPages[next]?.streamId ?? null);
+                  scrollToPage(next);
+                }}
+                disabled={activePageIndex <= 0}
               >
-                Все задачи
+                {"<"}
               </Button>
               <Button
                 size="xs"
-                variant={onlyNeedsMyApproval ? "filled" : "default"}
-                onClick={() => setOnlyNeedsMyApproval(true)}
+                variant="default"
+                onClick={() => {
+                  if (activePageIndex >= streamPages.length - 1) return;
+                  const next = Math.min(streamPages.length - 1, activePageIndex + 1);
+                  setSelectedStreamId(streamPages[next]?.streamId ?? null);
+                  scrollToPage(next);
+                }}
+                disabled={activePageIndex >= streamPages.length - 1}
               >
-                Ждут подтверждения ({needsApprovalTaskIds.size})
+                {">"}
               </Button>
             </Button.Group>
+
+            <PagerDots count={streamPages.length} activeIndex={activePageIndex} />
+
+            <Menu shadow="md" width={280} withinPortal>
+              <Menu.Target>
+                <Button size="xs" variant="light">
+                  {activeStream?.name ?? "Все потоки"}
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Потоки</Menu.Label>
+                {streamPages.map((p) => (
+                  <Menu.Item
+                    key={p.key}
+                    onClick={() => {
+                      setSelectedStreamId(p.streamId);
+                      const idx = streamPages.findIndex((x) => x.key === p.key);
+                      if (idx >= 0) scrollToPage(idx);
+                    }}
+                  >
+                    {p.label}
+                  </Menu.Item>
+                ))}
+                {canManageBoards ? (
+                  <>
+                    <Menu.Divider />
+                    <Menu.Item
+                      leftSection={<IconPlus size={14} />}
+                      onClick={() => {
+                        setNewStreamName("");
+                        setNewStreamModalOpened(true);
+                      }}
+                    >
+                      Новый поток
+                    </Menu.Item>
+                  </>
+                ) : null}
+              </Menu.Dropdown>
+            </Menu>
+
+            {activeStream && canManageBoards ? (
+              <ActionIcon
+                variant="light"
+                color="indigo"
+                aria-label="Цвет потока"
+                onClick={() => setStreamThemeModalOpened(true)}
+              >
+                <IconPalette size={16} />
+              </ActionIcon>
+            ) : null}
+
+            <TextInput
+              size="xs"
+              placeholder="Поиск…"
+              leftSection={<IconSearch size={14} />}
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.currentTarget.value)}
+              w={220}
+            />
+
             <Select
               size="xs"
               placeholder="Исполнитель"
@@ -1069,20 +1055,7 @@ export default function AdminTasksPage() {
               clearable
               w={190}
             />
-            <Select
-              size="xs"
-              placeholder="Приоритет"
-              data={[
-                { value: "low", label: "Низкий" },
-                { value: "medium", label: "Средний" },
-                { value: "high", label: "Высокий" },
-                { value: "urgent", label: "Срочно" },
-              ]}
-              value={filterPriority}
-              onChange={setFilterPriority}
-              clearable
-              w={160}
-            />
+
             <Select
               size="xs"
               placeholder="Срок"
@@ -1095,50 +1068,98 @@ export default function AdminTasksPage() {
               onChange={(v) => setFilterDue(v ?? "all")}
               w={150}
             />
-            <MultiSelect
-              size="xs"
-              placeholder="Теги (все выбранные)"
-              data={taskTags.map((t) => ({ value: t.id, label: t.name }))}
-              value={filterTagIds}
-              onChange={setFilterTagIds}
-              clearable
-              searchable
-              w={220}
-            />
-            {canManageBoards ? (
-              <Button
-                size="xs"
-                variant="light"
-                leftSection={<IconPlus size={14} />}
-                onClick={() => {
-                  setNewTagName("");
-                  setNewTagModalOpened(true);
-                }}
-              >
-                Новый тег
-              </Button>
-            ) : null}
+
+            <Menu shadow="md" width={320} withinPortal>
+              <Menu.Target>
+                <Button size="xs" variant="default" leftSection={<IconFilter size={14} />}>
+                  Фильтры
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Фильтры</Menu.Label>
+                <Menu.Item
+                  onClick={() => setOnlyNeedsMyApproval((v) => !v)}
+                >
+                  {onlyNeedsMyApproval ? "Показывать все задачи" : `Ждут подтверждения (${activeNeedsApprovalCount})`}
+                </Menu.Item>
+                <Menu.Divider />
+                <Box p="xs">
+                  <Group gap="xs" wrap="wrap">
+                    <Select
+                      size="xs"
+                      placeholder="Приоритет"
+                      data={[
+                        { value: "low", label: "Низкий" },
+                        { value: "medium", label: "Средний" },
+                        { value: "high", label: "Высокий" },
+                        { value: "urgent", label: "Срочно" },
+                      ]}
+                      value={filterPriority}
+                      onChange={setFilterPriority}
+                      clearable
+                      w={160}
+                    />
+                    <MultiSelect
+                      size="xs"
+                      placeholder="Теги"
+                      data={taskTags.map((t) => ({ value: t.id, label: t.name }))}
+                      value={filterTagIds}
+                      onChange={setFilterTagIds}
+                      clearable
+                      searchable
+                      w={220}
+                    />
+                  </Group>
+                </Box>
+              </Menu.Dropdown>
+            </Menu>
           </Group>
+
           <Group gap="xs" wrap="wrap">
-            <Select
-              size="xs"
-              placeholder="Массово: статус"
-              data={statusColumns.map((c) => ({ value: c.id, label: c.label }))}
-              value={bulkStatus}
-              onChange={setBulkStatus}
-              w={180}
-            />
-            <Button
-              size="xs"
-              variant="light"
-              onClick={applyBulkStatus}
-              disabled={!bulkStatus || selectedTaskIds.length === 0}
-            >
-              Применить ({selectedTaskIds.length})
+            <Button size="xs" onClick={() => setCreateOpened(true)}>
+              Новая задача
             </Button>
+            {canManageBoards ? (
+              <Menu shadow="md" width={320} withinPortal>
+                <Menu.Target>
+                  <ActionIcon variant="light" color="gray" aria-label="Настройки">
+                    <IconSettings size={16} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Настройки</Menu.Label>
+                  <Menu.Item
+                    leftSection={<IconLayoutKanban size={14} />}
+                    onClick={() => {
+                      if (!selectedBoard) return;
+                      const sorted = [...selectedBoard.columns].sort((a, b) => a.sort_order - b.sort_order);
+                      setColumnDraft(
+                        sorted.map((c) => ({
+                          mapped_status: c.mapped_status,
+                          label: c.label,
+                        }))
+                      );
+                      setBoardColumnModalOpened(true);
+                    }}
+                    disabled={!canEditSelectedBoardColumns}
+                  >
+                    Колонки (порядок/названия)
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<IconLayoutKanban size={14} />}
+                    onClick={() => {}}
+                    disabled
+                  >
+                    Доски колонок (скоро)
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            ) : null}
           </Group>
         </Group>
       </AdminDataTableToolbar>
+
+      {/* bulk actions moved to Settings menu (later) */}
 
       {dragError ? (
         <Alert color={SEMANTIC.opsSeverity.warning} icon={<IconAlertTriangle size={16} />} variant="light">
@@ -1163,136 +1184,79 @@ export default function AdminTasksPage() {
         </Alert>
       ) : null}
 
-      <AdminDataTableSurface>
-        <Group justify="space-between" mb="xs">
-          <Text size="sm" fw={700}>
-            Требуют подтверждения
-          </Text>
-          <Badge
-            size="sm"
-            variant="light"
-            color={approvalQueueTasks.length > 0 ? SEMANTIC.opsSeverity.warning : "gray"}
-          >
-            {approvalQueueTasks.length}
-          </Badge>
-        </Group>
-        {approvalQueueTasks.length === 0 ? (
-          <Text size="xs" c="dimmed">
-            Очередь подтверждений пуста.
-          </Text>
-        ) : (
-          <Box style={{ overflowX: "auto" }}>
-            <Group gap="xs" wrap="nowrap" align="stretch">
-              {approvalQueueTasks.slice(0, 24).map((t) => (
-                <Box key={t.id} w={300} style={{ flexShrink: 0 }}>
-                  <TaskKanbanCard
-                    task={t}
+      <Box
+        ref={pagerRef}
+        data-testid="stream-pager"
+        onScroll={handlePagerScroll}
+        className="admin-stream-pager"
+        style={{
+          display: "flex",
+          overflowX: "auto",
+          scrollSnapType: "x mandatory",
+          scrollBehavior: "smooth",
+          gap: "var(--space-md)",
+          paddingBottom: "var(--space-sm)",
+        }}
+      >
+        {streamPages.map((p, i) => {
+          const shouldRender = Math.abs(i - activePageIndex) <= 1;
+          const pageTint = streamPageTintKey(p.stream?.theme);
+          const accent = streamMantineColorKey(p.stream?.theme);
+          const streamName = p.streamId ? p.label : "Все потоки";
+          return (
+            <Box
+              key={p.key}
+              data-stream-page-index={i}
+              style={{
+                flex: "0 0 100%",
+                scrollSnapAlign: "start",
+                minWidth: 0,
+              }}
+            >
+              <StreamPageShell pageTint={pageTint} accentColor={accent}>
+                {shouldRender ? (
+                  <TasksKanbanPage
+                    streamId={p.streamId}
+                    streamName={streamName}
+                    streamTheme={p.stream?.theme}
+                    allTasks={allTasks}
+                    taskStreams={taskStreams}
                     admins={admins}
-                    patientName={t.patient_id ? patientIdToName.get(t.patient_id) ?? null : null}
-                    onOpenDetail={setDetailTaskId}
-                    onClaim={(t.source === "ai_suggested" || t.source === "ai_auto") ? (id) => claimMutation.mutate(id) : undefined}
-                    onTaskChat={setTaskChatId}
-                    isAi={t.source === "ai_suggested" || t.source === "ai_auto"}
-                    draggable={false}
-                    blocked={Boolean(t.blocked)}
-                    selected={selectedTaskIds.includes(t.id)}
-                    onSelect={(taskId, checked) =>
-                      setSelectedTaskIds((prev) =>
-                        checked ? Array.from(new Set([...prev, taskId])) : prev.filter((id) => id !== taskId)
-                      )
-                    }
-                    onMoveByKeyboard={handleKeyboardColumnMove}
+                    patientIdToName={patientIdToName}
+                    currentAdminId={currentAdminId}
+                    myFocusTasks={myFocusTasks}
+                    selectedBoard={selectedBoard}
+                    wipPolicies={wipPolicies}
+                    canMoveTasksAcrossStreams={canMoveTasksAcrossStreams}
+                    streamMoveOptions={streamMoveOptions}
+                    selectedTaskIds={selectedTaskIds}
+                    setSelectedTaskIds={setSelectedTaskIds}
+                    onlyNeedsMyApproval={onlyNeedsMyApproval}
+                    filterAssignee={filterAssignee}
+                    filterPriority={filterPriority}
+                    filterDue={filterDue}
+                    filterQuery={debouncedFilterQuery}
+                    setOnlyNeedsMyApproval={setOnlyNeedsMyApproval}
+                    setDetailTaskId={setDetailTaskId}
+                    setTaskChatId={setTaskChatId}
+                    claimMutation={claimMutation}
+                    patchStreamTagsMutation={patchStreamTagsMutation}
+                    updateStatusMutation={updateStatusMutation}
+                    reorderTasksMutation={reorderTasksMutation}
+                    setDragError={setDragError}
+                    scheduleNavIntent={scheduleNavIntent}
+                    handleKeyboardColumnMove={handleKeyboardColumnMove}
+                    activePageIndex={activePageIndex}
+                    streamPagesLength={streamPages.length}
                   />
-                </Box>
-              ))}
-            </Group>
-          </Box>
-        )}
-      </AdminDataTableSurface>
-
-      <DndContext sensors={sensors} onDragEnd={handleKanbanDragEnd}>
-          <Box style={{ flex: 1, minWidth: 0 }}>
-            <Box mb="md">
-              <AdminDataTableSurface>
-                <Group justify="space-between" align="center">
-                  <Text size="sm" fw={700}>
-                    Список задач
-                  </Text>
-                  {currentAdminId ? (
-                    <Text size="xs" c="dimmed">
-                      Назначено мне: {myFocusTasks.filter((t) => t.status !== "done" && t.status !== "cancelled").length}
-                    </Text>
-                  ) : null}
-                </Group>
-              </AdminDataTableSurface>
+                ) : (
+                  <PageSkeleton variant="cards" rows={4} />
+                )}
+              </StreamPageShell>
             </Box>
-            {filteredTasks.length === 0 ? (
-              <AdminDataTableSurface>
-                <EmptyState
-                  title={onlyNeedsMyApproval ? "Нет задач в очереди подтверждений" : "Нет задач"}
-                  description={
-                    onlyNeedsMyApproval
-                      ? "В этом режиме список пуст. Переключитесь на «Все задачи» или ослабьте фильтры исполнителя, приоритета и срока."
-                      : "Создайте первую задачу или примите задачу от AI в работу."
-                  }
-                  action={
-                    onlyNeedsMyApproval
-                      ? { label: "Показать все задачи", onClick: () => setOnlyNeedsMyApproval(false) }
-                      : { label: "Создать задачу", onClick: () => setCreateOpened(true) }
-                  }
-                />
-              </AdminDataTableSurface>
-            ) : (
-              <Box style={{ overflowX: "auto" }}>
-                <Box
-                  style={{
-                    display: "grid",
-                    gridAutoFlow: "column",
-                    gridAutoColumns: "minmax(290px, 1fr)",
-                    gap: "var(--space-md)",
-                    alignItems: "start",
-                    minWidth: "max-content",
-                  }}
-                >
-                {statusColumns.map((col, colIndex) => {
-                  const droppableId = `droppable-${col.id}`;
-                  const columnTasks = columnMap[col.id] ?? [];
-                  const wipLimit = wipPolicies[col.id] ?? KANBAN_WIP_LIMITS[col.id];
-                  const overdueCount = columnTasks.filter((t) => isDueOverdue(t.due_at)).length;
-                  const agingCount = columnTasks.filter((t) => {
-                    if (!t.stage_entered_at) return false;
-                    return dayjs().diff(dayjs(t.stage_entered_at), "hour") >= AGING_ALERT_HOURS;
-                  }).length;
-                  return (
-                    <KanbanColumn
-                      key={col.id}
-                      id={droppableId}
-                      title={col.label}
-                      tasks={columnTasks}
-                      admins={admins}
-                      isLast={colIndex === statusColumns.length - 1}
-                      onOpenDetail={setDetailTaskId}
-                      onClaim={(id) => claimMutation.mutate(id)}
-                      onTaskChat={setTaskChatId}
-                      patientIdToName={patientIdToName}
-                      selectedTaskIds={selectedTaskIds}
-                      onSelectTask={(taskId, checked) =>
-                        setSelectedTaskIds((prev) =>
-                          checked ? Array.from(new Set([...prev, taskId])) : prev.filter((id) => id !== taskId)
-                        )
-                      }
-                      onMoveByKeyboard={handleKeyboardColumnMove}
-                      wipLimit={wipLimit}
-                      overdueCount={overdueCount}
-                      agingCount={agingCount}
-                    />
-                  );
-                })}
-                </Box>
-              </Box>
-            )}
-          </Box>
-      </DndContext>
+          );
+        })}
+      </Box>
 
       <AdminDataTableSurface>
         <Text size="sm" fw={700} mb={6}>
@@ -1359,9 +1323,25 @@ export default function AdminTasksPage() {
               )}
               <Text size="xs" mt="xs" style={{ color: taskStatusTextColors(detailTask.status).meta }}>
                 Срок: {detailTask.due_at ? dayjs(detailTask.due_at).format("DD.MM.YYYY HH:mm") : "—"}
-                {!canEditAssignees
-                  ? ` · Исполнители: ${formatTaskAssigneeLine(detailTask, admins) || detailTask.role_assignee || "—"}`
-                  : null}
+                {!canEditAssignees ? (
+                  <>
+                    {" "}
+                    · Исполнители:{" "}
+                    {(() => {
+                      const ids = taskAssigneeIdList(detailTask);
+                      if (!ids.length) return detailTask.role_assignee || "—";
+                      return ids.map((id, idx) => {
+                        const a = admins.find((x) => x.id === id);
+                        return (
+                          <span key={id}>
+                            <PersonNameLink kind="staff" id={id} label={a?.full_name || a?.email || null} size="xs" />
+                            {idx < ids.length - 1 ? ", " : ""}
+                          </span>
+                        );
+                      });
+                    })()}
+                  </>
+                ) : null}
               </Text>
             </Box>
             {canEditAssignees ? (
@@ -1928,13 +1908,18 @@ export default function AdminTasksPage() {
       </GlassModal>
 
       <GlassModal
-        size="md"
+        size="xl"
         centered
         opened={createOpened}
         onClose={() => setCreateOpened(false)}
         title="Новая задача"
         styles={{
-          content: { maxHeight: "min(92vh, 900px)", display: "flex", flexDirection: "column" },
+          content: {
+            maxHeight: "min(92vh, 900px)",
+            display: "flex",
+            flexDirection: "column",
+            width: "min(980px, 96vw)",
+          },
           // Scroll is handled by Mantine Modal body (global CSS),
           // footer below is sticky to keep actions accessible.
           body: { padding: 0 },
@@ -1947,7 +1932,7 @@ export default function AdminTasksPage() {
             </Alert>
           ) : null}
 
-          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
             <Stack gap="sm">
               <TextInput
                 label="Заголовок задачи"
@@ -1959,7 +1944,7 @@ export default function AdminTasksPage() {
               <Textarea
                 label="Описание"
                 placeholder="Добавьте детали, ссылки, ID брони/лида и т.д."
-                minRows={6}
+                minRows={8}
                 value={description}
                 onChange={(e) => setDescription(e.currentTarget.value)}
               />
@@ -2126,6 +2111,74 @@ export default function AdminTasksPage() {
               }}
             >
               Создать
+            </Button>
+          </Group>
+        </Stack>
+      </GlassModal>
+
+      <GlassModal
+        size="sm"
+        centered
+        opened={streamThemeModalOpened}
+        onClose={() => setStreamThemeModalOpened(false)}
+        title={activeStream ? `Цвет потока: ${activeStream.name}` : "Цвет потока"}
+      >
+        <Stack gap="sm">
+          <Select
+            label="Фоновый tint"
+            description="Мягкий градиент страницы потока (пресеты UI)."
+            data={[
+              { value: "none", label: "Нет" },
+              { value: "subtle_gray", label: "Серый" },
+              { value: "subtle_violet", label: "Фиолетовый" },
+              { value: "subtle_blue", label: "Синий" },
+              { value: "subtle_green", label: "Зелёный" },
+              { value: "subtle_amber", label: "Янтарный" },
+            ]}
+            value={themeDraftTint}
+            onChange={(v) => setThemeDraftTint((v as TaskStreamPageTint) ?? "none")}
+          />
+          <Select
+            label="Акцент"
+            description="Цвет для акцентов UI (Mantine preset)."
+            data={[
+              { value: "gray", label: "Gray" },
+              { value: "red", label: "Red" },
+              { value: "pink", label: "Pink" },
+              { value: "grape", label: "Grape" },
+              { value: "violet", label: "Violet" },
+              { value: "indigo", label: "Indigo" },
+              { value: "blue", label: "Blue" },
+              { value: "cyan", label: "Cyan" },
+              { value: "teal", label: "Teal" },
+              { value: "green", label: "Green" },
+              { value: "lime", label: "Lime" },
+              { value: "yellow", label: "Yellow" },
+              { value: "orange", label: "Orange" },
+            ]}
+            value={themeDraftColor}
+            onChange={(v) => setThemeDraftColor((v as TaskStreamMantineColor) ?? "blue")}
+            searchable
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setStreamThemeModalOpened(false)}>
+              Отмена
+            </Button>
+            <Button
+              disabled={!activeStream}
+              loading={patchStreamMutation.isPending}
+              onClick={() => {
+                if (!activeStream) return;
+                patchStreamMutation.mutate(
+                  {
+                    streamId: activeStream.id,
+                    theme: { page_tint: themeDraftTint, mantine_color: themeDraftColor },
+                  },
+                  { onSuccess: () => setStreamThemeModalOpened(false) }
+                );
+              }}
+            >
+              Сохранить
             </Button>
           </Group>
         </Stack>
@@ -2452,5 +2505,654 @@ function TaskDropSlot({
     >
       {children}
     </Box>
+  );
+}
+
+function StreamPageShell({
+  pageTint,
+  accentColor,
+  children,
+}: {
+  pageTint: string;
+  accentColor: TaskStreamMantineColor;
+  children: ReactNode;
+}) {
+  return (
+    <Box
+      className="admin-tasks-context"
+      data-page-tint={pageTint}
+      style={{ borderRadius: "var(--radius-md)", overflow: "hidden" }}
+    >
+      <Box
+        style={{
+          height: 4,
+          background: `var(--mantine-color-${accentColor}-6)`,
+          opacity: 0.8,
+        }}
+      />
+      <Box p="md" style={{ paddingTop: "var(--space-md)" }}>
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+function StreamHeaderDropZone({
+  id,
+  label,
+  disabled,
+  accentColor,
+}: {
+  id: string;
+  label: string;
+  disabled?: boolean;
+  accentColor: TaskStreamMantineColor;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: Boolean(disabled) });
+  return (
+    <Box ref={setNodeRef}>
+      <Paper
+        withBorder
+        radius="md"
+        p="xs"
+        style={{
+          borderColor: isOver ? `var(--mantine-color-${accentColor}-4)` : "var(--calendar-card-border)",
+          background: isOver ? `var(--mantine-color-${accentColor}-0)` : "var(--mantine-color-body)",
+        }}
+      >
+        <Group justify="space-between" wrap="wrap" gap="xs">
+          <Text size="sm" fw={700}>
+            {label}
+          </Text>
+          <Badge size="sm" variant="light" color={accentColor}>
+            Поток
+          </Badge>
+        </Group>
+        <Text size="xs" c="dimmed" mt={4}>
+          Можно перетащить карточку задачи сюда, чтобы переместить её в этот поток.
+        </Text>
+      </Paper>
+    </Box>
+  );
+}
+
+function NavDropZone({ id, disabled }: { id: string; disabled?: boolean }) {
+  const { setNodeRef } = useDroppable({ id, disabled: Boolean(disabled) });
+  return (
+    <Box
+      ref={setNodeRef}
+      aria-hidden
+      style={{
+        position: "absolute",
+        top: 0,
+        bottom: 0,
+        width: 44,
+        left: id === "nav-prev" ? 0 : undefined,
+        right: id === "nav-next" ? 0 : undefined,
+        opacity: 0,
+        pointerEvents: disabled ? "none" : "auto",
+        zIndex: 4,
+      }}
+    />
+  );
+}
+
+function PagerDots({ count, activeIndex }: { count: number; activeIndex: number }) {
+  return (
+    <Group gap={6} wrap="nowrap" aria-label="Индикатор страниц">
+      {Array.from({ length: count }, (_, i) => (
+        <Box
+          key={i}
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: 999,
+            background: i === activeIndex ? "var(--mantine-color-indigo-6)" : "var(--mantine-color-gray-4)",
+            opacity: i === activeIndex ? 0.95 : 0.55,
+          }}
+        />
+      ))}
+    </Group>
+  );
+}
+
+function TasksKanbanPage({
+  streamId,
+  streamName,
+  streamTheme,
+  allTasks,
+  taskStreams,
+  admins,
+  patientIdToName,
+  currentAdminId,
+  myFocusTasks,
+  selectedBoard,
+  wipPolicies,
+  canMoveTasksAcrossStreams,
+  streamMoveOptions,
+  selectedTaskIds,
+  setSelectedTaskIds,
+  onlyNeedsMyApproval,
+  filterAssignee,
+  filterPriority,
+  filterDue,
+  filterQuery,
+  setOnlyNeedsMyApproval,
+  setDetailTaskId,
+  setTaskChatId,
+  claimMutation,
+  patchStreamTagsMutation,
+  updateStatusMutation,
+  reorderTasksMutation,
+  setDragError,
+  scheduleNavIntent,
+  handleKeyboardColumnMove,
+  activePageIndex,
+  streamPagesLength,
+}: {
+  streamId: string | null;
+  streamName: string;
+  streamTheme?: Record<string, unknown>;
+  allTasks: AdminTaskRow[];
+  taskStreams: TaskStreamRow[];
+  admins: AdminUserRow[];
+  patientIdToName: Map<string, string>;
+  currentAdminId: string | null;
+  myFocusTasks: AdminTaskRow[];
+  selectedBoard: { columns?: Array<{ mapped_status: string; sort_order: number; label: string | null }> } | undefined;
+  wipPolicies: Record<string, number>;
+  canMoveTasksAcrossStreams: boolean;
+  streamMoveOptions: Array<{ value: string; label: string }>;
+  selectedTaskIds: string[];
+  setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
+  onlyNeedsMyApproval: boolean;
+  filterAssignee: string | null;
+  filterPriority: string | null;
+  filterDue: string;
+  filterQuery: string;
+  setOnlyNeedsMyApproval: (v: boolean) => void;
+  setDetailTaskId: (id: string) => void;
+  setTaskChatId: (id: string) => void;
+  claimMutation: { mutate: (id: string) => void };
+  patchStreamTagsMutation: { mutate: (args: { taskId: string; stream_id?: string; tag_ids?: string[] }) => void };
+  updateStatusMutation: { mutate: (args: { taskId: string; status: string }) => void };
+  reorderTasksMutation: {
+    mutate: (
+      args: { status: string; ordered_task_ids: string[] },
+      opts?: { onError?: () => void; onSuccess?: () => void }
+    ) => void;
+  };
+  setDragError: (msg: string | null) => void;
+  scheduleNavIntent: (intent: "prev" | "next" | null) => void;
+  handleKeyboardColumnMove: (taskId: string, direction: -1 | 1) => void;
+  activePageIndex: number;
+  streamPagesLength: number;
+}) {
+  const [optimisticOrderByStatus, setOptimisticOrderByStatus] = useState<Record<string, string[]>>({});
+  void taskStreams;
+  const pageTasks = useMemo(() => {
+    if (!streamId) return allTasks;
+    return allTasks.filter((t) => t.stream_id === streamId);
+  }, [allTasks, streamId]);
+
+  const statusColumns = useMemo(() => {
+    if (selectedBoard?.columns?.length) {
+      return selectedBoard.columns
+        .slice()
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((c) => ({
+          id: c.mapped_status,
+          label:
+            (c.label && c.label.trim()) ||
+            STATUS_META[c.mapped_status] ||
+            c.mapped_status.replace(/_/g, " "),
+        }));
+    }
+    const discovered = Array.from(new Set(pageTasks.map((t) => t.status).filter(Boolean)));
+    const ordered = STATUS_ORDER.filter((s) => discovered.includes(s));
+    const extras = discovered
+      .filter((s) => !STATUS_ORDER.includes(s as (typeof STATUS_ORDER)[number]))
+      .sort();
+    return [...ordered, ...extras].map((id) => ({
+      id,
+      label: STATUS_META[id] ?? id.replace(/_/g, " "),
+    }));
+  }, [pageTasks, selectedBoard]);
+
+  const tasksByStatus = useCallback(
+    (list: AdminTaskRow[]) => {
+      const m: Record<string, AdminTaskRow[]> = {};
+      statusColumns.forEach((c) => {
+        m[c.id] = [];
+      });
+      list.forEach((t) => {
+        const key = t.status || "open";
+        if (!m[key]) m[key] = [];
+        m[key].push(t);
+      });
+      Object.keys(m).forEach((status) => {
+        m[status] = m[status].slice().sort((a, b) => {
+          const ra = a.rank ?? Number.MAX_SAFE_INTEGER;
+          const rb = b.rank ?? Number.MAX_SAFE_INTEGER;
+          if (ra !== rb) return ra - rb;
+          return (
+            (a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER) -
+            (b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER)
+          );
+        });
+      });
+      return m;
+    },
+    [statusColumns]
+  );
+
+  const needsApprovalTaskIds = useMemo(() => {
+    return new Set(
+      pageTasks
+        .filter(
+          (t) =>
+            t.status === "review" ||
+            (t.source?.startsWith("ai") && t.status !== "done" && t.status !== "cancelled")
+        )
+        .filter((t) => {
+          if (!currentAdminId) return true;
+          const assignees = taskAssigneeIdList(t);
+          return assignees.length === 0 || assignees.includes(currentAdminId);
+        })
+        .map((t) => t.id)
+    );
+  }, [pageTasks, currentAdminId]);
+
+  const approvalQueueTasks = useMemo(() => {
+    return pageTasks
+      .filter((t) => needsApprovalTaskIds.has(t.id))
+      .slice()
+      .sort((a, b) => {
+        const ra = a.rank ?? Number.MAX_SAFE_INTEGER;
+        const rb = b.rank ?? Number.MAX_SAFE_INTEGER;
+        if (ra !== rb) return ra - rb;
+        return (
+          (a.due_at ? new Date(a.due_at).getTime() : Number.MAX_SAFE_INTEGER) -
+          (b.due_at ? new Date(b.due_at).getTime() : Number.MAX_SAFE_INTEGER)
+        );
+      });
+  }, [pageTasks, needsApprovalTaskIds]);
+
+  const filteredTasks = useMemo(() => {
+    return pageTasks.filter((t) => {
+      if (onlyNeedsMyApproval && !needsApprovalTaskIds.has(t.id)) return false;
+      const fq = String(filterQuery ?? "");
+      if (fq.trim()) {
+        const q = fq.trim().toLowerCase();
+        const hay = `${t.title ?? ""} ${t.description ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (filterAssignee) {
+        const assignees = taskAssigneeIdList(t);
+        if (!assignees.includes(filterAssignee)) return false;
+      }
+      if (filterPriority && t.priority !== filterPriority) return false;
+      if (filterDue === "today") {
+        if (!t.due_at || !dayjs(t.due_at).isSame(dayjs(), "day")) return false;
+      }
+      if (filterDue === "overdue") {
+        if (!isDueOverdue(t.due_at)) return false;
+      }
+      return true;
+    });
+  }, [pageTasks, onlyNeedsMyApproval, needsApprovalTaskIds, filterQuery, filterAssignee, filterPriority, filterDue]);
+
+  const columnMap = useMemo(() => tasksByStatus(filteredTasks), [tasksByStatus, filteredTasks]);
+  const columnMapWithOptimistic = useMemo(() => {
+    const next: Record<string, AdminTaskRow[]> = { ...columnMap };
+    Object.entries(optimisticOrderByStatus).forEach(([status, orderedIds]) => {
+      const cur = next[status];
+      if (!cur || cur.length === 0) return;
+      const byId = new Map(cur.map((t) => [t.id, t]));
+      const ordered: AdminTaskRow[] = [];
+      orderedIds.forEach((id) => {
+        const row = byId.get(id);
+        if (row) ordered.push(row);
+      });
+      cur.forEach((t) => {
+        if (!orderedIds.includes(t.id)) ordered.push(t);
+      });
+      next[status] = ordered;
+    });
+    return next;
+  }, [columnMap, optimisticOrderByStatus]);
+
+  const canMoveToStatus = useCallback(
+    (task: AdminTaskRow, toStatus: string): { ok: boolean; reason?: string } => {
+      if (toStatus === task.status) return { ok: true };
+      const wipLimit = wipPolicies[toStatus];
+      if (typeof wipLimit === "number") {
+        const currentCount = (columnMapWithOptimistic[toStatus] ?? []).length;
+        if (currentCount >= wipLimit)
+          return {
+            ok: false,
+            reason: `WIP-лимит колонки "${STATUS_META[toStatus] ?? toStatus}" исчерпан`,
+          };
+      }
+      if (toStatus === "done") {
+        if (!task.checklist_done)
+          return { ok: false, reason: "Перед завершением отметьте checklist в карточке задачи" };
+        if (task.blocked) return { ok: false, reason: "Нельзя завершить заблокированную задачу" };
+      }
+      return { ok: true };
+    },
+    [columnMapWithOptimistic, wipPolicies]
+  );
+
+  const moveTask = useCallback(
+    (task: AdminTaskRow, toStatus: string) => {
+      const decision = canMoveToStatus(task, toStatus);
+      if (!decision.ok) {
+        setDragError(decision.reason ?? "Переход запрещен");
+        return;
+      }
+      setDragError(null);
+      updateStatusMutation.mutate({ taskId: task.id, status: toStatus });
+    },
+    [canMoveToStatus, setDragError, updateStatusMutation]
+  );
+
+  const handleKanbanDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || typeof over.id !== "string") return;
+      const overId = String(over.id);
+
+      if (overId.startsWith("stream-page-")) {
+        const taskId = String(active.id);
+        const task = allTasks.find((t) => t.id === taskId);
+        if (!task) return;
+        if (!canMoveTasksAcrossStreams) return;
+        const target = overId.replace("stream-page-", "");
+        if (target === "all") return;
+        if (target === task.stream_id) return;
+        patchStreamTagsMutation.mutate({ taskId: task.id, stream_id: target });
+        return;
+      }
+
+      const status = overId.startsWith("droppable-")
+        ? overId.replace("droppable-", "")
+        : overId.startsWith("task-slot-")
+          ? overId.split("--")[0].replace("task-slot-", "")
+          : "";
+      if (!statusColumns.some((c) => c.id === status)) return;
+      const taskId = String(active.id);
+      const task = allTasks.find((t) => t.id === taskId);
+      if (!task) return;
+
+      const hasActiveFilters =
+        onlyNeedsMyApproval || Boolean(filterAssignee) || Boolean(filterPriority) || filterDue !== "all";
+
+      if (overId.startsWith("task-slot-")) {
+        if (hasActiveFilters) {
+          setDragError("Перестановка внутри колонки доступна только без активных фильтров.");
+          return;
+        }
+        const targetTaskId = overId.split("--")[1];
+        const current = columnMapWithOptimistic[status] ?? [];
+        const without = current.filter((x) => x.id !== task.id);
+        const targetIdx = without.findIndex((x) => x.id === targetTaskId);
+        const insertAt = targetIdx >= 0 ? targetIdx : without.length;
+        const next = [...without.slice(0, insertAt), { ...task, status }, ...without.slice(insertAt)];
+        setOptimisticOrderByStatus((prev) => ({ ...prev, [status]: next.map((x) => x.id) }));
+        reorderTasksMutation.mutate(
+          {
+            status,
+            ordered_task_ids: next.map((item) => item.id),
+          },
+          {
+            onError: () => {
+              setOptimisticOrderByStatus((prev) => {
+                const rest = { ...prev };
+                delete rest[status];
+                return rest;
+              });
+            },
+            onSuccess: () => {
+              setOptimisticOrderByStatus((prev) => {
+                const rest = { ...prev };
+                delete rest[status];
+                return rest;
+              });
+            },
+          }
+        );
+      }
+      if (task.status !== status) moveTask(task, status);
+    },
+    [
+      allTasks,
+      canMoveTasksAcrossStreams,
+      patchStreamTagsMutation,
+      statusColumns,
+      onlyNeedsMyApproval,
+      filterAssignee,
+      filterPriority,
+      filterDue,
+      columnMap,
+      reorderTasksMutation,
+      setDragError,
+      moveTask,
+    ]
+  );
+
+  const handleKanbanDragOver = useCallback(
+    (event: DragOverEvent) => {
+      if (!event.over || typeof event.over.id !== "string") {
+        scheduleNavIntent(null);
+        return;
+      }
+      const overId = String(event.over.id);
+      if (overId === "nav-prev") scheduleNavIntent("prev");
+      else if (overId === "nav-next") scheduleNavIntent("next");
+      else scheduleNavIntent(null);
+    },
+    [scheduleNavIntent]
+  );
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  const accentColor = streamMantineColorKey(streamTheme);
+  const pageDroppableId = streamId ? `stream-page-${streamId}` : "stream-page-all";
+
+  return (
+    <Stack>
+      {canMoveTasksAcrossStreams ? (
+        <StreamHeaderDropZone
+          id={pageDroppableId}
+          label={streamName}
+          accentColor={accentColor}
+          disabled={streamId === null}
+        />
+      ) : (
+        <Group justify="space-between" wrap="wrap">
+          <Text size="sm" fw={700}>
+            {streamName}
+          </Text>
+          {streamId ? (
+            <Badge size="sm" variant="light" color={accentColor}>
+              Поток
+            </Badge>
+          ) : null}
+        </Group>
+      )}
+
+      <AdminDataTableSurface>
+        <Group justify="space-between" mb="xs">
+          <Text size="sm" fw={700}>
+            Требуют подтверждения
+          </Text>
+          <Badge
+            size="sm"
+            variant="light"
+            color={approvalQueueTasks.length > 0 ? SEMANTIC.opsSeverity.warning : "gray"}
+          >
+            {approvalQueueTasks.length}
+          </Badge>
+        </Group>
+        {approvalQueueTasks.length === 0 ? (
+          <Text size="xs" c="dimmed">
+            Очередь подтверждений пуста.
+          </Text>
+        ) : (
+          <Box style={{ overflowX: "auto" }}>
+            <Group gap="xs" wrap="nowrap" align="stretch">
+              {approvalQueueTasks.slice(0, 24).map((t) => (
+                <Box key={t.id} w={300} style={{ flexShrink: 0 }}>
+                  <TaskKanbanCard
+                    task={t}
+                    admins={admins}
+                    patientName={t.patient_id ? patientIdToName.get(t.patient_id) ?? null : null}
+                    onOpenDetail={setDetailTaskId}
+                    onClaim={(t.source === "ai_suggested" || t.source === "ai_auto") ? (id) => claimMutation.mutate(id) : undefined}
+                    onTaskChat={setTaskChatId}
+                    isAi={t.source === "ai_suggested" || t.source === "ai_auto"}
+                    draggable={false}
+                    blocked={Boolean(t.blocked)}
+                    selected={selectedTaskIds.includes(t.id)}
+                    onSelect={(taskId, checked) =>
+                      setSelectedTaskIds((prev) =>
+                        checked ? Array.from(new Set([...prev, taskId])) : prev.filter((id) => id !== taskId)
+                      )
+                    }
+                    onMoveByKeyboard={handleKeyboardColumnMove}
+                    canMoveStream={canMoveTasksAcrossStreams}
+                    streamOptions={streamMoveOptions.filter((x) => x.value !== t.stream_id)}
+                    onMoveToStream={(taskId, nextStreamId) =>
+                      patchStreamTagsMutation.mutate({ taskId, stream_id: nextStreamId })
+                    }
+                  />
+                </Box>
+              ))}
+            </Group>
+          </Box>
+        )}
+      </AdminDataTableSurface>
+
+      <DndContext sensors={sensors} onDragEnd={handleKanbanDragEnd} onDragOver={handleKanbanDragOver}>
+        <Box style={{ flex: 1, minWidth: 0, position: "relative" }}>
+          {canMoveTasksAcrossStreams ? (
+            <>
+              <NavDropZone id="nav-prev" disabled={activePageIndex <= 0} />
+              <NavDropZone id="nav-next" disabled={activePageIndex >= streamPagesLength - 1} />
+              <Box
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 44,
+                  background:
+                    "linear-gradient(90deg, rgba(15,20,25,0.05) 0%, transparent 100%)",
+                  opacity: 0.7,
+                  pointerEvents: "none",
+                }}
+              />
+              <Box
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 44,
+                  background:
+                    "linear-gradient(270deg, rgba(15,20,25,0.05) 0%, transparent 100%)",
+                  opacity: 0.7,
+                  pointerEvents: "none",
+                }}
+              />
+            </>
+          ) : null}
+
+          <Box mb="md">
+            <AdminDataTableSurface>
+              <Group justify="space-between" align="center">
+                <Text size="sm" fw={700}>
+                  Список задач
+                </Text>
+                {currentAdminId ? (
+                  <Text size="xs" c="dimmed">
+                    Назначено мне: {myFocusTasks.filter((t) => t.status !== "done" && t.status !== "cancelled").length}
+                  </Text>
+                ) : null}
+              </Group>
+            </AdminDataTableSurface>
+          </Box>
+
+          {filteredTasks.length === 0 ? (
+            <AdminDataTableSurface>
+              <EmptyState
+                title={onlyNeedsMyApproval ? "Нет задач в очереди подтверждений" : "Нет задач"}
+                description={
+                  onlyNeedsMyApproval
+                    ? "В этом режиме список пуст. Переключитесь на «Все задачи» или ослабьте фильтры исполнителя, приоритета и срока."
+                    : "Создайте первую задачу или примите задачу от AI в работу."
+                }
+                action={
+                  onlyNeedsMyApproval
+                    ? { label: "Показать все задачи", onClick: () => setOnlyNeedsMyApproval(false) }
+                    : { label: "Создать задачу", onClick: () => {} }
+                }
+              />
+            </AdminDataTableSurface>
+          ) : (
+            <Box style={{ overflowX: "auto" }}>
+              <Box
+                style={{
+                  display: "grid",
+                  gridAutoFlow: "column",
+                  gridAutoColumns: "minmax(290px, 1fr)",
+                  gap: "var(--space-md)",
+                  alignItems: "start",
+                  minWidth: "max-content",
+                }}
+              >
+                {statusColumns.map((col, colIndex) => {
+                  const droppableId = `droppable-${col.id}`;
+                  const columnTasks = columnMapWithOptimistic[col.id] ?? [];
+                  const wipLimit = wipPolicies[col.id] ?? KANBAN_WIP_LIMITS[col.id];
+                  const overdueCount = columnTasks.filter((t) => isDueOverdue(t.due_at)).length;
+                  const agingCount = columnTasks.filter((t) => {
+                    if (!t.stage_entered_at) return false;
+                    return dayjs().diff(dayjs(t.stage_entered_at), "hour") >= AGING_ALERT_HOURS;
+                  }).length;
+                  return (
+                    <KanbanColumn
+                      key={col.id}
+                      id={droppableId}
+                      title={col.label}
+                      tasks={columnTasks}
+                      admins={admins}
+                      isLast={colIndex === statusColumns.length - 1}
+                      onOpenDetail={setDetailTaskId}
+                      onClaim={(id) => claimMutation.mutate(id)}
+                      onTaskChat={setTaskChatId}
+                      patientIdToName={patientIdToName}
+                      selectedTaskIds={selectedTaskIds}
+                      onSelectTask={(taskId, checked) =>
+                        setSelectedTaskIds((prev) =>
+                          checked ? Array.from(new Set([...prev, taskId])) : prev.filter((id) => id !== taskId)
+                        )
+                      }
+                      onMoveByKeyboard={handleKeyboardColumnMove}
+                      wipLimit={wipLimit}
+                      overdueCount={overdueCount}
+                      agingCount={agingCount}
+                    />
+                  );
+                })}
+              </Box>
+            </Box>
+          )}
+        </Box>
+      </DndContext>
+    </Stack>
   );
 }

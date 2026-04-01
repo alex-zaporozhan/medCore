@@ -12,6 +12,8 @@ export const ROUTE_PATHS = {
     dashboard: "/admin",
     /** Внутренний staff/collab чат клиники (не омниканальный инбокс пациентов). */
     staffChat: "/admin/staff-chat",
+    /** Личный кабинет сотрудника: фото + «о себе». */
+    me: "/admin/me",
     staffCalendar: "/admin/calendar",
     knowledge: "/admin/knowledge",
     clinics: "/admin/clinics",
@@ -74,6 +76,7 @@ export const ROUTE_PATHS = {
  */
 export const ADMIN_SHELL_ROUTE_SEGMENTS = [
   "staff-chat",
+  "me",
   "calendar",
   "knowledge",
   "clinics",

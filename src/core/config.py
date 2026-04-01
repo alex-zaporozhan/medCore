@@ -76,6 +76,30 @@ class Settings(BaseSettings):
     rate_admin_omni_send_per_admin_limit: int = 30
     rate_admin_omni_send_window_seconds: int = 60
 
+    # Chat anti-spam (enterprise): message send limits (per sender + per room)
+    rate_admin_chat_send_per_admin_limit: int = 60
+    rate_admin_chat_send_window_seconds: int = 60
+    rate_admin_chat_send_per_conversation_limit: int = 30
+
+    rate_patient_chat_send_per_patient_limit: int = 20
+    rate_patient_chat_send_window_seconds: int = 60
+    rate_patient_chat_send_per_conversation_limit: int = 12
+
+    rate_staff_chat_send_per_admin_limit: int = 40
+    rate_staff_chat_send_window_seconds: int = 60
+    rate_staff_chat_send_per_room_limit: int = 20
+
+    # Adaptive captcha (Cloudflare Turnstile)
+    turnstile_enabled: bool = False
+    turnstile_site_key: str = ""
+    turnstile_secret_key: str = ""
+    # When soft limits are exceeded, require captcha (before hard 429/lockout).
+    rate_auth_send_code_captcha_soft_ip_limit: int = 5
+    rate_auth_verify_code_captcha_soft_ip_limit: int = 10
+    rate_auth_captcha_soft_window_seconds: int = 600
+    rate_webchat_message_captcha_soft_ip_limit: int = 10
+    rate_webchat_message_window_seconds: int = 60
+
     # YooKassa
     yookassa_shop_id: str = ""
     yookassa_secret_key: str = ""
@@ -117,6 +141,35 @@ class Settings(BaseSettings):
     # Staff chat attachments (local disk; clinic-scoped paths)
     staff_chat_upload_root: str = "data/staff_chat_uploads"
     staff_chat_max_attachment_bytes: int = 5 * 1024 * 1024
+
+    # S3-compatible object storage (medical files)
+    s3_endpoint: str = ""
+    s3_bucket: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "us-east-1"
+    s3_use_ssl: bool = True
+    s3_presign_exp_seconds: int = 900
+    # PHI/medical data: keep presigned links short-lived.
+    s3_medical_presign_exp_seconds: int = 120
+    s3_medical_prefix: str = "medical"
+
+    # Staff avatars (S3; metadata in DB)
+    s3_staff_avatars_prefix: str = "staff-avatars"
+    s3_staff_avatars_presign_exp_seconds: int = 900
+    staff_avatar_max_bytes: int = 2 * 1024 * 1024
+
+    # Enterprise medical downloads (token-bound streaming proxy)
+    medical_download_token_ttl_seconds: int = 120
+    # Enforce user-agent binding for download tokens (recommended on).
+    medical_download_token_bind_ua: bool = True
+    # IP binding is fragile under corporate proxies; keep tolerant by default.
+    medical_download_token_enforce_ip: bool = False
+    # Trusted proxies (CIDR allowlist) for reading Forwarded/X-Forwarded-For client IP.
+    # Example: "10.0.0.0/8,192.168.0.0/16,127.0.0.1/32"
+    medical_trusted_proxy_cidrs: str = ""
+    # When enabled and the immediate peer is trusted, use Forwarded/X-Forwarded-For to resolve real client IP.
+    medical_resolve_client_ip_from_forwarded: bool = True
 
     # Logging
     log_level: str = "INFO"
@@ -180,6 +233,14 @@ class Settings(BaseSettings):
         if os.environ.get("TESTING") == "1":
             object.__setattr__(self, "rate_admin_login_ip_limit", 0)
             object.__setattr__(self, "rate_admin_login_email_limit", 0)
+        return self
+
+    @model_validator(mode="after")
+    def _enforce_s3_ssl_in_prod(self) -> "Settings":
+        """For PHI storage, require SSL in non-development environments."""
+        if str(self.app_env).lower() not in ("development", "dev", "local"):
+            if self.s3_endpoint and not bool(self.s3_use_ssl):
+                raise ValueError("S3_USE_SSL must be enabled outside development")
         return self
 
     @model_validator(mode="after")

@@ -42,6 +42,7 @@ import AdminAdministratorsPage from "@/admin/pages/AdminAdministratorsPage";
 import AdminSalesPipelinePage from "@/admin/pages/AdminSalesPipelinePage";
 import AdminTasksPage from "@/admin/pages/AdminTasksPage";
 import AdminStaffChatPage from "@/admin/pages/AdminStaffChatPage";
+import AdminStaffCabinetPage from "@/admin/pages/AdminStaffCabinetPage";
 import AdminStaffCalendarPage from "@/admin/pages/AdminStaffCalendarPage";
 import AdminKnowledgePage from "@/admin/pages/AdminKnowledgePage";
 import AdminEmergencyNotificationsPage from "@/admin/pages/AdminEmergencyNotificationsPage";
@@ -59,6 +60,7 @@ import ProfilePage from "@/app/pages/ProfilePage";
 import LoginPage from "@/app/pages/LoginPage";
 import OAuthResultPage from "@/app/pages/OAuthResultPage";
 import FormsPage from "@/app/pages/FormsPage";
+import PublicDoctorProfilePage from "@/marketing/pages/PublicDoctorProfilePage";
 import {
   ADMIN_SHELL_ROUTE_SEGMENTS,
   PATIENT_APP_ROUTE_SEGMENTS,
@@ -80,6 +82,7 @@ import {
 
 const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
   "staff-chat": AdminStaffChatPage,
+  me: AdminStaffCabinetPage,
   calendar: AdminStaffCalendarPage,
   knowledge: AdminKnowledgePage,
   clinics: AdminClinicsPage,
@@ -292,6 +295,7 @@ const router = createBrowserRouter(
   createRoutesFromElements(
     <>
       <Route path={ROUTE_PATHS.marketing.landing} element={<LandingPage />} />
+      <Route path="/:clinicSlug/doctors/:doctorSlug" element={<PublicDoctorProfilePage />} />
       <Route path={ROUTE_PATHS.admin.dashboard} element={<AdminAuthGuard />}>
         <Route path="login" element={<AdminLoginPage />} />
         <Route
