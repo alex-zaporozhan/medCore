@@ -17,6 +17,7 @@ export interface AdminTaskRow {
   description: string | null;
   status: string;
   priority: string;
+  creator_id?: string | null;
   assignee_id: string | null;
   /** Личные исполнители (junction); если пусто — смотрите assignee_id / role_assignee. */
   assignee_ids?: string[];
@@ -76,12 +77,16 @@ function fetchAdminTasks(params?: {
   status?: string;
   stream_id?: string;
   tag_ids?: string[];
+  completed_from?: string;
+  completed_to?: string;
 }) {
   const search = new URLSearchParams();
   if (params?.source) search.set("source", params.source);
   if (params?.assignee_id) search.set("assignee_id", params.assignee_id);
   if (params?.status) search.set("status", params.status);
   if (params?.stream_id) search.set("stream_id", params.stream_id);
+  if (params?.completed_from) search.set("completed_from", params.completed_from);
+  if (params?.completed_to) search.set("completed_to", params.completed_to);
   for (const id of params?.tag_ids ?? []) {
     search.append("tag_ids", id);
   }
@@ -90,27 +95,29 @@ function fetchAdminTasks(params?: {
 }
 
 export function useAdminTasksList(
-  filters?: { streamId?: string | null; tagIds?: string[] },
+  filters?: { streamId?: string | null; tagIds?: string[]; completedFrom?: string; completedTo?: string },
   options?: { enabled?: boolean }
 ) {
   const streamId = filters?.streamId ?? null;
   const tagIds = filters?.tagIds ?? [];
   return useQuery({
-    queryKey: queryKeys.adminTasks.list(streamId, tagIds),
+    queryKey: queryKeys.adminTasks.list(streamId, tagIds, filters?.completedFrom ?? null, filters?.completedTo ?? null),
     queryFn: () =>
       fetchAdminTasks({
         stream_id: streamId ?? undefined,
         tag_ids: tagIds.length ? tagIds : undefined,
+        completed_from: filters?.completedFrom ?? undefined,
+        completed_to: filters?.completedTo ?? undefined,
       }),
     enabled: options?.enabled !== false,
   });
 }
 
-export function useAdminTasksMyFocus(adminId: string | null) {
+export function useAdminTasksMyFocus(adminId: string | null, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.adminTasks.myFocus(adminId),
     queryFn: () => fetchAdminTasks({ assignee_id: adminId ?? undefined }),
-    enabled: !!adminId,
+    enabled: options?.enabled ?? !!adminId,
   });
 }
 
@@ -121,7 +128,7 @@ export function useAdminTasksAi() {
   });
 }
 
-export function useAdminTasksOpen() {
+export function useAdminTasksOpen(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.adminTasks.open(),
     queryFn: () => fetchAdminTasks({ status: "open" }),
@@ -133,6 +140,7 @@ export function useAdminTasksOpen() {
         priority: t.priority,
         due_at: t.due_at,
       })),
+    enabled: options?.enabled !== false,
   });
 }
 

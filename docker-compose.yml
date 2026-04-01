@@ -180,6 +180,26 @@ services:
       - backend
     restart: unless-stopped
 
+  # Playwright E2E (headless) against running compose stack.
+  # Usage: docker compose up -d db redis migrations backend frontend
+  #        docker compose --profile e2e run --rm e2e
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.49.1-jammy
+    container_name: dental_booking_e2e
+    profiles: ["e2e"]
+    working_dir: /work/frontend
+    environment:
+      CI: "1"
+      BASE_URL: http://frontend
+      E2E_EXTERNAL_BASE_URL: http://frontend
+    volumes:
+      - ./frontend:/work/frontend
+    depends_on:
+      - frontend
+    entrypoint: ["/bin/bash", "-lc"]
+    command: "npm ci && npx playwright test"
+    restart: "no"
+
 volumes:
   redis_data:
   staff_uploads:

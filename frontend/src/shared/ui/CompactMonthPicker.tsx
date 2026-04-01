@@ -108,10 +108,11 @@ export function CompactMonthPicker({
                 minWidth: 0,
                 paddingLeft: isCompact ? 4 : undefined,
                 paddingRight: isCompact ? 4 : undefined,
-                height: isCompact ? 28 : undefined,
-                fontSize: isCompact ? 11 : undefined,
+                height: isCompact ? 28 : 32,
+                fontSize: isCompact ? 11 : 12,
                 background: "var(--bg-card)",
-                opacity: isThisMonth ? 1 : 0.35,
+                // Too low opacity makes day digits look "missing" on some displays.
+                opacity: isThisMonth ? 1 : 0.7,
                 boxShadow: isSel ? "var(--shadow-soft-md)" : "var(--shadow-soft-sm)",
                 transform: isSel ? "translateY(-1px)" : undefined,
                 transition: "transform 0.12s ease, box-shadow 0.2s ease",
@@ -144,7 +145,7 @@ export function CompactMonthPicker({
         padding: pad,
         boxShadow: "var(--shadow-soft-md)",
         transition: "transform 0.15s ease",
-        maxWidth: isCompact ? 268 : 320,
+        maxWidth: isCompact ? 280 : 360,
         ...style,
       }}
     >

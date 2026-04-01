@@ -41,6 +41,8 @@ import AdminLoginPage from "@/admin/pages/AdminLoginPage";
 import AdminAdministratorsPage from "@/admin/pages/AdminAdministratorsPage";
 import AdminSalesPipelinePage from "@/admin/pages/AdminSalesPipelinePage";
 import AdminTasksPage from "@/admin/pages/AdminTasksPage";
+import AdminLeadsLogPage from "@/admin/pages/AdminLeadsLogPage";
+import AdminTaskDetailsPage from "@/admin/pages/AdminTaskDetailsPage";
 import AdminStaffChatPage from "@/admin/pages/AdminStaffChatPage";
 import AdminStaffCabinetPage from "@/admin/pages/AdminStaffCabinetPage";
 import AdminStaffCalendarPage from "@/admin/pages/AdminStaffCalendarPage";
@@ -89,6 +91,7 @@ const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
   services: AdminServicesPage,
   schedule: SchedulePage,
   tasks: AdminTasksPage,
+  "leads-log": AdminLeadsLogPage,
   bookings: AdminBookingsPage,
   prepayment: AdminPrepaymentPage,
   waitlist: AdminWaitlistPage,
@@ -309,6 +312,7 @@ const router = createBrowserRouter(
           }
         >
           <Route index element={<AdminDashboardPage />} />
+          <Route path="tasks/:taskId" element={<AdminTaskDetailsPage />} />
           {ADMIN_SHELL_ROUTE_SEGMENTS.map((seg) => (
             <Route
               key={seg}

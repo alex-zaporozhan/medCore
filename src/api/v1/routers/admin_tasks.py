@@ -313,6 +313,8 @@ async def list_tasks(
     role_assignee: str | None = Query(None),
     due_from: datetime | None = Query(None),
     due_to: datetime | None = Query(None),
+    completed_from: datetime | None = Query(None, description="Filter by completed_at >= (UTC)"),
+    completed_to: datetime | None = Query(None, description="Filter by completed_at <= (UTC)"),
     source: str | None = Query(None, description="Filter by source; use 'ai' for AI-suggested/auto tasks"),
     attention_kind: str | None = Query(
         None,
@@ -368,6 +370,10 @@ async def list_tasks(
         stmt = stmt.where(Task.due_at >= due_from)
     if due_to:
         stmt = stmt.where(Task.due_at <= due_to)
+    if completed_from:
+        stmt = stmt.where(Task.completed_at >= completed_from)
+    if completed_to:
+        stmt = stmt.where(Task.completed_at <= completed_to)
     if source == "ai":
         stmt = stmt.where(Task.source.in_(["ai_suggested", "ai_auto"]))
     elif source:
@@ -647,6 +653,9 @@ async def update_task(
         )
         reassigned = True
     if data.due_at is not None:
+        # Due date policy: only task creator or management can change.
+        if context.user_id != task.creator_id:
+            _ensure_operation_permission(context, specific="manage_tasks")
         task = await service.get_task_details(task_id)
         task.due_at = data.due_at
         await session.flush()

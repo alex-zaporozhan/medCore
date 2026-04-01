@@ -268,9 +268,15 @@ describe("AdminTasksPage workstation behavior", () => {
 
   it("renders WIP/SLA/Aging indicators", () => {
     renderPage();
-    expect(screen.getAllByText(/WIP 2\/8/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/SLA overdue: 1/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Aging 48h\+: 1/).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("Лимит 2/8"))).length
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("SLA просрочено: 1"))).length
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("В работе 48ч+: 1"))).length
+    ).toBeGreaterThan(0);
   });
 
   it("moves task by keyboard Alt+ArrowRight", () => {

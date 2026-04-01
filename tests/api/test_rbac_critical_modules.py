@@ -7,7 +7,7 @@ and 403 with invalid token. Add new routes here when adding protected endpoints.
 import uuid
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 from src.main import app
 
@@ -54,7 +54,8 @@ def _path_with_placeholder(path: str, clinic_id: str | None = None) -> str:
 async def test_rbac_critical_module_401_without_auth(method: str, path: str):
     """Without Authorization header, protected endpoints return 401 or 403."""
     path = _path_with_placeholder(path)
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         if method == "GET":
             resp = await client.get(path)
         else:
@@ -69,7 +70,8 @@ async def test_rbac_critical_module_401_without_auth(method: str, path: str):
 async def test_rbac_critical_module_403_invalid_token(method: str, path: str):
     """With invalid Bearer token, protected endpoints return 401 or 403."""
     path = _path_with_placeholder(path)
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         headers = {"Authorization": "Bearer invalid-token"}
         if method == "GET":
             resp = await client.get(path, headers=headers)

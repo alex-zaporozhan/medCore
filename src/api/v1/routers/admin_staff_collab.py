@@ -14,6 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.chat_attachment_disposition import clinic_chat_attachment_content_disposition
 from src.api.v1.dependencies import AdminContext, get_request_context, get_session, require_permissions
+from src.api.v1.routers._admin_staff_common import (
+    require_active_clinic_admin,
+    require_clinic_id as _clinic_id,
+    staff_collab_svc as _svc,
+)
 from src.application.dto.staff_collab_dto import (
     StaffCalendarEventDetailsResponse,
     StaffCalendarInvitationAckResponse,
@@ -37,14 +42,10 @@ from src.application.dto.staff_collab_dto import (
     StaffFeedPostAckResponse,
     StaffFeedPostAckStatusResponse,
     StaffFeedAckStatusRow,
-    StaffAnnouncementPublishPolicyRow,
-    StaffAnnouncementPublishPolicyResponse,
-    StaffAnnouncementPublishPolicyAuditListResponse,
     StaffRoomCreateDm,
     StaffRoomCreateGroup,
     StaffRoomInviteCreate,
 )
-from src.application.services.staff_collaboration_service import StaffCollaborationService
 from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
 from src.domain.entities.staff_calendar_event import StaffCalendarEvent
 from src.domain.entities.staff_calendar_event_participant import StaffCalendarEventParticipant
@@ -62,19 +63,8 @@ def _naive_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
-
-
-def _svc(session: AsyncSession) -> StaffCollaborationService:
-    return StaffCollaborationService(session)
-
-
-def _clinic_id(ctx: AdminContext) -> UUID:
-    if ctx.clinic_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется контекст клиники")
-    return ctx.clinic_id
-
-
 async def _admin_in_clinic(session: AsyncSession, clinic_id: UUID, admin_id: UUID) -> bool:
+    # Keep legacy helper for local checks in this module (shared auth gate lives in _admin_staff_common).
     res = await session.execute(
         select(AdminUser.id).where(
             AdminUser.id == admin_id,
@@ -84,30 +74,6 @@ async def _admin_in_clinic(session: AsyncSession, clinic_id: UUID, admin_id: UUI
         )
     )
     return res.scalar_one_or_none() is not None
-
-
-async def require_active_clinic_admin(
-    session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(require_permissions()),
-) -> AdminContext:
-    """Любой активный администратор в контексте своей клиники.
-
-    Для **внутренней стены** (лента персонала): чтение, лайки и комментарии доступны всем
-    сотрудникам с учётной записью админки этой клиники, без отдельного ``view_staff_collab``.
-    Чат, календарь и база знаний по-прежнему требуют ``view_staff_collab``.
-    """
-    if context.user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Требуется пользователь",
-        )
-    cid = _clinic_id(context)
-    if not await _admin_in_clinic(session, cid, context.user_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Нет доступа к клинике",
-        )
-    return context
 
 
 @router.get(
@@ -791,54 +757,6 @@ async def delete_staff_feed_comment(
 
 
 @router.get(
-    "/feed/announcements/publish-policy",
-    response_model=StaffAnnouncementPublishPolicyResponse,
-    dependencies=[Depends(require_permissions("rbac.manage"))],
-)
-async def get_staff_announcement_publish_policy(
-    session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(get_request_context),
-) -> StaffAnnouncementPublishPolicyResponse:
-    cid = _clinic_id(context)
-    return await _svc(session).list_announcement_publish_policies(cid)
-
-
-@router.put(
-    "/feed/announcements/publish-policy",
-    response_model=StaffAnnouncementPublishPolicyResponse,
-    dependencies=[Depends(require_permissions("rbac.manage"))],
-)
-async def put_staff_announcement_publish_policy(
-    rows: list[StaffAnnouncementPublishPolicyRow],
-    session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(get_request_context),
-) -> StaffAnnouncementPublishPolicyResponse:
-    cid = _clinic_id(context)
-    return await _svc(session).upsert_announcement_publish_policies(
-        cid,
-        actor_admin_id=context.user_id,
-        rows=rows,
-    )
-
-
-@router.get(
-    "/feed/announcements/publish-policy/audit",
-    response_model=StaffAnnouncementPublishPolicyAuditListResponse,
-)
-async def list_staff_announcement_publish_policy_audit(
-    limit: int = Query(200, ge=1, le=500),
-    session: AsyncSession = Depends(get_session),
-    context: AdminContext = Depends(require_active_clinic_admin),
-) -> StaffAnnouncementPublishPolicyAuditListResponse:
-    # Owner-only by default, with optional individual grant.
-    is_owner = "owner" in set(context.roles or set())
-    has_perm = "staff.announcements.policy.audit.view" in set(context.permissions or set())
-    if not (is_owner or has_perm):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-    return await _svc(session).list_announcement_publish_policy_audits(_clinic_id(context), limit=limit)
-
-
-@router.post(
     "/feed/comments/{comment_id}/attachments",
     response_model=StaffAttachmentBrief,
     status_code=status.HTTP_201_CREATED,

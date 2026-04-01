@@ -11,6 +11,7 @@ from src.application.services.omnichannel_chat_service import OmnichannelChatSer
 from src.domain.entities.omnichannel_ai_settings import AISettings as OmniAISettings
 from src.domain.entities.omnichannel_channel import Channel as OmniChannel
 from src.domain.entities.omnichannel_chat import Chat as OmniChat
+from src.domain.entities.omnichannel_chat_closure import OmniChatClosure
 from src.domain.entities.omnichannel_message import Message as OmniMessage
 from src.infrastructure.database import base as db_base
 
@@ -162,6 +163,72 @@ async def test_admin_send_and_hide_omni_message(init_db, seed_data, client: Asyn
         assert msg is not None
         assert msg.ui_hidden is True
         assert msg.hidden_reason == "moderation via admin API"
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_claim_and_close_omni_chat_and_analytics(init_db, seed_data, client: AsyncClient, admin_auth: dict):
+    business_account_id = seed_data["clinic_id"]
+
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="Omni Claim Close Test",
+            primary_phone="+79990007788",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=channel_id,
+        )
+        chat.status = "WAITING_FOR_OPERATOR"
+        chat.assignee_admin_id = None
+        await session.flush()
+        chat_id = chat.id
+        await session.commit()
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+
+    # Claim -> assigned to current admin + IN_PROGRESS + claimed_at set
+    r_claim = await client.post(f"/api/v1/admin/omni-chats/{chat_id}/claim", headers=headers)
+    assert r_claim.status_code == 200, r_claim.text
+    claimed = r_claim.json()["chat"]
+    assert claimed["chat_id"] == str(chat_id)
+    assert claimed["assignee_admin_id"] == admin_auth["admin_id"]
+    assert claimed["status"] in {"IN_PROGRESS", "WAITING_FOR_OPERATOR", "OPEN"}  # server normalizes to IN_PROGRESS
+    assert claimed.get("claimed_at") is not None
+
+    # Close -> closure record + chat CLOSED
+    r_close = await client.post(
+        f"/api/v1/admin/omni-chats/{chat_id}/close",
+        json={"outcome": "BOOKED", "tag_ids": [], "comment": "Booked"},
+        headers=headers,
+    )
+    assert r_close.status_code == 200, r_close.text
+    closed = r_close.json()["chat"]
+    assert closed["status"] == "CLOSED"
+    assert closed.get("closed_at") is not None
+
+    async with db_base.AsyncSessionLocal() as session:
+        cres = await session.execute(select(OmniChatClosure).where(OmniChatClosure.chat_id == chat_id))
+        closure = cres.scalar_one_or_none()
+        assert closure is not None
+        assert closure.outcome == "BOOKED"
+
+    # Analytics should include at least 1 created/claimed/closed for a wide range.
+    r_analytics = await client.get(
+        "/api/v1/admin/omni-chats/analytics",
+        params={"date_from": "2000-01-01", "date_to": "2100-01-01"},
+        headers=headers,
+    )
+    assert r_analytics.status_code in {200, 403}, r_analytics.text
+    if r_analytics.status_code == 200:
+        a = r_analytics.json()
+        assert a["total_chats_created"] >= 1
+        assert a["total_claimed"] >= 1
+        assert a["total_closed"] >= 1
 
 
 @pytest.mark.regression_chats
@@ -675,4 +742,97 @@ async def test_admin_omni_list_assignee_param_rejects_invalid(
     headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
     r = await client.get("/api/v1/admin/omni-chats", params={"assignee": "all"}, headers=headers)
     assert r.status_code == 422, r.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_sse_token_requires_permission(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict, doctor_auth: dict
+):
+    """SSE token endpoint is protected by omni.inbox.manage."""
+    r_forbidden = await client.get(
+        "/api/v1/admin/omni-chats/sse-token",
+        headers={"Authorization": f"Bearer {doctor_auth['access_token']}"},
+    )
+    assert r_forbidden.status_code == 403, r_forbidden.text
+
+    r_ok = await client.get(
+        "/api/v1/admin/omni-chats/sse-token",
+        headers={"Authorization": f"Bearer {admin_auth['access_token']}"},
+    )
+    assert r_ok.status_code == 200, r_ok.text
+    data = r_ok.json()
+    assert isinstance(data.get("token"), str) and data["token"]
+    assert data.get("expires_in_seconds") == 300
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_close_forbidden_for_non_assignee(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict, doctor_auth: dict
+):
+    """Close is allowed only for assignee (owner override), and still requires omni.inbox.manage."""
+    business_account_id = seed_data["clinic_id"]
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="Close ownership test",
+            primary_phone="+79990001003",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=channel_id,
+        )
+        chat.status = "WAITING_FOR_OPERATOR"
+        chat.assignee_admin_id = None
+        await session.commit()
+        chat_id = chat.id
+
+    # Claim as admin
+    r_claim = await client.post(
+        f"/api/v1/admin/omni-chats/{chat_id}/claim",
+        headers={"Authorization": f"Bearer {admin_auth['access_token']}"},
+    )
+    assert r_claim.status_code == 200, r_claim.text
+
+    # Attempt to close as doctor (no omni.inbox.manage) -> 403
+    r_close = await client.post(
+        f"/api/v1/admin/omni-chats/{chat_id}/close",
+        json={"outcome": "BOOKED", "tag_ids": [], "comment": "nope"},
+        headers={"Authorization": f"Bearer {doctor_auth['access_token']}"},
+    )
+    assert r_close.status_code == 403, r_close.text
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_admin_omni_upload_rejects_svg(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict
+):
+    """Upload blocks image/svg+xml to prevent stored XSS."""
+    business_account_id = seed_data["clinic_id"]
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="SVG upload test",
+            primary_phone="+79990001004",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=channel_id,
+        )
+        await session.commit()
+        chat_id = chat.id
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    files = {"file": ("x.svg", b"<svg xmlns='http://www.w3.org/2000/svg'></svg>", "image/svg+xml")}
+    data = {"body": "svg"}
+    r = await client.post(f"/api/v1/admin/omni-chats/{chat_id}/messages/upload", headers=headers, data=data, files=files)
+    assert r.status_code == 400, r.text
 

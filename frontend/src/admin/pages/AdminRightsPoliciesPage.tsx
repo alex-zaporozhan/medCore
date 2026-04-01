@@ -53,7 +53,11 @@ import {
   useRbacPolicies,
   useRbacUsers,
 } from "@/hooks";
-import { useStaffAnnouncementPublishPolicyAudit } from "@/hooks/useStaffCollab";
+import {
+  useStaffAnnouncementPublishPolicy,
+  useStaffAnnouncementPublishPolicyAudit,
+  useUpdateStaffAnnouncementPublishPolicy,
+} from "@/hooks/useStaffCollab";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { ContextBar, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
@@ -92,6 +96,7 @@ export default function AdminRightsPoliciesPage() {
   const effectiveClinicId = currentClinicId ?? undefined;
   const { data: session, isLoading: sessionLoading } = useAdminSession();
   const canManage = (session?.permissions ?? []).includes(ADMIN_PERM_RBAC_MANAGE);
+  const isOwner = Boolean(session?.roles?.includes("owner"));
   const catalogQ = useRbacCatalog(effectiveClinicId);
   const usersQ = useRbacUsers(effectiveClinicId);
   const policiesQ = useRbacPolicies(effectiveClinicId);
@@ -100,6 +105,8 @@ export default function AdminRightsPoliciesPage() {
     Boolean(session?.roles?.includes("owner")) ||
     Boolean(session?.permissions?.includes(STAFF_ANNOUNCEMENTS_POLICY_AUDIT_VIEW));
   const announcementsAuditQ = useStaffAnnouncementPublishPolicyAudit(200);
+  const announcementsPolicyQ = useStaffAnnouncementPublishPolicy();
+  const updateAnnouncementsPolicyMut = useUpdateStaffAnnouncementPublishPolicy();
   const patchRolePermissions = usePatchRolePermissions();
   const patchUserRoles = usePatchUserRoles();
   const patchUserPermissions = usePatchUserPermissions();
@@ -140,6 +147,10 @@ export default function AdminRightsPoliciesPage() {
   const [deleteRoleOpen, setDeleteRoleOpen] = useState(false);
 
   const [mainTab, setMainTab] = useState<string>("roles");
+
+  const [announcementPolicyError, setAnnouncementPolicyError] = useState<string | null>(null);
+  const [announcementDenyRoles, setAnnouncementDenyRoles] = useState<string[]>([]);
+  const [announcementDenyUsers, setAnnouncementDenyUsers] = useState<string[]>([]);
 
   const [policyForm, setPolicyForm] = useState({
     allow_patient_disable_discount_notifications: false,
@@ -290,6 +301,32 @@ export default function AdminRightsPoliciesPage() {
       })),
     [usersQ.data?.items]
   );
+
+  const announcementUserOptions = useMemo(() => {
+    const items = usersQ.data?.items ?? [];
+    return items
+      .slice()
+      .sort((a, b) => (a.full_name || a.email || "").localeCompare(b.full_name || b.email || ""))
+      .map((u) => ({
+        value: u.admin_id,
+        label: u.full_name || u.email || u.admin_id.slice(0, 8),
+      }));
+  }, [usersQ.data?.items]);
+
+  useEffect(() => {
+    if (!isOwner) return;
+    const policies = announcementsPolicyQ.data?.policies ?? [];
+    const roles = policies
+      .filter((p) => p.scope_type === "role" && p.can_publish === false)
+      .map((p) => p.scope_value)
+      .filter(Boolean);
+    const users = policies
+      .filter((p) => p.scope_type === "user" && p.can_publish === false)
+      .map((p) => p.scope_value)
+      .filter(Boolean);
+    setAnnouncementDenyRoles(roles);
+    setAnnouncementDenyUsers(users);
+  }, [isOwner, announcementsPolicyQ.data?.policies]);
 
   useEffect(() => {
     if (!selectedRoleId) return;
@@ -778,6 +815,97 @@ export default function AdminRightsPoliciesPage() {
           </Group>
         </Paper>
       </Stack>
+
+      {isOwner ? (
+        <Card withBorder>
+          <Stack gap="xs">
+            <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+              <Stack gap={2} maw={720}>
+                <Text fw={700}>Права на публикацию объявлений</Text>
+                <Text size="sm" c="dimmed">
+                  По умолчанию публиковать могут все сотрудники. Здесь можно запретить по роли или точечно по человеку.
+                </Text>
+              </Stack>
+              <Button
+                variant="light"
+                onClick={() => announcementsPolicyQ.refetch()}
+                loading={announcementsPolicyQ.isFetching}
+              >
+                Обновить
+              </Button>
+            </Group>
+
+            {announcementPolicyError ? (
+              <Alert
+                color="red"
+                title="Ошибка"
+                onClose={() => setAnnouncementPolicyError(null)}
+                withCloseButton
+              >
+                {announcementPolicyError}
+              </Alert>
+            ) : null}
+
+            <Group grow align="flex-end">
+              <MultiSelect
+                label="Запретить по ролям"
+                data={[
+                  { value: "manager", label: "Менеджер" },
+                  { value: "admin", label: "Администратор" },
+                  { value: "doctor", label: "Врач/мастер" },
+                ]}
+                value={announcementDenyRoles}
+                onChange={setAnnouncementDenyRoles}
+                placeholder="Пусто = без запретов"
+                searchable
+                clearable
+                comboboxProps={{ withinPortal: true }}
+              />
+              <MultiSelect
+                label="Запретить конкретным сотрудникам"
+                data={announcementUserOptions}
+                value={announcementDenyUsers}
+                onChange={setAnnouncementDenyUsers}
+                placeholder="Пусто = без запретов"
+                searchable
+                clearable
+                hidePickedOptions
+                comboboxProps={{ withinPortal: true }}
+              />
+            </Group>
+
+            <Group justify="flex-end">
+              <Button
+                onClick={async () => {
+                  setAnnouncementPolicyError(null);
+                  try {
+                    const payload = [
+                      ...announcementDenyRoles.map((r) => ({
+                        scope_type: "role" as const,
+                        scope_value: r,
+                        can_publish: false,
+                      })),
+                      ...announcementDenyUsers.map((id) => ({
+                        scope_type: "user" as const,
+                        scope_value: id,
+                        can_publish: false,
+                      })),
+                    ];
+                    await updateAnnouncementsPolicyMut.mutateAsync(payload);
+                  } catch (e) {
+                    setAnnouncementPolicyError(
+                      e instanceof Error ? e.message : "Не удалось сохранить политику"
+                    );
+                  }
+                }}
+                loading={updateAnnouncementsPolicyMut.isPending}
+              >
+                Сохранить политику
+              </Button>
+            </Group>
+          </Stack>
+        </Card>
+      ) : null}
 
       <Tabs value={mainTab} onChange={(v) => setMainTab(v ?? "roles")}>
         <Tabs.List>

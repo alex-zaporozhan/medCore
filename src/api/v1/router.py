@@ -48,6 +48,7 @@ from src.api.v1.routers import (
     public_doctor_profiles,
     patient_chat,
     admin_omni_chat,
+    admin_omni_chat_closure_tags,
     integrations_gateway,
     owner_omni_channels,
     owner_omni_ai_settings,
@@ -62,6 +63,7 @@ from src.api.v1.routers import (
     admin_task_streams,
     admin_task_tags,
     admin_staff_collab,
+    admin_staff_announcement_policy,
     admin_loyalty,
     patient_loyalty,
     admin_forms,
@@ -77,6 +79,8 @@ from src.api.v1.routers import (
     admin_staff_directory,
     admin_staff_profile,
     admin_patient_medical,
+    admin_lead_logs,
+    admin_leads_log_routing,
 )
 
 # Create main API router
@@ -129,6 +133,7 @@ api_router.include_router(admin_task_boards.router)
 api_router.include_router(admin_task_streams.router)
 api_router.include_router(admin_task_tags.router)
 api_router.include_router(admin_staff_collab.router)
+api_router.include_router(admin_staff_announcement_policy.router)
 api_router.include_router(patient_chat.router)
 api_router.include_router(patient_notification_settings.router)
 api_router.include_router(public_services.router)
@@ -141,6 +146,7 @@ api_router.include_router(payments.router)
 api_router.include_router(csv_sync.router)
 api_router.include_router(reports.router)
 api_router.include_router(admin_omni_chat.router)
+api_router.include_router(admin_omni_chat_closure_tags.router)
 api_router.include_router(integrations_gateway.router)
 api_router.include_router(owner_omni_channels.router)
 api_router.include_router(owner_omni_ai_settings.router)
@@ -156,3 +162,5 @@ api_router.include_router(admin_vault.router)
 api_router.include_router(admin_ui_events.router)
 api_router.include_router(admin_omni_tools.router)
 api_router.include_router(admin_rbac_management.router)
+api_router.include_router(admin_lead_logs.router)
+api_router.include_router(admin_leads_log_routing.router)

@@ -57,6 +57,8 @@ class Chat(Base):
     last_actor_type: Mapped[str | None] = mapped_column(
         String(32), nullable=True
     )  # CLIENT / AI / HUMAN_ADMIN / SYSTEM / OWNER
+    claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )

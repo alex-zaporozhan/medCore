@@ -313,7 +313,15 @@ export {
   useSendAdminOmniMessage,
   useHideAdminOmniMessage,
   useUpdateOmniChatAiMode,
+  useAdminOmniChatPresence,
 } from "./useAdminOmniChat";
+
+export { useAdminLeadLogs, useAdminLeadLogDetail } from "./useAdminLeadLogs";
+export {
+  useAdminLeadLogRoutingRules,
+  useSimulateAdminLeadLogRoutingMutation,
+  useReplaceAdminLeadLogRoutingRulesMutation,
+} from "./useAdminLeadLogRouting";
 export {
   useAdminRecallSegments,
   useCreateRecallSegment,

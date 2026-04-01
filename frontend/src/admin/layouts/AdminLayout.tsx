@@ -67,6 +67,7 @@ import { BOX_HIDDEN_ADMIN_PATHS, isBoxEdition } from "@/config/edition";
 import { PersonCardModalHost, PersonCardProvider } from "@/shared/ui";
 
 const NAVBAR_COLLAPSED_KEY = "admin_navbar_collapsed";
+const PERM_LEADS_LOG_VIEW = "leads.log.view";
 
 type NavItem = {
   to: string;
@@ -81,7 +82,6 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { to: ROUTE_PATHS.admin.dashboard, label: "Лента", icon: IconDashboard },
       { to: ROUTE_PATHS.admin.staffChat, label: "Чат команды", icon: IconMessageCircle },
-      { to: ROUTE_PATHS.admin.me, label: "Личный кабинет", icon: IconUser },
       { to: ROUTE_PATHS.admin.staffCalendar, label: "Календарь", icon: IconCalendarEvent },
       { to: ROUTE_PATHS.admin.tasks, label: "Задачи (Kanban)", icon: IconListCheck },
       { to: ROUTE_PATHS.admin.knowledge, label: "База знаний", icon: IconBook },
@@ -118,6 +118,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: "SYSTEM",
     items: [
       { to: ROUTE_PATHS.admin.settings, label: "Настройки", icon: IconSettings },
+      { to: ROUTE_PATHS.admin.me, label: "Личный кабинет", icon: IconUser },
       { to: ROUTE_PATHS.admin.doctors, label: "Врачи", icon: IconStethoscope },
       { to: ROUTE_PATHS.admin.doctorSchedule, label: "Расписание врачей", icon: IconCalendarWeek },
       { to: ROUTE_PATHS.admin.patients, label: "Пациенты", icon: IconUserCircle },
@@ -133,12 +134,14 @@ function navGroupsVisible(
   groups: typeof navGroups,
   canPatientsPii: boolean,
   canRbacManage: boolean,
+  canLeadsLogView: boolean,
 ): typeof navGroups {
   return groups.map((g) => ({
     ...g,
     items: g.items.filter((item) => {
       if ("to" in item && item.to === ROUTE_PATHS.admin.patients && !canPatientsPii) return false;
       if ("to" in item && item.to === ROUTE_PATHS.admin.rightsPolicies && !canRbacManage) return false;
+      if ("to" in item && item.to === ROUTE_PATHS.admin.leadsLog && !canLeadsLogView) return false;
       return true;
     }),
   }));
@@ -192,11 +195,33 @@ export default function AdminLayout() {
     adminSession?.permissions?.includes(ADMIN_PERM_PATIENTS_PII_READ) ?? false;
   const canRbacManage =
     adminSession?.permissions?.includes(ADMIN_PERM_RBAC_MANAGE) ?? false;
+  const canLeadsLogView = adminSession?.permissions?.includes(PERM_LEADS_LOG_VIEW) ?? false;
   const boxEdition = isBoxEdition();
   const sidebarNavGroups = useMemo(
     () =>
-      navGroupsForBoxEdition(navGroupsVisible(navGroups, canPatientsPii, canRbacManage), boxEdition),
-    [canPatientsPii, canRbacManage, boxEdition],
+      navGroupsForBoxEdition(
+        navGroupsVisible(
+          // Inject leads-log item next to tasks (kanban surface).
+          navGroups.map((g) => {
+            if (g.title !== "СОТРУДНИКИ") return g;
+            const nextItems = [...g.items];
+            const idx = nextItems.findIndex((x) => x.to === ROUTE_PATHS.admin.tasks);
+            if (idx >= 0) {
+              nextItems.splice(idx + 1, 0, {
+                to: ROUTE_PATHS.admin.leadsLog,
+                label: "Лиды (лог)",
+                icon: IconListCheck,
+              });
+            }
+            return { ...g, items: nextItems };
+          }),
+          canPatientsPii,
+          canRbacManage,
+          canLeadsLogView,
+        ),
+        boxEdition,
+      ),
+    [canPatientsPii, canRbacManage, canLeadsLogView, boxEdition],
   );
 
   const clinicOptions =
