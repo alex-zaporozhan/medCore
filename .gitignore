@@ -78,3 +78,6 @@ frontend/public/emoji-datasource/
 frontend/playwright-report/
 frontend/test-results/
 .tmp_ci_logs/
+
+# Local runtime uploads / storage (never commit)
+data/
