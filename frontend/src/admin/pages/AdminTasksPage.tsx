@@ -4,7 +4,6 @@ import {
   Avatar,
   Badge,
   Button,
-  Card,
   Checkbox,
   Group,
   Input,
@@ -22,19 +21,17 @@ import {
   Paper,
   Alert,
   Tooltip,
+  Divider,
 } from "@mantine/core";
 import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
+import { TaskDetailsView } from "@/admin/components/TaskDetailsView";
 import {
   IconGripVertical,
   IconRobot,
-  IconMessageCircle,
-  IconMessages,
-  IconCalendarEvent,
-  IconPhone,
-  IconBrandWhatsapp,
+  IconDotsVertical,
+  IconExternalLink,
   IconAlertTriangle,
   IconLock,
-  IconLockOpen,
   IconChevronUp,
   IconChevronDown,
   IconLayoutKanban,
@@ -43,9 +40,9 @@ import {
   IconSettings,
   IconFilter,
   IconSearch,
+  IconTrash,
 } from "@tabler/icons-react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ROUTE_PATHS } from "@/routePaths";
 import {
   GlassModal,
   AdminDataTableToolbar,
@@ -53,7 +50,6 @@ import {
   AppleEmojiOverlayTextarea,
   EmojiMartPopoverPicker,
   CompactMonthPicker,
-  PersonNameLink,
 } from "@/shared/ui";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { SEMANTIC } from "@/shared/semanticUi";
@@ -75,16 +71,10 @@ import {
   useCreateAdminTaskMutation,
   useClaimAdminTaskMutation,
   useUpdateAdminTaskStatusMutation,
-  useUpdateAdminTaskMetaMutation,
   useReorderAdminTasksMutation,
   useTaskWipPolicies,
-  useTaskTransitions,
-  useTaskCalendarContext,
-  useInviteTaskCalendarParticipants,
   useTaskComments,
   usePostTaskComment,
-  usePatchAdminTaskAssigneesMutation,
-  usePatchAdminTaskDueMutation,
   useAdminSession,
   useTaskBoardsQuery,
   useReplaceTaskBoardColumnsMutation,
@@ -94,9 +84,13 @@ import {
   usePatchTaskStreamMutation,
   useCreateTaskTagMutation,
   usePatchAdminTaskStreamTagsMutation,
+  useAdminLeadLogDetail,
+  useAdminLeadLogRoutingRules,
+  useSimulateAdminLeadLogRoutingMutation,
+  useReplaceAdminLeadLogRoutingRulesMutation,
 } from "@/hooks";
 import type { AdminTaskRow, AdminUserRow, TaskStreamRow, TaskStreamMantineColor, TaskStreamPageTint } from "@/hooks";
-import { ApiErrorWithCode, getAdminId } from "@/api/client";
+import { getAdminId } from "@/api/client";
 import {
   DndContext,
   PointerSensor,
@@ -119,6 +113,25 @@ const STATUS_META: Record<string, string> = {
   cancelled: "Отменено",
 };
 const STATUS_ORDER = ["open", "in_progress", "on_hold", "review", "done", "cancelled"] as const;
+
+const PRIORITY_META: Record<string, string> = {
+  low: "Низкий",
+  medium: "Средний",
+  high: "Высокий",
+  urgent: "Срочно",
+};
+
+const LEAD_OUTCOME_META: Record<string, { label: string; color: string }> = {
+  BOOKED: { label: "Записался", color: "teal" },
+  NOT_BOOKED: { label: "Не записался", color: "orange" },
+  UNKNOWN: { label: "Не определено", color: "gray" },
+};
+
+function leadOutcomeKey(v: unknown): "BOOKED" | "NOT_BOOKED" | "UNKNOWN" {
+  const s = String(v || "").toUpperCase();
+  if (s === "BOOKED" || s === "NOT_BOOKED" || s === "UNKNOWN") return s;
+  return "UNKNOWN";
+}
 
 const TIME_BOMB_HOURS = 2;
 const AGING_ALERT_HOURS = 48;
@@ -186,8 +199,8 @@ function TaskKanbanCard({
   admins,
   patientName,
   onOpenDetail,
-  onClaim,
-  onTaskChat,
+  onClaim: _onClaim,
+  onTaskChat: _onTaskChat,
   isAi,
   draggable,
   blocked,
@@ -235,7 +248,7 @@ function TaskKanbanCard({
     <Box ref={setNodeRef} style={outerStyle}>
       <Paper
         radius="md"
-        p="md"
+        p={0}
         withBorder={false}
         style={{
           ...taskStatusCardSurface(task.status),
@@ -260,146 +273,170 @@ function TaskKanbanCard({
           }
         }}
       >
-        <Group gap="xs" wrap="nowrap" align="flex-start">
-          {onSelect ? (
-            <Checkbox
-              mt={2}
-              checked={Boolean(selected)}
-              onChange={(e) => onSelect(task.id, e.currentTarget.checked)}
-              onClick={(e) => e.stopPropagation()}
-              aria-label="Выбрать задачу"
-            />
-          ) : null}
+        <Group gap={0} wrap="nowrap" align="stretch">
           {draggable ? (
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="sm"
-              style={{ cursor: "grab", flexShrink: 0, marginTop: 2 }}
-              {...listeners}
-              {...attributes}
-              onClick={(e) => e.stopPropagation()}
-              aria-label="Перетащить задачу"
-            >
-              <IconGripVertical size={16} />
-            </ActionIcon>
+            <Tooltip label="Перетащить" withArrow>
+              <Box
+                {...listeners}
+                {...attributes}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                aria-label="Перетащить задачу"
+                style={{
+                  width: 28,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "grab",
+                  userSelect: "none",
+                  borderTopLeftRadius: "var(--radius-md)",
+                  borderBottomLeftRadius: "var(--radius-md)",
+                  background:
+                    "linear-gradient(180deg, rgba(15, 20, 25, 0.04) 0%, rgba(15, 20, 25, 0.015) 100%)",
+                }}
+              >
+                <IconGripVertical size={16} color="var(--mantine-color-gray-6)" />
+              </Box>
+            </Tooltip>
           ) : null}
-          <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
-            <Group gap={6} wrap="wrap">
-              <Badge size="xs" variant="transparent" tt="uppercase" styles={taskStatusBadgeStyles(task.status)}>
-                {STATUS_META[task.status] ?? task.status}
-              </Badge>
-              <Badge size="xs" variant="light" color={priorityBadgeColor(task.priority)} tt="uppercase">
-                {task.priority}
-              </Badge>
-            </Group>
-            <Group gap={6} wrap="nowrap" align="flex-start">
-              {isAi && <IconRobot size={16} color="var(--mantine-color-indigo-6)" style={{ flexShrink: 0 }} />}
-              <Text size="sm" fw={600} lineClamp={2} style={{ flex: 1, color: tc.title }}>
-                {task.title}
-              </Text>
-              {canMoveStream && streamOptions && streamOptions.length > 0 && onMoveToStream ? (
-                <Menu shadow="md" width={260} withinPortal>
-                  <Menu.Target>
-                    <ActionIcon
-                      variant="subtle"
-                      color="gray"
-                      size="sm"
-                      onClick={(e) => e.stopPropagation()}
-                      aria-label="Переместить в поток"
-                      style={{ flexShrink: 0 }}
-                    >
-                      <IconLayoutKanban size={16} />
-                    </ActionIcon>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Label>Переместить в поток</Menu.Label>
-                    {streamOptions.map((opt) => (
-                      <Menu.Item
-                        key={opt.value}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onMoveToStream(task.id, opt.value);
-                        }}
-                      >
-                        {opt.label}
-                      </Menu.Item>
-                    ))}
-                  </Menu.Dropdown>
-                </Menu>
+
+          <Box p="md" style={{ flex: 1, minWidth: 0 }}>
+            <Group gap="xs" wrap="nowrap" align="flex-start">
+              {onSelect ? (
+                <Checkbox
+                  mt={2}
+                  checked={Boolean(selected)}
+                  onChange={(e) => onSelect(task.id, e.currentTarget.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="Выбрать задачу"
+                />
               ) : null}
+
+              <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
+                <Group gap={6} wrap="wrap">
+                  <Badge size="xs" variant="transparent" tt="uppercase" styles={taskStatusBadgeStyles(task.status)}>
+                    {STATUS_META[task.status] ?? task.status}
+                  </Badge>
+                  <Badge size="xs" variant="light" color={priorityBadgeColor(task.priority)} tt="uppercase">
+                    {PRIORITY_META[task.priority] ?? task.priority}
+                  </Badge>
+                  <Box style={{ marginLeft: "auto" }}>
+                    <Menu shadow="md" width={260} withinPortal>
+                      <Menu.Target>
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          size="sm"
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label="Действия"
+                        >
+                          <IconDotsVertical size={16} />
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item onClick={(e) => { e.stopPropagation(); onOpenDetail(task.id); }}>
+                          Открыть
+                        </Menu.Item>
+                        <Menu.Item
+                          component={Link}
+                          to={`/admin/tasks/${task.id}`}
+                          target="_blank"
+                          onClick={(e) => e.stopPropagation()}
+                          leftSection={<IconExternalLink size={14} />}
+                        >
+                          Открыть в новой вкладке
+                        </Menu.Item>
+                        {canMoveStream && streamOptions && streamOptions.length > 0 && onMoveToStream ? (
+                          <>
+                            <Menu.Divider />
+                            <Menu.Label>Переместить в поток</Menu.Label>
+                            {streamOptions.map((opt) => (
+                              <Menu.Item
+                                key={opt.value}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onMoveToStream(task.id, opt.value);
+                                }}
+                              >
+                                {opt.label}
+                              </Menu.Item>
+                            ))}
+                          </>
+                        ) : null}
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Box>
+                </Group>
+
+                <Group gap={6} wrap="nowrap" align="flex-start">
+                  {isAi ? (
+                    <Tooltip label="AI" withArrow>
+                      <Box style={{ flexShrink: 0, marginTop: 2 }}>
+                        <IconRobot size={16} color="var(--mantine-color-indigo-6)" />
+                      </Box>
+                    </Tooltip>
+                  ) : null}
+                  <Text size="sm" fw={600} lineClamp={2} style={{ flex: 1, color: tc.title }}>
+                    {task.title}
+                  </Text>
+                </Group>
+
+                {blocked ? (
+                  <Tooltip
+                    label={task.blocked_reason?.trim() ? `Причина: ${task.blocked_reason}` : "Причина блокировки не указана"}
+                    withArrow
+                    multiline
+                    maw={300}
+                  >
+                    <Badge size="xs" color="red" variant="light" leftSection={<IconLock size={12} />}>
+                      Заблокировано
+                    </Badge>
+                  </Tooltip>
+                ) : null}
+
+                {patientName ? (
+                  <Text size="xs" lineClamp={1} style={{ color: tc.meta }}>
+                    Привязка: {patientName}
+                  </Text>
+                ) : null}
+
+                <Group justify="space-between" mt="md" wrap="nowrap" gap="xs">
+                  <Text size="xs" c={overdue || timeBomb ? "red" : "dimmed"} fw={overdue ? 500 : 400}>
+                    {task.due_at ? dayjs(task.due_at).format("DD.MM HH:mm") : "—"}
+                  </Text>
+                  <Avatar size="sm" radius="xl" color="indigo">
+                    {(displayName || "?").slice(0, 2).toUpperCase()}
+                  </Avatar>
+                </Group>
+              </Stack>
             </Group>
-            {blocked ? (
-              <Tooltip
-                label={task.blocked_reason?.trim() ? `Причина: ${task.blocked_reason}` : "Причина блокировки не указана"}
-                withArrow
-                multiline
-                maw={300}
-              >
-                <Badge size="xs" color="red" variant="light" leftSection={<IconLock size={12} />}>
-                  Заблокировано
-                </Badge>
-              </Tooltip>
-            ) : null}
-            {patientName ? (
-              <Text size="xs" lineClamp={1} style={{ color: tc.meta }}>
-                Привязка: {patientName}
-              </Text>
-            ) : null}
-            <Group justify="space-between" mt="md" wrap="nowrap" gap="xs">
-              <Text size="xs" c={overdue || timeBomb ? "red" : "dimmed"} fw={overdue ? 500 : 400}>
-                {task.due_at ? dayjs(task.due_at).format("DD.MM HH:mm") : "—"}
-              </Text>
-              <Avatar size="sm" radius="xl" color="indigo">
-                {(displayName || "?").slice(0, 2).toUpperCase()}
-              </Avatar>
-            </Group>
-            {isAi && onClaim && (task.status === "open" || task.source === "ai_suggested" || task.source === "ai_auto") ? (
-              <Button
-                size="xs"
-                variant="light"
-                color="indigo"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClaim(task.id);
-                }}
-              >
-                Принять в работу
-              </Button>
-            ) : null}
-            {onTaskChat ? (
-              <Button
-                size="xs"
-                variant="outline"
-                color="indigo"
-                leftSection={<IconMessages size={12} />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTaskChat(task.id);
-                }}
-              >
-                Чат задачи
-              </Button>
-            ) : null}
-          </Stack>
+          </Box>
         </Group>
       </Paper>
     </Box>
   );
 }
 
-export default function AdminTasksPage() {
+export type AdminTasksPageMode = "tasks" | "leads-log";
+
+export default function AdminTasksPage({
+  mode = "tasks",
+  forcedStreamSlug,
+  titleOverride,
+}: {
+  mode?: AdminTasksPageMode;
+  /** Lock page to a single stream (by slug), disabling stream pager selection. */
+  forcedStreamSlug?: string;
+  /** Override ContextBar title. */
+  titleOverride?: string;
+}) {
   const { currentClinicId } = useAdminClinic();
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
-  const [detailCommentDraft, setDetailCommentDraft] = useState("");
-  const detailCommentTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [taskChatId, setTaskChatId] = useState<string | null>(null);
   const [taskChatDraft, setTaskChatDraft] = useState("");
   const taskChatTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { data: taskComments = [], isLoading: taskCommentsLoading } = useTaskComments(taskChatId);
   const postTaskComment = usePostTaskComment(taskChatId);
-  const { data: detailComments = [], isLoading: detailCommentsLoading } = useTaskComments(detailTaskId);
-  const postDetailComment = usePostTaskComment(detailTaskId);
   const [createOpened, setCreateOpened] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -419,21 +456,18 @@ export default function AdminTasksPage() {
   const [filterQuery, setFilterQuery] = useState("");
   const [debouncedFilterQuery] = useDebouncedValue(filterQuery, 180);
   const [onlyNeedsMyApproval, setOnlyNeedsMyApproval] = useState(false);
-  const [blockedReasonDraft, setBlockedReasonDraft] = useState("");
-  const [auditTrail, setAuditTrail] = useState<
+  const [completedDayIso, setCompletedDayIso] = useState(() => dayjs().format("YYYY-MM-DD"));
+  const [auditTrail] = useState<
     Array<{ id: string; taskId: string; taskTitle: string; from: string; to: string; at: string }>
   >([]);
   const [dragError, setDragError] = useState<string | null>(null);
   const [bulkResultMessage, setBulkResultMessage] = useState<string | null>(null);
-  const [detailAssigneeDraft, setDetailAssigneeDraft] = useState<string[]>([]);
-  const [detailDueDayIso, setDetailDueDayIso] = useState("");
-  const [detailDueTimeStr, setDetailDueTimeStr] = useState("");
-  const [detailModalApiError, setDetailModalApiError] = useState<string | null>(null);
-  const [assigneeAuditComment, setAssigneeAuditComment] = useState(true);
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
   const [boardColumnModalOpened, setBoardColumnModalOpened] = useState(false);
-  const [columnDraft, setColumnDraft] = useState<{ mapped_status: string; label: string | null }[]>([]);
+  const [columnDraft, setColumnDraft] = useState<{ mapped_status: string; label: string | null; visible: boolean }[]>([]);
   const boardInitRef = useRef(false);
+  const [hiddenStatuses, setHiddenStatuses] = useState<string[]>([]);
+  const [boardPickerOpened, setBoardPickerOpened] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedStreamId, setSelectedStreamId] = useState<string | null>(null);
   const [streamFilterInitialized, setStreamFilterInitialized] = useState(false);
@@ -447,19 +481,26 @@ export default function AdminTasksPage() {
   const [themeDraftColor, setThemeDraftColor] = useState<TaskStreamMantineColor>("blue");
   const [newTagModalOpened, setNewTagModalOpened] = useState(false);
   const [newTagName, setNewTagName] = useState("");
-  const [detailStreamDraft, setDetailStreamDraft] = useState<string | null>(null);
-  const [detailTagDraft, setDetailTagDraft] = useState<string[]>([]);
+
 
   const currentAdminId = getAdminId();
   const { data: adminSession } = useAdminSession();
   const canManageBoards = Boolean(adminSession?.permissions?.includes("manage_tasks"));
+  const canLeadsLogManage = Boolean(adminSession?.permissions?.includes("leads.log.manage"));
   const { data: taskStreams = [], isLoading: streamsLoading } = useTaskStreamsQuery();
   const { data: taskTags = [], isLoading: tagsLoading } = useTaskTagsQuery();
   const {
     data: allTasks = [],
     isLoading: tasksLoading,
   } = useAdminTasksList(
-    { streamId: null, tagIds: filterTagIds },
+    mode === "leads-log"
+      ? {
+          streamId: null,
+          tagIds: filterTagIds,
+          completedFrom: `${completedDayIso}T00:00:00Z`,
+          completedTo: `${completedDayIso}T23:59:59Z`,
+        }
+      : { streamId: null, tagIds: filterTagIds },
     { enabled: streamFilterInitialized }
   );
   const taskChatTitle = useMemo(() => {
@@ -469,13 +510,6 @@ export default function AdminTasksPage() {
   const { data: myFocusTasks = [] } = useAdminTasksMyFocus(currentAdminId);
   const { data: admins = [] } = useAdminAdmins();
   const { data: patientsList = [] } = usePatients({ clinic_id: currentClinicId ?? undefined, limit: 500 });
-  const patientIdToPhone = useMemo(() => {
-    const m = new Map<string, string>();
-    patientsList.forEach((p) => {
-      if (p.phone) m.set(p.id, p.phone);
-    });
-    return m;
-  }, [patientsList]);
   const patientIdToName = useMemo(() => {
     const m = new Map<string, string>();
     patientsList.forEach((p) => {
@@ -488,36 +522,47 @@ export default function AdminTasksPage() {
     () => (detailTaskId ? allTasks.find((t) => t.id === detailTaskId) : undefined),
     [detailTaskId, allTasks]
   );
+  const leadLogIdFromTrace = useMemo(() => {
+    if (mode !== "leads-log") return null;
+    const raw = String(detailTask?.trace_id ?? "");
+    const m = raw.match(/^omni_lead_log:([0-9a-fA-F-]{32,36})$/);
+    return m?.[1] ?? null;
+  }, [detailTask?.trace_id, mode]);
+  const leadLogDetailQ = useAdminLeadLogDetail(mode === "leads-log" ? leadLogIdFromTrace : null);
+
+  const routingRulesQ = useAdminLeadLogRoutingRules();
+  const simulateRoutingMut = useSimulateAdminLeadLogRoutingMutation();
+  const replaceRoutingRulesMut = useReplaceAdminLeadLogRoutingRulesMutation();
+  const [routingModalOpened, setRoutingModalOpened] = useState(false);
+  const [routingDraft, setRoutingDraft] = useState<
+    Array<{
+      key: string;
+      channel_type: string;
+      source_key: string;
+      target_stream_id: string;
+      is_active: boolean;
+      sort_order: number;
+    }>
+  >([]);
+  const [simulateChannelType, setSimulateChannelType] = useState("");
+  const [simulateSourceKey, setSimulateSourceKey] = useState("");
 
   useEffect(() => {
-    if (!detailTask) {
-      setDetailStreamDraft(null);
-      setDetailTagDraft([]);
-      return;
-    }
-    setDetailStreamDraft(detailTask.stream_id);
-    setDetailTagDraft([...(detailTask.tag_ids ?? [])]);
-  }, [detailTask?.id, detailTask?.stream_id, detailTask?.tag_ids]);
+    if (!routingModalOpened) return;
+    const rows = (routingRulesQ.data ?? []).map((r) => ({
+      key: r.id,
+      channel_type: r.channel_type ?? "",
+      source_key: r.source_key ?? "",
+      target_stream_id: r.target_stream_id,
+      is_active: Boolean(r.is_active),
+      sort_order: Number(r.sort_order ?? 0),
+    }));
+    setRoutingDraft(rows);
+  }, [routingModalOpened, routingRulesQ.data]);
 
   const createTaskMutation = useCreateAdminTaskMutation();
   const claimMutation = useClaimAdminTaskMutation();
   const updateStatusMutation = useUpdateAdminTaskStatusMutation();
-  const moveTask = useCallback(
-    (task: AdminTaskRow, toStatus: string) => {
-      if (!task || task.status === toStatus) return;
-      const id =
-        typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-      setAuditTrail((prev) => [
-        { id, taskId: task.id, taskTitle: task.title, from: task.status, to: toStatus, at: new Date().toISOString() },
-        ...prev,
-      ]);
-      updateStatusMutation.mutate({ taskId: task.id, status: toStatus });
-    },
-    [updateStatusMutation]
-  );
-  const updateTaskMetaMutation = useUpdateAdminTaskMetaMutation();
-  const patchAssigneesMutation = usePatchAdminTaskAssigneesMutation();
-  const patchDueMutation = usePatchAdminTaskDueMutation();
   const { data: taskBoards = [], isLoading: boardsLoading } = useTaskBoardsQuery();
   const replaceBoardColumnsMutation = useReplaceTaskBoardColumnsMutation();
   // Personal boards creation is intentionally hidden in the new UX; keep API hook unused for now.
@@ -534,11 +579,6 @@ export default function AdminTasksPage() {
   const reorderTasksMutation = useReorderAdminTasksMutation();
   // Bulk update action is hidden in the new UX; keep hook out until reintroduced.
   const { data: wipPolicies = KANBAN_WIP_LIMITS } = useTaskWipPolicies();
-  const { data: detailTransitions = [] } = useTaskTransitions(detailTaskId);
-  const { data: taskCalendarContext = [] } = useTaskCalendarContext(detailTaskId);
-  const [inviteEventId, setInviteEventId] = useState<string | null>(null);
-  const [inviteAdminIds, setInviteAdminIds] = useState<string[]>([]);
-  const inviteParticipantsMutation = useInviteTaskCalendarParticipants(detailTaskId, inviteEventId);
 
   useEffect(() => {
     setSelectedTaskIds((prev) => prev.filter((id) => allTasks.some((t) => t.id === id)));
@@ -546,6 +586,12 @@ export default function AdminTasksPage() {
 
   useEffect(() => {
     if (streamsLoading || streamFilterInitialized) return;
+    if (forcedStreamSlug) {
+      const forced = taskStreams.find((s) => s.slug === forcedStreamSlug && !s.is_archived);
+      setSelectedStreamId(forced?.id ?? null);
+      setStreamFilterInitialized(true);
+      return;
+    }
     const q = searchParams.get("stream");
     if (q === "all") {
       setSelectedStreamId(null);
@@ -568,10 +614,11 @@ export default function AdminTasksPage() {
       setSelectedStreamId(null);
     }
     setStreamFilterInitialized(true);
-  }, [streamsLoading, taskStreams, searchParams, streamFilterInitialized]);
+  }, [streamsLoading, taskStreams, searchParams, streamFilterInitialized, forcedStreamSlug]);
 
   useEffect(() => {
     if (!streamFilterInitialized) return;
+    if (forcedStreamSlug) return;
     const sp = new URLSearchParams(searchParams);
     if (selectedStreamId) sp.set("stream", selectedStreamId);
     else sp.set("stream", "all");
@@ -584,7 +631,7 @@ export default function AdminTasksPage() {
     } catch {
       /* ignore */
     }
-  }, [selectedStreamId, streamFilterInitialized, searchParams, setSearchParams]);
+  }, [selectedStreamId, streamFilterInitialized, searchParams, setSearchParams, forcedStreamSlug]);
 
   const activeStream = useMemo(
     () => taskStreams.find((s) => s.id === selectedStreamId),
@@ -609,8 +656,13 @@ export default function AdminTasksPage() {
     taskStreams.forEach((s) => {
       pages.push({ key: s.id, label: s.name, streamId: s.id, stream: s });
     });
+    if (forcedStreamSlug) {
+      const forced = taskStreams.find((s) => s.slug === forcedStreamSlug && !s.is_archived);
+      if (!forced) return [];
+      return [{ key: forced.id, label: forced.name, streamId: forced.id, stream: forced }];
+    }
     return pages;
-  }, [taskStreams]);
+  }, [taskStreams, forcedStreamSlug]);
 
   const activePageIndex = useMemo(() => {
     if (!selectedStreamId) return 0;
@@ -628,18 +680,12 @@ export default function AdminTasksPage() {
     const clamped = Math.max(0, Math.min(idx, streamPages.length - 1));
     const target = el.querySelector<HTMLElement>(`[data-stream-page-index="${clamped}"]`);
     if (!target) return;
-    if (typeof (target as any).scrollIntoView === "function") {
-      target.scrollIntoView({ behavior, inline: "start", block: "nearest" });
-      return;
-    }
-    // JSDOM / embedded: fallback to scrollLeft.
-    const pageWidth = el.clientWidth || 1;
-    const nextLeft = clamped * pageWidth;
+    const nextLeft = target.offsetLeft;
     if (typeof (el as any).scrollTo === "function") {
       el.scrollTo({ left: nextLeft, behavior });
-      return;
+    } else {
+      el.scrollLeft = nextLeft;
     }
-    el.scrollLeft = nextLeft;
   }, [streamPages.length]);
 
   const handlePagerScroll = useCallback(() => {
@@ -705,50 +751,6 @@ export default function AdminTasksPage() {
     if (def) setCreateStreamId(def);
   }, [createOpened, selectedStreamId, taskStreams]);
 
-  useEffect(() => {
-    if (!detailTask) {
-      setBlockedReasonDraft("");
-      return;
-    }
-    setBlockedReasonDraft(detailTask.blocked_reason ?? "");
-  }, [detailTask?.id, detailTask?.blocked_reason]);
-
-  const detailAssigneeServerSig = detailTask
-    ? JSON.stringify([...taskAssigneeIdList(detailTask)].sort())
-    : "";
-  useEffect(() => {
-    if (!detailTask) {
-      setDetailAssigneeDraft([]);
-      return;
-    }
-    setDetailAssigneeDraft(taskAssigneeIdList(detailTask));
-  }, [detailTask?.id, detailAssigneeServerSig]);
-
-  useEffect(() => {
-    if (!detailTask) {
-      setDetailDueDayIso("");
-      setDetailDueTimeStr("");
-      return;
-    }
-    if (!detailTask.due_at) {
-      setDetailDueDayIso("");
-      setDetailDueTimeStr("");
-      return;
-    }
-    const d = dayjs(detailTask.due_at);
-    setDetailDueDayIso(d.format("YYYY-MM-DD"));
-    setDetailDueTimeStr(d.format("HH:mm"));
-  }, [detailTask?.id, detailTask?.due_at]);
-
-  const canEditAssignees =
-    adminSession?.permissions?.includes("manage_tasks") ||
-    adminSession?.permissions?.includes("assign_tasks");
-
-  const canPatchTaskFields =
-    Boolean(adminSession?.permissions?.includes("manage_tasks")) ||
-    Boolean(adminSession?.permissions?.includes("assign_tasks")) ||
-    Boolean(adminSession?.permissions?.includes("tasks.change_status"));
-
   // moved above (used earlier for stream movement)
   const canEditClinicBoardLayout = Boolean(
     adminSession?.permissions?.includes("tasks.manage_clinic_board")
@@ -772,6 +774,21 @@ export default function AdminTasksPage() {
     }
   }, [selectedBoardId]);
 
+  useEffect(() => {
+    if (!selectedBoardId || typeof localStorage === "undefined") {
+      setHiddenStatuses([]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(`adminKanbanHiddenColumns:${selectedBoardId}`);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      const list = Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+      setHiddenStatuses(list);
+    } catch {
+      setHiddenStatuses([]);
+    }
+  }, [selectedBoardId]);
+
   const selectedBoard = useMemo(
     () => taskBoards.find((b) => b.id === selectedBoardId),
     [taskBoards, selectedBoardId]
@@ -785,42 +802,6 @@ export default function AdminTasksPage() {
     return canEditClinicBoardLayout;
   }, [selectedBoard, canManageBoards, canEditClinicBoardLayout, currentAdminId]);
 
-  const detailDueComposite = useMemo(
-    () => (detailDueDayIso && detailDueTimeStr ? `${detailDueDayIso}T${detailDueTimeStr}` : ""),
-    [detailDueDayIso, detailDueTimeStr]
-  );
-
-  const detailDueInPast = useMemo(() => {
-    if (!detailDueDayIso || !detailDueTimeStr) return false;
-    const wall = dayjs(`${detailDueDayIso}T${detailDueTimeStr}`);
-    return wall.isValid() && wall.isBefore(dayjs().startOf("day"));
-  }, [detailDueDayIso, detailDueTimeStr]);
-
-  const detailDueUnchanged = useMemo(() => {
-    if (!detailTask) return true;
-    if (!detailTask.due_at) {
-      return !detailDueComposite;
-    }
-    if (!detailDueComposite) return false;
-    const cur = dayjs(detailTask.due_at);
-    return cur.format("YYYY-MM-DD") === detailDueDayIso && cur.format("HH:mm") === detailDueTimeStr;
-  }, [detailTask, detailDueComposite, detailDueDayIso, detailDueTimeStr]);
-
-  const assigneeListUnchanged = useMemo(() => {
-    if (!detailTask) return true;
-    const cur = [...taskAssigneeIdList(detailTask)].sort().join(",");
-    const next = [...detailAssigneeDraft].sort().join(",");
-    return cur === next;
-  }, [detailTask, detailAssigneeDraft]);
-
-  const detailContextUnchanged = useMemo(() => {
-    if (!detailTask || detailStreamDraft === null) return true;
-    const tagsEq =
-      JSON.stringify([...(detailTask.tag_ids ?? [])].sort()) ===
-      JSON.stringify([...detailTagDraft].sort());
-    return detailTask.stream_id === detailStreamDraft && tagsEq;
-  }, [detailTask, detailStreamDraft, detailTagDraft]);
-
   useEffect(() => {
     if (!dragError) return;
     const t = window.setTimeout(() => setDragError(null), 3500);
@@ -832,12 +813,6 @@ export default function AdminTasksPage() {
     const t = window.setTimeout(() => setBulkResultMessage(null), 5500);
     return () => window.clearTimeout(t);
   }, [bulkResultMessage]);
-
-  useEffect(() => {
-    if (!inviteEventId && taskCalendarContext.length > 0) {
-      setInviteEventId(taskCalendarContext[0].event_id);
-    }
-  }, [inviteEventId, taskCalendarContext]);
 
   useEffect(() => {
     if (!createOpened) return;
@@ -933,7 +908,7 @@ export default function AdminTasksPage() {
   if (streamsLoading || tagsLoading || !streamFilterInitialized || boardsLoading || tasksLoading) {
     return (
       <Stack>
-        <ContextBar title="Задачи" />
+        <ContextBar title={titleOverride ?? (mode === "leads-log" ? "Лиды (лог)" : "Задачи")} />
         <PageSkeleton variant="cards" rows={6} />
       </Stack>
     );
@@ -947,14 +922,17 @@ export default function AdminTasksPage() {
     >
       <Stack>
       <ContextBar
-        title="Задачи"
+        title={titleOverride ?? (mode === "leads-log" ? "Лиды (лог)" : "Задачи")}
         actions={
-          <Button size="sm" onClick={() => setCreateOpened(true)}>
-            Новая задача
-          </Button>
+          mode === "leads-log" ? null : (
+            <Button size="sm" onClick={() => setCreateOpened(true)}>
+              Новая задача
+            </Button>
+          )
         }
       />
 
+      <Box style={{ position: "sticky", top: 0, zIndex: 5, background: "var(--bg-main)" }}>
       <AdminDataTableToolbar>
         <Group gap="xs" wrap="wrap" justify="space-between" align="flex-end">
           <Group gap="xs" wrap="wrap">
@@ -968,7 +946,7 @@ export default function AdminTasksPage() {
                   setSelectedStreamId(streamPages[next]?.streamId ?? null);
                   scrollToPage(next);
                 }}
-                disabled={activePageIndex <= 0}
+                disabled={forcedStreamSlug ? true : activePageIndex <= 0}
               >
                 {"<"}
               </Button>
@@ -981,7 +959,7 @@ export default function AdminTasksPage() {
                   setSelectedStreamId(streamPages[next]?.streamId ?? null);
                   scrollToPage(next);
                 }}
-                disabled={activePageIndex >= streamPages.length - 1}
+                disabled={forcedStreamSlug ? true : activePageIndex >= streamPages.length - 1}
               >
                 {">"}
               </Button>
@@ -989,42 +967,44 @@ export default function AdminTasksPage() {
 
             <PagerDots count={streamPages.length} activeIndex={activePageIndex} />
 
-            <Menu shadow="md" width={280} withinPortal>
-              <Menu.Target>
-                <Button size="xs" variant="light">
-                  {activeStream?.name ?? "Все потоки"}
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>Потоки</Menu.Label>
-                {streamPages.map((p) => (
-                  <Menu.Item
-                    key={p.key}
-                    onClick={() => {
-                      setSelectedStreamId(p.streamId);
-                      const idx = streamPages.findIndex((x) => x.key === p.key);
-                      if (idx >= 0) scrollToPage(idx);
-                    }}
-                  >
-                    {p.label}
-                  </Menu.Item>
-                ))}
-                {canManageBoards ? (
-                  <>
-                    <Menu.Divider />
+            {forcedStreamSlug ? null : (
+              <Menu shadow="md" width={280} withinPortal>
+                <Menu.Target>
+                  <Button size="xs" variant="light">
+                    {activeStream?.name ?? "Все потоки"}
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Потоки</Menu.Label>
+                  {streamPages.map((p) => (
                     <Menu.Item
-                      leftSection={<IconPlus size={14} />}
+                      key={p.key}
                       onClick={() => {
-                        setNewStreamName("");
-                        setNewStreamModalOpened(true);
+                        setSelectedStreamId(p.streamId);
+                        const idx = streamPages.findIndex((x) => x.key === p.key);
+                        if (idx >= 0) scrollToPage(idx);
                       }}
                     >
-                      Новый поток
+                      {p.label}
                     </Menu.Item>
-                  </>
-                ) : null}
-              </Menu.Dropdown>
-            </Menu>
+                  ))}
+                  {canManageBoards ? (
+                    <>
+                      <Menu.Divider />
+                      <Menu.Item
+                        leftSection={<IconPlus size={14} />}
+                        onClick={() => {
+                          setNewStreamName("");
+                          setNewStreamModalOpened(true);
+                        }}
+                      >
+                        Новый поток
+                      </Menu.Item>
+                    </>
+                  ) : null}
+                </Menu.Dropdown>
+              </Menu>
+            )}
 
             {activeStream && canManageBoards ? (
               <ActionIcon
@@ -1037,6 +1017,19 @@ export default function AdminTasksPage() {
               </ActionIcon>
             ) : null}
 
+            {mode === "leads-log" && canLeadsLogManage ? (
+              <Tooltip label="Routing rules: куда складывать лиды" withArrow>
+                <ActionIcon
+                  variant="light"
+                  color="indigo"
+                  aria-label="Routing rules"
+                  onClick={() => setRoutingModalOpened(true)}
+                >
+                  <IconSettings size={16} />
+                </ActionIcon>
+              </Tooltip>
+            ) : null}
+
             <TextInput
               size="xs"
               placeholder="Поиск…"
@@ -1045,6 +1038,16 @@ export default function AdminTasksPage() {
               onChange={(e) => setFilterQuery(e.currentTarget.value)}
               w={220}
             />
+
+            {mode === "leads-log" ? (
+              <TextInput
+                size="xs"
+                type="date"
+                label="День"
+                value={completedDayIso}
+                onChange={(e) => setCompletedDayIso(e.currentTarget.value)}
+              />
+            ) : null}
 
             <Select
               size="xs"
@@ -1077,12 +1080,14 @@ export default function AdminTasksPage() {
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Label>Фильтры</Menu.Label>
-                <Menu.Item
-                  onClick={() => setOnlyNeedsMyApproval((v) => !v)}
-                >
-                  {onlyNeedsMyApproval ? "Показывать все задачи" : `Ждут подтверждения (${activeNeedsApprovalCount})`}
-                </Menu.Item>
-                <Menu.Divider />
+                {mode !== "leads-log" ? (
+                  <>
+                    <Menu.Item onClick={() => setOnlyNeedsMyApproval((v) => !v)}>
+                      {onlyNeedsMyApproval ? "Показывать все задачи" : `Ждут подтверждения (${activeNeedsApprovalCount})`}
+                    </Menu.Item>
+                    <Menu.Divider />
+                  </>
+                ) : null}
                 <Box p="xs">
                   <Group gap="xs" wrap="wrap">
                     <Select
@@ -1116,9 +1121,11 @@ export default function AdminTasksPage() {
           </Group>
 
           <Group gap="xs" wrap="wrap">
-            <Button size="xs" onClick={() => setCreateOpened(true)}>
-              Новая задача
-            </Button>
+            {mode === "leads-log" ? null : (
+              <Button size="xs" onClick={() => setCreateOpened(true)}>
+                Новая задача
+              </Button>
+            )}
             {canManageBoards ? (
               <Menu shadow="md" width={320} withinPortal>
                 <Menu.Target>
@@ -1137,6 +1144,7 @@ export default function AdminTasksPage() {
                         sorted.map((c) => ({
                           mapped_status: c.mapped_status,
                           label: c.label,
+                          visible: !hiddenStatuses.includes(c.mapped_status),
                         }))
                       );
                       setBoardColumnModalOpened(true);
@@ -1147,10 +1155,9 @@ export default function AdminTasksPage() {
                   </Menu.Item>
                   <Menu.Item
                     leftSection={<IconLayoutKanban size={14} />}
-                    onClick={() => {}}
-                    disabled
+                    onClick={() => setBoardPickerOpened(true)}
                   >
-                    Доски колонок (скоро)
+                    Доски Kanban
                   </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
@@ -1158,6 +1165,7 @@ export default function AdminTasksPage() {
           </Group>
         </Group>
       </AdminDataTableToolbar>
+      </Box>
 
       {/* bulk actions moved to Settings menu (later) */}
 
@@ -1227,6 +1235,7 @@ export default function AdminTasksPage() {
                     myFocusTasks={myFocusTasks}
                     selectedBoard={selectedBoard}
                     wipPolicies={wipPolicies}
+                    hiddenStatuses={hiddenStatuses}
                     canMoveTasksAcrossStreams={canMoveTasksAcrossStreams}
                     streamMoveOptions={streamMoveOptions}
                     selectedTaskIds={selectedTaskIds}
@@ -1279,18 +1288,141 @@ export default function AdminTasksPage() {
       </AdminDataTableSurface>
 
       <GlassModal
-        size="lg"
+        size="calc(100vw - 48px)"
         centered
-        styles={{ body: { maxHeight: "calc(100vh - 180px)", overflowY: "auto" } }}
-        opened={!!detailTaskId && !!detailTask}
+        styles={{
+          content: {
+            height: "calc(100vh - 48px)",
+            maxHeight: "calc(100vh - 48px)",
+            borderRadius: "var(--radius-lg)",
+          },
+          body: { maxHeight: "calc(100vh - 140px)", overflowY: "auto" },
+        }}
+        opened={!!detailTaskId}
         onClose={() => {
           setDetailTaskId(null);
-          setDetailCommentDraft("");
-          setDetailModalApiError(null);
         }}
-        title={detailTask ? detailTask.title : "Задача"}
+        title={
+          mode === "leads-log"
+            ? (leadLogDetailQ.data?.title ?? detailTask?.title ?? "Лид (лог)")
+            : (detailTask ? detailTask.title : "Задача")
+        }
       >
-        {detailTask ? (
+        {detailTaskId ? (
+          mode === "leads-log" ? (
+            <Stack gap="sm">
+              {leadLogIdFromTrace ? (
+                <>
+                  <Text size="sm" fw={600}>
+                    Лог диалога
+                  </Text>
+                  {leadLogDetailQ.isLoading ? (
+                    <Group gap="xs">
+                      <Loader size="sm" />
+                      <Text size="sm" c="dimmed">
+                        Загрузка…
+                      </Text>
+                    </Group>
+                  ) : leadLogDetailQ.data ? (
+                    <Stack gap="sm">
+                      <Group justify="space-between" align="flex-start" wrap="wrap" gap="xs">
+                        <Stack gap={2} style={{ minWidth: 0 }}>
+                          <Text fw={700} size="sm" truncate="end">
+                            {leadLogDetailQ.data.contact_name ?? "Без имени"}
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            {leadLogDetailQ.data.contact_primary_phone ?? ""}
+                            {leadLogDetailQ.data.opened_by_admin_name ? ` · Оператор: ${leadLogDetailQ.data.opened_by_admin_name}` : ""}
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            Закрыт: {dayjs(leadLogDetailQ.data.closed_at).format("DD.MM.YYYY HH:mm")}
+                          </Text>
+                        </Stack>
+                        <Group gap="xs" wrap="wrap">
+                          <Badge
+                            variant="light"
+                            color={LEAD_OUTCOME_META[leadOutcomeKey(leadLogDetailQ.data.outcome)].color}
+                          >
+                            {LEAD_OUTCOME_META[leadOutcomeKey(leadLogDetailQ.data.outcome)].label}
+                          </Badge>
+                          {leadLogDetailQ.data.omni_chat_id ? (
+                            <Button
+                              component={Link}
+                              to={`/admin/omni-chat?chat_id=${encodeURIComponent(String(leadLogDetailQ.data.omni_chat_id))}`}
+                              size="xs"
+                              variant="default"
+                              target="_blank"
+                            >
+                              Открыть исходный чат
+                            </Button>
+                          ) : null}
+                        </Group>
+                      </Group>
+
+                      <Divider />
+
+                      {Array.isArray((leadLogDetailQ.data.transcript_json as any)?.messages) ? (
+                        <Stack gap="xs">
+                          {(leadLogDetailQ.data.transcript_json as any).messages.slice(-200).map((m: any) => {
+                            const actor = String(m?.actor_type ?? "UNKNOWN").toUpperCase();
+                            const dir = String(m?.direction ?? "").toUpperCase();
+                            const ts = m?.created_at ? dayjs(String(m.created_at)) : null;
+                            const body = String(m?.content ?? "").trim();
+                            const tone =
+                              actor === "ADMIN" || dir === "OUTBOUND"
+                                ? { bg: "var(--mantine-color-indigo-0)", border: "var(--mantine-color-indigo-2)" }
+                                : { bg: "white", border: "var(--mantine-color-gray-2)" };
+                            return (
+                              <Paper
+                                key={String(m?.id ?? `${actor}-${m?.created_at ?? ""}-${Math.random()}`)}
+                                withBorder
+                                radius="md"
+                                p="sm"
+                                style={{ background: tone.bg, borderColor: tone.border }}
+                              >
+                                <Group justify="space-between" wrap="nowrap" gap="xs">
+                                  <Text size="xs" fw={600} c="dimmed">
+                                    {actor}
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    {ts?.isValid() ? ts.format("HH:mm") : ""}
+                                  </Text>
+                                </Group>
+                                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                                  {body || "—"}
+                                </Text>
+                              </Paper>
+                            );
+                          })}
+                        </Stack>
+                      ) : (
+                        <Paper withBorder p="md" radius="md" style={{ whiteSpace: "pre-wrap" }}>
+                          <Text size="sm">
+                            {leadLogDetailQ.data.transcript_text?.trim()
+                              ? leadLogDetailQ.data.transcript_text
+                              : "Нет текста."}
+                          </Text>
+                        </Paper>
+                      )}
+                    </Stack>
+                  ) : (
+                    <Alert color="red" variant="light">
+                      Не удалось загрузить lead-log.
+                    </Alert>
+                  )}
+                </>
+              ) : (
+                <Alert color="orange" variant="light">
+                  У этой карточки нет ссылки на lead-log (trace_id).
+                </Alert>
+              )}
+            </Stack>
+          ) : (
+            <TaskDetailsView taskId={detailTaskId} mode="modal" onClose={() => setDetailTaskId(null)} />
+          )
+        ) : null}
+
+        {/* legacy detail modal removed
           <Stack gap="md">
             {detailModalApiError ? (
               <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />}>
@@ -1904,7 +2036,7 @@ export default function AdminTasksPage() {
               </Button>
             </Group>
           </Stack>
-        ) : null}
+        */}
       </GlassModal>
 
       <GlassModal
@@ -2185,6 +2317,210 @@ export default function AdminTasksPage() {
       </GlassModal>
 
       <GlassModal
+        size="lg"
+        centered
+        opened={routingModalOpened}
+        onClose={() => setRoutingModalOpened(false)}
+        title="Routing rules: лиды (лог)"
+      >
+        <Stack gap="sm">
+          <Alert icon={<IconFilter size={16} />} color="blue" variant="light">
+            Правила применяются при resolve: первое совпавшее активное правило отправляет лид‑лог в выбранный поток.
+            Пустое поле означает “любой”.
+          </Alert>
+
+          <Paper withBorder radius="md" p="sm">
+            <Stack gap="xs">
+              <Group justify="space-between" align="flex-end" wrap="wrap">
+                <Group gap="xs" wrap="wrap" align="flex-end">
+                  <TextInput
+                    label="Тест: channel_type"
+                    placeholder="TELEGRAM_BOT / WHATSAPP / VK / EMAIL"
+                    value={simulateChannelType}
+                    onChange={(e) => setSimulateChannelType(e.currentTarget.value)}
+                    w={240}
+                  />
+                  <TextInput
+                    label="Тест: source_key"
+                    placeholder="(опционально)"
+                    value={simulateSourceKey}
+                    onChange={(e) => setSimulateSourceKey(e.currentTarget.value)}
+                    w={200}
+                  />
+                </Group>
+                <Button
+                  size="xs"
+                  variant="default"
+                  loading={simulateRoutingMut.isPending}
+                  onClick={() => {
+                    simulateRoutingMut.mutate({
+                      channel_type: simulateChannelType.trim() ? simulateChannelType.trim() : null,
+                      source_key: simulateSourceKey.trim() ? simulateSourceKey.trim() : null,
+                    });
+                  }}
+                >
+                  Проверить
+                </Button>
+              </Group>
+
+              {simulateRoutingMut.data ? (
+                <Alert color="gray" variant="light">
+                  {(() => {
+                    const sid = simulateRoutingMut.data.target_stream_id;
+                    if (!sid) return "Нет совпадения → будет fallback в leads-log.";
+                    const label =
+                      streamPages.find((p) => p.streamId === sid)?.label ??
+                      taskStreams.find((s) => s.id === sid)?.name ??
+                      sid;
+                    return `Target stream: ${label}`;
+                  })()}
+                </Alert>
+              ) : null}
+            </Stack>
+          </Paper>
+
+          <Group justify="space-between">
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<IconPlus size={14} />}
+              onClick={() => {
+                const fallbackStreamId = activeStream?.id ?? streamPages[0]?.streamId ?? "";
+                setRoutingDraft((prev) => [
+                  ...prev,
+                  {
+                    key: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                    channel_type: "",
+                    source_key: "",
+                    target_stream_id: fallbackStreamId,
+                    is_active: true,
+                    sort_order: prev.length,
+                  },
+                ]);
+              }}
+            >
+              Добавить правило
+            </Button>
+
+            <Button
+              size="xs"
+              loading={replaceRoutingRulesMut.isPending}
+              disabled={!canLeadsLogManage}
+              onClick={() => {
+                const payload = routingDraft.map((r) => ({
+                  channel_type: r.channel_type.trim() ? r.channel_type.trim() : null,
+                  source_key: r.source_key.trim() ? r.source_key.trim() : null,
+                  target_stream_id: r.target_stream_id,
+                  is_active: Boolean(r.is_active),
+                  sort_order: Number(r.sort_order ?? 0),
+                }));
+                replaceRoutingRulesMut.mutate(payload, {
+                  onSuccess: () => setRoutingModalOpened(false),
+                });
+              }}
+            >
+              Сохранить
+            </Button>
+          </Group>
+
+          <Divider />
+
+          <ScrollArea h={360} type="auto">
+            <Stack gap="xs" pr="xs">
+              {routingDraft.length === 0 ? (
+                <EmptyState
+                  title="Нет правил"
+                  description="Тогда все лиды будут падать в дефолтный поток leads-log."
+                />
+              ) : null}
+
+              {routingDraft.map((r, idx) => (
+                <Paper key={r.key} withBorder radius="md" p="sm">
+                  <Group gap="xs" align="flex-end" wrap="wrap">
+                    <TextInput
+                      label="channel_type"
+                      placeholder="TELEGRAM_BOT / WHATSAPP / VK / EMAIL"
+                      value={r.channel_type}
+                      onChange={(e) => {
+                        const v = e.currentTarget.value;
+                        setRoutingDraft((prev) =>
+                          prev.map((x) => (x.key === r.key ? { ...x, channel_type: v } : x))
+                        );
+                      }}
+                      w={220}
+                    />
+                    <TextInput
+                      label="source_key"
+                      placeholder="(опционально)"
+                      value={r.source_key}
+                      onChange={(e) => {
+                        const v = e.currentTarget.value;
+                        setRoutingDraft((prev) =>
+                          prev.map((x) => (x.key === r.key ? { ...x, source_key: v } : x))
+                        );
+                      }}
+                      w={180}
+                    />
+                    <Select
+                      label="target stream"
+                      data={streamPages
+                        .filter((p) => typeof p.streamId === "string" && p.streamId)
+                        .map((p) => ({ value: p.streamId as string, label: p.label }))}
+                      value={r.target_stream_id}
+                      onChange={(v) => {
+                        const next = v ?? "";
+                        setRoutingDraft((prev) =>
+                          prev.map((x) => (x.key === r.key ? { ...x, target_stream_id: next } : x))
+                        );
+                      }}
+                      w={260}
+                      searchable
+                    />
+                    <TextInput
+                      label="sort"
+                      value={String(r.sort_order)}
+                      onChange={(e) => {
+                        const n = Number(e.currentTarget.value);
+                        setRoutingDraft((prev) =>
+                          prev.map((x) =>
+                            x.key === r.key ? { ...x, sort_order: Number.isFinite(n) ? n : 0 } : x
+                          )
+                        );
+                      }}
+                      w={80}
+                    />
+                    <Checkbox
+                      label="active"
+                      checked={r.is_active}
+                      onChange={(e) => {
+                        const checked = e.currentTarget.checked;
+                        setRoutingDraft((prev) =>
+                          prev.map((x) => (x.key === r.key ? { ...x, is_active: checked } : x))
+                        );
+                      }}
+                      mt={22}
+                    />
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      aria-label="Удалить правило"
+                      onClick={() => setRoutingDraft((prev) => prev.filter((x) => x.key !== r.key))}
+                      mt={22}
+                    >
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                    <Text size="xs" c="dimmed" mt={24}>
+                      #{idx + 1}
+                    </Text>
+                  </Group>
+                </Paper>
+              ))}
+            </Stack>
+          </ScrollArea>
+        </Stack>
+      </GlassModal>
+
+      <GlassModal
         size="sm"
         centered
         opened={newTagModalOpened}
@@ -2246,6 +2582,18 @@ export default function AdminTasksPage() {
               <Text size="xs" w={130} ff="monospace">
                 {col.mapped_status}
               </Text>
+              <Checkbox
+                size="xs"
+                mt={6}
+                checked={col.visible}
+                onChange={(e) => {
+                  const checked = e.currentTarget.checked;
+                  setColumnDraft((prev) =>
+                    prev.map((c, idx) => (idx === i ? { ...c, visible: checked } : c))
+                  );
+                }}
+                aria-label="Показывать колонку"
+              />
               <TextInput
                 size="xs"
                 placeholder={STATUS_META[col.mapped_status] ?? col.mapped_status}
@@ -2288,13 +2636,51 @@ export default function AdminTasksPage() {
               loading={replaceBoardColumnsMutation.isPending}
               onClick={() => {
                 if (!selectedBoardId) return;
+                const hidden = columnDraft.filter((c) => !c.visible).map((c) => c.mapped_status);
+                if (typeof localStorage !== "undefined") {
+                  localStorage.setItem(`adminKanbanHiddenColumns:${selectedBoardId}`, JSON.stringify(hidden));
+                }
+                setHiddenStatuses(hidden);
                 replaceBoardColumnsMutation.mutate(
-                  { boardId: selectedBoardId, columns: columnDraft },
+                  {
+                    boardId: selectedBoardId,
+                    columns: columnDraft.map((c) => ({ mapped_status: c.mapped_status, label: c.label })),
+                  },
                   { onSuccess: () => setBoardColumnModalOpened(false) }
                 );
               }}
             >
               Сохранить
+            </Button>
+          </Group>
+        </Stack>
+      </GlassModal>
+
+      <GlassModal
+        size="md"
+        centered
+        opened={boardPickerOpened}
+        onClose={() => setBoardPickerOpened(false)}
+        title="Доски Kanban"
+      >
+        <Stack gap="sm">
+          <Text size="xs" c="dimmed">
+            Выберите раскладку колонок (доску). Это влияет только на порядок/названия колонок.
+          </Text>
+          <Select
+            label="Доска"
+            placeholder="Выберите доску"
+            data={taskBoards.map((b) => ({
+              value: b.id,
+              label: `${b.name}${b.kind === "clinic_wide" ? " (клиника)" : b.kind === "personal" ? " (личная)" : ""}`,
+            }))}
+            value={selectedBoardId}
+            onChange={(v) => setSelectedBoardId(v ?? null)}
+            searchable
+          />
+          <Group justify="flex-end" mt="sm">
+            <Button variant="default" onClick={() => setBoardPickerOpened(false)}>
+              Закрыть
             </Button>
           </Group>
         </Stack>
@@ -2441,14 +2827,14 @@ function KanbanColumn({
           <Group gap={4}>
             {typeof wipLimit === "number" ? (
               <Badge size="xs" variant="light" color={tasks.length > wipLimit ? "red" : "gray"}>
-                WIP {tasks.length}/{wipLimit}
+                Лимит {tasks.length}/{wipLimit}
               </Badge>
             ) : null}
             <Badge size="xs" variant="light" color={overdueCount > 0 ? "red" : "gray"}>
-              SLA overdue: {overdueCount}
+              SLA просрочено: {overdueCount}
             </Badge>
             <Badge size="xs" variant="light" color={agingCount > 0 ? "orange" : "gray"}>
-              Aging 48h+: {agingCount}
+              В работе 48ч+: {agingCount}
             </Badge>
           </Group>
         </Stack>
@@ -2525,9 +2911,9 @@ function StreamPageShell({
     >
       <Box
         style={{
-          height: 4,
-          background: `var(--mantine-color-${accentColor}-6)`,
-          opacity: 0.8,
+          height: 12,
+          background: `linear-gradient(90deg, var(--mantine-color-${accentColor}-5) 0%, var(--mantine-color-${accentColor}-7) 100%)`,
+          opacity: 0.9,
         }}
       />
       <Box p="md" style={{ paddingTop: "var(--space-md)" }}>
@@ -2628,6 +3014,7 @@ function TasksKanbanPage({
   myFocusTasks,
   selectedBoard,
   wipPolicies,
+  hiddenStatuses,
   canMoveTasksAcrossStreams,
   streamMoveOptions,
   selectedTaskIds,
@@ -2661,6 +3048,7 @@ function TasksKanbanPage({
   myFocusTasks: AdminTaskRow[];
   selectedBoard: { columns?: Array<{ mapped_status: string; sort_order: number; label: string | null }> } | undefined;
   wipPolicies: Record<string, number>;
+  hiddenStatuses: string[];
   canMoveTasksAcrossStreams: boolean;
   streamMoveOptions: Array<{ value: string; label: string }>;
   selectedTaskIds: string[];
@@ -2696,6 +3084,7 @@ function TasksKanbanPage({
   }, [allTasks, streamId]);
 
   const statusColumns = useMemo(() => {
+    const hidden = new Set(hiddenStatuses);
     if (selectedBoard?.columns?.length) {
       return selectedBoard.columns
         .slice()
@@ -2706,18 +3095,21 @@ function TasksKanbanPage({
             (c.label && c.label.trim()) ||
             STATUS_META[c.mapped_status] ||
             c.mapped_status.replace(/_/g, " "),
-        }));
+        }))
+        .filter((c) => !hidden.has(c.id));
     }
     const discovered = Array.from(new Set(pageTasks.map((t) => t.status).filter(Boolean)));
     const ordered = STATUS_ORDER.filter((s) => discovered.includes(s));
     const extras = discovered
       .filter((s) => !STATUS_ORDER.includes(s as (typeof STATUS_ORDER)[number]))
       .sort();
-    return [...ordered, ...extras].map((id) => ({
-      id,
-      label: STATUS_META[id] ?? id.replace(/_/g, " "),
-    }));
-  }, [pageTasks, selectedBoard]);
+    return [...ordered, ...extras]
+      .map((id) => ({
+        id,
+        label: STATUS_META[id] ?? id.replace(/_/g, " "),
+      }))
+      .filter((c) => !hidden.has(c.id));
+  }, [pageTasks, selectedBoard, hiddenStatuses]);
 
   const tasksByStatus = useCallback(
     (list: AdminTaskRow[]) => {
@@ -2962,12 +3354,12 @@ function TasksKanbanPage({
 
   return (
     <Stack>
-      {canMoveTasksAcrossStreams ? (
+      {canMoveTasksAcrossStreams && streamId !== null ? (
         <StreamHeaderDropZone
           id={pageDroppableId}
           label={streamName}
           accentColor={accentColor}
-          disabled={streamId === null}
+          disabled={false}
         />
       ) : (
         <Group justify="space-between" wrap="wrap">

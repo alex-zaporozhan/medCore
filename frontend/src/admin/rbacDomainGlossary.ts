@@ -175,6 +175,16 @@ const DOMAIN_GLOSSARY: Record<string, DomainGlossaryEntry> = {
     ruInside: "Например: omni.inbox.manage.",
     enInside: "E.g. `omni.inbox.manage`.",
   },
+  leads: {
+    ruShort: "Лиды (лог)",
+    enShort: "Leads (log)",
+    ruGentle:
+      "Права на страницу логов обращений из omni‑чата: кто может смотреть историю закрытых диалогов и исходы (записался/не записался).",
+    enGentle:
+      "Permissions for the omni-chat lead log page: who can view resolved conversation history and outcomes.",
+    ruInside: "Например: leads.log.view.",
+    enInside: "E.g. `leads.log.view`.",
+  },
   rbac: {
     ruShort: "Управление доступами",
     enShort: "Access control",

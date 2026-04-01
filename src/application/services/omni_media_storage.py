@@ -24,7 +24,19 @@ def sanitize_omni_filename(name: str) -> str:
 
 def allowed_omni_upload_mime(content_type: str) -> bool:
     ct = (content_type or "").split(";")[0].strip().lower()
-    if ct.startswith("image/") or ct.startswith("audio/"):
+    # SECURITY: forbid SVG (stored XSS) and avoid broad image/* allowlists.
+    if ct in {"image/svg+xml", "image/svg"}:
+        return False
+    if ct.startswith("audio/"):
+        return True
+    if ct in {
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/gif",
+        "image/webp",
+        "image/avif",
+    }:
         return True
     return ct in (
         "application/pdf",

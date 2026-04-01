@@ -3,10 +3,11 @@
 import logging
 from uuid import UUID
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.omnichannel_chat import Chat
+from src.domain.entities.omnichannel_channel import Channel
 from src.domain.entities.omnichannel_contact import Contact
 from src.domain.entities.omnichannel_message import Message
 from src.domain.interfaces.repositories.omnichannel_chat_repository import (
@@ -105,15 +106,32 @@ class ChatRepositoryImpl(ChatRepository):
         business_account_id: UUID,
         status: str | None,
         search: str | None,
+        channel_types: list[str] | None,
         skip: int,
         limit: int,
         assignee_admin_id: UUID | None = None,
+        unassigned_only: bool = False,
     ) -> list[Chat]:
         stmt: Select[tuple[Chat]] = select(Chat).where(
             Chat.business_account_id == business_account_id
         )
+        if channel_types:
+            msg_has_any_type = (
+                select(1)
+                .select_from(Message)
+                .join(Channel, Message.channel_id == Channel.id)
+                .where(
+                    Message.chat_id == Chat.id,
+                    Channel.type.in_(channel_types),
+                    Channel.business_account_id == business_account_id,
+                )
+                .limit(1)
+            )
+            stmt = stmt.where(exists(msg_has_any_type))
         if assignee_admin_id is not None:
             stmt = stmt.where(Chat.assignee_admin_id == assignee_admin_id)
+        if unassigned_only:
+            stmt = stmt.where(Chat.assignee_admin_id.is_(None))
         if status:
             stmt = stmt.where(Chat.status == status)
         if search:

@@ -15,6 +15,7 @@ import {
   Table,
   Skeleton,
   ScrollArea,
+  Badge,
 } from "@mantine/core";
 import type { ComboboxItem } from "@mantine/core";
 import { useClipboard } from "@mantine/hooks";
@@ -176,6 +177,8 @@ export function BookingEntityDrawer({
   const patientCardHref = `${ROUTE_PATHS.admin.patients}?patient_id=${booking.patient_id}`;
   const doctorCardHref = `${ROUTE_PATHS.admin.doctors}?doctor_id=${booking.doctor_id}&doctor_tab=schedule`;
 
+  const statusCfg = booking ? bookingStatusSelectOptions(booking.status).find((x) => x.value === booking.status) : null;
+
   const tabs = (
     <Box>
       <Tabs defaultValue="details" variant="outline" color="brand" keepMounted styles={bookingTabsStyles}>
@@ -191,6 +194,41 @@ export function BookingEntityDrawer({
           <Stack gap="sm">
             {!editing ? (
               <>
+                <Paper
+                  p="sm"
+                  radius="md"
+                  withBorder
+                  bg="white"
+                  style={{
+                    borderColor: "var(--mantine-color-gray-2)",
+                    boxShadow: "0 1px 2px rgba(15, 20, 25, 0.04)",
+                  }}
+                >
+                  <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+                    <Stack gap={4} style={{ flex: 1, minWidth: 220 }}>
+                      <Text size="xs" c="dimmed" fw={700}>
+                        Сводка
+                      </Text>
+                      <Text size="sm" fw={700} c="gray.9">
+                        {displayPersonName(patientName, booking.patient_id)}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {booking.appointment_date} {timeStr}
+                        {serviceName && !looksLikeUuid(serviceName) ? ` · ${serviceName}` : ""}
+                      </Text>
+                    </Stack>
+                    <Stack gap={6} style={{ alignItems: "flex-end" }}>
+                      <Badge variant="light" color="gray">
+                        {statusCfg?.label ?? "Статус"}
+                      </Badge>
+                      {booking.notes?.trim() ? (
+                        <Text size="xs" c="dimmed">
+                          Есть комментарий администратора
+                        </Text>
+                      ) : null}
+                    </Stack>
+                  </Group>
+                </Paper>
                 <EntityDrawerFieldBlock label="Пациент">
                   <HoverCard openDelay={300} width={280} shadow="md" withinPortal>
                     <HoverCard.Target>

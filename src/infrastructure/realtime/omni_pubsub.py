@@ -38,3 +38,30 @@ async def publish_omni_message_created(
             "omni realtime publish failed",
             extra={"channel": channel, "error": str(exc)},
         )
+
+
+async def publish_omni_chat_updated(
+    *,
+    clinic_id: UUID,
+    chat_id: UUID,
+    reason: str,
+) -> None:
+    """Notify SSE subscribers that chat meta/status changed."""
+    payload = json.dumps(
+        {
+            "type": "chat.updated",
+            "chat_id": str(chat_id),
+            "clinic_id": str(clinic_id),
+            "reason": str(reason)[:64],
+        },
+        separators=(",", ":"),
+    )
+    channel = f"{OMNI_EVENTS_CHANNEL_PREFIX}:{clinic_id}"
+    try:
+        redis = await get_redis()
+        await redis.publish(channel, payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "omni realtime publish failed",
+            extra={"channel": channel, "error": str(exc)},
+        )

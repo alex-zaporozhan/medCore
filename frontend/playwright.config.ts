@@ -19,13 +19,16 @@ export default defineConfig({
   use: {
     baseURL: process.env.BASE_URL ?? "http://127.0.0.1:4173",
     trace: "on-first-retry",
+    serviceWorkers: "block",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    command: "npm run preview -- --host 127.0.0.1 --port 4173",
-    cwd: __dirname,
-    url: "http://127.0.0.1:4173",
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: process.env.E2E_EXTERNAL_BASE_URL
+    ? undefined
+    : {
+        command: "npm run preview -- --host 127.0.0.1 --port 4173",
+        cwd: __dirname,
+        url: "http://127.0.0.1:4173",
+        reuseExistingServer: !process.env.CI,
+        timeout: 120_000,
+      },
 });

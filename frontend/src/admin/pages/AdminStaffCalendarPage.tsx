@@ -32,6 +32,7 @@ import {
 import type { StaffCalendarEventResponse } from "@/hooks";
 import type { CalendarDayCell } from "@/hooks/useStaffCollab";
 import { useAdminTaskDetails } from "@/hooks/useAdminTaskDetails";
+import { useAdminTasksList, useAdminTasksMyFocus, useAdminTasksOpen } from "@/hooks/useAdminTasks";
 import { getAdminId } from "@/api/client";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
@@ -173,6 +174,11 @@ export default function AdminStaffCalendarPage() {
   const [flashUntilMs, setFlashUntilMs] = useState<number>(0);
   const lastSignalsRef = useRef<{ unseen: number; remindersDueNow: number } | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const seenReminderEventIdsRef = useRef<Set<string>>(new Set());
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("staff_cal_sound_enabled") === "true";
+  });
 
   const playSound3x = () => {
     try {
@@ -207,8 +213,28 @@ export default function AdminStaffCalendarPage() {
     }
   };
 
+  const enableSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) {
+        setSoundEnabled(false);
+        return;
+      }
+      const ctx = audioCtxRef.current ?? new AudioCtx();
+      audioCtxRef.current = ctx;
+      void ctx.resume?.();
+      window.localStorage.setItem("staff_cal_sound_enabled", "true");
+      setSoundEnabled(true);
+      // User-gesture beep (short, quiet) to confirm audio is unblocked.
+      playSound3x();
+    } catch {
+      setSoundEnabled(false);
+    }
+  };
+
   useEffect(() => {
     lastSignalsRef.current = null;
+    seenReminderEventIdsRef.current = new Set();
   }, [fromIso, toIso]);
 
   useEffect(() => {
@@ -222,16 +248,35 @@ export default function AdminStaffCalendarPage() {
 
     const unseenIncreased = unseen_invites_count > prev.unseen;
     const remindersIncreased = reminders_due_now_count > prev.remindersDueNow;
-    if (unseenIncreased || remindersIncreased) {
-      setFlashUntilMs(Date.now() + 4000);
-      playSound3x();
-    }
+    if (unseenIncreased || remindersIncreased) setFlashUntilMs(Date.now() + 4000);
     lastSignalsRef.current = { unseen: unseen_invites_count, remindersDueNow: reminders_due_now_count };
   }, [
     monthGrid?.notification_signals.unseen_invites_count,
     monthGrid?.notification_signals.reminders_due_now_count,
     monthGrid,
   ]);
+
+  useEffect(() => {
+    if (!monthGrid) return;
+    if (!soundEnabled) return;
+    // Beep once per reminder event id.
+    const dueNowIds = new Set<string>();
+    for (const day of monthGrid.days ?? []) {
+      for (const id of day.reminder_event_ids ?? []) dueNowIds.add(String(id));
+    }
+    const seen = seenReminderEventIdsRef.current;
+    let hasNew = false;
+    for (const id of dueNowIds) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        hasNew = true;
+      }
+    }
+    if (hasNew) {
+      setFlashUntilMs(Date.now() + 4000);
+      playSound3x();
+    }
+  }, [monthGrid, soundEnabled]);
 
   useEffect(() => {
     if (!lastCreatedEvent) return;
@@ -248,6 +293,10 @@ export default function AdminStaffCalendarPage() {
   const [reminderMinutes, setReminderMinutes] = useState<string>("15");
   /** Связь с задачей: только при создании; при редактировании только просмотр (PATCH без task_id). */
   const [linkedTaskId, setLinkedTaskId] = useState<string>("");
+  const [linkedTaskTitle, setLinkedTaskTitle] = useState<string>("");
+  const [linkTaskOpen, setLinkTaskOpen] = useState(false);
+  const [taskSearch, setTaskSearch] = useState("");
+  const [taskSource, setTaskSource] = useState<"open" | "my" | "all">("open");
   /** Приглашённые сотрудники (нужно право invite_staff_calendar_participants). */
   const [participantAdminIds, setParticipantAdminIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -283,8 +332,10 @@ export default function AdminStaffCalendarPage() {
   };
 
   useEffect(() => {
-    if (taskIdFromUrl) setLinkedTaskId(taskIdFromUrl);
-  }, [taskIdFromUrl]);
+    if (!taskIdFromUrl) return;
+    setLinkedTaskId(taskIdFromUrl);
+    if (taskDetails?.title) setLinkedTaskTitle(taskDetails.title);
+  }, [taskIdFromUrl, taskDetails?.title]);
 
   const resetForm = (initialDayIso?: string) => {
     const dayIso = initialDayIso ?? dayjs().format("YYYY-MM-DD");
@@ -295,6 +346,7 @@ export default function AdminStaffCalendarPage() {
     setAllDay(false);
     setReminderMinutes("15");
     setLinkedTaskId("");
+    setLinkedTaskTitle("");
     setParticipantAdminIds([]);
     setFormError(null);
     setCreateSelectedDayIso(dayIso);
@@ -304,6 +356,8 @@ export default function AdminStaffCalendarPage() {
     setTimeConflictWarning(null);
     setTimePickerKind(null);
     setHideCreateMonthPicker(false);
+    setTaskSearch("");
+    setTaskSource("open");
   };
 
   const openCreate = () => {
@@ -405,6 +459,7 @@ export default function AdminStaffCalendarPage() {
       r == null || r <= 0 ? "0" : String(r)
     );
     setLinkedTaskId(ev.task_id ?? "");
+    setLinkedTaskTitle("");
     setParticipantAdminIds(ev.participants?.map((p) => p.id) ?? []);
     setModal({ mode: "edit", event: ev });
   };
@@ -556,6 +611,29 @@ export default function AdminStaffCalendarPage() {
   };
 
   const pending = createMut.isPending || updateMut.isPending;
+
+  const tasksOpenQ = useAdminTasksOpen({
+    enabled: linkTaskOpen && canViewTasks && taskSource === "open",
+  });
+  const tasksMyQ = useAdminTasksMyFocus(myAdminId || null, {
+    enabled: linkTaskOpen && canViewTasks && taskSource === "my",
+  });
+  const tasksAllQ = useAdminTasksList(undefined, {
+    enabled: linkTaskOpen && canViewTasks && taskSource === "all",
+  });
+
+  const taskCandidates = useMemo(() => {
+    if (!canViewTasks) return [];
+    if (taskSource === "open") return tasksOpenQ.data ?? [];
+    if (taskSource === "my") return tasksMyQ.data ?? [];
+    return tasksAllQ.data ?? [];
+  }, [canViewTasks, taskSource, tasksOpenQ.data, tasksMyQ.data, tasksAllQ.data]);
+
+  const filteredTaskCandidates = useMemo(() => {
+    const q = taskSearch.trim().toLowerCase();
+    if (!q) return taskCandidates;
+    return taskCandidates.filter((t: any) => String(t.title ?? "").toLowerCase().includes(q));
+  }, [taskCandidates, taskSearch]);
 
   const isDetailsModalCreator = useMemo(() => {
     if (modal?.mode !== "details" || !eventDetails?.event?.created_by?.id || !myAdminId) return false;
@@ -724,6 +802,16 @@ export default function AdminStaffCalendarPage() {
         календарь». Несколько участников может добавить сотрудник с правом приглашения в календаре (обычно руководитель
         или старший администратор). Редактирование сохраняет изменения через PATCH.
       </Text>
+      <Group gap="xs" wrap="wrap">
+        <Badge variant="light" color={soundEnabled ? "teal" : "gray"}>
+          Звук: {soundEnabled ? "включён" : "выключен"}
+        </Badge>
+        {!soundEnabled ? (
+          <Button size="xs" variant="light" onClick={enableSound}>
+            Включить звук напоминаний
+          </Button>
+        ) : null}
+      </Group>
       {lastCreatedEvent ? (
         <Text size="sm" c="dimmed" style={{ color: "var(--accent-teal)" }}>
           Создано событие: {lastCreatedEvent.title} ({dayjs(lastCreatedEvent.dayIso).format("DD.MM.YYYY")}).
@@ -1111,7 +1199,7 @@ export default function AdminStaffCalendarPage() {
               : "Событие"
         }
         centered
-        size={modal?.mode === "details" ? "lg" : "xl"}
+        size={modal?.mode === "details" ? "lg" : "72rem"}
         radius="lg"
         classNames={{ content: "staff-cal-modal-content" }}
         styles={{
@@ -1400,13 +1488,54 @@ export default function AdminStaffCalendarPage() {
                         </>
                       )}
 
-                      <TextInput
-                        label="ID задачи (необязательно)"
-                        description="UUID задачи из раздела «Задачи» — для связи с календарём; оставьте пустым, чтобы снять привязку"
-                        value={linkedTaskId}
-                        onChange={(e) => setLinkedTaskId(e.currentTarget.value)}
-                        placeholder="например из ссылки «В календарь»"
-                      />
+                      {canViewTasks ? (
+                        <Stack gap={6}>
+                          <Text size="sm" fw={700}>
+                            Связь с задачей
+                          </Text>
+                          {linkedTaskId ? (
+                            <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+                              <Group gap="xs" wrap="wrap">
+                                <Badge color="teal" variant="light">
+                                  Задача
+                                </Badge>
+                                <Text size="sm" fw={600}>
+                                  {linkedTaskTitle?.trim() || "Выбрана задача"}
+                                </Text>
+                              </Group>
+                              <Group gap="xs">
+                                <Button variant="default" size="sm" onClick={() => setLinkTaskOpen(true)}>
+                                  Изменить
+                                </Button>
+                                <Button
+                                  variant="subtle"
+                                  color="red"
+                                  size="sm"
+                                  onClick={() => {
+                                    setLinkedTaskId("");
+                                    setLinkedTaskTitle("");
+                                  }}
+                                >
+                                  Снять связь
+                                </Button>
+                              </Group>
+                            </Group>
+                          ) : (
+                            <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+                              <Text size="sm" c="dimmed">
+                                Можно привязать событие к задаче, чтобы сотрудникам было проще понимать контекст.
+                              </Text>
+                              <Button size="sm" onClick={() => setLinkTaskOpen(true)}>
+                                Связать с задачей
+                              </Button>
+                            </Group>
+                          )}
+                        </Stack>
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          Для привязки события к задаче нужно право просмотра задач.
+                        </Text>
+                      )}
                     </Stack>
                   </SimpleGrid>
                 </>
@@ -1477,6 +1606,74 @@ export default function AdminStaffCalendarPage() {
             </Group>
           )}
         </Box>
+      </Modal>
+
+      <Modal
+        opened={linkTaskOpen}
+        onClose={() => setLinkTaskOpen(false)}
+        title="Связать с задачей"
+        centered
+        size="lg"
+        radius="lg"
+        classNames={{ content: "staff-cal-modal-content" }}
+      >
+        <Stack gap="sm">
+          <Group grow>
+            <Select
+              label="Список"
+              value={taskSource}
+              onChange={(v) => setTaskSource((v as any) || "open")}
+              data={[
+                { value: "open", label: "Открытые" },
+                { value: "my", label: "Мои" },
+                { value: "all", label: "Все" },
+              ]}
+              comboboxProps={{ withinPortal: true }}
+            />
+            <TextInput
+              label="Поиск"
+              placeholder="Начните вводить название задачи"
+              value={taskSearch}
+              onChange={(e) => setTaskSearch(e.currentTarget.value)}
+            />
+          </Group>
+
+          <ScrollArea h={420} className="staff-cal-time-scroll">
+            <Stack gap={6}>
+              {filteredTaskCandidates.length === 0 ? (
+                <EmptyState title="Ничего не найдено" description="Попробуйте другой фильтр или измените запрос." />
+              ) : (
+                filteredTaskCandidates.slice(0, 200).map((t: any) => (
+                  <Button
+                    key={t.id}
+                    variant={t.id === linkedTaskId ? "filled" : "default"}
+                    style={{ justifyContent: "space-between" }}
+                    onClick={() => {
+                      setLinkedTaskId(String(t.id));
+                      setLinkedTaskTitle(String(t.title || "").trim());
+                      setLinkTaskOpen(false);
+                    }}
+                  >
+                    <span style={{ textAlign: "left", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {String(t.title || "Задача")}
+                    </span>
+                    {"status" in t && t.status ? (
+                      <Badge variant="light" color="gray" style={{ marginLeft: 10 }}>
+                        {String(t.status)}
+                      </Badge>
+                    ) : null}
+                  </Button>
+                ))
+              )}
+            </Stack>
+          </ScrollArea>
+
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setLinkTaskOpen(false)}>
+              Закрыть
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
 
       <Modal

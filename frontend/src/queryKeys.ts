@@ -24,8 +24,19 @@ export const queryKeys = {
   adminTasks: {
     /** Префикс для invalidateQueries — все списки задач админки */
     prefix: ["admin-tasks"] as const,
-    list: (streamId?: string | null, tagIds?: string[]) =>
-      ["admin-tasks", streamId ?? "all", ...(tagIds?.length ? [tagIds.slice().sort().join(",")] : [])] as const,
+    list: (
+      streamId?: string | null,
+      tagIds?: string[],
+      completedFrom?: string | null,
+      completedTo?: string | null
+    ) =>
+      [
+        "admin-tasks",
+        streamId ?? "all",
+        ...(tagIds?.length ? [tagIds.slice().sort().join(",")] : []),
+        ...(completedFrom ? [`completedFrom:${completedFrom}`] : []),
+        ...(completedTo ? [`completedTo:${completedTo}`] : []),
+      ] as const,
     myFocus: (adminId: string | null) => ["admin-tasks", "my-focus", adminId] as const,
     ai: () => ["admin-tasks", "ai"] as const,
     /** GET /v1/admin/tasks?status=open — виджет в Omni Chat */

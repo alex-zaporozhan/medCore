@@ -204,6 +204,16 @@ export default function SchedulePage() {
   const [pickerMonth, setPickerMonth] = useState(() => dayjs().startOf("month"));
   const prevDateStrRef = useRef(dateStr);
   const [scheduleSlideSign, setScheduleSlideSign] = useState(1);
+  const [pendingDragMove, setPendingDragMove] = useState<{
+    bookingId: string;
+    fromDoctorId: string;
+    fromDate: string;
+    fromTime: string;
+    toDoctorId: string;
+    toDate: string;
+    toTime: string;
+    patientLabel: string;
+  } | null>(null);
 
   const { data: patientModalData } = usePatient(patientModalId);
   const { data: doctorModalData } = useDoctor(doctorModalId);
@@ -233,20 +243,20 @@ export default function SchedulePage() {
   }, [adminServices]);
 
   const handleRescheduleDrag = (payload: { bookingId: string; toDoctorId: string; date: string; time: string }) => {
-    const timeForApi = payload.time.length === 5 ? `${payload.time}:00` : payload.time;
-    rescheduleMutation.mutate(
-      {
-        id: payload.bookingId,
-        doctor_id: payload.toDoctorId,
-        date: payload.date,
-        time: timeForApi,
-      },
-      {
-        onError: () => {
-          // Rollback is done in useRescheduleBookingAdmin; optional: show toast when notifications are added
-        },
-      }
-    );
+    const b = bookingsForGrid.find((x) => x.id === payload.bookingId);
+    if (!b) return;
+    const fromTime = String(b.appointment_time).slice(0, 5);
+    const patientLabel = patientNameMap?.[b.patient_id] || b.patient_name || b.patient_id;
+    setPendingDragMove({
+      bookingId: payload.bookingId,
+      fromDoctorId: b.doctor_id,
+      fromDate: b.appointment_date,
+      fromTime,
+      toDoctorId: payload.toDoctorId,
+      toDate: payload.date,
+      toTime: payload.time,
+      patientLabel: String(patientLabel).trim() || "Пациент",
+    });
   };
 
   const doctorOptions =
@@ -606,6 +616,56 @@ export default function SchedulePage() {
         scheduleShareUrl={scheduleShareUrl}
         onBookingUpdated={(b) => setSelectedBooking(b)}
       />
+
+      <GlassModal
+        opened={pendingDragMove !== null}
+        onClose={() => setPendingDragMove(null)}
+        title="Подтверждение перемещения"
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            Вы действительно хотите переместить запись{" "}
+            <Text component="span" fw={700}>
+              {pendingDragMove?.patientLabel ?? "Пациент"}
+            </Text>{" "}
+            с{" "}
+            <Text component="span" fw={700}>
+              {pendingDragMove ? `${pendingDragMove.fromDate} ${pendingDragMove.fromTime}` : ""}
+            </Text>{" "}
+            на{" "}
+            <Text component="span" fw={700}>
+              {pendingDragMove ? `${pendingDragMove.toDate} ${pendingDragMove.toTime}` : ""}
+            </Text>
+            ?
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="subtle" onClick={() => setPendingDragMove(null)} disabled={rescheduleMutation.isPending}>
+              Нет
+            </Button>
+            <Button
+              onClick={() => {
+                if (!pendingDragMove) return;
+                const timeForApi =
+                  pendingDragMove.toTime.length === 5 ? `${pendingDragMove.toTime}:00` : pendingDragMove.toTime;
+                rescheduleMutation.mutate(
+                  {
+                    id: pendingDragMove.bookingId,
+                    doctor_id: pendingDragMove.toDoctorId,
+                    date: pendingDragMove.toDate,
+                    time: timeForApi,
+                  },
+                  {
+                    onSettled: () => setPendingDragMove(null),
+                  }
+                );
+              }}
+              loading={rescheduleMutation.isPending}
+            >
+              Да
+            </Button>
+          </Group>
+        </Stack>
+      </GlassModal>
 
       <PatientEntityDrawer
         opened={patientModalId !== null && Boolean(patientModalData)}

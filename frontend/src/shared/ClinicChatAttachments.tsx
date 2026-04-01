@@ -113,14 +113,18 @@ export function ClinicChatAttachments({
           alignSelf: "stretch" as const,
         };
         if (!imageUrls[a.id]) {
-          return <Skeleton key={`aud-sk-${a.id}`} height={54} radius="md" style={shell} />;
+          return <Skeleton key={`aud-sk-${a.id}`} height={38} radius="md" style={shell} />;
         }
         return (
           <Box key={`aud-wrap-${a.id}`} style={shell}>
             <ChatInlineAudioPlayer
               src={imageUrls[a.id]}
               allowDownload={allowAudioAttachmentDownload}
-              style={{ display: "block", width: "100%", minHeight: 40 }}
+              style={{
+                display: "block",
+                width: "100%",
+                height: 38,
+              }}
             />
           </Box>
         );

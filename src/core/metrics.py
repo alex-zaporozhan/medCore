@@ -122,6 +122,88 @@ omni_ai_provider_errors_total = Counter(  # type: ignore[call-arg]
     ["source", "error_type"],
 )
 
+# Omni lead log metrics
+omni_lead_logs_resolved_total = Counter(  # type: ignore[call-arg]
+    "omni_lead_logs_resolved_total",
+    "Total resolved omni chats that produced immutable lead logs.",
+    ["clinic_bucket", "outcome"],
+)
+
+omni_presence_events_total = Counter(  # type: ignore[call-arg]
+    "omni_presence_events_total",
+    "Total omni presence events (OPEN/HEARTBEAT/CLOSE).",
+    ["clinic_bucket", "event"],
+)
+
+omni_presence_idempotent_replays_total = Counter(  # type: ignore[call-arg]
+    "omni_presence_idempotent_replays_total",
+    "Total idempotent replays for omni presence (duplicate client_event_id).",
+    ["clinic_bucket"],
+)
+
+omni_auto_claim_total = Counter(  # type: ignore[call-arg]
+    "omni_auto_claim_total",
+    "Total omni auto-claims performed on commit actions.",
+    ["clinic_bucket", "source"],
+)
+
+omni_auto_claim_conflicts_total = Counter(  # type: ignore[call-arg]
+    "omni_auto_claim_conflicts_total",
+    "Total 409 conflicts when trying to commit on a chat claimed by another admin.",
+    ["clinic_bucket"],
+)
+
+omni_auto_resolve_attempts_total = Counter(  # type: ignore[call-arg]
+    "omni_auto_resolve_attempts_total",
+    "Total omni auto-resolve attempts and outcomes.",
+    ["clinic_bucket", "result"],
+)
+
+omni_lead_logs_resolve_errors_total = Counter(  # type: ignore[call-arg]
+    "omni_lead_logs_resolve_errors_total",
+    "Errors during omni resolve/lead-log creation by reason.",
+    ["clinic_bucket", "reason"],
+)
+
+omni_lead_logs_transcript_bytes = Histogram(  # type: ignore[call-arg]
+    "omni_lead_logs_transcript_bytes",
+    "Transcript snapshot size in bytes for omni lead logs.",
+    ["clinic_bucket"],
+    buckets=(256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072),
+)
+
+omni_active_leases = Gauge(  # type: ignore[call-arg]
+    "omni_active_leases",
+    "Current active omni chat leases (expires_at > now).",
+    ["clinic_bucket"],
+)
+
+omni_lease_duration_seconds = Histogram(  # type: ignore[call-arg]
+    "omni_lease_duration_seconds",
+    "Duration of omni chat lease sessions in seconds (created_at -> close).",
+    ["clinic_bucket"],
+    buckets=(5, 10, 20, 30, 60, 120, 300, 600, 1200, 3600),
+)
+
+lead_log_routing_matches_total = Counter(  # type: ignore[call-arg]
+    "lead_log_routing_matches_total",
+    "Lead-log routing matches by channel and target stream.",
+    ["clinic_bucket", "channel_type", "stream_slug"],
+)
+
+lead_log_routing_fallback_total = Counter(  # type: ignore[call-arg]
+    "lead_log_routing_fallback_total",
+    "Lead-log routing fell back to default stream (no rule match or invalid target).",
+    ["clinic_bucket", "channel_type"],
+)
+
+omni_time_to_first_outbound_seconds = Histogram(  # type: ignore[call-arg]
+    "omni_time_to_first_outbound_seconds",
+    "Seconds from chat created_at to first outbound commit action (first message/upload that claims chat).",
+    ["clinic_bucket"],
+    buckets=(1, 3, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 3600, 7200),
+)
+
 
 # ------------------------------------------------------------------------------
 # ERP loyalty obligations metrics

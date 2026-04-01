@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -12,6 +12,7 @@ import {
   Textarea,
   Divider,
   Alert,
+  Collapse,
 } from "@mantine/core";
 import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { useAdminSession } from "@/hooks/useAdminSession";
@@ -19,8 +20,6 @@ import { useAdminAdmins } from "@/hooks/useAdminAdmins";
 import {
   useAddStaffFeedComment,
   useCreateStaffFeedPost,
-  useStaffAnnouncementPublishPolicy,
-  useUpdateStaffAnnouncementPublishPolicy,
   useStaffFeedComments,
   useUpdateStaffFeedComment,
   useDeleteStaffFeedComment,
@@ -213,25 +212,7 @@ export default function AdminEmergencyNotificationsPage() {
 
   const posts = useMemo(() => data ?? [], [data]);
   const allowCreate = canPublish(session);
-  const canManagePolicy = Boolean(session?.permissions?.includes("rbac.manage"));
-  const { data: policyData } = useStaffAnnouncementPublishPolicy();
-  const updatePolicyMut = useUpdateStaffAnnouncementPublishPolicy();
-  const [policyError, setPolicyError] = useState<string | null>(null);
-  const [denyRoles, setDenyRoles] = useState<string[]>([]);
-  const [denyAdmins, setDenyAdmins] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!canManagePolicy) return;
-    const policies = policyData?.policies ?? [];
-    const roles = policies
-      .filter((p) => p.scope_type === "role" && p.can_publish === false)
-      .map((p) => p.scope_value);
-    const users = policies
-      .filter((p) => p.scope_type === "user" && p.can_publish === false)
-      .map((p) => p.scope_value);
-    setDenyRoles(roles);
-    setDenyAdmins(users);
-  }, [canManagePolicy, policyData?.policies]);
+  const [publishOpen, setPublishOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -253,138 +234,118 @@ export default function AdminEmergencyNotificationsPage() {
   return (
     <Stack gap="md">
       <ContextBar title="Стена объявлений" />
-      {canManagePolicy ? (
+      {allowCreate ? (
         <Card withBorder>
           <Stack gap="xs">
-            <Text fw={600}>Права на публикацию объявлений</Text>
-            <Text size="sm" c="dimmed">
-              По умолчанию публиковать могут все сотрудники. Здесь можно запретить по роли или точечно по человеку.
-            </Text>
-            {policyError ? (
-              <Alert color="red" title="Ошибка" onClose={() => setPolicyError(null)} withCloseButton>
-                {policyError}
-              </Alert>
-            ) : null}
-            <Group grow align="flex-end">
-              <MultiSelect
-                label="Запретить по ролям"
-                data={[
-                  { value: "manager", label: "Менеджер" },
-                  { value: "admin", label: "Администратор" },
-                  { value: "doctor", label: "Врач/мастер" },
-                ]}
-                value={denyRoles}
-                onChange={setDenyRoles}
-                placeholder="Пусто = без запретов"
-              />
-              <MultiSelect
-                label="Запретить конкретным сотрудникам"
-                data={admins.map((a) => ({ value: a.id, label: a.full_name?.trim() || a.email }))}
-                value={denyAdmins}
-                onChange={setDenyAdmins}
-                placeholder="Пусто = без запретов"
-              />
+            <Group justify="space-between" align="center" wrap="wrap">
+              <Stack gap={2}>
+                <Text fw={600}>Публикация объявления</Text>
+                <Text size="sm" c="dimmed">
+                  По умолчанию объявление увидят все сотрудники. Можно ограничить аудиторию после нажатия «Опубликовать».
+                </Text>
+              </Stack>
+              <Group gap="xs">
+                {publishOpen ? (
+                  <Button
+                    variant="default"
+                    onClick={() => setPublishOpen(false)}
+                    disabled={createMut.isPending}
+                  >
+                    Отмена
+                  </Button>
+                ) : null}
+                <Button
+                  onClick={() => {
+                    if (!publishOpen) {
+                      setPublishOpen(true);
+                      return;
+                    }
+                    if (!body.trim()) return;
+                    createMut.mutate({
+                      title: title.trim() || "Объявление",
+                      body: body.trim(),
+                      is_announcement: true,
+                      requires_ack: true,
+                      priority_level: priority,
+                      audience_roles: audienceRoles,
+                      audience_admin_ids: audienceAdmins,
+                    });
+                    setTitle("");
+                    setBody("");
+                    setAudienceRoles([]);
+                    setAudienceAdmins([]);
+                    setPriority("normal");
+                    setPublishOpen(false);
+                  }}
+                  loading={createMut.isPending}
+                  disabled={publishOpen ? !body.trim() : false}
+                >
+                  Опубликовать
+                </Button>
+              </Group>
             </Group>
-            <Group justify="flex-end">
-              <Button
-                variant="light"
-                onClick={async () => {
-                  setPolicyError(null);
-                  try {
-                    const payload = [
-                      ...denyRoles.map((r) => ({
-                        scope_type: "role" as const,
-                        scope_value: r,
-                        can_publish: false,
-                      })),
-                      ...denyAdmins.map((id) => ({
-                        scope_type: "user" as const,
-                        scope_value: id,
-                        can_publish: false,
-                      })),
-                    ];
-                    await updatePolicyMut.mutateAsync(payload);
-                  } catch (e) {
-                    setPolicyError(e instanceof Error ? e.message : "Не удалось сохранить политику");
-                  }
-                }}
-                loading={updatePolicyMut.isPending}
-              >
-                Сохранить политику
-              </Button>
-            </Group>
+
+            <Collapse in={publishOpen}>
+              <Stack gap="xs" mt="sm">
+                <Textarea
+                  placeholder="Заголовок"
+                  minRows={1}
+                  value={title}
+                  onChange={(e) => setTitle(e.currentTarget.value)}
+                />
+                <Textarea
+                  placeholder="Текст объявления"
+                  minRows={3}
+                  value={body}
+                  onChange={(e) => setBody(e.currentTarget.value)}
+                />
+                <Group grow align="flex-end">
+                  <MultiSelect
+                    label="По категориям персонала"
+                    data={[
+                      { value: "owner", label: "Владелец" },
+                      { value: "manager", label: "Менеджер" },
+                      { value: "admin", label: "Администратор" },
+                      { value: "doctor", label: "Врач/мастер" },
+                    ]}
+                    value={audienceRoles}
+                    onChange={setAudienceRoles}
+                    placeholder="Пусто = всем"
+                    searchable
+                    hidePickedOptions
+                    clearable
+                    comboboxProps={{ withinPortal: true }}
+                  />
+                  <MultiSelect
+                    label="Индивидуально"
+                    data={admins.map((a) => ({ value: a.id, label: a.full_name?.trim() || a.email }))}
+                    value={audienceAdmins}
+                    onChange={setAudienceAdmins}
+                    placeholder="Дополнительно"
+                    searchable
+                    hidePickedOptions
+                    clearable
+                    comboboxProps={{ withinPortal: true }}
+                  />
+                  <Select
+                    label="Приоритет"
+                    value={priority}
+                    onChange={(v) => setPriority((v as "normal" | "priority" | "critical") || "normal")}
+                    data={[
+                      { value: "normal", label: "Обычный" },
+                      { value: "priority", label: "Приоритет" },
+                      { value: "critical", label: "Критично" },
+                    ]}
+                    comboboxProps={{ withinPortal: true }}
+                  />
+                </Group>
+              </Stack>
+            </Collapse>
           </Stack>
         </Card>
       ) : null}
 
       <Divider />
-      {allowCreate ? (
-        <Card withBorder>
-          <Stack gap="xs">
-            <Text size="sm" c="dimmed">
-              Публикация объявления для всех или выбранных сотрудников.
-            </Text>
-            <Textarea placeholder="Заголовок" minRows={1} value={title} onChange={(e) => setTitle(e.currentTarget.value)} />
-            <Textarea placeholder="Текст объявления" minRows={3} value={body} onChange={(e) => setBody(e.currentTarget.value)} />
-            <Group grow>
-              <MultiSelect
-                label="По категориям персонала"
-                data={[
-                  { value: "owner", label: "Владелец" },
-                  { value: "manager", label: "Менеджер" },
-                  { value: "admin", label: "Администратор" },
-                  { value: "doctor", label: "Врач/мастер" },
-                ]}
-                value={audienceRoles}
-                onChange={setAudienceRoles}
-                placeholder="Пусто = всем"
-              />
-              <MultiSelect
-                label="Индивидуально"
-                data={admins.map((a) => ({ value: a.id, label: a.full_name?.trim() || a.email }))}
-                value={audienceAdmins}
-                onChange={setAudienceAdmins}
-                placeholder="Дополнительно"
-              />
-              <Select
-                label="Приоритет"
-                value={priority}
-                onChange={(v) => setPriority((v as "normal" | "priority" | "critical") || "normal")}
-                data={[
-                  { value: "normal", label: "Обычный" },
-                  { value: "priority", label: "Приоритет" },
-                  { value: "critical", label: "Критично" },
-                ]}
-              />
-            </Group>
-            <Group justify="flex-end">
-              <Button
-                onClick={() => {
-                  if (!body.trim()) return;
-                  createMut.mutate({
-                    title: title.trim() || "Объявление",
-                    body: body.trim(),
-                    is_announcement: true,
-                    requires_ack: true,
-                    priority_level: priority,
-                    audience_roles: audienceRoles,
-                    audience_admin_ids: audienceAdmins,
-                  });
-                  setTitle("");
-                  setBody("");
-                  setAudienceRoles([]);
-                  setAudienceAdmins([]);
-                  setPriority("normal");
-                }}
-                loading={createMut.isPending}
-              >
-                Опубликовать
-              </Button>
-            </Group>
-          </Stack>
-        </Card>
-      ) : null}
-
       {posts.length === 0 ? (
         <EmptyState title="Нет объявлений" description="Опубликованные рабочие объявления появятся здесь." />
       ) : (

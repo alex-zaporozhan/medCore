@@ -51,9 +51,11 @@ class ChatRepository(ABC):
         business_account_id: UUID,
         status: str | None,
         search: str | None,
+        channel_types: list[str] | None,
         skip: int,
         limit: int,
         assignee_admin_id: UUID | None = None,
+        unassigned_only: bool = False,
     ) -> list[Chat]:
         ...
 

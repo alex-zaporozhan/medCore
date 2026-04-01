@@ -124,6 +124,18 @@ PERMISSIONS: Final[list[PermissionDef]] = [
         "Омниканал: назначение диалогов, статусы, быстрые ответы",
     ),
     PermissionDef(
+        "omni.chat.resolve.override",
+        "Омниканал: аварийное закрытие/resolve диалога несмотря на active lease (escape hatch)",
+    ),
+    PermissionDef(
+        "leads.log.view",
+        "Лиды (лог): просмотр журнала обращений из omni‑чата",
+    ),
+    PermissionDef(
+        "leads.log.manage",
+        "Лиды (лог): управление маршрутизацией/правилами и настройками лид‑логов",
+    ),
+    PermissionDef(
         "rbac.manage",
         "Управление ролями, персональными правами и политиками доступа",
     ),
@@ -176,6 +188,9 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "staff.feed.comments.moderate",
         "invite_staff_calendar_participants",
         "omni.inbox.manage",
+        "omni.chat.resolve.override",
+        "leads.log.view",
+        "leads.log.manage",
         "manage_staff_directory",
         # SR5 (QA_ARCH W7): managers may review ERP owner reports + attribution read-only.
         "erp.owner_reports.read",
@@ -206,6 +221,7 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "manage_staff_collab",
         "invite_staff_calendar_participants",
         "omni.inbox.manage",
+        "omni.chat.resolve.override",
         "rbac.manage",
         "manage_staff_directory",
     ],

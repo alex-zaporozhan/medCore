@@ -1,2413 +1,1367 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import { useAdminTasksOpen, useCreateAdminTaskMutation, useCreateAdminBooking, usePatient } from "@/hooks";
-import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  useAdminOmniChats,
-  useAdminOmniChatDetail,
-  useAdminOmniChatMessagesInfinite,
-  useOmniChatSse,
-  useOmniQuickReplies,
-  usePatchOmniChat,
-  useSendAdminOmniMessage,
-  useSendAdminOmniMessageWithFile,
-  useUpdateOmniChatAiMode,
-  useHideAdminOmniMessage,
-  OMNI_CHAT_AI_MODES,
-} from "@/hooks/useAdminOmniChat";
-import { useAdminLoyaltySummaryByContact, useAdminFormSubmissions, useAdminFormTemplates, useSendFormLink } from "@/hooks";
-import { Link, useSearchParams } from "react-router-dom";
-import { ROUTE_PATHS } from "@/routePaths";
-import {
-  AdminDrawer,
-  DataSkeleton,
-  AiFeatureBadge,
-  QueryErrorAlert,
-  OmniInspectorTabShell,
-  OmniInspectorSection,
-} from "@/shared/ui";
-import { ContextBar } from "@/shared/ui/ContextBar";
-import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import {
-  useAiCreateTaskForLead,
-  useAiIgnoreLeadRecommendation,
-  useAiLeadSummary,
-  useAiSuggestNextStage,
-  useAiUpdateLeadStage,
-} from "@/hooks/useCrmLeads";
-import { useDoctors } from "@/hooks/useDoctors";
-import { useServices } from "@/hooks/useServices";
-import {
+  ActionIcon,
+  Badge,
   Box,
+  Button,
+  Divider,
   Flex,
-  Stack,
+  Group,
+  Loader,
+  Menu,
+  Modal,
+  MultiSelect,
   Paper,
+  ScrollArea,
+  Select,
+  Stack,
+  Tabs,
   Text,
   TextInput,
-  Button,
-  Badge,
-  Select,
-  Checkbox,
-  Tabs,
-  Group,
-  Menu,
-  Divider,
   Tooltip,
-  SegmentedControl,
-  ActionIcon,
   rem,
-  ScrollArea,
 } from "@mantine/core";
+import { useHotkeys } from "@mantine/hooks";
 import {
-  IconBriefcase,
   IconBrandTelegram,
   IconBrandWhatsapp,
-  IconCalendarEvent,
-  IconCalendarPlus,
-  IconCopy,
-  IconDeviceMobile,
-  IconChevronLeft,
-  IconChevronRight,
-  IconEyeOff,
-  IconFileDescription,
-  IconHistory,
-  IconListCheck,
-  IconMessageReply,
-  IconRefresh,
-  IconSend,
-  IconRobot,
-  IconUser,
-  IconDotsVertical,
+  IconBrandVk,
+  IconQuote,
+  IconCornerUpLeft,
+  IconMail,
   IconPaperclip,
   IconPhoto,
+  IconSearch,
+  IconSend,
 } from "@tabler/icons-react";
-import { useHotkeys } from "@mantine/hooks";
-import { GlassModal } from "@/shared/ui/GlassModal";
-import { Textarea } from "@mantine/core";
+import { ContextBar } from "@/shared/ui/ContextBar";
+import { EmptyStateHint } from "@/shared/emptyStateHint";
+import {
+  useAdminOmniChatDetail,
+  useAdminOmniChatMessagesInfinite,
+  useAdminOmniChats,
+  getAdminClinicChatAttachmentBlob,
+  getAdminOmniAttachmentBlob,
+  useSendAdminOmniMessage,
+  useSendAdminOmniMessageWithFile,
+  useOmniChatAnalytics,
+  useOmniQuickReplies,
+  OMNI_CHAT_AI_MODES,
+  useUpdateOmniChatAiMode,
+  useResolveAdminOmniChat,
+  useAdminOmniChatPresence,
+} from "@/hooks/useAdminOmniChat";
 import { AppleEmojiOverlayTextarea } from "@/shared/ui";
-import { api, getAdminId } from "@/api/client";
-import { useAiFeatures, getAiFeatureTooltip } from "@/shared/aiFeatures";
-import { useEffectiveAiFeatureGate } from "@/hooks/useEffectiveAiFeatureGate";
-import { logUiEvent } from "@/shared/uiEvents";
-import { useAvailableAiTools } from "@/hooks/useAvailableAiTools";
+import { EmojiMartPopoverPicker } from "@/shared/ui/EmojiMartPopoverPicker";
+import { VoiceNoteRecorderButton } from "@/shared/ui/VoiceNoteRecorderButton";
+import { OmniMessageRichBody } from "@/shared/OmniMessageRichBody";
 import {
   ADMIN_CHAT_MESSAGES_REGION,
   adminChatOmniClientInboundBubbleStyle,
-  adminChatOmniHiddenBubbleStyle,
   adminChatOmniOutboundBubbleStyle,
 } from "@/shared/adminChatChrome";
-import { SEMANTIC } from "@/shared/semanticUi";
-import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
-import { OmniMessageRichBody } from "@/shared/OmniMessageRichBody";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAdminSession } from "@/hooks/useAdminSession";
-import { EmojiMartPopoverPicker } from "@/shared/ui/EmojiMartPopoverPicker";
-import { VoiceNoteRecorderButton } from "@/shared/ui/VoiceNoteRecorderButton";
+import { getAdminId } from "@/api/client";
 
-function omniChatListStatusColor(status: string): string {
-  const s = String(status).toUpperCase();
-  if (s === "OPEN") return "var(--mantine-color-green-6)";
-  if (s === "CLOSED") return "var(--mantine-color-gray-5)";
-  return "var(--mantine-color-blue-6)";
-}
-
-function omniChatListAiShort(ai_mode: string | null | undefined): string | null {
-  if (!ai_mode || ai_mode === "DISABLED") return null;
-  if (ai_mode === "AUTO_REPLY") return "AI авто";
-  return "AI подск.";
-}
-
-function omniMessageDeliveryLabel(
-  deliveryStatus: string | null | undefined,
-  readStatus: string | null | undefined
-): { label: string; color: string; tooltip: string } | null {
-  const read = String(readStatus || "").toUpperCase();
-  const delivery = String(deliveryStatus || "").toUpperCase();
-  if (read === "READ") {
-    return { label: "Прочитано", color: "var(--mantine-color-teal-7)", tooltip: "Клиент открыл сообщение." };
-  }
-  if (delivery === "DELIVERED") {
-    return { label: "Доставлено", color: "var(--mantine-color-green-7)", tooltip: "Канал подтвердил доставку." };
-  }
-  if (delivery) {
-    return { label: delivery, color: "var(--mantine-color-gray-6)", tooltip: "Технический статус доставки." };
-  }
+function ChannelIcon({ type }: { type: string }) {
+  const t = (type || "").toUpperCase();
+  if (t === "TELEGRAM_BOT") return <IconBrandTelegram size={14} />;
+  if (t === "WHATSAPP_BUSINESS") return <IconBrandWhatsapp size={14} />;
+  if (t === "VK_BOT") return <IconBrandVk size={14} />;
+  if (t === "EMAIL_INBOX") return <IconMail size={14} />;
   return null;
 }
 
-function omniOutboundChannelLabel(t: string | null | undefined): string {
-  const u = String(t || "").toUpperCase();
-  if (u === "TELEGRAM_BOT") return "Telegram";
-  if (u === "WHATSAPP") return "WhatsApp";
-  if (u === "WEB_WIDGET") return "Виджет сайта";
-  if (u === "WEB_APP") return "Приложение";
-  return t ? String(t) : "Канал";
+function channelBrandColor(type: string): string {
+  const t = (type || "").toUpperCase();
+  if (t === "TELEGRAM_BOT") return "var(--mantine-color-blue-6)";
+  if (t === "WHATSAPP_BUSINESS") return "var(--mantine-color-green-6)";
+  if (t === "VK_BOT") return "var(--mantine-color-indigo-6)";
+  if (t === "EMAIL_INBOX") return "var(--mantine-color-gray-6)";
+  return "var(--mantine-color-gray-6)";
 }
 
-function OmniChannelMetaIcon({ channelType, size = 12 }: { channelType: string | null | undefined; size?: number }) {
-  const u = String(channelType || "").toUpperCase();
-  if (u === "TELEGRAM_BOT") return <IconBrandTelegram size={size} stroke={1.6} />;
-  if (u === "WHATSAPP") return <IconBrandWhatsapp size={size} stroke={1.6} />;
-  return <IconDeviceMobile size={size} stroke={1.6} />;
+function ChannelTypeRow({ types }: { types: string[] }) {
+  const uniq = Array.from(new Set(types.map((x) => String(x || "").toUpperCase()).filter(Boolean)));
+  if (!uniq.length) return null;
+  return (
+    <Group gap={6} wrap="nowrap">
+      {uniq.slice(0, 5).map((t) => (
+        <Tooltip key={t} label={t}>
+          <Box style={{ color: "var(--mantine-color-gray-6)", display: "flex", alignItems: "center" }}>
+            <ChannelIcon type={t} />
+          </Box>
+        </Tooltip>
+      ))}
+    </Group>
+  );
 }
 
-/** Подсказка к сырому статусу диалога из API (список слева). */
-function omniChatStatusTooltip(status: string): string {
-  const s = String(status).toUpperCase();
-  if (s === "OPEN") {
-    return "Диалог открыт: переписка активна, можно отправлять и получать сообщения.";
-  }
-  if (s === "CLOSED") {
-    return "Диалог закрыт: переписка завершена, новые сообщения обычно не ожидаются.";
-  }
-  if (s === "WAITING_FOR_OPERATOR") {
-    return "Ожидает оператора: нужен ответ сотрудника.";
-  }
-  if (s === "IN_PROGRESS") {
-    return "В работе у оператора.";
-  }
-  return `Статус диалога в системе: ${status}`;
+function toDayKey(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-type OmniInspectorTab = "client" | "forms" | "timeline" | "ai";
+const dateLabelFmt = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", day: "numeric" });
+const timeLabelFmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
 
-const OMNI_INSPECTOR_COLLAPSED_KEY = "admin_omni_inspector_collapsed";
-const MAX_OMNI_UPLOAD_BYTES = 5 * 1024 * 1024;
+function formatDayLabel(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return dateLabelFmt.format(d);
+}
+
+function formatTimeLabel(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return timeLabelFmt.format(d);
+}
+
+function isClosedStatus(status: unknown): boolean {
+  return String(status || "").toUpperCase() === "CLOSED";
+}
+
+function isContactActor(lastActorType: unknown): boolean {
+  const t = String(lastActorType || "").toUpperCase();
+  return t === "CONTACT" || t === "CLIENT" || t === "PATIENT";
+}
+
+function parseReplyLine(content: string): { messageId: string | null; rest: string } | null {
+  const raw = String(content || "");
+  const lines = raw.split(/\r?\n/);
+  const first = (lines[0] || "").trim();
+  if (!/^reply_to:\s+/i.test(first)) return null;
+  const messageId = first.replace(/^reply_to:\s+/i, "").trim() || null;
+  const rest = lines.slice(1).join("\n").trimStart();
+  return { messageId, rest };
+}
+
+function OmniWorkPane({
+  selectedChatId,
+  onSelectChat,
+  mineOpen,
+  mineClosed,
+}: {
+  selectedChatId: string | null;
+  onSelectChat: (chatId: string) => void;
+  mineOpen: any[];
+  mineClosed: any[];
+}) {
+  const [tab, setTab] = useState<"mine" | "closed">("mine");
+  const items = tab === "mine" ? mineOpen : mineClosed;
+
+  return (
+    <Box
+      w={320}
+      miw={320}
+      style={{
+        borderLeft: "1px solid var(--mantine-color-gray-2)",
+        backgroundColor: "white",
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      <Box p="sm" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
+        <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: rem(0.4) }}>
+          Мои заявки
+        </Text>
+        <Tabs value={tab} onChange={(v) => v && setTab(v as any)} variant="pills" mt="xs">
+          <Tabs.List grow>
+            <Tabs.Tab value="mine">В работе</Tabs.Tab>
+            <Tabs.Tab value="closed">Закрытые</Tabs.Tab>
+          </Tabs.List>
+        </Tabs>
+      </Box>
+      <ScrollArea style={{ flex: 1 }}>
+        <Stack gap={4} p="sm">
+          {items.length ? (
+            items.map((c: any) => (
+              <Paper
+                key={c.chat_id}
+                p="xs"
+                withBorder
+                radius="md"
+                style={{
+                  cursor: "pointer",
+                  borderColor:
+                    selectedChatId === c.chat_id ? "var(--mantine-color-indigo-4)" : "var(--divider)",
+                }}
+                onClick={() => onSelectChat(c.chat_id)}
+              >
+                <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+                  <Stack gap={2} style={{ minWidth: 0 }}>
+                      <Group gap={6} wrap="nowrap">
+                        <ChannelTypeRow
+                          types={(c.channel_types ?? (c.channel_type ? [c.channel_type] : [])) as string[]}
+                        />
+                        <Text size="sm" fw={600} truncate="end" title={c.contact_name ?? "Без имени"} style={{ minWidth: 0 }}>
+                          {c.contact_name ?? "Без имени"}
+                        </Text>
+                      </Group>
+                    <Text size="xs" c="dimmed" truncate="end">
+                      {c.contact_primary_phone ?? ""}
+                    </Text>
+                  </Stack>
+                  <Badge size="xs" variant="light" color="gray">
+                    {String(c.status || "").toUpperCase() === "CLOSED" ? "закрыто" : "в работе"}
+                  </Badge>
+                </Group>
+              </Paper>
+            ))
+          ) : (
+            <Text size="sm" c="dimmed">
+              {tab === "mine" ? "Нет чатов в работе." : "Нет закрытых заявок."}
+            </Text>
+          )}
+        </Stack>
+      </ScrollArea>
+    </Box>
+  );
+}
 
 export default function AdminOmniChatPage() {
+  const qc = useQueryClient();
   const { data: adminSession } = useAdminSession();
-  const allowAudioAttachmentDownload = adminSession?.roles?.includes("owner") ?? false;
-
-  const [searchParams] = useSearchParams();
-  const patientIdFromUrl = (searchParams.get("patient_id") || "").trim();
-
-  const { currentClinicId } = useAdminClinic();
-  const aiFeatures = useAiFeatures(currentClinicId ?? null);
-  const crmStageFeature = aiFeatures.get("omni.tools.crm_suggest_next_stage");
-  const createTaskFeature = aiFeatures.get("omni.tools.create_task");
-  const spotlightGate = useEffectiveAiFeatureGate(currentClinicId ?? null, "omni.spotlight.agent", [], {
-    gateByTools: false,
-  });
-  const availableTools = useAvailableAiTools(currentClinicId ?? null);
-  const canCrmAi = availableTools.hasAll(["summarize_lead_context", "suggest_next_stage_for_lead"]);
-  const canApplyStage = availableTools.hasAll(["update_lead_stage"]);
-  const canCreateAiTask = availableTools.hasAll(["create_task_for_lead"]);
-  const createTaskMutation = useCreateAdminTaskMutation();
-  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
-  const [search, setSearch] = useState("");
+  const adminId = useMemo(() => getAdminId(), []);
+  const isOwner = Boolean(adminSession?.roles?.includes("owner"));
+  const canToggleAi = Boolean(adminSession?.permissions?.includes("omni.inbox.manage"));
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
-  const [messageText, setMessageText] = useState("");
-  const [pendingOmniFile, setPendingOmniFile] = useState<File | null>(null);
-  const [omniAttachError, setOmniAttachError] = useState<string | null>(null);
-  const omniFileInputRef = useRef<HTMLInputElement>(null);
-  const [omniFileAccept, setOmniFileAccept] = useState("*");
-  const messageComposerRef = useRef<HTMLTextAreaElement>(null);
-  /** Явный выбор канала при нескольких каналах в треде (сбрасывается при смене чата). */
-  const [replyChannelPick, setReplyChannelPick] = useState<string | null>(null);
-  const [showOnlyWaiting, setShowOnlyWaiting] = useState(false);
-  const [showHiddenMessages, setShowHiddenMessages] = useState(false);
-  const [replyToMessage, setReplyToMessage] = useState<{
-    id: string;
-    content: string;
-    actorType: string;
-  } | null>(null);
-  const [messageContextMenu, setMessageContextMenu] = useState<{
-    id: string;
-    content: string;
-    actorType: string;
-    x: number;
-    y: number;
-  } | null>(null);
-  const [aiFilter, setAiFilter] = useState<string>("ALL");
-  const [hideModalOpen, setHideModalOpen] = useState(false);
-  const [hideMessageId, setHideMessageId] = useState<string | null>(null);
-  const [hideReason, setHideReason] = useState("");
-  const [formDrawerOpen, setFormDrawerOpen] = useState(false);
-  const [formTemplateId, setFormTemplateId] = useState<string | null>(null);
-  const [formSendVia, setFormSendVia] = useState<"whatsapp" | "sms" | "copy_only">("copy_only");
-  const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDescription, setTaskDescription] = useState("");
-  const [taskPriority, setTaskPriority] = useState<string | null>("medium");
-  const [taskDueAt, setTaskDueAt] = useState("");
-  const [taskAssignMe, setTaskAssignMe] = useState(true);
-  const [bookingModalOpen, setBookingModalOpen] = useState(false);
-  const [bookingDoctorId, setBookingDoctorId] = useState<string | null>(null);
-  const [bookingServiceId, setBookingServiceId] = useState<string | null>(null);
-  const [bookingDate, setBookingDate] = useState("");
-  const [bookingTime, setBookingTime] = useState("");
-  const [bookingNotes, setBookingNotes] = useState("");
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(OMNI_INSPECTOR_COLLAPSED_KEY) === "true";
+  const [deepLinkMessageId, setDeepLinkMessageId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [channelTypeFilters, setChannelTypeFilters] = useState<string[]>([]);
+  const [leftMode, setLeftMode] = useState<"all" | "new">("all");
+
+  const leftFilters = useMemo(
+    () => ({
+      search: search || undefined,
+      channel_types: channelTypeFilters.length ? channelTypeFilters : undefined,
+      page: 1,
+      page_size: 200,
+    }),
+    [search, channelTypeFilters],
+  );
+
+  const { data: allChatsData } = useAdminOmniChats(leftFilters);
+  const { data: newChatsData } = useAdminOmniChats({
+    ...leftFilters,
+    status: "WAITING_FOR_OPERATOR",
+    assignee: "unassigned",
   });
-  const [inspectorTab, setInspectorTab] = useState<OmniInspectorTab>("client");
-  /** P1-B: фильтр «мои диалоги» (assignee=me). */
-  const [assigneeMineOnly, setAssigneeMineOnly] = useState(false);
+  const { data: myChatsData } = useAdminOmniChats({ page: 1, page_size: 200, assignee: "me" });
 
-  const queryClient = useQueryClient();
-  const { data: chatsData, isLoading: chatsLoading, isError: chatsError, error: chatsErr } = useAdminOmniChats({
-    status: showOnlyWaiting ? "WAITING_FOR_OPERATOR" : statusFilter,
-    search: search || undefined,
-    page: 1,
-    page_size: 100,
-    assignee: assigneeMineOnly ? "me" : undefined,
-  });
+  const leftChats = leftMode === "new" ? (newChatsData?.items ?? []) : (allChatsData?.items ?? []);
+  const newCount = newChatsData?.total ?? 0;
 
-  const { sseBroken } = useOmniChatSse(true, selectedChatId);
-  const { data: quickRepliesData } = useOmniQuickReplies(true);
-  const patchOmniChat = usePatchOmniChat();
-
-  const handleRefreshOmniThread = useCallback(() => {
-    if (!selectedChatId) return;
-    void queryClient.invalidateQueries({ queryKey: ["admin-omni-chat-messages", selectedChatId] });
-    void queryClient.invalidateQueries({ queryKey: ["admin-omni-chat-detail", selectedChatId] });
-    void queryClient.invalidateQueries({ queryKey: ["admin-omni-chats"] });
-  }, [queryClient, selectedChatId]);
-
-  const handleAssignOmniToMe = useCallback(() => {
-    const adminId = getAdminId();
-    if (!selectedChatId || !adminId) return;
-    patchOmniChat.mutate({ chatId: selectedChatId, assignee_admin_id: adminId });
-  }, [selectedChatId, patchOmniChat]);
-
-  const visibleChats = useMemo(() => {
-    let items = chatsData?.items ?? [];
-    if (aiFilter === "AI_ONLY") {
-      items = items.filter(
-        (c) => c.ai_mode && c.ai_mode !== "DISABLED"
-      );
-    }
-    return items;
-  }, [aiFilter, chatsData?.items]);
-
-  const { data: patientFromUrl } = usePatient(patientIdFromUrl ? patientIdFromUrl : null);
-  const [autoAppliedPatient, setAutoAppliedPatient] = useState<string | null>(null);
-
-  // Deep-link from patient card: prefill search by phone and auto-select first matching chat.
-  useEffect(() => {
-    if (!patientIdFromUrl) return;
-    if (!patientFromUrl) return;
-    if (autoAppliedPatient === patientIdFromUrl) return;
-    const phone = String(patientFromUrl.phone || "").trim();
-    if (phone && !search.trim()) {
-      setSearch(phone);
-    }
-    setAutoAppliedPatient(patientIdFromUrl);
-  }, [patientIdFromUrl, patientFromUrl, autoAppliedPatient, search]);
-
-  useEffect(() => {
-    if (!patientIdFromUrl) return;
-    if (!patientFromUrl) return;
-    const phone = String(patientFromUrl.phone || "").trim();
-    if (!phone) return;
-    if (selectedChatId) return;
-    const match = visibleChats.find((c) => String(c.contact_primary_phone || "").trim() === phone);
-    if (match) setSelectedChatId(match.chat_id);
-  }, [patientIdFromUrl, patientFromUrl, visibleChats, selectedChatId]);
-
-  const { data: chatDetail, isLoading: detailLoading } = useAdminOmniChatDetail(selectedChatId);
-  const {
-    mergedMessages,
-    isPending: messagesInitialLoading,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-  } = useAdminOmniChatMessagesInfinite(selectedChatId, {
-    limit: 100,
-    include_hidden: showHiddenMessages,
-  });
-
-  const omniMessagesViewportRef = useRef<HTMLDivElement>(null);
-
-  const handleLoadOlderMessages = useCallback(async () => {
-    const el = omniMessagesViewportRef.current;
-    const prevH = el?.scrollHeight ?? 0;
-    const prevTop = el?.scrollTop ?? 0;
-    await fetchNextPage();
-    requestAnimationFrame(() => {
-      const node = omniMessagesViewportRef.current;
-      if (!node) return;
-      node.scrollTop = prevTop + (node.scrollHeight - prevH);
-    });
-  }, [fetchNextPage]);
-
-  const replyChannelOptions = useMemo(() => {
-    const items = mergedMessages;
-    const seen = new Set<string>();
-    const out: { value: string; label: string }[] = [];
-    for (const m of items) {
-      if (m.direction !== "INBOUND" || m.actor_type !== "CLIENT" || !m.channel_id) continue;
-      if (seen.has(m.channel_id)) continue;
-      seen.add(m.channel_id);
-      out.push({ value: m.channel_id, label: omniOutboundChannelLabel(m.channel_type) });
-    }
-    if (out.length === 0 && chatDetail?.channel_id) {
-      out.push({
-        value: chatDetail.channel_id,
-        label: omniOutboundChannelLabel(chatDetail.channel_type),
-      });
-    }
-    return out;
-  }, [mergedMessages, chatDetail?.channel_id, chatDetail?.channel_type]);
-
-  const defaultReplyChannelId = useMemo(() => {
-    const items = mergedMessages;
-    for (let i = items.length - 1; i >= 0; i--) {
-      const m = items[i];
-      if (m.direction === "INBOUND" && m.actor_type === "CLIENT" && m.channel_id) {
-        return m.channel_id;
+  const availableChannelTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of allChatsData?.items ?? []) {
+      for (const t of c.channel_types ?? (c.channel_type ? [c.channel_type] : [])) {
+        if (t) set.add(String(t));
       }
     }
-    return chatDetail?.channel_id ?? null;
-  }, [mergedMessages, chatDetail?.channel_id]);
+    return Array.from(set).sort();
+  }, [allChatsData?.items]);
 
-  const effectiveReplyChannelId = replyChannelPick ?? defaultReplyChannelId;
-  const effectiveReplyLabel =
-    replyChannelOptions.find((o) => o.value === effectiveReplyChannelId)?.label ??
-    omniOutboundChannelLabel(
-      mergedMessages.find((m) => m.channel_id === effectiveReplyChannelId)?.channel_type
-    );
+  const myOpenChats = useMemo(
+    () => (myChatsData?.items ?? []).filter((c) => String(c.status).toUpperCase() !== "CLOSED"),
+    [myChatsData?.items],
+  );
+  const myClosedChats = useMemo(
+    () => (myChatsData?.items ?? []).filter((c) => String(c.status).toUpperCase() === "CLOSED"),
+    [myChatsData?.items],
+  );
 
+  const { data: chatDetail } = useAdminOmniChatDetail(selectedChatId);
+  const { mergedMessages } = useAdminOmniChatMessagesInfinite(selectedChatId, {
+    limit: 100,
+    include_hidden: false,
+  });
   const sendMessage = useSendAdminOmniMessage();
-  const sendOmniWithFile = useSendAdminOmniMessageWithFile();
+  const sendWithFile = useSendAdminOmniMessageWithFile();
+  const resolveChat = useResolveAdminOmniChat();
+  const presenceMut = useAdminOmniChatPresence();
   const updateAiMode = useUpdateOmniChatAiMode();
-  const hideMessage = useHideAdminOmniMessage();
+  const { data: quickRepliesData } = useOmniQuickReplies(true);
+
+  const canViewAnalytics = Boolean(adminSession?.permissions?.includes("erp.owner_reports.read"));
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const today = useMemo(() => new Date(), []);
+  const defaultDateTo = useMemo(() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }, [today]);
+  const defaultDateFrom = useMemo(() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 6);
+    return d.toISOString().slice(0, 10);
+  }, [today]);
+  const [dateFrom, setDateFrom] = useState(defaultDateFrom);
+  const [dateTo, setDateTo] = useState(defaultDateTo);
+  const analyticsQuery = useOmniChatAnalytics(analyticsOpen && canViewAnalytics, {
+    date_from: dateFrom,
+    date_to: dateTo,
+  });
+
+  const [messageText, setMessageText] = useState("");
+  const [replyingTo, setReplyingTo] = useState<{ messageId: string; preview: string } | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const centerPaneRef = useRef<HTMLDivElement>(null);
+  const messagesViewportRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const scrollTopBeforeResizeRef = useRef<number | null>(null);
+  const scrollRestoreRafRef = useRef<number | null>(null);
+  const [composerMaxRows, setComposerMaxRows] = useState(12);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fileAccept, setFileAccept] = useState<string>("*");
+  const [ctxMenu, setCtxMenu] = useState<{
+    opened: boolean;
+    x: number;
+    y: number;
+    messageId: string | null;
+    messageText: string;
+  }>({ opened: false, x: 0, y: 0, messageId: null, messageText: "" });
+
+  // Deep-link support: /admin/omni-chat?chat_id=...&message_id=...
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const cid = url.searchParams.get("chat_id");
+    const mid = url.searchParams.get("message_id");
+    if (cid && !selectedChatId) {
+      setSelectedChatId(cid);
+    }
+    if (mid) {
+      setDeepLinkMessageId(mid);
+    }
+  }, []);
+
+  const tabId = useMemo(() => {
+    try {
+      if (typeof window === "undefined") return "tab";
+      const key = "omni_chat_tab_id";
+      const existing = window.sessionStorage.getItem(key);
+      if (existing) return existing;
+      const next = `tab_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`.slice(0, 64);
+      window.sessionStorage.setItem(key, next);
+      return next;
+    } catch {
+      return "tab";
+    }
+  }, []);
+
+  const draftRef = useRef(false);
+  useEffect(() => {
+    draftRef.current = Boolean(messageText.trim() || pendingFile);
+  }, [messageText, pendingFile]);
+
+  // Presence lease: OPEN on select + HEARTBEAT while active + CLOSE on unselect/unmount.
+  useEffect(() => {
+    if (!selectedChatId) return;
+    const mkId = () => {
+      try {
+        return (crypto as any)?.randomUUID?.() ?? `${Date.now()}_${Math.random()}`;
+      } catch {
+        return `${Date.now()}_${Math.random()}`;
+      }
+    };
+    presenceMut.mutate({
+      chatId: selectedChatId,
+      body: { client_event_id: String(mkId()), tab_id: tabId, event: "OPEN" },
+    });
+    const t = window.setInterval(() => {
+      presenceMut.mutate({
+        chatId: selectedChatId,
+        body: { client_event_id: String(mkId()), tab_id: tabId, event: "HEARTBEAT" },
+      });
+    }, 30000);
+    return () => {
+      window.clearInterval(t);
+      // UX safety: if there is a draft (text/file), avoid sending CLOSE immediately.
+      // Lease will expire by TTL, preventing surprise auto-resolve while user is composing.
+      if (!draftRef.current) {
+        presenceMut.mutate({
+          chatId: selectedChatId,
+          body: { client_event_id: String(mkId()), tab_id: tabId, event: "CLOSE" },
+        });
+      }
+    };
+  }, [selectedChatId, tabId]);
+
+  // Best-effort scroll to deep-linked message when it becomes available in DOM.
+  useEffect(() => {
+    if (!selectedChatId || !deepLinkMessageId) return;
+    // Only try when we have some messages loaded.
+    if (!mergedMessages?.length) return;
+    let tries = 0;
+    let raf = 0;
+    const tick = () => {
+      tries += 1;
+      const el =
+        document.getElementById(`omni-msg-${deepLinkMessageId}`) ||
+        document.querySelector(`[data-omni-message-id="${CSS.escape(deepLinkMessageId)}"]`);
+      if (el && "scrollIntoView" in el) {
+        try {
+          (el as HTMLElement).scrollIntoView({ block: "center", behavior: "smooth" });
+        } catch {
+          (el as HTMLElement).scrollIntoView();
+        }
+        setDeepLinkMessageId(null);
+        return;
+      }
+      if (tries < 16) raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, [deepLinkMessageId, mergedMessages?.length, selectedChatId]);
 
   useEffect(() => {
-    setReplyChannelPick(null);
-    setReplyToMessage(null);
-    setMessageContextMenu(null);
-    setPendingOmniFile(null);
-    setOmniAttachError(null);
+    setMessageText("");
+    setPendingFile(null);
+    setAttachError(null);
+    setReplyingTo(null);
   }, [selectedChatId]);
 
-  const getClinicChatBlob = useCallback(
-    (conversationId: string, attachmentId: string) =>
-      api.getBlob(`/v1/admin/chat/conversations/${conversationId}/attachments/${attachmentId}/file`),
-    []
+  useEffect(() => {
+    const recompute = () => {
+      const h = centerPaneRef.current?.getBoundingClientRect().height ?? 0;
+      if (!h) return;
+      const maxPx = Math.max(180, Math.floor(h * 0.33));
+      const approxRowPx = 22;
+      const next = Math.max(6, Math.min(18, Math.floor(maxPx / approxRowPx)));
+      setComposerMaxRows(next);
+    };
+    recompute();
+    window.addEventListener("resize", recompute);
+    return () => window.removeEventListener("resize", recompute);
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const el = messagesViewportRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  const isAtBottom = useCallback(() => {
+    const el = messagesViewportRef.current;
+    if (!el) return true;
+    const threshold = 24;
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    return remaining <= threshold;
+  }, []);
+
+  // Track whether user is reading history (not at bottom).
+  useEffect(() => {
+    const el = messagesViewportRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      shouldStickToBottomRef.current = isAtBottom();
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll as any);
+  }, [isAtBottom]);
+
+  // Keep scroll stable when composer / layout height changes.
+  useEffect(() => {
+    const el = messagesViewportRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => {
+      const viewport = messagesViewportRef.current;
+      if (!viewport) return;
+      if (shouldStickToBottomRef.current) {
+        scrollToBottom("auto");
+        return;
+      }
+      if (scrollTopBeforeResizeRef.current == null) {
+        scrollTopBeforeResizeRef.current = viewport.scrollTop;
+      }
+      if (scrollRestoreRafRef.current) {
+        cancelAnimationFrame(scrollRestoreRafRef.current);
+      }
+      scrollRestoreRafRef.current = requestAnimationFrame(() => {
+        const v = messagesViewportRef.current;
+        if (v && scrollTopBeforeResizeRef.current != null) {
+          v.scrollTop = scrollTopBeforeResizeRef.current;
+        }
+        scrollTopBeforeResizeRef.current = null;
+        scrollRestoreRafRef.current = null;
+      });
+    });
+    obs.observe(el);
+    return () => {
+      obs.disconnect();
+      if (scrollRestoreRafRef.current) cancelAnimationFrame(scrollRestoreRafRef.current);
+    };
+  }, [scrollToBottom]);
+
+  // When new messages arrive: stick to bottom only if user was at bottom.
+  useEffect(() => {
+    if (!selectedChatId) return;
+    if (!mergedMessages?.length) return;
+    if (!shouldStickToBottomRef.current) return;
+    scrollToBottom("auto");
+  }, [mergedMessages?.length, scrollToBottom, selectedChatId]);
+
+  const canClaim =
+    !!chatDetail &&
+    !chatDetail.assignee_admin_id &&
+    String(chatDetail.status || "").toUpperCase() !== "CLOSED";
+
+  const handleSend = useCallback(() => {
+    if (!selectedChatId) return;
+    setAttachError(null);
+    if (pendingFile) {
+      const bodyRaw = messageText.trim();
+      const body = replyingTo ? `reply_to: ${replyingTo.messageId}\n${bodyRaw}` : bodyRaw;
+      sendWithFile.mutate(
+        { chatId: selectedChatId, body, file: pendingFile },
+        {
+          onSuccess: () => {
+            setMessageText("");
+            setReplyingTo(null);
+            setPendingFile(null);
+            qc.invalidateQueries({ queryKey: ["admin-omni-chat-messages", selectedChatId] });
+            qc.invalidateQueries({ queryKey: ["admin-omni-chat-detail", selectedChatId] });
+            qc.invalidateQueries({ queryKey: ["admin-omni-chats"] });
+            queueMicrotask(() => composerRef.current?.focus());
+          },
+          onError: () => setAttachError("Не удалось отправить файл"),
+        },
+      );
+      return;
+    }
+    const content = messageText.trim();
+    if (!content) return;
+    const payload = replyingTo ? `reply_to: ${replyingTo.messageId}\n${content}` : content;
+    sendMessage.mutate(
+      { chatId: selectedChatId, content: payload },
+      {
+        onSuccess: () => {
+          setMessageText("");
+          setReplyingTo(null);
+          qc.invalidateQueries({ queryKey: ["admin-omni-chat-messages", selectedChatId] });
+          qc.invalidateQueries({ queryKey: ["admin-omni-chat-detail", selectedChatId] });
+          qc.invalidateQueries({ queryKey: ["admin-omni-chats"] });
+          queueMicrotask(() => composerRef.current?.focus());
+        },
+      },
+    );
+  }, [messageText, pendingFile, qc, replyingTo, selectedChatId, sendMessage, sendWithFile]);
+
+  const canResolveSelected = Boolean(
+    selectedChatId &&
+      chatDetail &&
+      String(chatDetail.status || "").toUpperCase() !== "CLOSED" &&
+      (isOwner || (!!adminId && chatDetail.assignee_admin_id === adminId)),
   );
+
+  const getClinicChatBlob = useCallback((conversationId: string, attachmentId: string) => {
+    return getAdminClinicChatAttachmentBlob(conversationId, attachmentId);
+  }, []);
 
   const getOmniBlobForMessage = useCallback(
     (messageId: string, attachmentId: string) => {
       if (!selectedChatId) return Promise.reject(new Error("no chat"));
-      return api.getBlob(
-        `/v1/admin/omni-chats/${selectedChatId}/messages/${messageId}/attachments/${attachmentId}/file`
-      );
+      return getAdminOmniAttachmentBlob(selectedChatId, messageId, attachmentId);
     },
-    [selectedChatId]
+    [selectedChatId],
   );
 
-  const handleSend = () => {
-    if (!selectedChatId) return;
-    if (!messageText.trim() && !pendingOmniFile) return;
-    const reply_channel_id =
-      replyChannelOptions.length > 1 && effectiveReplyChannelId ? effectiveReplyChannelId : undefined;
+  const pickFile = useCallback(
+    (accept: string) => {
+      setFileAccept(accept);
+      queueMicrotask(() => fileInputRef.current?.click());
+    },
+    [],
+  );
 
-    if (pendingOmniFile) {
-      if (pendingOmniFile.size > MAX_OMNI_UPLOAD_BYTES) {
-        setOmniAttachError("Файл больше 5 МБ");
-        return;
-      }
-      setOmniAttachError(null);
-      sendOmniWithFile.mutate(
-        {
-          chatId: selectedChatId,
-          body: messageText.trim(),
-          file: pendingOmniFile,
-          reply_channel_id,
-        },
-        {
-          onSuccess: () => {
-            setMessageText("");
-            setPendingOmniFile(null);
-            setReplyToMessage(null);
-          },
-        }
-      );
-      return;
-    }
-
-    const payload: {
-      chatId: string;
-      content: string;
-      reply_channel_id?: string | null;
-    } = {
-      chatId: selectedChatId,
-      content: messageText.trim(),
-    };
-    if (reply_channel_id) {
-      payload.reply_channel_id = reply_channel_id;
-    }
-    sendMessage.mutate(payload, {
-      onSuccess: () => {
-        setMessageText("");
-        setReplyToMessage(null);
-      },
+  const applyQuickReply = useCallback((body: string) => {
+    if (!body) return;
+    setMessageText((prev) => {
+      const next = prev ? `${prev}${prev.endsWith("\n") ? "" : "\n"}${body}` : body;
+      return next;
     });
-  };
-
-  const selectedItem = chatsData?.items?.find((c) => c.chat_id === selectedChatId) ?? null;
-  const contactId = selectedItem?.contact_id ?? chatDetail?.contact_id ?? null;
-  const { data: loyaltySummary } = useAdminLoyaltySummaryByContact(contactId);
-  const patientId = loyaltySummary?.patient_id ?? null;
-  const { data: formSubmissions } = useAdminFormSubmissions({
-    patient_id: patientId ?? undefined,
-  });
-
-  const { data: openTasks } = useAdminTasksOpen();
-  const openTasksCount = openTasks?.length ?? 0;
-
-  const leadId = chatDetail?.lead_id ?? null;
-  const aiSummary = useAiLeadSummary(leadId);
-  const aiSuggestStage = useAiSuggestNextStage(leadId);
-  const aiApplyStage = useAiUpdateLeadStage(leadId);
-  const aiCreateTask = useAiCreateTaskForLead(leadId);
-  const aiIgnore = useAiIgnoreLeadRecommendation(leadId);
-
-  const { data: formTemplates } = useAdminFormTemplates();
-  const sendFormLink = useSendFormLink();
-  const createBooking = useCreateAdminBooking();
-  const { data: doctors } = useDoctors({
-    clinic_id: currentClinicId ?? undefined,
-    is_active: true,
-    enabled: Boolean(currentClinicId),
-  });
-  const { data: services } = useServices({
-    clinic_id: currentClinicId ?? undefined,
-  });
-
-  const handleSendFormLink = useCallback(() => {
-    if (!patientId || !formTemplateId) return;
-    sendFormLink.mutate(
-      { patient_id: patientId, template_id: formTemplateId, send_via: formSendVia },
-      {
-        onSuccess: (res) => {
-          if (res.sent) setFormDrawerOpen(false);
-          if (res.sent && formSendVia === "copy_only" && res.url) {
-            try {
-              navigator.clipboard.writeText(res.url);
-            } catch {
-              // ignore
-            }
-          }
-        },
-      }
-    );
-  }, [patientId, formTemplateId, formSendVia, sendFormLink]);
-
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  useHotkeys([
-    ["mod+J", () => { searchInputRef.current?.focus(); }],
-    ["mod+Enter", () => { if (selectedChatId && (messageText.trim() || pendingOmniFile)) handleSend(); }],
-    ["Escape", () => { setFormDrawerOpen(false); setTaskDrawerOpen(false); }],
-    ["mod+b", () => { if (selectedChatId && patientId && currentClinicId) handleOpenBookingModal(); }],
-    /** Правая панель «Рабочий центр»: свернуть/развернуть (как левое меню). Не срабатывает в полях ввода. */
-    ["mod+shift+l", () => { setInspectorCollapsed((c) => !c); }],
-  ]);
-
-  useEffect(() => {
-    // Prefill task template when context changes.
-    if (!taskDrawerOpen) return;
-    const base = leadId ? "Follow‑up по лиду из чата" : patientId ? "Follow‑up по пациенту из чата" : "Follow‑up по чату";
-    setTaskTitle((prev) => prev || base);
-  }, [taskDrawerOpen, leadId, patientId]);
-
-  useEffect(() => {
-    localStorage.setItem(OMNI_INSPECTOR_COLLAPSED_KEY, String(inspectorCollapsed));
-  }, [inspectorCollapsed]);
-
-  const handleOpenTaskDrawer = () => {
-    setTaskDrawerOpen(true);
-    void logUiEvent({
-      event_name: "task_create_open",
-      clinic_id: currentClinicId,
-      feature_id: createTaskFeature.id,
-      feature_status: createTaskFeature.status,
-      meta: { lead_id: leadId, patient_id: patientId, contact_id: contactId },
-    });
-  };
-
-  const handleOpenBookingModal = useCallback(() => {
-    setBookingModalOpen(true);
-    setBookingDoctorId(null);
-    setBookingServiceId(null);
-    setBookingDate("");
-    setBookingTime("");
-    setBookingNotes("");
+    queueMicrotask(() => composerRef.current?.focus());
   }, []);
 
-  const handleCreateBooking = useCallback(() => {
-    if (!currentClinicId || !patientId || !bookingDoctorId || !bookingServiceId || !bookingDate || !bookingTime) {
-      return;
-    }
-    createBooking.mutate(
-      {
-        clinic_id: currentClinicId,
-        patient_id: patientId,
-        doctor_id: bookingDoctorId,
-        service_id: bookingServiceId,
-        appointment_date: bookingDate,
-        appointment_time: bookingTime.length === 5 ? `${bookingTime}:00` : bookingTime,
-        notes: bookingNotes.trim() ? bookingNotes.trim() : undefined,
-      },
-      {
-        onSuccess: () => {
-          setBookingModalOpen(false);
-          setBookingDoctorId(null);
-          setBookingServiceId(null);
-          setBookingDate("");
-          setBookingTime("");
-          setBookingNotes("");
-        },
-      }
-    );
-  }, [
-    bookingDate,
-    bookingDoctorId,
-    bookingNotes,
-    bookingServiceId,
-    bookingTime,
-    createBooking,
-    currentClinicId,
-    patientId,
-  ]);
+  const startReply = useCallback(
+    (messageId: string) => {
+      const msg = (mergedMessages as any[]).find((x) => String(x.id) === String(messageId));
+      const raw = msg ? String(msg.content || "") : "";
+      const meta = parseReplyLine(raw);
+      const preview = String((meta ? meta.rest : raw) || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, 180) || "Сообщение";
+      setReplyingTo({ messageId, preview });
+      queueMicrotask(() => composerRef.current?.focus());
+    },
+    [mergedMessages],
+  );
 
-  const handleCreateTask = () => {
-    if (createTaskFeature.status === "stub") return;
-    if (!canCreateAiTask) return;
-    if (!taskTitle.trim()) return;
-    const adminId = getAdminId();
-    const dueIso = taskDueAt ? new Date(taskDueAt).toISOString() : null;
-    void logUiEvent({
-      event_name: "task_create_submit",
-      clinic_id: currentClinicId,
-      feature_id: createTaskFeature.id,
-      feature_status: createTaskFeature.status,
-      meta: { lead_id: leadId, patient_id: patientId, contact_id: contactId },
-    });
-    createTaskMutation.mutate(
-      {
-        title: taskTitle.trim(),
-        description: taskDescription.trim() ? taskDescription.trim() : null,
-        priority: taskPriority ?? "medium",
-        due_at: dueIso,
-        assignee_id: taskAssignMe ? adminId : null,
-        patient_id: patientId ?? undefined,
-        lead_id: leadId ?? undefined,
-      },
-      {
-        onSuccess: () => {
-          setTaskDrawerOpen(false);
-          setTaskTitle("");
-          setTaskDescription("");
-          setTaskPriority("medium");
-          setTaskDueAt("");
-          setTaskAssignMe(true);
-        },
-      }
-    );
-  };
+  useHotkeys([["mod+enter", () => handleSend()]]);
 
-  useEffect(() => {
-    if (!selectedChatId && visibleChats.length > 0) {
-      setSelectedChatId(visibleChats[0].chat_id);
-      return;
-    }
-    if (selectedChatId && !visibleChats.some((c) => c.chat_id === selectedChatId)) {
-      setSelectedChatId(visibleChats[0]?.chat_id ?? null);
-    }
-  }, [selectedChatId, visibleChats]);
-
-  const handleOpenHideModal = (messageId: string) => {
-    setHideMessageId(messageId);
-    setHideReason("");
-    setHideModalOpen(true);
-  };
-
-  const handleConfirmHide = () => {
-    if (!selectedChatId || !hideMessageId || !hideReason.trim()) return;
-    hideMessage.mutate(
-      {
-        chatId: selectedChatId,
-        messageId: hideMessageId,
-        reason: hideReason.trim(),
-      },
-      {
-        onSuccess: () => {
-          setHideModalOpen(false);
-          setHideMessageId(null);
-          setHideReason("");
-        },
-      }
-    );
-  };
-
-  const handleReplyToMessage = useCallback((message: { id: string; content: string; actorType: string }) => {
-    setReplyToMessage(message);
-  }, []);
-
-  const handleCopyMessage = useCallback((content: string) => {
-    if (typeof navigator === "undefined" || !navigator.clipboard) return;
-    void navigator.clipboard.writeText(content);
-  }, []);
-
-  useEffect(() => {
-    if (!messageContextMenu) return;
-    const closeMenu = () => setMessageContextMenu(null);
-    window.addEventListener("click", closeMenu);
-    window.addEventListener("scroll", closeMenu, true);
-    return () => {
-      window.removeEventListener("click", closeMenu);
-      window.removeEventListener("scroll", closeMenu, true);
-    };
-  }, [messageContextMenu]);
+  void resolveChat;
 
   return (
-    <Stack gap={0} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", height: "100%" }}>
+    <Stack gap={0} style={{ height: "100%", minHeight: 0 }}>
       <Box px="md" pt="sm" style={{ flexShrink: 0 }}>
         <ContextBar
-          title="Chat & AI — единый чат с пациентами"
-          breadcrumbs={
-            sseBroken ? (
-              <Tooltip label="Realtime недоступен: работает fallback polling (12с) и авто-переподключение SSE.">
-                <Badge size="xs" color="red" variant="dot">
-                  offline
-                </Badge>
-              </Tooltip>
-            ) : null
+          title="Omni‑чат — только работа"
+          actions={
+            <Group gap="xs">
+              {canViewAnalytics ? (
+                <Button size="xs" variant="subtle" color="gray" onClick={() => setAnalyticsOpen(true)}>
+                  Аналитика
+                </Button>
+              ) : null}
+            </Group>
           }
         />
       </Box>
-      <Box
-        px="md"
-        pb="sm"
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
-        <Stack gap="md" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-          <Flex gap="sm" wrap="wrap" align="center">
-            <TextInput
-              ref={searchInputRef}
-              placeholder="Поиск по контакту (⌘J)"
-              value={search}
-              onChange={(e) => setSearch(e.currentTarget.value)}
-              style={{ flex: 1, minWidth: 200 }}
-            />
-            <Group gap="xs" wrap="wrap">
-              <SegmentedControl
-                size="xs"
-                value={showOnlyWaiting ? "waiting" : "all"}
-                onChange={(v) => {
-                  if (v === "waiting") {
-                    setShowOnlyWaiting(true);
-                    setStatusFilter(undefined);
-                  } else {
-                    setShowOnlyWaiting(false);
-                    setStatusFilter(undefined);
-                  }
-                }}
-                data={[
-                  { label: "Все", value: "all" },
-                  { label: "Неотвеченные", value: "waiting" },
-                ]}
-                styles={(theme) => ({
-                  root: {
-                    backgroundColor: theme.colors.dark[0],
-                    padding: "var(--space-2)",
-                    borderRadius: theme.radius.sm,
-                  },
-                  label: { fontWeight: 600, fontSize: theme.fontSizes.xs },
-                })}
-              />
-              <Button variant="subtle" size="xs" disabled title="Фильтр по VIP (при наличии API)">
-                От VIP
-              </Button>
-              <Button variant="subtle" size="xs" disabled title="С ошибкой оплаты (при наличии API)">
-                С ошибкой оплаты
-              </Button>
-            </Group>
-            <Select
-              placeholder="Статус диалога"
-              value={statusFilter}
-              onChange={(value) => {
-                setStatusFilter(value || undefined);
-                setShowOnlyWaiting(false);
-              }}
-              data={[
-                { value: "", label: "Все" },
-                { value: "OPEN", label: "Открыт" },
-                { value: "WAITING_FOR_OPERATOR", label: "Ждёт оператора" },
-                { value: "IN_PROGRESS", label: "В работе" },
-                { value: "CLOSED", label: "Закрыт" },
-              ]}
-              allowDeselect
-              style={{ width: 220 }}
-            />
-            <Select
-              placeholder="Фильтр по AI‑режиму"
-              value={aiFilter}
-              onChange={(value) => setAiFilter(value || "ALL")}
-              data={[
-                { value: "ALL", label: "Все режимы" },
-                { value: "AI_ONLY", label: "Только AI (автоответ/подсказки)" },
-              ]}
-              style={{ width: 220 }}
-            />
-            <Tooltip label="Показать только диалоги, назначенные на вас">
-              <Checkbox
-                size="xs"
-                label="Только мои"
-                checked={assigneeMineOnly}
-                onChange={(e) => setAssigneeMineOnly(e.currentTarget.checked)}
-                styles={{ label: { whiteSpace: "nowrap" } }}
-              />
-            </Tooltip>
-          </Flex>
 
-          {chatsLoading ? (
-            <DataSkeleton lines={6} />
-          ) : chatsError ? (
-            <QueryErrorAlert error={chatsErr} title="Не удалось загрузить диалоги" />
-          ) : (
-            <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <Flex
-              direction="row"
-              gap={0}
-              w="100%"
-              style={{
-                flex: 1,
-                minHeight: 0,
-                overflow: "hidden",
-              }}
-            >
-              <Box
-                w={320}
-                style={{
-                  borderRight: "1px solid var(--mantine-color-gray-2)",
-                  backgroundColor: "white",
-                  minHeight: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <ScrollArea type="scroll" scrollbarSize={6} style={{ flex: 1, minHeight: 0 }}>
-                <Stack gap={4} p="xs" miw={0}>
-                  {!chatsData?.items?.length ? (
-                    <EmptyStateHint
-                      title="Нет диалогов"
-                      subtitle="Сообщения появятся из Telegram, веб‑чата и других каналов."
-                    />
-                  ) : (
-                    visibleChats.map((c) => {
-                      const aiShort = omniChatListAiShort(c.ai_mode);
-                      return (
-                      <Box
-                        key={c.chat_id}
-                        p={6}
-                        style={{
-                          cursor: "pointer",
-                          borderRadius: "var(--radius-sm)",
-                          minWidth: 0,
-                          width: "100%",
-                          backgroundColor:
-                            selectedChatId === c.chat_id ? "var(--dark-alpha-06)" : "transparent",
-                          border:
-                            selectedChatId === c.chat_id
-                              ? "1px solid var(--divider)"
-                              : "1px solid transparent",
-                          boxShadow:
-                            selectedChatId === c.chat_id
-                              ? "inset 3px 0 0 var(--mantine-color-gray-5)"
-                              : undefined,
-                        }}
-                        onClick={() => setSelectedChatId(c.chat_id)}
-                      >
-                        <Text
-                          fw={600}
-                          size="sm"
-                          truncate="end"
-                          title={
-                            (c.contact_name || c.contact_primary_phone || "Без имени") as string
-                          }
-                          style={{ minWidth: 0 }}
-                        >
-                          {c.contact_name || c.contact_primary_phone || "Без имени"}
-                        </Text>
-                        <Text size="xs" c="dimmed" truncate="end" lineClamp={1} style={{ minWidth: 0 }}>
-                          {c.contact_primary_phone || "—"}
-                        </Text>
-                        {c.assignee_name ? (
-                          <Badge size="xs" variant="light" color="blue" radius="xs" mt={2} style={{ alignSelf: "flex-start" }}>
-                            {c.assignee_name}
-                          </Badge>
-                        ) : null}
-                        <Text
-                          component="div"
-                          fz={9}
-                          lh={1.35}
-                          mt={4}
-                          lineClamp={1}
-                          style={{
-                            minWidth: 0,
-                            letterSpacing: rem(0.2),
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          <Text
-                            component="span"
-                            fz={9}
-                            fw={500}
-                            tt="uppercase"
-                            style={{ color: omniChatListStatusColor(c.status) }}
-                            title={omniChatStatusTooltip(c.status)}
-                          >
-                            {c.status}
-                          </Text>
-                          {c.last_actor_type ? (
-                            <>
-                              <Text component="span" c="dimmed" mx={3} fz={9}>
-                                ·
-                              </Text>
-                              <Text component="span" c="dimmed" fw={400} fz={9}>
-                                {c.last_actor_type}
-                              </Text>
-                            </>
-                          ) : null}
-                          {aiShort ? (
-                            <>
-                              <Text component="span" c="dimmed" mx={3} fz={9}>
-                                ·
-                              </Text>
-                              <Text
-                                component="span"
-                                fw={500}
-                                tt="uppercase"
-                                fz={9}
-                                style={{ color: "var(--mantine-color-ai-6)" }}
-                              >
-                                {aiShort}
-                              </Text>
-                            </>
-                          ) : null}
-                        </Text>
-                      </Box>
-                    );
-                    })
-                  )}
-                </Stack>
-                </ScrollArea>
-              </Box>
-              <Flex
-                direction="column"
-                flex={1}
-                bg="gray.0"
-                style={{
-                  minWidth: 0,
-                  position: "relative",
-                  minHeight: 0,
-                  overflow: "hidden",
-                }}
-              >
-                {!selectedChatId ? (
-                  <Stack h="100%" align="center" justify="center">
-                    <EmptyStateHint
-                      title="Выберите диалог"
-                      subtitle="Клик по строке слева, чтобы открыть переписку."
-                    />
-                  </Stack>
-                ) : (
-                  <Box
-                    p={0}
+      <Flex style={{ flex: 1, minHeight: 0 }}>
+        {/* Left inbox */}
+        <Box
+          w={300}
+          miw={300}
+          style={{
+            borderRight: "1px solid var(--mantine-color-gray-2)",
+            background: "white",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+            overflow: "hidden",
+          }}
+        >
+          <Box p="sm" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
+            <Group justify="space-between" wrap="nowrap" gap="xs">
+              <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: rem(0.4) }}>
+                Входящие
+              </Text>
+            </Group>
+
+            <Stack gap="xs" mt="xs">
+              <Tabs value={leftMode} onChange={(v) => v && setLeftMode(v as any)} variant="pills">
+                <Tabs.List grow>
+                  <Tabs.Tab value="all">Все чаты</Tabs.Tab>
+                  <Tabs.Tab value="new">Новые ({newCount})</Tabs.Tab>
+                </Tabs.List>
+              </Tabs>
+
+              <TextInput
+                size="xs"
+                placeholder="Поиск по контакту"
+                leftSection={<IconSearch size={14} />}
+                value={search}
+                onChange={(e) => setSearch(e.currentTarget.value)}
+              />
+
+              <MultiSelect
+                size="xs"
+                placeholder="Каналы: все"
+                value={channelTypeFilters}
+                onChange={setChannelTypeFilters}
+                data={availableChannelTypes.map((t) => ({ value: t, label: t }))}
+                clearable
+                searchable
+                nothingFoundMessage="Нет каналов"
+              />
+            </Stack>
+          </Box>
+
+          <ScrollArea style={{ flex: 1 }}>
+            <Stack gap={4} p="sm">
+              {leftChats.length ? (
+                leftChats.map((c: any) => (
+                  (() => {
+                    const closed = isClosedStatus(c.status);
+                    const unassignedWaiting = !closed && !c.assignee_admin_id;
+                    const myNeedsReply =
+                      !closed &&
+                      !!adminId &&
+                      c.assignee_admin_id === adminId &&
+                      isContactActor(c.last_actor_type);
+
+                    const needsAttention = Boolean(c.needs_attention) || unassignedWaiting || myNeedsReply;
+                    const tone: "waiting" | "needs_reply" | "none" =
+                      unassignedWaiting ? "waiting" : myNeedsReply ? "needs_reply" : "none";
+
+                    const bg =
+                      tone === "waiting"
+                        ? "var(--mantine-color-yellow-0)"
+                        : tone === "needs_reply"
+                          ? "var(--mantine-color-indigo-0)"
+                          : "white";
+                    const border =
+                      selectedChatId === c.chat_id
+                        ? "var(--mantine-color-indigo-4)"
+                        : tone === "waiting"
+                          ? "var(--mantine-color-yellow-4)"
+                          : tone === "needs_reply"
+                            ? "var(--mantine-color-indigo-3)"
+                            : "var(--divider)";
+
+                    const dotColor =
+                      tone === "waiting"
+                        ? "var(--mantine-color-yellow-7)"
+                        : tone === "needs_reply"
+                          ? "var(--mantine-color-indigo-7)"
+                          : "transparent";
+
+                    return (
+                  <Paper
+                    key={c.chat_id}
+                    p="xs"
+                    withBorder
+                    radius="md"
                     style={{
-                      height: "100%",
-                      minHeight: 0,
-                      display: "flex",
-                      flexDirection: "column",
-                      overflow: "hidden",
+                      cursor: "pointer",
+                      background: bg,
+                      borderColor: border,
                     }}
+                    onClick={() => setSelectedChatId(c.chat_id)}
                   >
-                    <Box
-                      px="md"
-                      pt="sm"
-                      pb="sm"
-                      style={{
-                        flexShrink: 0,
-                        borderBottom: "1px solid var(--mantine-color-gray-2)",
-                        backgroundColor: "var(--mantine-color-gray-0)",
-                      }}
-                    >
-                      {detailLoading ? (
-                        <DataSkeleton lines={2} />
-                      ) : (
-                        <Group justify="space-between" py="sm" px="md" wrap="nowrap" gap="md">
-                          <Stack gap={2} miw={180}>
-                            <Text fw={700} size="md" lh={1.25}>
-                              {chatDetail?.contact_name ||
-                                chatDetail?.contact_primary_phone ||
-                                selectedItem?.contact_name ||
-                                selectedItem?.contact_primary_phone ||
-                                "Контакт"}
+                    <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+                      <Stack gap={2} style={{ minWidth: 0 }}>
+                        <Group gap={6} wrap="nowrap" align="center">
+                          <ChannelTypeRow
+                            types={(c.channel_types ?? (c.channel_type ? [c.channel_type] : [])) as string[]}
+                          />
+                          <Text size="sm" fw={600} truncate="end" title={c.contact_name ?? "Без имени"} style={{ minWidth: 0 }}>
+                            {c.contact_name ?? "Без имени"}
+                          </Text>
+                        </Group>
+                        <Group gap={6} wrap="nowrap" align="center">
+                          {c.last_message_at ? (
+                            <Text size="xs" c="dimmed">
+                              {formatTimeLabel(c.last_message_at)}
                             </Text>
-                            {chatDetail && (
-                              <Group gap={6} wrap="nowrap">
-                                <Badge
-                                  size="xs"
-                                  variant="dot"
-                                  color={
-                                    String(chatDetail.status).toUpperCase() === "OPEN"
-                                      ? SEMANTIC.status.success
-                                      : String(chatDetail.status).toUpperCase() === "CLOSED"
-                                        ? "gray"
-                                        : SEMANTIC.opsSeverity.warning
-                                  }
-                                  radius="xs"
-                                >
-                                  {chatDetail.status}
-                                </Badge>
-                                {chatDetail.channel_type ? (
-                                  <Text size="xs" c="dimmed" fw={600} tt="uppercase" style={{ letterSpacing: rem(0.5) }}>
-                                    {String(chatDetail.channel_type).replace(/_/g, " ")}
-                                  </Text>
-                                ) : null}
-                                {chatDetail.assignee_name ? (
-                                  <Badge size="xs" variant="light" color="brand" radius="xs">
-                                    {chatDetail.assignee_name}
-                                  </Badge>
-                                ) : (
-                                  <Text size="xs" c="dimmed">
-                                    Без ответственного
-                                  </Text>
-                                )}
-                              </Group>
-                            )}
-                          </Stack>
-                          {chatDetail ? (
-                            <Group gap={8} align="center" wrap="nowrap">
-                              <Select
-                                size="xs"
-                                w={160}
-                                label={
-                                  <Text component="span" size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: rem(0.5) }}>
-                                    Режим AI
-                                  </Text>
-                                }
-                                leftSection={<IconRobot size={14} color="var(--mantine-color-ai-6)" />}
-                                data={OMNI_CHAT_AI_MODES.map((v) => ({
-                                  value: v,
-                                  label:
-                                    v === "DISABLED"
-                                      ? "Выкл"
-                                      : v === "AUTO_REPLY"
-                                        ? "Автоответ"
-                                        : "Подсказки",
-                                }))}
-                                value={chatDetail.ai_mode || "DISABLED"}
-                                onChange={(v) => {
-                                  if (v && selectedChatId)
-                                    updateAiMode.mutate({
-                                      chatId: selectedChatId,
-                                      ai_mode: v,
-                                    });
-                                }}
-                                disabled={updateAiMode.isPending}
-                                styles={{
-                                  input: { fontWeight: 600 },
-                                }}
-                              />
-                            </Group>
+                          ) : null}
+                          {c.contact_primary_phone ? (
+                            <Text size="xs" c="dimmed" truncate="end" style={{ minWidth: 0 }}>
+                              {c.contact_primary_phone}
+                            </Text>
                           ) : null}
                         </Group>
-                      )}
-                    </Box>
-                    <ScrollArea
-                      type="scroll"
-                      scrollbarSize={6}
-                      offsetScrollbars
-                      viewportRef={omniMessagesViewportRef}
-                      style={{ flex: 1, minHeight: 0, padding: "var(--space-20)" }}
-                    >
-                      <Stack gap={0} pb={0}>
-                        {hasNextPage ? (
-                          <Button
-                            size="xs"
-                            variant="light"
-                            fullWidth
-                            leftSection={<IconHistory size={14} stroke={1.5} />}
-                            onClick={() => void handleLoadOlderMessages()}
-                            loading={isFetchingNextPage}
-                            disabled={messagesInitialLoading}
-                          >
-                            Ранее
-                          </Button>
+                        {leftMode === "all" && c.assignee_name ? (
+                          <Text size="xs" c="dimmed" truncate="end">
+                            В работе: {c.assignee_name}
+                          </Text>
                         ) : null}
-                        {chatDetail?.lead_id ? (
-                          <Stack gap={6} align="flex-end">
-                                <Text size="xs" c="dimmed">
-                                  CRM‑лид:
-                                </Text>
-                                <Flex gap="xs" align="center" wrap="wrap" justify="flex-end">
-                                  {chatDetail.lead_stage_name && (
-                                    <Badge size="xs" variant="light" color="blue">
-                                      {chatDetail.lead_stage_name}
-                                    </Badge>
-                                  )}
-                                  <Tooltip label="Прогноз CRM (не проводка ERP)">
-                                    <Badge size="xs" variant="outline">
-                                      Оценка: {chatDetail.lead_estimated_value ?? "0"} ₽
-                                    </Badge>
-                                  </Tooltip>
-                                  <Tooltip label="Сумма доходов ERP по лиду (0 — пока нет проводок)">
-                                    <Badge size="xs" variant="outline" color="green">
-                                      Факт (ERP): {chatDetail.lead_actual_value ?? "0"} ₽
-                                    </Badge>
-                                  </Tooltip>
-                                </Flex>
-                                <Button
-                                  component={Link}
-                                  to={`/admin/sales?lead_id=${encodeURIComponent(
-                                    chatDetail.lead_id,
-                                  )}`}
-                                  size="xs"
-                                  variant="light"
-                                >
-                                  Открыть лид
-                                </Button>
-
-                                <Divider my={6} />
-                                <Stack gap={6} align="flex-end">
-                                  <Group gap="xs" justify="flex-end">
-                                    <Text size="xs" c="dimmed">
-                                      AI‑рекомендации
-                                    </Text>
-                                    <AiFeatureBadge status={crmStageFeature.status} />
-                                  </Group>
-                                  <Group gap="xs" justify="flex-end">
-                                    <Button
-                                      size="xs"
-                                      variant="light"
-                                      onClick={() => {
-                                        if (crmStageFeature.status === "stub") return;
-                                        if (!canCrmAi) return;
-                                        void logUiEvent({
-                                          event_name: "ai_click_summary",
-                                          clinic_id: currentClinicId,
-                                          feature_id: crmStageFeature.id,
-                                          feature_status: crmStageFeature.status,
-                                          meta: { lead_id: leadId, chat_id: selectedChatId },
-                                        });
-                                        aiSummary.refetch();
-                                      }}
-                                      loading={aiSummary.isFetching}
-                                      disabled={crmStageFeature.status === "stub" || !canCrmAi}
-                                      title={
-                                        crmStageFeature.status === "stub"
-                                          ? getAiFeatureTooltip(crmStageFeature.status)
-                                          : !canCrmAi
-                                            ? "Недостаточно прав или backend‑tool недоступен."
-                                            : undefined
-                                      }
-                                    >
-                                      Резюме
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="light"
-                                      onClick={() => {
-                                        if (crmStageFeature.status === "stub") return;
-                                        if (!canCrmAi) return;
-                                        void logUiEvent({
-                                          event_name: "ai_click_suggest_stage",
-                                          clinic_id: currentClinicId,
-                                          feature_id: crmStageFeature.id,
-                                          feature_status: crmStageFeature.status,
-                                          meta: { lead_id: leadId, chat_id: selectedChatId },
-                                        });
-                                        aiSuggestStage.refetch();
-                                      }}
-                                      loading={aiSuggestStage.isFetching}
-                                      disabled={crmStageFeature.status === "stub" || !canCrmAi}
-                                      title={
-                                        crmStageFeature.status === "stub"
-                                          ? getAiFeatureTooltip(crmStageFeature.status)
-                                          : !canCrmAi
-                                            ? "Недостаточно прав или backend‑tool недоступен."
-                                            : undefined
-                                      }
-                                    >
-                                      Стадия
-                                    </Button>
-                                  </Group>
-
-                                  {crmStageFeature.status === "stub" && (
-                                    <Text size="xs" c="dimmed" style={{ maxWidth: 360, textAlign: "right" }}>
-                                      {getAiFeatureTooltip(crmStageFeature.status)}
-                                    </Text>
-                                  )}
-
-                                  {aiSummary.data?.summary && (
-                                    <Box
-                                      p="xs"
-                                      style={{
-                                        borderRadius: "var(--radius-md)",
-                                        background: "var(--primary-alpha-06)",
-                                        border: "1px solid var(--primary-alpha-25)",
-                                        maxWidth: 360,
-                                      }}
-                                    >
-                                      <Text size="xs" c="dimmed" mb={4}>
-                                        {aiSummary.data.ai_status ? `mode: ${aiSummary.data.ai_status}` : "mode: —"}
-                                      </Text>
-                                      <Text size="sm">{aiSummary.data.summary}</Text>
-                                    </Box>
-                                  )}
-
-                                  {aiSuggestStage.data && (
-                                    <Box
-                                      p="xs"
-                                      style={{
-                                        borderRadius: "var(--radius-md)",
-                                        background: "var(--dark-alpha-02)",
-                                        border: "1px solid var(--muted-alpha-40)",
-                                        maxWidth: 360,
-                                      }}
-                                    >
-                                      <Text size="xs" c="dimmed">
-                                        confidence: {Math.round((aiSuggestStage.data.confidence || 0) * 100)}%
-                                      </Text>
-                                      <Text size="sm">
-                                        Рекомендованная стадия:{" "}
-                                        {aiSuggestStage.data.suggested_stage_id ?? "—"}
-                                      </Text>
-                                      {aiSuggestStage.data.rationale && (
-                                        <Text size="xs" c="dimmed" mt={4}>
-                                          {aiSuggestStage.data.rationale}
-                                        </Text>
-                                      )}
-                                      <Group mt="xs" gap="xs" justify="flex-end">
-                                        <Button
-                                          size="xs"
-                                          variant="outline"
-                                          disabled={
-                                            crmStageFeature.status === "stub" ||
-                                            !canApplyStage ||
-                                            !currentClinicId ||
-                                            !aiSuggestStage.data.suggested_stage_id ||
-                                            aiApplyStage.isPending
-                                          }
-                                          loading={aiApplyStage.isPending}
-                                          onClick={() => {
-                                            if (crmStageFeature.status === "stub") return;
-                                            if (!canApplyStage) return;
-                                            if (!currentClinicId || !aiSuggestStage.data?.suggested_stage_id) return;
-                                            void logUiEvent({
-                                              event_name: "ai_click_apply_stage",
-                                              clinic_id: currentClinicId,
-                                              feature_id: crmStageFeature.id,
-                                              feature_status: crmStageFeature.status,
-                                              meta: {
-                                                lead_id: leadId,
-                                                chat_id: selectedChatId,
-                                                target_stage_id: aiSuggestStage.data.suggested_stage_id,
-                                              },
-                                            });
-                                            aiApplyStage.mutate({
-                                              clinic_id: currentClinicId,
-                                              target_stage_id: aiSuggestStage.data.suggested_stage_id,
-                                              reason: "apply_ai_suggested_stage",
-                                              initiated_by_ai: true,
-                                            });
-                                          }}
-                                        >
-                                          Применить
-                                        </Button>
-                                        <Button
-                                          size="xs"
-                                          variant="subtle"
-                                          color="gray"
-                                          disabled={crmStageFeature.status === "stub" || !currentClinicId || aiIgnore.isPending}
-                                          loading={aiIgnore.isPending}
-                                          onClick={() => {
-                                            if (crmStageFeature.status === "stub") return;
-                                            if (!currentClinicId) return;
-                                            void logUiEvent({
-                                              event_name: "ai_click_ignore_reco",
-                                              clinic_id: currentClinicId,
-                                              feature_id: crmStageFeature.id,
-                                              feature_status: crmStageFeature.status,
-                                              meta: { lead_id: leadId, chat_id: selectedChatId, kind: "stage" },
-                                            });
-                                            aiIgnore.mutate({
-                                              clinic_id: currentClinicId,
-                                              kind: "stage",
-                                              reason: "operator_ignored",
-                                            });
-                                          }}
-                                        >
-                                          Игнорировать
-                                        </Button>
-                                        <Button
-                                          size="xs"
-                                          variant="outline"
-                                          disabled={
-                                            createTaskFeature.status === "stub" ||
-                                            !canCreateAiTask ||
-                                            !currentClinicId ||
-                                            aiCreateTask.isPending
-                                          }
-                                          loading={aiCreateTask.isPending}
-                                          title={
-                                            createTaskFeature.status === "stub"
-                                              ? getAiFeatureTooltip(createTaskFeature.status)
-                                              : !canCreateAiTask
-                                                ? "Недостаточно прав или backend‑tool недоступен."
-                                                : undefined
-                                          }
-                                          onClick={() => {
-                                            if (createTaskFeature.status === "stub") return;
-                                            if (!canCreateAiTask) return;
-                                            if (!currentClinicId) return;
-                                            void logUiEvent({
-                                              event_name: "ai_click_create_task",
-                                              clinic_id: currentClinicId,
-                                              feature_id: createTaskFeature.id,
-                                              feature_status: createTaskFeature.status,
-                                              meta: { lead_id: leadId, chat_id: selectedChatId },
-                                            });
-                                            aiCreateTask.mutate({
-                                              clinic_id: currentClinicId,
-                                              title: "Follow-up по лиду из чата",
-                                              description: aiSuggestStage.data?.rationale ?? undefined,
-                                              priority: "medium",
-                                              initiated_by_ai: true,
-                                              reason: "ai_recommendation_followup",
-                                            });
-                                          }}
-                                        >
-                                          Задача
-                                        </Button>
-                                      </Group>
-                                    </Box>
-                                  )}
-                                </Stack>
-                          </Stack>
+                      </Stack>
+                      <Stack gap={4} align="flex-end">
+                        <Group gap={6} wrap="nowrap" align="center">
+                          {needsAttention ? (
+                            <Box
+                              aria-label="needs-attention"
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: 999,
+                                background: dotColor,
+                                flexShrink: 0,
+                              }}
+                            />
+                          ) : null}
+                          <Badge size="xs" variant="light" color={closed ? "gray" : "blue"}>
+                            {closed ? "закрыто" : "открыто"}
+                          </Badge>
+                        </Group>
+                        {tone === "waiting" ? (
+                          <Badge size="xs" variant="light" color="yellow">
+                            Ожидает
+                          </Badge>
                         ) : null}
-                      {messagesInitialLoading ? (
-                        <DataSkeleton lines={3} />
-                      ) : (
-                        <Stack gap={0} align="stretch" {...ADMIN_CHAT_MESSAGES_REGION}>
-                          {mergedMessages.map((m, index) => {
-                            const prev = index > 0 ? mergedMessages[index - 1] : null;
-                            const metaChannel =
-                              m.channel_type ||
-                              chatDetail?.channel_type ||
-                              "";
-                            const outbound =
-                              m.direction === "OUTBOUND" && m.actor_type !== "CLIENT";
-                            const deliveryInfo = omniMessageDeliveryLabel(m.delivery_status, m.read_status);
-                            const timeLabel = m.created_at
-                              ? new Date(m.created_at).toLocaleString()
-                              : "";
-                            const bubbleFg = m.ui_hidden || !outbound ? "var(--mantine-color-dark-8)" : "var(--text-on-primary)";
-                            const sameAuthorAsPrev =
-                              !!prev &&
-                              prev.direction === m.direction &&
-                              prev.actor_type === m.actor_type;
-                            const hasAudioAttachment = (m.attachments ?? []).some((a) =>
-                              (a.content_type || "").toLowerCase().startsWith("audio/")
-                            );
-                            return (
-                              <Stack
-                                key={m.id}
-                                gap={4}
-                                align={outbound ? "flex-end" : "flex-start"}
-                                style={{
-                                  alignSelf: outbound ? "flex-end" : "flex-start",
-                                  maxWidth: "100%",
-                                  marginTop: index === 0 ? 0 : sameAuthorAsPrev ? 4 : 16,
+                      </Stack>
+                    </Group>
+                  </Paper>
+                    );
+                  })()
+                ))
+              ) : (
+                <Text size="sm" c="dimmed">
+                  Нет чатов.
+                </Text>
+              )}
+            </Stack>
+          </ScrollArea>
+        </Box>
+
+        {/* Center conversation */}
+        <Flex ref={centerPaneRef} direction="column" style={{ flex: 1, minWidth: 0, minHeight: 0, background: "var(--bg-main)" }}>
+          {!selectedChatId ? (
+            <Stack h="100%" align="center" justify="center">
+              <EmptyStateHint title="Выберите диалог" subtitle="Слева — все/новые, справа — ваши в работе." />
+            </Stack>
+          ) : (
+            <>
+              <Box px="sm" py={8} style={{ borderBottom: "1px solid var(--mantine-color-gray-2)", background: "white" }}>
+                <Group justify="space-between" wrap="nowrap" gap={8} align="center">
+                  <Stack gap={1} style={{ minWidth: 0 }}>
+                    <Text fw={700} size="sm" truncate="end" style={{ lineHeight: 1.15 }}>
+                      {chatDetail?.contact_name ?? "Диалог"}
+                    </Text>
+                    <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                      <ChannelTypeRow
+                        types={
+                          (chatDetail?.channel_type
+                            ? [chatDetail.channel_type]
+                            : []) as string[]
+                        }
+                      />
+                      {chatDetail?.assignee_name ? (
+                        <Badge size="xs" variant="light" color="indigo">
+                          В работе: {chatDetail.assignee_name}
+                        </Badge>
+                      ) : null}
+                      {chatDetail?.status ? (
+                        <Badge size="xs" variant="light" color="gray">
+                          {String(chatDetail.status).toLowerCase()}
+                        </Badge>
+                      ) : null}
+                    </Group>
+                  </Stack>
+                  <Group gap={8} wrap="nowrap" align="center">
+                    <Tooltip label="ИИ" withArrow>
+                      <Box>
+                        <Select
+                          size="xs"
+                          w={160}
+                          aria-label="ИИ"
+                          label="ИИ"
+                          placeholder="ИИ"
+                          value={(chatDetail?.ai_mode || "DISABLED").toUpperCase()}
+                      data={[
+                        { value: "DISABLED", label: "Выкл" },
+                        { value: "SUGGEST_ONLY", label: "Подсказка" },
+                        { value: "AUTO_REPLY", label: "Автоответчик" },
+                      ].filter((o) => (OMNI_CHAT_AI_MODES as readonly string[]).includes(o.value))}
+                      onChange={(v) => {
+                        if (!selectedChatId || !v || !canToggleAi) return;
+                        updateAiMode.mutate({ chatId: selectedChatId, ai_mode: v });
+                      }}
+                      disabled={!selectedChatId || !canToggleAi}
+                      rightSection={updateAiMode.isPending ? <Loader size="xs" /> : undefined}
+                        />
+                      </Box>
+                    </Tooltip>
+                    {/* No-buttons automation: claim happens on first outbound send; resolve is server-side policy (later). */}
+                    {!canClaim && !canResolveSelected && chatDetail?.assignee_name ? (
+                      <Button size="xs" variant="light" color="gray" disabled>
+                        В работе у {chatDetail.assignee_name}
+                      </Button>
+                    ) : null}
+                  </Group>
+                </Group>
+              </Box>
+
+              <ScrollArea
+                style={{ flex: 1, minHeight: 0 }}
+                scrollHideDelay={250}
+                viewportRef={messagesViewportRef as any}
+              >
+                <Stack gap="xs" p="md" {...ADMIN_CHAT_MESSAGES_REGION}>
+                  {mergedMessages.length ? (
+                    mergedMessages.map((m: any, idx: number) => {
+                      const dayKey = toDayKey(m.created_at);
+                      const prevDayKey = idx > 0 ? toDayKey(mergedMessages[idx - 1]?.created_at) : null;
+                      const showDaySeparator = !!dayKey && dayKey !== prevDayKey;
+                      const timeLabel = formatTimeLabel(m.created_at);
+                      const outbound = String(m.direction || "").toUpperCase() === "OUTBOUND";
+                      const replyMeta = parseReplyLine(String(m.content || ""));
+                      const displayContent = replyMeta ? replyMeta.rest : String(m.content || "");
+                      const targetMsg = replyMeta?.messageId
+                        ? (mergedMessages as any[]).find((x) => String(x.id) === String(replyMeta.messageId))
+                        : null;
+                      const quotedText =
+                        targetMsg && String(targetMsg.content || "").trim()
+                          ? String(parseReplyLine(String(targetMsg.content || ""))?.rest ?? String(targetMsg.content || "")).trim()
+                          : replyMeta?.messageId
+                            ? "Сообщение"
+                            : "";
+                      return (
+                        <Stack key={m.id} gap={6}>
+                          {showDaySeparator ? (
+                            <Group justify="center">
+                              <Badge size="xs" variant="light" color="gray">
+                                {formatDayLabel(m.created_at)}
+                              </Badge>
+                            </Group>
+                          ) : null}
+                          <Group justify={outbound ? "flex-end" : "flex-start"} align="flex-start" wrap="nowrap">
+                            {!outbound ? <Box style={{ width: 28, flexShrink: 0 }} /> : null}
+                            <Group gap={8} wrap="nowrap" align="flex-start" style={{ maxWidth: "92%" }}>
+                              <Paper
+                                p={6}
+                                radius="lg"
+                                withBorder
+                                id={`omni-msg-${String(m.id)}`}
+                                data-omni-message-id={String(m.id)}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  setCtxMenu({
+                                    opened: true,
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    messageId: String(m.id),
+                                    messageText: String(m.content || ""),
+                                  });
                                 }}
-                                aria-label={timeLabel ? `Сообщение, время: ${timeLabel}` : undefined}
+                                style={{
+                                  display: "flex",
+                                  gap: 8,
+                                  alignItems: "stretch",
+                                  flex: 1,
+                                  minWidth: 0,
+                                  borderColor: "var(--mantine-color-gray-2)",
+                                  background: "transparent",
+                                }}
                               >
-                                <Box
-                                  p={0}
-                                  onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    setMessageContextMenu({
-                                      id: m.id,
-                                      content: m.content || "",
-                                      actorType: m.actor_type,
-                                      x: e.clientX,
-                                      y: e.clientY,
-                                    });
-                                  }}
+                                <Paper
+                                  p="sm"
+                                  radius="lg"
                                   style={{
-                                    position: "relative",
-                                    maxWidth: "min(85%, 520px)",
-                                    minWidth: hasAudioAttachment ? 280 : undefined,
-                                    ...(m.ui_hidden
-                                      ? adminChatOmniHiddenBubbleStyle()
-                                      : outbound
-                                        ? adminChatOmniOutboundBubbleStyle()
-                                        : adminChatOmniClientInboundBubbleStyle()),
-                                    opacity: m.ui_hidden ? 0.9 : 1,
+                                    flex: 1,
+                                    minWidth: 0,
+                                    border: "none",
+                                    ...(outbound ? adminChatOmniOutboundBubbleStyle : adminChatOmniClientInboundBubbleStyle),
                                   }}
                                 >
-                                  {m.ui_hidden ? (
-                                    <Text size="xs" c="dimmed" p="10px 14px">
-                                      Сообщение скрыто: {m.hidden_reason || "без указания причины"}
-                                    </Text>
-                                  ) : (
-                                    <Text
-                                      size="sm"
-                                      lh={1.55}
-                                      p="10px 14px"
-                                      component="div"
-                                      style={{ wordBreak: "break-word", color: bubbleFg }}
+                                  {replyMeta ? (
+                                    <Paper
+                                      p="xs"
+                                      radius="md"
+                                      withBorder
+                                      style={{
+                                        cursor: replyMeta.messageId ? "pointer" : "default",
+                                        marginBottom: 8,
+                                        background: "var(--mantine-color-gray-0)",
+                                        borderColor: "var(--mantine-color-gray-2)",
+                                        borderLeft: `3px solid ${outbound ? "var(--mantine-color-indigo-6)" : "var(--mantine-color-teal-6)"}`,
+                                      }}
+                                      onClick={() => {
+                                        const mid = replyMeta.messageId;
+                                        if (!mid) return;
+                                        const el = document.getElementById(`omni-msg-${mid}`);
+                                        if (!el) return;
+                                        try {
+                                          (el as HTMLElement).scrollIntoView({ block: "center", behavior: "smooth" });
+                                        } catch {
+                                          (el as HTMLElement).scrollIntoView();
+                                        }
+                                      }}
                                     >
-                                      <OmniMessageRichBody
-                                        content={m.content || ""}
-                                        attachments={m.attachments ?? []}
-                                        getClinicChatBlob={getClinicChatBlob}
-                                        getOmniBlob={(aid) => getOmniBlobForMessage(m.id, aid)}
-                                        allowAudioAttachmentDownload={allowAudioAttachmentDownload}
-                                      />
-                                    </Text>
-                                  )}
-                                </Box>
-                                {timeLabel ? (
-                                  <Group gap={4} px={4}>
-                                    {!outbound ? (
-                                      <OmniChannelMetaIcon channelType={metaChannel} size={10} />
-                                    ) : m.actor_type === "AI" ? (
-                                      <IconRobot size={12} stroke={1.7} />
-                                    ) : (
-                                      <IconUser size={12} stroke={1.7} />
-                                    )}
-                                    <Text size="xs" c="dimmed">
-                                      {timeLabel}
-                                      {outbound && deliveryInfo ? ` · ${deliveryInfo.label}` : ""}
-                                    </Text>
-                                  </Group>
-                                ) : null}
-                              </Stack>
-                            );
-                          })}
+                                      <Group gap={6} wrap="nowrap" align="center">
+                                        <IconQuote size={16} />
+                                        <Text size="xs" c="dimmed" truncate="end" style={{ flex: 1, minWidth: 0 }}>
+                                          {quotedText}
+                                        </Text>
+                                      </Group>
+                                    </Paper>
+                                  ) : null}
+                                  <Box style={{ fontSize: 13, lineHeight: 1.35 }}>
+                                    <OmniMessageRichBody
+                                      content={displayContent}
+                                      attachments={(m.attachments ?? []).map((a: any) => ({
+                                        id: String(a.id),
+                                        file_name: String(a.file_name || ""),
+                                        content_type: String(a.content_type || "application/octet-stream"),
+                                        size_bytes: Number(a.size_bytes || 0),
+                                        source: a.source === "clinic_chat" ? "clinic_chat" : "omni",
+                                        conversation_id: a.conversation_id ?? null,
+                                      }))}
+                                      getClinicChatBlob={getClinicChatBlob}
+                                      getOmniBlob={(attachmentId) => getOmniBlobForMessage(String(m.id), attachmentId)}
+                                      allowAudioAttachmentDownload={false}
+                                    />
+                                  </Box>
+                                </Paper>
+
+                                <Paper
+                                  p={6}
+                                  radius="md"
+                                  withBorder
+                                  style={{
+                                    width: 56,
+                                    flexShrink: 0,
+                                    background: "var(--mantine-color-gray-0)",
+                                    borderColor: "var(--mantine-color-gray-2)",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    alignItems: "center",
+                                    justifyContent: "flex-start",
+                                    gap: 6,
+                                  }}
+                                >
+                                  <Text size="xs" c="dimmed" style={{ lineHeight: 1 }}>
+                                    {timeLabel}
+                                  </Text>
+                                  {m.channel_type ? (
+                                    <Box style={{ color: channelBrandColor(String(m.channel_type)), display: "flex" }}>
+                                      <ChannelIcon type={String(m.channel_type)} />
+                                    </Box>
+                                  ) : null}
+                                  <Tooltip label="Ответить" withArrow>
+                                    <ActionIcon
+                                      variant="subtle"
+                                      color="gray"
+                                      size="sm"
+                                      aria-label="Ответить"
+                                      onClick={() => startReply(String(m.id))}
+                                    >
+                                      <IconCornerUpLeft size={16} />
+                                    </ActionIcon>
+                                  </Tooltip>
+                                  {/* actions: right-click context menu */}
+                                </Paper>
+                              </Paper>
+                            </Group>
+                            {outbound ? <Box style={{ width: 28, flexShrink: 0 }} /> : null}
+                          </Group>
                         </Stack>
-                      )}
-                    </Stack>
-                    </ScrollArea>
-                    <Box
-                      p="md"
-                      bg="var(--mantine-color-body)"
+                      );
+                    })
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      Нет сообщений.
+                    </Text>
+                  )}
+                </Stack>
+              </ScrollArea>
+
+              {ctxMenu.opened && ctxMenu.messageId ? (
+                <Box
+                  style={{
+                    position: "fixed",
+                    left: ctxMenu.x,
+                    top: ctxMenu.y,
+                    width: 1,
+                    height: 1,
+                    zIndex: 9999,
+                  }}
+                  onClick={() => setCtxMenu((s) => ({ ...s, opened: false }))}
+                >
+                  <Menu opened withinPortal shadow="md" position="bottom-start">
+                    <Menu.Target>
+                      <Box style={{ width: 1, height: 1 }} />
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      <Menu.Item
+                        onClick={() => {
+                          startReply(ctxMenu.messageId as string);
+                          setCtxMenu((s) => ({ ...s, opened: false }));
+                        }}
+                      >
+                        Ответить
+                      </Menu.Item>
+                      <Menu.Item
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard?.writeText(ctxMenu.messageText || "");
+                          } catch {
+                            /* ignore */
+                          }
+                          setCtxMenu((s) => ({ ...s, opened: false }));
+                        }}
+                      >
+                        Копировать текст
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
+                </Box>
+              ) : null}
+
+              <Box p="md" style={{ borderTop: "1px solid var(--mantine-color-gray-2)", background: "white" }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={fileAccept}
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.currentTarget.files?.[0] ?? null;
+                    e.currentTarget.value = "";
+                    if (!f) return;
+                    setPendingFile(f);
+                    queueMicrotask(() => composerRef.current?.focus());
+                  }}
+                />
+                <Stack gap={8}>
+                  {replyingTo ? (
+                    <Paper
+                      p="xs"
+                      radius="md"
+                      withBorder
                       style={{
-                        flexShrink: 0,
-                        borderTop: "1px solid var(--mantine-color-gray-2)",
+                        background: "var(--mantine-color-gray-0)",
+                        borderColor: "var(--mantine-color-gray-2)",
+                        borderLeft: "3px solid var(--mantine-color-indigo-6)",
                       }}
                     >
-                    <Stack gap="xs">
-                      {replyToMessage ? (
-                        <Paper withBorder p="xs" bg="var(--mantine-color-gray-0)">
-                          <Group justify="space-between" wrap="nowrap" gap="xs">
-                            <Stack gap={2} style={{ minWidth: 0 }}>
-                              <Text size="xs" c="dimmed">
-                                Ответ на {replyToMessage.actorType === "CLIENT" ? "сообщение клиента" : "сообщение клиники"}
-                              </Text>
-                              <Text size="xs" lineClamp={1} component="div" style={{ minWidth: 0 }}>
-                                <AppleEmojiRichText text={replyToMessage.content || ""} emojiEm={1} />
-                              </Text>
-                            </Stack>
-                            <ActionIcon
-                              size="sm"
-                              variant="subtle"
-                              color="gray"
-                              aria-label="Убрать ответ"
-                              onClick={() => setReplyToMessage(null)}
-                            >
-                              <IconChevronRight size={14} style={{ transform: "rotate(90deg)" }} />
-                            </ActionIcon>
-                          </Group>
-                        </Paper>
-                      ) : null}
-                      <input
-                        ref={omniFileInputRef}
-                        type="file"
-                        style={{ display: "none" }}
-                        accept={omniFileAccept}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0] ?? null;
-                          e.target.value = "";
-                          setOmniAttachError(null);
-                          if (!f) return;
-                          if (f.size > MAX_OMNI_UPLOAD_BYTES) {
-                            setOmniAttachError("Файл больше 5 МБ");
-                            return;
-                          }
-                          setPendingOmniFile(f);
+                      <Group justify="space-between" gap="xs" wrap="nowrap" align="center">
+                        <Group gap={6} wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+                          <IconQuote size={16} />
+                          <Text size="xs" c="dimmed" truncate="end" style={{ minWidth: 0 }}>
+                            {replyingTo.preview}
+                          </Text>
+                        </Group>
+                        <ActionIcon
+                          size="sm"
+                          variant="subtle"
+                          color="gray"
+                          aria-label="Убрать ответ"
+                          onClick={() => setReplyingTo(null)}
+                        >
+                          ×
+                        </ActionIcon>
+                      </Group>
+                    </Paper>
+                  ) : null}
+                  {pendingFile ? (
+                    <Group justify="space-between" gap="xs">
+                      <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 520 }}>
+                        Файл: {pendingFile.name} ({Math.ceil(pendingFile.size / 1024)} КБ)
+                      </Text>
+                      <Button size="xs" variant="subtle" color="gray" onClick={() => setPendingFile(null)}>
+                        Убрать
+                      </Button>
+                    </Group>
+                  ) : null}
+                  {attachError ? (
+                    <Text size="xs" c="red">
+                      {attachError}
+                    </Text>
+                  ) : null}
+                  {selectedChatId && String(chatDetail?.status || "").toUpperCase() !== "CLOSED" ? (
+                    <Text size="xs" c="dimmed">
+                      Автозакрытие: когда вы выходите из диалога, сервер может закрыть его автоматически после ~10 минут
+                      тишины и отсутствия активного присутствия (lease). При наличии черновика мы не отправляем CLOSE
+                      сразу.
+                    </Text>
+                  ) : null}
+                  <Group align="flex-end" wrap="nowrap" gap="sm">
+                    <Box style={{ flex: 1, minWidth: 260 }}>
+                      <AppleEmojiOverlayTextarea
+                        ref={composerRef}
+                        value={messageText}
+                        onChange={(e: any) => setMessageText(String(e?.target?.value ?? ""))}
+                        autosize
+                        minRows={4}
+                        maxRows={composerMaxRows}
+                        placeholder="Написать ответ… (Ctrl+Enter)"
+                        styles={{
+                          input: {
+                            fontSize: 14,
+                          },
                         }}
                       />
-                      {pendingOmniFile ? (
-                        <Text size="xs" c="dimmed">
-                          К отправке: {pendingOmniFile.name}{" "}
-                          <Text
-                            component="button"
-                            type="button"
-                            span
-                            c="red.7"
-                            ml="xs"
-                            style={{ cursor: "pointer", border: "none", background: "none", font: "inherit" }}
-                            onClick={() => setPendingOmniFile(null)}
-                          >
-                            Убрать
-                          </Text>
-                        </Text>
-                      ) : null}
-                      {omniAttachError ? (
-                        <Text size="xs" c="red">
-                          {omniAttachError}
-                        </Text>
-                      ) : null}
-                      <Group gap="xs" align="flex-end" wrap="nowrap">
-                        <Menu shadow="md" width={280} position="top-start">
-                          <Menu.Target>
-                            <ActionIcon
-                              variant="subtle"
-                              color="gray"
-                              aria-label="Действия: быстрые ответы, взять в работу, обновить"
-                            >
-                              <IconDotsVertical size={20} stroke={1.5} />
-                            </ActionIcon>
-                          </Menu.Target>
-                          <Menu.Dropdown>
-                            <Menu.Item
-                              disabled={!selectedChatId}
-                              leftSection={<IconRefresh size={14} stroke={1.5} />}
-                              onClick={() => handleRefreshOmniThread()}
-                            >
-                              Обновить переписку
-                            </Menu.Item>
-                            <Menu.Item
-                              disabled={!selectedChatId || patchOmniChat.isPending}
-                              onClick={() => handleAssignOmniToMe()}
-                            >
-                              Взять в работу
-                            </Menu.Item>
-                            <Menu.Divider />
-                            {(quickRepliesData?.items ?? []).map((qr) => (
-                              <Menu.Item
-                                key={qr.id}
-                                onClick={() => {
-                                  setMessageText((prev) => (prev ? `${prev}\n${qr.body}` : qr.body));
-                                }}
-                              >
-                                <Stack gap={2}>
-                                  <Text size="sm" fw={600}>
-                                    {qr.title}
-                                  </Text>
-                                  <Text size="xs" c="dimmed" lineClamp={2}>
-                                    {qr.body}
-                                  </Text>
-                                </Stack>
-                              </Menu.Item>
-                            ))}
-                          </Menu.Dropdown>
-                        </Menu>
-                        <ActionIcon
-                          variant="subtle"
-                          color="gray"
-                          size="lg"
-                          aria-label="Документ"
-                          onClick={() => {
-                            setOmniFileAccept(
-                              ".pdf,.doc,.docx,.txt,.xlsx,.xls,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
-                            );
-                            queueMicrotask(() => omniFileInputRef.current?.click());
-                          }}
-                        >
-                          <IconPaperclip size={20} />
-                        </ActionIcon>
-                        <ActionIcon
-                          variant="subtle"
-                          color="gray"
-                          size="lg"
-                          aria-label="Изображение"
-                          onClick={() => {
-                            setOmniFileAccept("image/*");
-                            queueMicrotask(() => omniFileInputRef.current?.click());
-                          }}
-                        >
-                          <IconPhoto size={20} />
-                        </ActionIcon>
-                        <VoiceNoteRecorderButton
-                          disabled={!selectedChatId || sendOmniWithFile.isPending || sendMessage.isPending}
-                          onError={(msg) => setOmniAttachError(msg)}
-                          onRecorded={(file) => {
-                            setOmniAttachError(null);
-                            if (file.size > MAX_OMNI_UPLOAD_BYTES) {
-                              setOmniAttachError("Файл больше 5 МБ");
-                              return;
-                            }
-                            setPendingOmniFile(file);
-                          }}
-                        />
-                        <EmojiMartPopoverPicker
-                          actionIconProps={{ variant: "subtle", color: "gray", size: "lg" }}
-                          onPick={(native) => setMessageText((prev) => prev + native)}
-                          onInserted={() => messageComposerRef.current?.focus()}
-                        />
-                        <AppleEmojiOverlayTextarea
-                          ref={messageComposerRef}
-                          autosize
-                          minRows={1}
-                          maxRows={6}
-                          placeholder={`Написать ответ в ${effectiveReplyLabel || "канал"} (Ctrl+Enter)...`}
-                          value={messageText}
-                          size="sm"
-                          onChange={(e) => setMessageText(e.currentTarget.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                              e.preventDefault();
-                              handleSend();
-                            }
-                          }}
-                          style={{ flex: 1, minWidth: 180 }}
-                          styles={{ input: { border: `1px solid var(--mantine-color-gray-3)` } }}
-                        />
-                        <ActionIcon
-                          size="lg"
-                          color="indigo"
-                          variant="filled"
-                          onClick={handleSend}
-                          disabled={(!messageText.trim() && !pendingOmniFile) || !selectedChatId}
-                          loading={sendMessage.isPending || sendOmniWithFile.isPending}
-                          aria-label="Отправить сообщение"
-                        >
-                          <IconSend size={18} />
-                        </ActionIcon>
-                      </Group>
-                      <Group gap="sm" mt="xs" align="center" wrap="wrap">
-                        <Button
-                          size="xs"
-                          variant="subtle"
-                          leftSection={<IconCalendarPlus size={14} stroke={1.5} />}
-                          title={!patientId ? "Выберите чат с привязанным пациентом" : "Создать запись без перехода в расписание (⌘B / Ctrl+B)"}
-                          onClick={handleOpenBookingModal}
-                          disabled={!patientId || !currentClinicId}
-                        >
-                          Запись
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="subtle"
-                          leftSection={<IconFileDescription size={14} stroke={1.5} />}
-                          onClick={() => setFormDrawerOpen(true)}
-                          disabled={!patientId}
-                          title={!patientId ? "Выберите чат с привязанным пациентом" : "Отправить анкету/форму"}
-                        >
-                          Анкета
-                        </Button>
-                        {selectedChatId && effectiveReplyChannelId && replyChannelOptions.length > 1 ? (
-                          <Select
-                            size="xs"
-                            data={replyChannelOptions}
-                            value={effectiveReplyChannelId}
-                            onChange={(v) => setReplyChannelPick(v)}
-                            w={180}
-                          />
-                        ) : null}
-                        <Checkbox
-                          size="xs"
-                          label="Скрытые сообщения"
-                          checked={showHiddenMessages}
-                          onChange={(e) => setShowHiddenMessages(e.currentTarget.checked)}
-                          styles={{ label: { color: "var(--mantine-color-dimmed)" } }}
-                        />
-                      </Group>
-                    </Stack>
-                  </Box>
-                  </Box>
-              )}
-              </Flex>
-              <Box
-                w={inspectorCollapsed ? 56 : 350}
-                miw={inspectorCollapsed ? 56 : 350}
-                style={{
-                  borderLeft: "1px solid var(--mantine-color-gray-2)",
-                  backgroundColor: "white",
-                  minHeight: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  overflow: "hidden",
-                }}
-              >
-                {inspectorCollapsed ? (
-                  <Paper
-                    p={4}
-                    radius="md"
-                    withBorder
-                    shadow="none"
-                    bg="var(--bg-card)"
-                    style={{ borderColor: "var(--divider)", height: "100%" }}
-                  >
-                    <Stack gap={6} align="center" py="xs" style={{ minWidth: 0 }}>
-                      <Tooltip
-                        label="Развернуть рабочий центр (Ctrl+Shift+L / ⌘⇧L)"
-                        position="left"
+                    </Box>
+                    <ActionIcon
+                      size={44}
+                      variant="filled"
+                      color="indigo"
+                      onClick={handleSend}
+                      loading={sendMessage.isPending || sendWithFile.isPending}
+                      aria-label="Отправить"
+                    >
+                      <IconSend size={18} />
+                    </ActionIcon>
+                  </Group>
+
+                  <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
+                    <Group gap={6} wrap="nowrap" align="flex-end">
+                      <EmojiMartPopoverPicker
+                        onPick={(native) => setMessageText((prev) => `${prev}${native}`)}
+                        onInserted={() => composerRef.current?.focus()}
+                        ariaLabel="Эмодзи"
+                      />
+                      <ActionIcon size="lg" variant="light" color="gray" onClick={() => pickFile("*")} aria-label="Файл">
+                        <IconPaperclip size={20} />
+                      </ActionIcon>
+                      <ActionIcon
+                        size="lg"
+                        variant="light"
+                        color="gray"
+                        onClick={() => pickFile("image/*")}
+                        aria-label="Фото"
                       >
-                        <ActionIcon
-                          variant="light"
-                          color="gray"
-                          size="md"
-                          onClick={() => setInspectorCollapsed(false)}
-                          aria-label="Развернуть рабочий центр"
-                        >
-                          <IconChevronLeft size={18} stroke={1.5} />
-                        </ActionIcon>
-                      </Tooltip>
-                      {currentClinicId ? (
-                        <>
-                          <Divider w="100%" style={{ borderTopColor: "var(--divider)" }} />
-                          <Tooltip label="CRM" position="left">
-                            <ActionIcon
-                              component={Link}
-                              to={ROUTE_PATHS.admin.sales}
-                              variant="subtle"
-                              color="blue"
-                              size="md"
-                              aria-label="CRM"
-                            >
-                              <IconBriefcase size={18} stroke={1.5} />
-                            </ActionIcon>
-                          </Tooltip>
-                          <Tooltip label="Расписание" position="left">
-                            <ActionIcon
-                              component={Link}
-                              to={ROUTE_PATHS.admin.schedule}
-                              variant="subtle"
-                              color={SEMANTIC.action.confirm}
-                              size="md"
-                              aria-label="Расписание"
-                            >
-                              <IconCalendarEvent size={18} stroke={1.5} />
-                            </ActionIcon>
-                          </Tooltip>
-                          <Tooltip label="Задачи" position="left">
-                            <ActionIcon
-                              component={Link}
-                              to={ROUTE_PATHS.admin.tasks}
-                              variant="subtle"
-                              color="gray"
-                              size="md"
-                              aria-label="Задачи"
-                            >
-                              <IconListCheck size={18} stroke={1.5} />
-                            </ActionIcon>
-                          </Tooltip>
-                          <Divider w="100%" style={{ borderTopColor: "var(--divider)" }} />
-                        </>
-                      ) : null}
-                      <Tooltip label="Клиент" position="left">
-                        <ActionIcon
-                          variant={inspectorTab === "client" ? "light" : "subtle"}
-                          color="dark"
-                          size="md"
-                          aria-label="Вкладка Клиент"
-                          onClick={() => {
-                            setInspectorTab("client");
-                            setInspectorCollapsed(false);
-                          }}
-                        >
-                          <IconUser size={18} stroke={1.5} />
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label="Анкеты" position="left">
-                        <ActionIcon
-                          variant={inspectorTab === "forms" ? "light" : "subtle"}
-                          color="dark"
-                          size="md"
-                          aria-label="Вкладка Анкеты"
-                          onClick={() => {
-                            setInspectorTab("forms");
-                            setInspectorCollapsed(false);
-                          }}
-                        >
-                          <IconFileDescription size={18} stroke={1.5} />
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label="Таймлайн" position="left">
-                        <ActionIcon
-                          variant={inspectorTab === "timeline" ? "light" : "subtle"}
-                          color="dark"
-                          size="md"
-                          aria-label="Вкладка Таймлайн"
-                          onClick={() => {
-                            setInspectorTab("timeline");
-                            setInspectorCollapsed(false);
-                          }}
-                        >
-                          <IconHistory size={18} stroke={1.5} />
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label="AI" position="left">
-                        <ActionIcon
-                          variant={inspectorTab === "ai" ? "light" : "subtle"}
-                          color="dark"
-                          size="md"
-                          aria-label="Вкладка AI"
-                          onClick={() => {
-                            setInspectorTab("ai");
-                            setInspectorCollapsed(false);
-                          }}
-                        >
-                          <IconRobot size={18} stroke={1.5} />
-                        </ActionIcon>
-                      </Tooltip>
-                    </Stack>
-                  </Paper>
-                ) : (
-                <Stack gap="sm" style={{ minWidth: 0 }} p="sm">
-                  <Paper
-                    p="sm"
-                    radius="md"
-                    withBorder
-                    shadow="none"
-                    bg="var(--bg-card)"
-                    style={{ borderColor: "var(--divider)" }}
-                  >
-                    <Stack gap="sm">
-                      {currentClinicId ? (
-                        <>
-                          <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
-                            <Stack gap={2} style={{ minWidth: 0 }}>
-                              <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: rem(0.4) }}>
-                                Рабочий центр
-                              </Text>
-                              <Text size="xs" c="dimmed" lineClamp={2}>
-                                Быстрые переходы: воронка, расписание, задачи.
-                              </Text>
-                            </Stack>
-                            <Tooltip
-                              label="Свернуть в иконки — больше места для чата (Ctrl+Shift+L / ⌘⇧L)"
-                              position="left"
-                            >
-                              <ActionIcon
-                                variant="subtle"
-                                color="gray"
-                                size="sm"
-                                onClick={() => setInspectorCollapsed(true)}
-                                aria-label="Свернуть рабочий центр"
-                              >
-                                <IconChevronRight size={18} stroke={1.5} />
-                              </ActionIcon>
-                            </Tooltip>
-                          </Group>
-                          <Group gap={6} wrap="wrap">
-                            <Button
-                              component={Link}
-                              to={ROUTE_PATHS.admin.sales}
-                              size="compact-xs"
-                              variant="subtle"
-                              color="blue"
-                              leftSection={<IconBriefcase size={14} stroke={1.5} />}
-                            >
-                              CRM
-                            </Button>
-                            <Button
-                              component={Link}
-                              to={ROUTE_PATHS.admin.schedule}
-                              size="compact-xs"
-                              variant="subtle"
-                              color={SEMANTIC.action.confirm}
-                              leftSection={<IconCalendarEvent size={14} stroke={1.5} />}
-                            >
-                              Расписание
-                            </Button>
-                            <Button
-                              component={Link}
-                              to={ROUTE_PATHS.admin.tasks}
-                              size="compact-xs"
-                              variant="subtle"
-                              color="gray"
-                              leftSection={<IconListCheck size={14} stroke={1.5} />}
-                            >
-                              Задачи
-                            </Button>
-                          </Group>
-                          <Divider style={{ borderTopColor: "var(--divider)" }} />
-                        </>
-                      ) : null}
-                      <Tabs
-                        value={inspectorTab}
-                        onChange={(v) => v && setInspectorTab(v as OmniInspectorTab)}
-                        variant="pills"
-                        radius="xl"
-                        color="indigo"
-                        styles={{
-                          list: {
-                            width: "100%",
-                            flexWrap: "nowrap",
-                            backgroundColor: "var(--bg-main)",
-                            border: "1px solid var(--divider)",
-                            padding: rem(3),
-                            borderRadius: "var(--mantine-radius-sm)",
-                            gap: rem(2),
-                          },
-                          tab: {
-                            fontSize: "var(--mantine-font-size-xs)",
-                            fontWeight: 600,
-                          },
-                          panel: {
-                            minHeight: 300,
-                          },
+                        <IconPhoto size={20} />
+                      </ActionIcon>
+                      <VoiceNoteRecorderButton
+                        onRecorded={(file) => {
+                          setPendingFile(file);
+                          queueMicrotask(() => composerRef.current?.focus());
                         }}
-                      >
-                        <Tabs.List grow>
-                          <Tabs.Tab value="client">Клиент</Tabs.Tab>
-                          <Tabs.Tab value="forms">Анкеты</Tabs.Tab>
-                          <Tabs.Tab value="timeline">Таймлайн</Tabs.Tab>
-                          <Tabs.Tab value="ai">AI</Tabs.Tab>
-                        </Tabs.List>
-                        <Tabs.Panel value="client" pt="sm">
-                          <OmniInspectorTabShell
-                            title="Клиент"
-                            description="Лояльность и задачи по выбранному контакту."
-                          >
-                            <Stack gap="md">
-                              <OmniInspectorSection title="Профиль и лояльность">
-                                {loyaltySummary ? (
-                                  <Stack gap="xs">
-                                    <Text size="xs" c="dimmed">
-                                      Баланс и подписки
-                                    </Text>
-                                    {loyaltySummary.wallet ? (
-                                      <Badge size="xs" variant="outline" color="teal">
-                                        Баланс: {loyaltySummary.wallet.balance}{" "}
-                                        {loyaltySummary.wallet.currency}
-                                      </Badge>
-                                    ) : (
-                                      <Text size="xs" c="dimmed">
-                                        Нет кошелька
-                                      </Text>
-                                    )}
-                                    <Text size="xs" c="dimmed">
-                                      Активных абонементов:{" "}
-                                      {
-                                        loyaltySummary.subscriptions.filter(
-                                          (s) => s.status === "active",
-                                        ).length
-                                      }
-                                    </Text>
-                                    {loyaltySummary.patient_id ? (
-                                      <Group gap="xs">
-                                        <Button
-                                          component={Link}
-                                          to={ROUTE_PATHS.admin.schedule}
-                                          size="xs"
-                                          variant="subtle"
-                                          color={SEMANTIC.action.confirm}
-                                        >
-                                          Создать запись
-                                        </Button>
-                                        <Button
-                                          component={Link}
-                                          to={`/admin/loyalty?patient_id=${encodeURIComponent(
-                                            loyaltySummary.patient_id,
-                                          )}`}
-                                          size="xs"
-                                          variant="subtle"
-                                          color={SEMANTIC.action.confirm}
-                                        >
-                                          Открыть лояльность
-                                        </Button>
-                                      </Group>
-                                    ) : null}
-                                  </Stack>
-                                ) : (
-                                  <Text size="xs" c="dimmed">
-                                    Данные по лояльности будут доступны после выбора чата.
-                                  </Text>
-                                )}
-                              </OmniInspectorSection>
-                              <OmniInspectorSection title="Задачи">
-                                <Text size="xs" c="dimmed">
-                                  Открытых задач в клинике: {openTasksCount}
-                                </Text>
-                                <Group gap="xs" wrap="wrap">
-                                  <Button
-                                    size="xs"
-                                    variant="subtle"
-                                    color="gray"
-                                    onClick={handleOpenTaskDrawer}
-                                    disabled={createTaskFeature.status === "stub" || !canCreateAiTask}
-                                    title={
-                                      createTaskFeature.status === "stub"
-                                        ? getAiFeatureTooltip(createTaskFeature.status)
-                                        : !canCreateAiTask
-                                          ? "Недостаточно прав или backend‑tool недоступен."
-                                          : "Создать задачу по контексту чата"
-                                    }
-                                  >
-                                    Создать задачу
-                                  </Button>
-                                  <Button
-                                    component={Link}
-                                    to={ROUTE_PATHS.admin.tasks}
-                                    size="xs"
-                                    variant="subtle"
-                                    color="gray"
-                                  >
-                                    Открыть список задач
-                                  </Button>
-                                </Group>
-                              </OmniInspectorSection>
-                            </Stack>
-                          </OmniInspectorTabShell>
-                        </Tabs.Panel>
-                        <Tabs.Panel value="forms" pt="sm">
-                          <OmniInspectorTabShell
-                            title="Анкеты и согласия"
-                            description="Статус форм пациента и быстрые действия."
-                          >
-                            {!patientId ? (
-                              <Text size="xs" c="dimmed">
-                                Выберите чат с привязанным пациентом, чтобы видеть статус форм.
-                              </Text>
-                            ) : (
-                              <Stack gap="sm">
-                                <Text size="xs" c="dimmed">
-                                  Заполнено форм: {formSubmissions?.length ?? 0}
-                                </Text>
-                                {formSubmissions && formSubmissions.length > 0 ? (
-                                  <Stack gap={6}>
-                                    {formSubmissions.map((s) => (
-                                      <Group key={s.id} gap="xs" align="flex-start" wrap="nowrap">
-                                        <Badge size="xs" variant="light" color="gray">
-                                          Форма
-                                        </Badge>
-                                        <Text size="xs" lineClamp={2}>
-                                          {s.template_name}
-                                        </Text>
-                                      </Group>
-                                    ))}
-                                  </Stack>
-                                ) : null}
-                                <Button
-                                  component={Link}
-                                  to={`/admin/forms?patient_id=${encodeURIComponent(patientId)}`}
-                                  size="xs"
-                                  variant="subtle"
-                                  color={SEMANTIC.action.send}
-                                >
-                                  Открыть формы и согласия
-                                </Button>
-                                <Text size="xs" c="dimmed">
-                                  Отправьте пациенту ссылку на раздел «Анкеты и согласия» в PWA, чтобы
-                                  он заполнил недостающие формы.
-                                </Text>
-                              </Stack>
-                            )}
-                          </OmniInspectorTabShell>
-                        </Tabs.Panel>
-                        <Tabs.Panel value="timeline" pt="sm">
-                          <OmniInspectorTabShell
-                            title="Таймлайн"
-                            description="Сводка событий по пациенту (краткий вид)."
-                          >
-                            {loyaltySummary?.patient_id ? (
-                              <Stack gap="sm">
-                                <Text size="xs" c="dimmed">
-                                  История записей и форм недоступна в кратком виде. Откройте формы и
-                                  историю, чтобы увидеть детали.
-                                </Text>
-                                <Button
-                                  component={Link}
-                                  to={`/admin/forms`}
-                                  size="xs"
-                                  variant="subtle"
-                                  color={SEMANTIC.action.send}
-                                >
-                                  Открыть формы и согласия
-                                </Button>
-                              </Stack>
-                            ) : (
-                              <Text size="xs" c="dimmed">
-                                Нет связанного пациента. Выберите чат с привязанным контактом.
-                              </Text>
-                            )}
-                          </OmniInspectorTabShell>
-                        </Tabs.Panel>
-                        <Tabs.Panel value="ai" pt="sm">
-                          <OmniInspectorTabShell
-                            title="AI‑агент"
-                            description="Управляйте режимом работы AI‑агента в этом диалоге и наблюдайте за качеством ответов."
-                          >
-                            <Group gap="xs" align="center" wrap="wrap">
-                              <Text size="xs" c="dimmed">
-                                Spotlight (статус флага):
-                              </Text>
-                              <AiFeatureBadge status={spotlightGate.feature.status} />
-                              {!spotlightGate.enabled && spotlightGate.disabledReason ? (
-                                <Text size="xs" c="dimmed">
-                                  {spotlightGate.disabledReason}
-                                </Text>
-                              ) : null}
-                            </Group>
-                            <OmniInspectorSection title="Функции Omni / AI">
-                              <Stack gap={6}>
-                                {aiFeatures.list.map((f) => (
-                                  <Group key={f.id} gap="xs" align="flex-start" wrap="nowrap">
-                                    <AiFeatureBadge status={f.status} />
-                                    <Stack gap={0}>
-                                      <Text size="xs" fw={500}>
-                                        {f.label}
-                                      </Text>
-                                      {f.description ? (
-                                        <Text size="xs" c="dimmed" lineClamp={3}>
-                                          {f.description}
-                                        </Text>
-                                      ) : null}
-                                    </Stack>
-                                  </Group>
-                                ))}
-                              </Stack>
-                            </OmniInspectorSection>
-                            {chatDetail ? (
-                              <Text size="xs" c="dimmed">
-                                Текущий режим:{" "}
-                                {chatDetail.ai_mode === "AUTO_REPLY"
-                                  ? "Автоответ"
-                                  : chatDetail.ai_mode === "ASSISTANT"
-                                    ? "Подсказки"
-                                    : "Выкл"}
-                              </Text>
-                            ) : null}
-                          </OmniInspectorTabShell>
-                        </Tabs.Panel>
-                      </Tabs>
-                    </Stack>
-                  </Paper>
+                        onError={(msg) => setAttachError(msg)}
+                      />
+                    </Group>
+
+                    <Box style={{ flex: 1, minWidth: 320, maxWidth: 520 }}>
+                      <Select
+                        label="Быстрые ответы"
+                        placeholder="Выберите…"
+                        disabled={!quickRepliesData?.items?.length}
+                        data={(quickRepliesData?.items ?? []).map((qr: any) => ({
+                          value: String(qr.id),
+                          label: String(qr.title || qr.body || "Ответ"),
+                        }))}
+                        searchable
+                        clearable
+                        nothingFoundMessage="Нет быстрых ответов"
+                        onChange={(v) => {
+                          const id = v ? String(v) : null;
+                          const qr = id ? (quickRepliesData?.items ?? []).find((x: any) => String(x.id) === id) : null;
+                          if (qr?.body) applyQuickReply(String(qr.body));
+                        }}
+                      />
+                    </Box>
+                  </Group>
                 </Stack>
-              )}
               </Box>
-            </Flex>
-            </Box>
+            </>
           )}
-        </Stack>
-      </Box>
+        </Flex>
 
-      {messageContextMenu ? (
-        <Paper
-          withBorder
-          shadow="md"
-          p={4}
-          style={{
-            position: "fixed",
-            left: messageContextMenu.x,
-            top: messageContextMenu.y,
-            zIndex: 400,
-            minWidth: 180,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Stack gap={2}>
-            <Button
-              size="xs"
-              variant="subtle"
-              color="gray"
-              justify="flex-start"
-              leftSection={<IconMessageReply size={14} />}
-              onClick={() => {
-                handleReplyToMessage({
-                  id: messageContextMenu.id,
-                  content: messageContextMenu.content,
-                  actorType: messageContextMenu.actorType,
-                });
-                setMessageContextMenu(null);
-              }}
-            >
-              Ответить
-            </Button>
-            <Button
-              size="xs"
-              variant="subtle"
-              color="gray"
-              justify="flex-start"
-              leftSection={<IconCopy size={14} />}
-              onClick={() => {
-                handleCopyMessage(messageContextMenu.content || "");
-                setMessageContextMenu(null);
-              }}
-            >
-              Копировать
-            </Button>
-            <Button
-              size="xs"
-              variant="subtle"
-              color="gray"
-              justify="flex-start"
-              leftSection={<IconSend size={14} />}
-              onClick={() => {
-                setMessageContextMenu(null);
-              }}
-            >
-              Переслать (скоро)
-            </Button>
-            <Button
-              size="xs"
-              variant="subtle"
-              color="red"
-              justify="flex-start"
-              leftSection={<IconEyeOff size={14} />}
-              onClick={() => {
-                handleOpenHideModal(messageContextMenu.id);
-                setMessageContextMenu(null);
-              }}
-            >
-              Скрыть сообщение
-            </Button>
-          </Stack>
-        </Paper>
-      ) : null}
+        {/* Right work list */}
+        <OmniWorkPane
+          selectedChatId={selectedChatId}
+          onSelectChat={setSelectedChatId}
+          mineOpen={myOpenChats}
+          mineClosed={myClosedChats}
+        />
+      </Flex>
 
-      <GlassModal
-        opened={hideModalOpen}
-        onClose={() => setHideModalOpen(false)}
-        title="Скрыть сообщение"
+      <Modal
+        opened={analyticsOpen}
+        onClose={() => setAnalyticsOpen(false)}
+        title="Аналитика omni‑чата"
+        size="lg"
         centered
       >
-        <Stack gap="md">
-          <Text size="sm" c="dimmed">
-            Укажите причину скрытия. Сообщение останется в истории, но будет скрыто в
-            обычном режиме просмотра.
-          </Text>
-          <Textarea
-            label="Причина скрытия"
-            minRows={3}
-            value={hideReason}
-            onChange={(e) => setHideReason(e.currentTarget.value)}
-          />
-          <Flex justify="flex-end" gap="sm">
-            <Button
-              variant="subtle"
-              color={SEMANTIC.action.dismiss}
-              size="sm"
-              onClick={() => setHideModalOpen(false)}
-              disabled={hideMessage.isPending}
-            >
-              Отмена
-            </Button>
-            <Button
-              size="sm"
-              color={SEMANTIC.action.danger}
-              onClick={handleConfirmHide}
-              loading={hideMessage.isPending}
-            >
-              Скрыть
-            </Button>
-          </Flex>
-        </Stack>
-      </GlassModal>
-
-      <GlassModal
-        opened={bookingModalOpen}
-        onClose={() => setBookingModalOpen(false)}
-        title="Быстрая запись из чата"
-        centered
-      >
-        <Stack gap="md">
-          {!patientId ? (
+        <Stack gap="sm">
+          <Group grow>
+            <TextInput label="Дата от" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.currentTarget.value)} />
+            <TextInput label="Дата до" type="date" value={dateTo} onChange={(e) => setDateTo(e.currentTarget.value)} />
+          </Group>
+          {analyticsQuery.isLoading ? (
             <Text size="sm" c="dimmed">
-              Выберите чат с привязанным пациентом.
+              Загрузка…
             </Text>
-          ) : (
+          ) : analyticsQuery.isError ? (
+            <Text size="sm" c="red">
+              Не удалось загрузить аналитику.
+            </Text>
+          ) : analyticsQuery.data ? (
             <>
-              <Select
-                label="Врач"
-                placeholder="Выберите врача"
-                data={(doctors ?? []).map((d) => ({ value: d.id, label: d.full_name }))}
-                value={bookingDoctorId}
-                onChange={setBookingDoctorId}
-                searchable
-              />
-              <Select
-                label="Услуга"
-                placeholder="Выберите услугу"
-                data={(services ?? []).map((s) => ({ value: s.id, label: s.name }))}
-                value={bookingServiceId}
-                onChange={setBookingServiceId}
-                searchable
-              />
               <Group grow>
-                <TextInput
-                  label="Дата"
-                  type="date"
-                  value={bookingDate}
-                  onChange={(e) => setBookingDate(e.currentTarget.value)}
-                />
-                <TextInput
-                  label="Время"
-                  type="time"
-                  value={bookingTime}
-                  onChange={(e) => setBookingTime(e.currentTarget.value)}
-                />
+                <Paper withBorder p="sm" radius="md">
+                  <Text size="xs" c="dimmed">
+                    Создано чатов
+                  </Text>
+                  <Text fw={700}>{analyticsQuery.data.total_chats_created}</Text>
+                </Paper>
+                <Paper withBorder p="sm" radius="md">
+                  <Text size="xs" c="dimmed">
+                    Взято в работу
+                  </Text>
+                  <Text fw={700}>{analyticsQuery.data.total_claimed}</Text>
+                </Paper>
+                <Paper withBorder p="sm" radius="md">
+                  <Text size="xs" c="dimmed">
+                    Закрыто
+                  </Text>
+                  <Text fw={700}>{analyticsQuery.data.total_closed}</Text>
+                </Paper>
               </Group>
-              <Textarea
-                label="Комментарий"
-                minRows={2}
-                placeholder="Опционально"
-                value={bookingNotes}
-                onChange={(e) => setBookingNotes(e.currentTarget.value)}
-              />
-              {createBooking.isError ? (
-                <QueryErrorAlert error={createBooking.error} title="Не удалось создать запись" />
-              ) : null}
-              <Group justify="flex-end">
-                <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setBookingModalOpen(false)}>
-                  Отмена
-                </Button>
-                <Button
-                  color={SEMANTIC.action.confirm}
-                  onClick={handleCreateBooking}
-                  loading={createBooking.isPending}
-                  disabled={!bookingDoctorId || !bookingServiceId || !bookingDate || !bookingTime || !patientId}
-                >
-                  Создать запись
-                </Button>
-              </Group>
-            </>
-          )}
-        </Stack>
-      </GlassModal>
 
-      <AdminDrawer
-        opened={formDrawerOpen}
-        onClose={() => setFormDrawerOpen(false)}
-        position="right"
-        size="sm"
-        title="Отправить форму"
-      >
-        <Stack gap="md">
-          {!patientId ? (
-            <Text size="sm" c="dimmed">
-              Выберите чат с привязанным пациентом, чтобы отправить форму.
-            </Text>
-          ) : (
-            <>
-              <Select
-                label="Шаблон формы"
-                placeholder="Выберите шаблон"
-                data={(formTemplates ?? []).map((t) => ({ value: t.id, label: t.name }))}
-                value={formTemplateId}
-                onChange={(v) => setFormTemplateId(v)}
-                searchable
-              />
-              <Select
-                label="Куда отправить"
-                data={[
-                  { value: "copy_only", label: "Скопировать ссылку" },
-                  { value: "whatsapp", label: "WhatsApp" },
-                  { value: "sms", label: "SMS" },
-                ]}
-                value={formSendVia}
-                onChange={(v) => setFormSendVia((v as "whatsapp" | "sms" | "copy_only") || "copy_only")}
-              />
-              <Group justify="flex-end">
-                <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setFormDrawerOpen(false)}>
-                  Отмена
-                </Button>
-                <Button
-                  color={SEMANTIC.action.send}
-                  onClick={handleSendFormLink}
-                  loading={sendFormLink.isPending}
-                  disabled={!formTemplateId}
-                >
-                  Отправить ссылку
-                </Button>
+              <Group grow>
+                <Paper withBorder p="sm" radius="md">
+                  <Text size="xs" c="dimmed">
+                    Среднее время до взятия
+                  </Text>
+                  <Text fw={700}>
+                    {analyticsQuery.data.avg_time_to_claim_seconds != null
+                      ? `${Math.round(analyticsQuery.data.avg_time_to_claim_seconds / 60)} мин`
+                      : "—"}
+                  </Text>
+                </Paper>
+                <Paper withBorder p="sm" radius="md">
+                  <Text size="xs" c="dimmed">
+                    Среднее время до закрытия
+                  </Text>
+                  <Text fw={700}>
+                    {analyticsQuery.data.avg_time_to_close_seconds != null
+                      ? `${Math.round(analyticsQuery.data.avg_time_to_close_seconds / 60)} мин`
+                      : "—"}
+                  </Text>
+                </Paper>
               </Group>
-            </>
-          )}
-        </Stack>
-      </AdminDrawer>
 
-      <AdminDrawer
-        opened={taskDrawerOpen}
-        onClose={() => setTaskDrawerOpen(false)}
-        position="right"
-        size="sm"
-        title={
-          <Group gap="xs" wrap="wrap">
-            <Text fw={600}>Создать задачу</Text>
-            <AiFeatureBadge status={createTaskFeature.status} size="sm" />
-          </Group>
-        }
-      >
-        <Stack gap="md">
-          {createTaskFeature.status === "stub" && (
-            <Text size="sm" c="dimmed">
-              {getAiFeatureTooltip(createTaskFeature.status)}
-            </Text>
-          )}
-          <TextInput
-            label="Заголовок"
-            value={taskTitle}
-            onChange={(e) => setTaskTitle(e.currentTarget.value)}
-            required
-          />
-          <Textarea
-            label="Описание"
-            minRows={3}
-            value={taskDescription}
-            onChange={(e) => setTaskDescription(e.currentTarget.value)}
-          />
-          <Select
-            label="Приоритет"
-            data={[
-              { value: "low", label: "Низкий" },
-              { value: "medium", label: "Средний" },
-              { value: "high", label: "Высокий" },
-              { value: "urgent", label: "Срочно" },
-            ]}
-            value={taskPriority}
-            onChange={setTaskPriority}
-          />
-          <TextInput
-            label="Срок (опционально)"
-            type="datetime-local"
-            value={taskDueAt}
-            onChange={(e) => setTaskDueAt(e.currentTarget.value)}
-          />
-          <Checkbox
-            label="Взять в работу"
-            checked={taskAssignMe}
-            onChange={(e) => setTaskAssignMe(e.currentTarget.checked)}
-          />
-          <Text size="xs" c="dimmed">
-            Привязки: {leadId ? `lead_id=${leadId}` : "lead_id=—"},{" "}
-            {patientId ? `patient_id=${patientId}` : "patient_id=—"}
-          </Text>
-          {createTaskMutation.isError && (
-            <QueryErrorAlert error={createTaskMutation.error} title="Не удалось создать задачу" />
-          )}
-          <Group justify="flex-end">
-            <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setTaskDrawerOpen(false)}>
-              Отмена
-            </Button>
-            <Button
-              color={SEMANTIC.action.confirm}
-              onClick={handleCreateTask}
-              loading={createTaskMutation.isPending}
-              disabled={createTaskFeature.status === "stub" || !canCreateAiTask || !taskTitle.trim()}
-            >
-              Создать
-            </Button>
-          </Group>
+              <Divider />
+
+              <Stack gap="xs">
+                <Text fw={600}>Исходы</Text>
+                {(analyticsQuery.data.outcomes ?? []).length ? (
+                  (analyticsQuery.data.outcomes ?? []).map((o) => (
+                    <Group key={o.outcome} justify="space-between">
+                      <Text size="sm">{o.outcome}</Text>
+                      <Badge variant="light" color="gray">
+                        {o.count}
+                      </Badge>
+                    </Group>
+                  ))
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    Нет закрытий за период.
+                  </Text>
+                )}
+              </Stack>
+
+              <Divider />
+
+              <Stack gap="xs">
+                <Text fw={600}>По администраторам</Text>
+                {(analyticsQuery.data.by_admin ?? []).length ? (
+                  (analyticsQuery.data.by_admin ?? []).map((a) => (
+                    <Paper key={a.admin_id} withBorder p="xs" radius="md">
+                      <Group justify="space-between" wrap="nowrap">
+                        <Text size="sm" truncate="end">
+                          {a.admin_name ?? a.admin_id}
+                        </Text>
+                        <Group gap="xs">
+                          <Badge size="sm" variant="light" color="blue">
+                            взял: {a.claimed_count}
+                          </Badge>
+                          <Badge size="sm" variant="light" color="gray">
+                            закрыл: {a.closed_count}
+                          </Badge>
+                        </Group>
+                      </Group>
+                    </Paper>
+                  ))
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    Нет данных.
+                  </Text>
+                )}
+              </Stack>
+            </>
+          ) : null}
         </Stack>
-      </AdminDrawer>
+      </Modal>
     </Stack>
   );
 }
+

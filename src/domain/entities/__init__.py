@@ -54,6 +54,10 @@ from src.domain.entities.erp_aggregate_coverage_watermark import (  # noqa: F401
     ErpAggregateCoverageWatermark,
 )
 from src.domain.entities.omni_quick_reply import OmniQuickReply  # noqa: F401
+from src.domain.entities.omni_lead_log import OmniLeadLog  # noqa: F401
+from src.domain.entities.omni_chat_lease import OmniChatLease  # noqa: F401
+from src.domain.entities.omni_chat_presence_event import OmniChatPresenceEvent  # noqa: F401
+from src.domain.entities.lead_log_routing_rule import LeadLogRoutingRule  # noqa: F401
 from src.domain.entities.staff_feed_post_ack import StaffFeedPostAck  # noqa: F401
 from src.domain.entities.staff_announcement_publish_policy import (  # noqa: F401
     StaffAnnouncementPublishPolicy,

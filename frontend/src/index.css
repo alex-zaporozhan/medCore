@@ -580,19 +580,19 @@ body {
 
 /* Task streams: subtle header tint per semantic context (preset keys from API theme.page_tint). */
 .admin-tasks-context[data-page-tint="subtle_gray"] {
-  background: linear-gradient(180deg, rgba(120, 128, 140, 0.1) 0%, transparent 160px);
+  background: linear-gradient(180deg, rgba(120, 128, 140, 0.12) 0%, transparent 320px);
 }
 .admin-tasks-context[data-page-tint="subtle_violet"] {
-  background: linear-gradient(180deg, rgba(124, 58, 237, 0.08) 0%, transparent 160px);
+  background: linear-gradient(180deg, rgba(124, 58, 237, 0.11) 0%, transparent 320px);
 }
 .admin-tasks-context[data-page-tint="subtle_blue"] {
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08) 0%, transparent 160px);
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.11) 0%, transparent 320px);
 }
 .admin-tasks-context[data-page-tint="subtle_green"] {
-  background: linear-gradient(180deg, rgba(5, 150, 105, 0.08) 0%, transparent 160px);
+  background: linear-gradient(180deg, rgba(5, 150, 105, 0.11) 0%, transparent 320px);
 }
 .admin-tasks-context[data-page-tint="subtle_amber"] {
-  background: linear-gradient(180deg, rgba(217, 119, 6, 0.09) 0%, transparent 160px);
+  background: linear-gradient(180deg, rgba(217, 119, 6, 0.12) 0%, transparent 320px);
 }
 
 /* Hide horizontal scrollbar for stream pager (keep swipe/trackpad). */
