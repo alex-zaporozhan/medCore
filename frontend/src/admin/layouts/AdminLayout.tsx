@@ -64,6 +64,7 @@ import { ADMIN_PERM_PATIENTS_PII_READ, ADMIN_PERM_RBAC_MANAGE } from "@/shared/a
 import { SEMANTIC } from "@/shared/semanticUi";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { BOX_HIDDEN_ADMIN_PATHS, isBoxEdition } from "@/config/edition";
+import { PersonCardModalHost, PersonCardProvider } from "@/shared/ui";
 
 const NAVBAR_COLLAPSED_KEY = "admin_navbar_collapsed";
 
@@ -80,6 +81,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { to: ROUTE_PATHS.admin.dashboard, label: "Лента", icon: IconDashboard },
       { to: ROUTE_PATHS.admin.staffChat, label: "Чат команды", icon: IconMessageCircle },
+      { to: ROUTE_PATHS.admin.me, label: "Личный кабинет", icon: IconUser },
       { to: ROUTE_PATHS.admin.staffCalendar, label: "Календарь", icon: IconCalendarEvent },
       { to: ROUTE_PATHS.admin.tasks, label: "Задачи (Kanban)", icon: IconListCheck },
       { to: ROUTE_PATHS.admin.knowledge, label: "База знаний", icon: IconBook },
@@ -281,42 +283,44 @@ export default function AdminLayout() {
   };
 
   return (
-    <AppShell
-      navbar={{ width: navbarWidth, breakpoint: "sm" }}
-      padding={omniChatFullWidth ? 0 : "md"}
-      styles={
-        omniChatFullWidth
-          ? {
-              root: { minHeight: "100dvh", maxHeight: "100dvh", display: "flex" },
-              main: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
-            }
-          : undefined
-      }
-    >
-      <AppShell.Navbar
-        p="sm"
-        h="100%"
-        style={{
-          ...sidebarStyles,
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-        }}
-        withBorder={false}
+    <PersonCardProvider>
+      <AppShell
+        navbar={{ width: navbarWidth, breakpoint: "sm" }}
+        padding={omniChatFullWidth ? 0 : "md"}
+        styles={
+          omniChatFullWidth
+            ? {
+                root: { minHeight: "100dvh", maxHeight: "100dvh", display: "flex" },
+                main: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
+              }
+            : undefined
+        }
       >
-        {/* Spotlight: Cmd+K / Ctrl+K; поиск по разделам и при API по пациентам/записям; «Спросить AI» */}
-        <Spotlight
-          actions={spotlightActions}
-          shortcut={["mod + K"]}
-          nothingFound="Ничего не найдено"
-          query={spotlightQuery}
-          onQueryChange={setSpotlightQuery}
-          searchProps={{
-            placeholder: "Поиск разделов, пациентов, записей... (⌘K)",
-            leftSection: <IconSearch size={20} stroke={1.5} />,
+        <PersonCardModalHost />
+        <AppShell.Navbar
+          p="sm"
+          h="100%"
+          style={{
+            ...sidebarStyles,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
           }}
-          limit={12}
-        />
+          withBorder={false}
+        >
+          {/* Spotlight: Cmd+K / Ctrl+K; поиск по разделам и при API по пациентам/записям; «Спросить AI» */}
+          <Spotlight
+            actions={spotlightActions}
+            shortcut={["mod + K"]}
+            nothingFound="Ничего не найдено"
+            query={spotlightQuery}
+            onQueryChange={setSpotlightQuery}
+            searchProps={{
+              placeholder: "Поиск разделов, пациентов, записей... (⌘K)",
+              leftSection: <IconSearch size={20} stroke={1.5} />,
+            }}
+            limit={12}
+          />
 
         {/* Top: clinic selector + links */}
         <Box mb="md" style={{ flexShrink: 0 }}>
@@ -548,77 +552,78 @@ export default function AdminLayout() {
         )}
       </AppShell.Main>
 
-      {/* Спросить AI (Spotlight → вкладка/режим по техпаспорту) */}
-      <Modal
-        opened={askAiOpen}
-        onClose={() => {
-          setAskAiOpen(false);
-          setAiQuestion("");
-        }}
-        title={
-          <Group gap="xs" wrap="wrap">
-            <Text fw={600}>Спросить AI</Text>
-            <Badge
-              size="sm"
-              variant="light"
-              color={getAiFeatureBadgeColor(spotlightFeature.status)}
-              title={getAiFeatureTooltip(spotlightFeature.status)}
-            >
-              {getAiFeatureStatusText(spotlightFeature.status)}
-            </Badge>
-          </Group>
-        }
-        size="md"
-        centered
-      >
-        <Stack gap="md">
-          <Text size="xs" c="dimmed">
-            {getAiFeatureTooltip(spotlightFeature.status)}
-          </Text>
-          <Textarea
-            placeholder="Введите вопрос ассистенту..."
-            value={aiQuestion}
-            onChange={(e) => setAiQuestion(e.currentTarget.value)}
-            minRows={3}
-            autosize
-          />
-          <Group justify="flex-end">
-            <Button
-              variant="subtle"
-              color={SEMANTIC.action.dismiss}
-              onClick={() => {
-                setAskAiOpen(false);
-                setAiQuestion("");
-              }}
-            >
-              Отмена
-            </Button>
-            <Button
-              color={SEMANTIC.ai.accent}
-              loading={aiAgent.isPending}
-              onClick={() => {
-                if (!aiQuestion.trim()) return;
-                void logUiEvent({
-                  event_name: "ai_spotlight_send",
-                  clinic_id: currentClinicId,
-                  feature_id: spotlightFeature.id,
-                  feature_status: spotlightFeature.status,
-                });
-                aiAgent.mutate({ query: aiQuestion.trim() });
-              }}
-            >
-              Отправить
-            </Button>
-          </Group>
-          {aiAgent.data?.answer && (
-            <Paper p="sm" withBorder radius="md" bg="gray.0">
-              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                {aiAgent.data.answer}
-              </Text>
-            </Paper>
-          )}
-        </Stack>
-      </Modal>
-    </AppShell>
+        {/* Спросить AI (Spotlight → вкладка/режим по техпаспорту) */}
+        <Modal
+          opened={askAiOpen}
+          onClose={() => {
+            setAskAiOpen(false);
+            setAiQuestion("");
+          }}
+          title={
+            <Group gap="xs" wrap="wrap">
+              <Text fw={600}>Спросить AI</Text>
+              <Badge
+                size="sm"
+                variant="light"
+                color={getAiFeatureBadgeColor(spotlightFeature.status)}
+                title={getAiFeatureTooltip(spotlightFeature.status)}
+              >
+                {getAiFeatureStatusText(spotlightFeature.status)}
+              </Badge>
+            </Group>
+          }
+          size="md"
+          centered
+        >
+          <Stack gap="md">
+            <Text size="xs" c="dimmed">
+              {getAiFeatureTooltip(spotlightFeature.status)}
+            </Text>
+            <Textarea
+              placeholder="Введите вопрос ассистенту..."
+              value={aiQuestion}
+              onChange={(e) => setAiQuestion(e.currentTarget.value)}
+              minRows={3}
+              autosize
+            />
+            <Group justify="flex-end">
+              <Button
+                variant="subtle"
+                color={SEMANTIC.action.dismiss}
+                onClick={() => {
+                  setAskAiOpen(false);
+                  setAiQuestion("");
+                }}
+              >
+                Отмена
+              </Button>
+              <Button
+                color={SEMANTIC.ai.accent}
+                loading={aiAgent.isPending}
+                onClick={() => {
+                  if (!aiQuestion.trim()) return;
+                  void logUiEvent({
+                    event_name: "ai_spotlight_send",
+                    clinic_id: currentClinicId,
+                    feature_id: spotlightFeature.id,
+                    feature_status: spotlightFeature.status,
+                  });
+                  aiAgent.mutate({ query: aiQuestion.trim() });
+                }}
+              >
+                Отправить
+              </Button>
+            </Group>
+            {aiAgent.data?.answer && (
+              <Paper p="sm" withBorder radius="md" bg="gray.0">
+                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                  {aiAgent.data.answer}
+                </Text>
+              </Paper>
+            )}
+          </Stack>
+        </Modal>
+      </AppShell>
+    </PersonCardProvider>
   );
 }

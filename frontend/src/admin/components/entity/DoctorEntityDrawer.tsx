@@ -16,15 +16,23 @@ import {
   Switch,
   Table,
   Skeleton,
+  Textarea,
 } from "@mantine/core";
 import { IconDotsVertical, IconPrinter, IconCopy, IconTrash } from "@tabler/icons-react";
 import { useWorkingHours, useAbsence } from "@/hooks/useDoctorScheduleConfig";
 import { usePayrollPolicies, useSalaryTransactions } from "@/hooks/useErpPayroll";
 import { useAdminClinicServices } from "@/hooks/useAdminClinicServices";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
-import { useCreateDoctor, useUpdateDoctor } from "@/hooks";
+import {
+  useAdminPublicDoctorProfileByDoctor,
+  useCreateAdminPublicDoctorProfileMutation,
+  usePatchAdminPublicDoctorProfileMutation,
+  useCreateDoctor,
+  useUpdateDoctor,
+} from "@/hooks";
 import { SPECIALIST_ROLE_OPTIONS } from "@/api/types";
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 
 const WEEKDAY_LABELS: Record<number, string> = {
   0: "Вс",
@@ -56,7 +64,7 @@ export function DoctorEntityDrawer({
   initialTab,
   presentation = "modal",
 }: DoctorEntityDrawerProps) {
-  const { currentClinicId } = useAdminClinic();
+  const { clinics, currentClinicId } = useAdminClinic();
   const [activeTab, setActiveTab] = useState<string | null>("profile");
 
   const [fullName, setFullName] = useState("");
@@ -80,6 +88,33 @@ export function DoctorEntityDrawer({
   const { data: adminServices } = useAdminClinicServices(currentClinicId ?? null);
   const createMutation = useCreateDoctor();
   const updateMutation = useUpdateDoctor();
+
+  const clinicSlug =
+    clinics.find((c) => c.id === currentClinicId)?.clinic_slug?.trim() || null;
+
+  const publicProfileQuery = useAdminPublicDoctorProfileByDoctor(
+    opened ? currentClinicId : null,
+    opened ? doctor?.id ?? null : null
+  );
+  const createPublicProfile = useCreateAdminPublicDoctorProfileMutation(
+    currentClinicId ?? ""
+  );
+  const patchPublicProfile = usePatchAdminPublicDoctorProfileMutation(
+    currentClinicId ?? ""
+  );
+
+  const [publicDoctorSlug, setPublicDoctorSlug] = useState("");
+  const [publicIsPublished, setPublicIsPublished] = useState(false);
+  const [publicPhotoUrl, setPublicPhotoUrl] = useState("");
+  const [publicShortBio, setPublicShortBio] = useState("");
+  const [publicAboutMd, setPublicAboutMd] = useState("");
+  const [publicSlugTouched, setPublicSlugTouched] = useState(false);
+
+  const normalizedPublicDoctorSlug = publicDoctorSlug.trim().toLowerCase();
+  const publicSlugValid =
+    normalizedPublicDoctorSlug.length >= 3 &&
+    normalizedPublicDoctorSlug.length <= 120 &&
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedPublicDoctorSlug);
 
   const doctorPolicy = payrollPolicies?.find(
     (p) => p.doctor_id === doctor?.id
@@ -115,6 +150,25 @@ export function DoctorEntityDrawer({
       setSpecialistRoleCustomName("");
     }
   }, [doctor]);
+
+  useEffect(() => {
+    if (!opened) return;
+    if (!doctor) return;
+    const p = publicProfileQuery.data;
+    if (!p) {
+      setPublicDoctorSlug("");
+      setPublicIsPublished(false);
+      setPublicPhotoUrl("");
+      setPublicShortBio("");
+      setPublicAboutMd("");
+      return;
+    }
+    setPublicDoctorSlug(p.doctor_slug ?? "");
+    setPublicIsPublished(Boolean(p.is_published));
+    setPublicPhotoUrl(p.public_photo_url ?? "");
+    setPublicShortBio(p.short_bio ?? "");
+    setPublicAboutMd(p.about_md ?? "");
+  }, [opened, doctor?.id, publicProfileQuery.data]);
 
   const handleSave = () => {
     const rolePayload = {
@@ -154,6 +208,33 @@ export function DoctorEntityDrawer({
         { onSuccess: () => { onSaved?.(); onClose(); } }
       );
     }
+  };
+
+  const handleSavePublicProfile = async () => {
+    if (!currentClinicId || !doctor?.id) return;
+    setPublicSlugTouched(true);
+    if (!publicSlugValid) return;
+    const body: Record<string, unknown> = {
+      doctor_slug: normalizedPublicDoctorSlug,
+      is_published: publicIsPublished,
+      public_photo_url: publicPhotoUrl || null,
+      short_bio: publicShortBio || null,
+      about_md: publicAboutMd || null,
+    };
+    const existing = publicProfileQuery.data;
+    if (!existing) {
+      await createPublicProfile.mutateAsync({
+        doctor_id: doctor.id,
+        ...body,
+      });
+      await publicProfileQuery.refetch();
+      return;
+    }
+    await patchPublicProfile.mutateAsync({
+      profileId: existing.id,
+      body,
+    });
+    await publicProfileQuery.refetch();
   };
 
   const title =
@@ -210,6 +291,7 @@ export function DoctorEntityDrawer({
           <Tabs.Tab value="schedule">Расписание</Tabs.Tab>
           <Tabs.Tab value="payroll">Зарплата</Tabs.Tab>
           <Tabs.Tab value="services">Услуги</Tabs.Tab>
+          <Tabs.Tab value="public">Публичная карточка</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="profile" pt="md">
@@ -429,6 +511,109 @@ export function DoctorEntityDrawer({
                 ))}
               </Table.Tbody>
             </Table>
+          )}
+        </Tabs.Panel>
+
+        <Tabs.Panel value="public" pt="md">
+          {!doctor ? (
+            <Text size="sm" c="dimmed">
+              Сохраните врача, чтобы настроить публичную карточку.
+            </Text>
+          ) : (
+            <Stack gap="sm">
+              <EntityDrawerFieldBlock label="Публичная карточка врача">
+                <Stack gap="sm">
+                  {publicProfileQuery.isLoading ? <Skeleton height={90} /> : null}
+                  <TextInput
+                    label="Slug врача (для URL)"
+                    value={publicDoctorSlug}
+                    onChange={(e) => {
+                      setPublicDoctorSlug(e.target.value);
+                      setPublicSlugTouched(true);
+                    }}
+                    placeholder="ivan-ivanov"
+                    disabled={mode === "view"}
+                    required
+                    error={
+                      publicSlugTouched && !publicSlugValid
+                        ? "Только латиница/цифры/дефисы, 3–120 символов"
+                        : null
+                    }
+                  />
+                  <Switch
+                    label="Опубликовано"
+                    checked={publicIsPublished}
+                    onChange={(e) => setPublicIsPublished(e.currentTarget.checked)}
+                    disabled={mode === "view"}
+                  />
+                  <TextInput
+                    label="Фото (URL) для публичной карточки"
+                    value={publicPhotoUrl}
+                    onChange={(e) => setPublicPhotoUrl(e.target.value)}
+                    disabled={mode === "view"}
+                  />
+                  <TextInput
+                    label="Короткое описание"
+                    value={publicShortBio}
+                    onChange={(e) => setPublicShortBio(e.target.value)}
+                    disabled={mode === "view"}
+                  />
+                  <Textarea
+                    label="О враче (Markdown)"
+                    value={publicAboutMd}
+                    onChange={(e) => setPublicAboutMd(e.target.value)}
+                    disabled={mode === "view"}
+                    minRows={6}
+                  />
+                  <Group justify="space-between">
+                    <Text size="xs" c="dimmed">
+                      URL предпросмотра появится при наличии `clinic_slug`.
+                    </Text>
+                    <Button
+                      component={Link}
+                      to={
+                        clinicSlug && publicSlugValid
+                          ? `/${encodeURIComponent(clinicSlug)}/doctors/${encodeURIComponent(
+                              normalizedPublicDoctorSlug
+                            )}`
+                          : "#"
+                      }
+                      target="_blank"
+                      variant="light"
+                      disabled={!clinicSlug || !publicSlugValid || !publicIsPublished}
+                    >
+                      Открыть публичную страницу
+                    </Button>
+                  </Group>
+                </Stack>
+              </EntityDrawerFieldBlock>
+
+              {mode !== "view" && (
+                <EntityDrawerFooterBar>
+                  <Button
+                    onClick={handleSavePublicProfile}
+                    loading={createPublicProfile.isPending || patchPublicProfile.isPending}
+                    disabled={!currentClinicId || publicProfileQuery.isLoading || !publicSlugValid}
+                  >
+                    Сохранить публичную карточку
+                  </Button>
+                </EntityDrawerFooterBar>
+              )}
+
+              {(publicProfileQuery.isError ||
+                createPublicProfile.isError ||
+                patchPublicProfile.isError) && (
+                <QueryErrorAlert
+                  error={
+                    (createPublicProfile.isError && createPublicProfile.error) ||
+                    (patchPublicProfile.isError && patchPublicProfile.error) ||
+                    (publicProfileQuery.isError && publicProfileQuery.error) ||
+                    null
+                  }
+                  title="Не удалось загрузить/сохранить публичную карточку"
+                />
+              )}
+            </Stack>
           )}
         </Tabs.Panel>
       </Tabs>

@@ -267,3 +267,80 @@ async def test_soft_delete_category_clears_profession_fk(client, admin_auth):
     row = next(x for x in staff.json() if x["id"] == new_id)
     assert row["profession_category_id"] is None
     assert row["profession_category_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_category_is_clinic_scoped(client, admin_auth):
+    """
+    Hardening: soft-delete must not update AdminUser rows outside the target clinic_id.
+
+    We simulate a foreign admin in another clinic with the same profession_category_id and ensure
+    that delete in clinic A doesn't clear admin B's profession_category_id.
+    """
+    from uuid import UUID
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    cid = admin_auth["clinic_id"]
+
+    # Create category in clinic A
+    cat = await client.post(
+        f"/api/v1/admin/clinics/{cid}/staff-directory/profession-categories",
+        headers=headers,
+        json={"name": "ClinicScoped", "sort_order": 0, "default_role_codes": ["doctor"]},
+    )
+    assert cat.status_code == 201, cat.text
+    cat_id = cat.json()["id"]
+
+    # Create staff in clinic A assigned to this category.
+    email_a = f"scope_a_{uuid.uuid4().hex[:8]}@test.local"
+    cr_a = await client.post(
+        f"/api/v1/admin/clinics/{cid}/staff-directory/admins",
+        headers=headers,
+        json={
+            "email": email_a,
+            "password": "password123",
+            "role_codes": ["doctor"],
+            "profession_category_id": cat_id,
+        },
+    )
+    assert cr_a.status_code == 201, cr_a.text
+    assert cr_a.json()["profession_category_id"] == cat_id
+
+    # Directly craft an admin in another clinic referencing this category_id (shouldn't happen via API,
+    # but we guard against cross-tenant mass updates anyway).
+    from sqlalchemy import select
+    from src.infrastructure.database.base import AsyncSessionLocal
+    from src.domain.entities.admin_user import AdminUser
+
+    other_clinic_id = str(uuid.uuid4())
+    other_admin_id = uuid.uuid4()
+    async with AsyncSessionLocal() as session:
+        session.add(
+            AdminUser(
+                id=other_admin_id,
+                clinic_id=UUID(other_clinic_id),
+                organization_id=None,
+                profession_category_id=UUID(cat_id),
+                email=f"scope_b_{uuid.uuid4().hex[:8]}@test.local",
+                password_hash="x",
+                full_name="Other Clinic Admin",
+                birth_date=None,
+            )
+        )
+        await session.flush()
+        # Sanity: profession_category_id set.
+        chk = await session.execute(select(AdminUser.profession_category_id).where(AdminUser.id == other_admin_id))
+        assert str(chk.scalar_one()) == cat_id
+        await session.commit()
+
+    # Delete category in clinic A.
+    dele = await client.delete(
+        f"/api/v1/admin/clinics/{cid}/staff-directory/profession-categories/{cat_id}",
+        headers=headers,
+    )
+    assert dele.status_code == 204, dele.text
+
+    # Verify other-clinic admin still has profession_category_id.
+    async with AsyncSessionLocal() as session:
+        chk2 = await session.execute(select(AdminUser.profession_category_id).where(AdminUser.id == other_admin_id))
+        assert chk2.scalar_one() is not None

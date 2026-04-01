@@ -9,6 +9,7 @@ class SendCodeRequest(BaseModel):
     """Request DTO for sending SMS code."""
 
     phone: str
+    turnstile_token: str | None = None
 
 
 class VerifyCodeRequest(BaseModel):
@@ -16,6 +17,7 @@ class VerifyCodeRequest(BaseModel):
 
     phone: str
     code: str
+    turnstile_token: str | None = None
     consent_pd: bool = True
     consent_mailing: bool = False
     full_name: str | None = None

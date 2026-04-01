@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -28,11 +30,16 @@ from src.application.dto.staff_collab_dto import (
     StaffChatRoomResponse,
     StaffFeedCommentCreate,
     StaffFeedCommentResponse,
+    StaffFeedCommentUpdate,
     StaffFeedPostCreate,
     StaffFeedPostResponse,
     StaffFeedPostLikeResponse,
+    StaffFeedPostAckResponse,
     StaffFeedPostAckStatusResponse,
     StaffFeedAckStatusRow,
+    StaffAnnouncementPublishPolicyRow,
+    StaffAnnouncementPublishPolicyResponse,
+    StaffAnnouncementPublishPolicyAuditListResponse,
     StaffRoomCreateDm,
     StaffRoomCreateGroup,
     StaffRoomInviteCreate,
@@ -42,6 +49,10 @@ from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
 from src.domain.entities.staff_calendar_event import StaffCalendarEvent
 from src.domain.entities.staff_calendar_event_participant import StaffCalendarEventParticipant
 from src.domain.entities.task import Task
+from src.core.config import settings
+from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
+from src.core.metrics import chat_rate_limited_total
+from src.core.metrics import chat_upload_rejected_total
 
 router = APIRouter(prefix="/admin/staff", tags=["admin-staff-collab"])
 
@@ -114,6 +125,24 @@ async def list_staff_chat_rooms(
     return await _svc(session).list_chat_rooms(cid, context.user_id)
 
 
+@router.post(
+    "/chat/rooms/{room_id}/read",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permissions("view_staff_collab"))],
+)
+async def mark_staff_chat_room_read(
+    room_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> None:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    ok = await _svc(session).mark_chat_room_read(cid, room_id, context.user_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Комната не найдена")
+
+
 @router.get(
     "/chat/rooms/{room_id}/messages",
     response_model=list[StaffChatMessageResponse],
@@ -145,10 +174,28 @@ async def post_staff_chat_message(
     data: StaffChatMessageCreate,
     session: AsyncSession = Depends(get_session),
     context: AdminContext = Depends(get_request_context),
+    rate_limiter=Depends(get_rate_limiter),
 ) -> StaffChatMessageResponse:
     cid = _clinic_id(context)
     if context.user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    try:
+        await rate_limiter.check_or_raise(
+            key=f"rate:staff_chat_send:admin:{context.user_id}",
+            limit=settings.rate_staff_chat_send_per_admin_limit,
+            window=settings.rate_staff_chat_send_window_seconds,
+        )
+        await rate_limiter.check_or_raise(
+            key=f"rate:staff_chat_send:room:{room_id}",
+            limit=settings.rate_staff_chat_send_per_room_limit,
+            window=settings.rate_staff_chat_send_window_seconds,
+        )
+    except RateLimitExceeded:
+        chat_rate_limited_total.labels(kind="staff_chat").inc()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "CHAT_RATE_LIMITED", "message": "Слишком много сообщений. Подождите и повторите."},
+        ) from None
     msg = await _svc(session).post_chat_message(cid, room_id, context.user_id, data)
     if msg is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Комната не найдена")
@@ -286,7 +333,32 @@ async def upload_staff_chat_attachment(
     cid = _clinic_id(context)
     if context.user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
-    raw = await file.read()
+    max_bytes = int(settings.staff_chat_max_attachment_bytes or 0)
+    if max_bytes <= 0:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Upload limit not configured")
+    tmp = tempfile.NamedTemporaryFile(delete=False)
+    tmp_path = tmp.name
+    size = 0
+    try:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > max_bytes:
+                chat_upload_rejected_total.labels(kind="staff_chat_upload", reason="file_too_large").inc()
+                raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Файл слишком большой")
+            tmp.write(chunk)
+        tmp.flush()
+    finally:
+        try:
+            await file.close()
+        except Exception:
+            pass
+        try:
+            tmp.close()
+        except Exception:
+            pass
     try:
         att = await _svc(session).add_message_attachment(
             cid,
@@ -294,15 +366,29 @@ async def upload_staff_chat_attachment(
             context.user_id,
             file_name=file.filename or "file",
             content_type=file.content_type or "application/octet-stream",
-            raw=raw,
+            raw=None,
+            tmp_path=tmp_path,
+            size_bytes=size,
         )
     except ValueError as exc:
         if str(exc) == "file_too_large":
+            chat_upload_rejected_total.labels(kind="staff_chat_upload", reason="file_too_large").inc()
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail="Файл слишком большой",
             ) from exc
+        if str(exc) == "file_magic_mismatch":
+            chat_upload_rejected_total.labels(kind="staff_chat_upload", reason="file_magic_mismatch").inc()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Файл не соответствует заявленному типу (content-type).",
+            ) from exc
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
     if att is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сообщение не найдено")
     return att
@@ -351,6 +437,25 @@ async def list_staff_feed_posts(
         viewer_admin_id=context.user_id,
         viewer_role_codes=set(context.roles),
         limit=limit,
+        exclude_announcements=True,
+    )
+
+
+@router.get(
+    "/feed/announcements",
+    response_model=list[StaffFeedPostResponse],
+)
+async def list_staff_feed_announcements(
+    limit: int = Query(50, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(require_active_clinic_admin),
+) -> list[StaffFeedPostResponse]:
+    return await _svc(session).list_feed_posts(
+        _clinic_id(context),
+        viewer_admin_id=context.user_id,
+        viewer_role_codes=set(context.roles),
+        limit=limit,
+        only_announcements=True,
     )
 
 
@@ -367,14 +472,20 @@ async def create_staff_feed_post(
     cid = _clinic_id(context)
     if context.user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
-    # Default policy: all active admin users can publish except doctor role.
-    # Owner may override via RBAC by granting manage_staff_collab to a specific role/user.
-    if "manage_staff_collab" not in context.permissions and "doctor" in set(context.roles):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Публикация объявлений для роли врача отключена",
+    try:
+        return await _svc(session).create_feed_post(
+            cid,
+            context.user_id,
+            data,
+            actor_role_codes=set(context.roles),
         )
-    return await _svc(session).create_feed_post(cid, context.user_id, data)
+    except ValueError as exc:
+        if str(exc) == "announcement_publish_denied":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Публикация объявлений отключена политикой",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.patch(
@@ -456,6 +567,25 @@ async def toggle_staff_feed_post_like(
     cid = _clinic_id(context)
     if context.user_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    toggled = await _svc(session).toggle_feed_post_like(cid, post_id, context.user_id)
+    if toggled is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
+    liked, likes_count = toggled
+    return StaffFeedPostLikeResponse(liked=liked, likes_count=likes_count)
+
+
+@router.post(
+    "/feed/posts/{post_id}/ack",
+    response_model=StaffFeedPostAckResponse,
+)
+async def acknowledge_staff_feed_post(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(require_active_clinic_admin),
+) -> StaffFeedPostAckResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
     toggled = await _svc(session).acknowledge_feed_post(
         cid,
         post_id,
@@ -464,8 +594,11 @@ async def toggle_staff_feed_post_like(
     )
     if toggled is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
-    liked, likes_count = toggled
-    return StaffFeedPostLikeResponse(liked=liked, likes_count=likes_count)
+    acknowledged, acknowledged_count = toggled
+    return StaffFeedPostAckResponse(
+        acknowledged=acknowledged,
+        acknowledged_count=acknowledged_count,
+    )
 
 
 @router.get(
@@ -563,7 +696,12 @@ async def list_staff_feed_comments(
     session: AsyncSession = Depends(get_session),
     context: AdminContext = Depends(require_active_clinic_admin),
 ) -> list[StaffFeedCommentResponse]:
-    rows = await _svc(session).list_feed_comments(_clinic_id(context), post_id)
+    include_deleted = "owner" in set(context.roles or set())
+    rows = await _svc(session).list_feed_comments(
+        _clinic_id(context),
+        post_id,
+        include_deleted=include_deleted,
+    )
     if rows is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
     return rows
@@ -595,6 +733,109 @@ async def add_staff_feed_comment(
     if c is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пост не найден")
     return c
+
+
+@router.patch(
+    "/feed/comments/{comment_id}",
+    response_model=StaffFeedCommentResponse,
+)
+async def update_staff_feed_comment(
+    comment_id: UUID,
+    data: StaffFeedCommentUpdate,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(require_active_clinic_admin),
+) -> StaffFeedCommentResponse:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    try:
+        row = await _svc(session).update_feed_comment(
+            cid,
+            comment_id=comment_id,
+            editor_admin_id=context.user_id,
+            data=data,
+        )
+    except ValueError as exc:
+        if str(exc) == "comment_deleted":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Комментарий удалён") from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Комментарий не найден или вы не автор")
+    return row
+
+
+@router.delete(
+    "/feed/comments/{comment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_staff_feed_comment(
+    comment_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(require_active_clinic_admin),
+) -> None:
+    cid = _clinic_id(context)
+    if context.user_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется пользователь")
+    allow_moderate = (
+        ("owner" in set(context.roles or set()))
+        or ("staff.feed.comments.moderate" in set(context.permissions or set()))
+    )
+    ok = await _svc(session).delete_feed_comment(
+        cid,
+        comment_id=comment_id,
+        actor_admin_id=context.user_id,
+        allow_moderate=allow_moderate,
+    )
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Комментарий не найден или нет доступа")
+
+
+@router.get(
+    "/feed/announcements/publish-policy",
+    response_model=StaffAnnouncementPublishPolicyResponse,
+    dependencies=[Depends(require_permissions("rbac.manage"))],
+)
+async def get_staff_announcement_publish_policy(
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffAnnouncementPublishPolicyResponse:
+    cid = _clinic_id(context)
+    return await _svc(session).list_announcement_publish_policies(cid)
+
+
+@router.put(
+    "/feed/announcements/publish-policy",
+    response_model=StaffAnnouncementPublishPolicyResponse,
+    dependencies=[Depends(require_permissions("rbac.manage"))],
+)
+async def put_staff_announcement_publish_policy(
+    rows: list[StaffAnnouncementPublishPolicyRow],
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(get_request_context),
+) -> StaffAnnouncementPublishPolicyResponse:
+    cid = _clinic_id(context)
+    return await _svc(session).upsert_announcement_publish_policies(
+        cid,
+        actor_admin_id=context.user_id,
+        rows=rows,
+    )
+
+
+@router.get(
+    "/feed/announcements/publish-policy/audit",
+    response_model=StaffAnnouncementPublishPolicyAuditListResponse,
+)
+async def list_staff_announcement_publish_policy_audit(
+    limit: int = Query(200, ge=1, le=500),
+    session: AsyncSession = Depends(get_session),
+    context: AdminContext = Depends(require_active_clinic_admin),
+) -> StaffAnnouncementPublishPolicyAuditListResponse:
+    # Owner-only by default, with optional individual grant.
+    is_owner = "owner" in set(context.roles or set())
+    has_perm = "staff.announcements.policy.audit.view" in set(context.permissions or set())
+    if not (is_owner or has_perm):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    return await _svc(session).list_announcement_publish_policy_audits(_clinic_id(context), limit=limit)
 
 
 @router.post(

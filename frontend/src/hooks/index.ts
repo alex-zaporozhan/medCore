@@ -16,6 +16,21 @@ export {
 export { useServices, useService } from "./useServices";
 export { usePatients, usePatient } from "./usePatients";
 export {
+  useAdminPublicDoctorProfileByDoctor,
+  useCreateAdminPublicDoctorProfileMutation,
+  usePatchAdminPublicDoctorProfileMutation,
+} from "./useAdminPublicDoctorProfiles";
+export { usePublicDoctorProfileBySlugs } from "./usePublicDoctorProfile";
+export {
+  useAdminPatientMedicalVisits,
+  useCreateAdminPatientMedicalVisit,
+  useAdminPatientDiagnoses,
+  useCreateAdminPatientDiagnosis,
+  useAdminPatientMedicalFiles,
+  useUploadAdminPatientMedicalFile,
+  fetchAdminPatientMedicalFileDownloadUrl,
+} from "./useAdminPatientMedical";
+export {
   useCheckoutInfo,
   useAdminBookings,
   useRescheduleBookingAdmin,
@@ -77,6 +92,8 @@ export type { StaffDirectoryAdminRow, StaffProfessionCategoryRow } from "./useSt
 export type { AdminUserRow } from "./useAdminAdmins";
 export { useAdminSession } from "./useAdminSession";
 export type { AdminSessionPayload } from "./useAdminSession";
+export { useMyStaffProfile, usePatchMyStaffProfile, useUploadMyStaffAvatar } from "./useMyStaffCabinet";
+export type { MyStaffProfileDto } from "./useMyStaffCabinet";
 export {
   useAdminTasksList,
   useAdminTasksMyFocus,
@@ -102,6 +119,7 @@ export {
   useTaskStreamsQuery,
   useTaskTagsQuery,
   useCreateTaskStreamMutation,
+  usePatchTaskStreamMutation,
   useCreateTaskTagMutation,
   usePatchAdminTaskStreamTagsMutation,
 } from "./useAdminTasks";
@@ -116,8 +134,13 @@ export type {
   TaskBoardColumnRow,
   TaskStreamRow,
   TaskTagRow,
+  TaskStreamMantineColor,
+  TaskStreamPageTint,
+  TaskStreamThemeDto,
 } from "./useAdminTasks";
 export { useAdminTaskDetails } from "./useAdminTaskDetails";
+export { useStaffProfile } from "./useStaffProfile";
+export type { StaffProfileDto } from "./useStaffProfile";
 export {
   useAdminDiscounts,
   useCreateAdminDiscountMutation,

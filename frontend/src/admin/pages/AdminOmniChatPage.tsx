@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import { useAdminTasksOpen, useCreateAdminTaskMutation, useCreateAdminBooking } from "@/hooks";
+import { useAdminTasksOpen, useCreateAdminTaskMutation, useCreateAdminBooking, usePatient } from "@/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAdminOmniChats,
@@ -15,7 +15,7 @@ import {
   OMNI_CHAT_AI_MODES,
 } from "@/hooks/useAdminOmniChat";
 import { useAdminLoyaltySummaryByContact, useAdminFormSubmissions, useAdminFormTemplates, useSendFormLink } from "@/hooks";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
 import {
   AdminDrawer,
@@ -177,6 +177,9 @@ export default function AdminOmniChatPage() {
   const { data: adminSession } = useAdminSession();
   const allowAudioAttachmentDownload = adminSession?.roles?.includes("owner") ?? false;
 
+  const [searchParams] = useSearchParams();
+  const patientIdFromUrl = (searchParams.get("patient_id") || "").trim();
+
   const { currentClinicId } = useAdminClinic();
   const aiFeatures = useAiFeatures(currentClinicId ?? null);
   const crmStageFeature = aiFeatures.get("omni.tools.crm_suggest_next_stage");
@@ -276,6 +279,31 @@ export default function AdminOmniChatPage() {
     }
     return items;
   }, [aiFilter, chatsData?.items]);
+
+  const { data: patientFromUrl } = usePatient(patientIdFromUrl ? patientIdFromUrl : null);
+  const [autoAppliedPatient, setAutoAppliedPatient] = useState<string | null>(null);
+
+  // Deep-link from patient card: prefill search by phone and auto-select first matching chat.
+  useEffect(() => {
+    if (!patientIdFromUrl) return;
+    if (!patientFromUrl) return;
+    if (autoAppliedPatient === patientIdFromUrl) return;
+    const phone = String(patientFromUrl.phone || "").trim();
+    if (phone && !search.trim()) {
+      setSearch(phone);
+    }
+    setAutoAppliedPatient(patientIdFromUrl);
+  }, [patientIdFromUrl, patientFromUrl, autoAppliedPatient, search]);
+
+  useEffect(() => {
+    if (!patientIdFromUrl) return;
+    if (!patientFromUrl) return;
+    const phone = String(patientFromUrl.phone || "").trim();
+    if (!phone) return;
+    if (selectedChatId) return;
+    const match = visibleChats.find((c) => String(c.contact_primary_phone || "").trim() === phone);
+    if (match) setSelectedChatId(match.chat_id);
+  }, [patientIdFromUrl, patientFromUrl, visibleChats, selectedChatId]);
 
   const { data: chatDetail, isLoading: detailLoading } = useAdminOmniChatDetail(selectedChatId);
   const {

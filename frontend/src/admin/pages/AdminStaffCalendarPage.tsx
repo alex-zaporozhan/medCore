@@ -19,7 +19,7 @@ import {
   Table,
 } from "@mantine/core";
 import { IconClock } from "@tabler/icons-react";
-import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert, CompactMonthPicker } from "@/shared/ui";
+import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert, CompactMonthPicker, PersonNameLink } from "@/shared/ui";
 import {
   useAdminAdmins,
   useAdminSession,
@@ -1158,7 +1158,12 @@ export default function AdminStaffCalendarPage() {
                     {eventDetails.event.participants?.length ? (
                       <Text size="sm" c="dimmed">
                         Участники:{" "}
-                        {eventDetails.event.participants.map((p) => p.full_name?.trim() || "—").join(", ")}
+                        {eventDetails.event.participants.map((p, idx) => (
+                          <span key={p.id}>
+                            <PersonNameLink kind="staff" id={p.id} label={p.full_name} />
+                            {idx < (eventDetails.event.participants?.length ?? 0) - 1 ? ", " : ""}
+                          </span>
+                        ))}
                       </Text>
                     ) : null}
 

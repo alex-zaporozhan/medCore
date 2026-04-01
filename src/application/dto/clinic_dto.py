@@ -32,6 +32,7 @@ class ClinicRead(BaseModel):
     """Clinic read DTO."""
 
     id: UUID
+    clinic_slug: str | None = None
     name: str
     phone: str | None = None
     email: str | None = None
@@ -64,6 +65,7 @@ class ClinicCreate(BaseModel):
     """Clinic create DTO."""
 
     name: str = Field(..., max_length=255)
+    clinic_slug: str | None = Field(None, max_length=120)
     phone: str | None = Field(None, max_length=50)
     email: str | None = Field(None, max_length=255)
     address: str | None = Field(None, max_length=500)
@@ -82,6 +84,7 @@ class ClinicUpdate(BaseModel):
     """Clinic update DTO (partial)."""
 
     name: str | None = Field(None, max_length=255)
+    clinic_slug: str | None = Field(None, max_length=120)
     phone: str | None = Field(None, max_length=50)
     email: str | None = Field(None, max_length=255)
     address: str | None = Field(None, max_length=500)

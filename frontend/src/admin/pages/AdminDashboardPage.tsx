@@ -9,18 +9,20 @@ import {
   useStaffFeedComments,
   useAddStaffFeedComment,
   useUploadStaffFeedCommentAttachment,
+  useUpdateStaffFeedComment,
+  useDeleteStaffFeedComment,
 } from "@/hooks/useStaffCollab";
 import type {
   StaffAttachmentBrief,
   StaffFeedCommentResponse,
   StaffFeedPostResponse,
 } from "@/hooks/useStaffCollab";
-import { api, ApiErrorWithCode } from "@/api/client";
+import { api, ApiErrorWithCode, getAdminId } from "@/api/client";
 import { ChatInlineAudioPlayer } from "@/shared/ChatInlineAudioPlayer";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/queryKeys";
 import { useRevenueHunterSaved, isRevenueHunterEnabled, useAdminSession } from "@/hooks";
-import { PageSkeleton, EmptyState, ContextBar, QueryErrorAlert, GlassModal } from "@/shared/ui";
+import { PageSkeleton, EmptyState, ContextBar, QueryErrorAlert, GlassModal, PersonNameLink } from "@/shared/ui";
 import { EmojiMartPopoverPicker, AppleEmojiOverlayTextarea } from "@/shared/ui";
 import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
 import { STAFF_FEED_CHROME } from "@/shared/staffFeedChrome";
@@ -209,11 +211,20 @@ function StaffFeedPostComments({
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [fileHint, setFileHint] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<StaffFeedCommentResponse | null>(null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editBody, setEditBody] = useState<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commentFileRef = useRef<HTMLInputElement>(null);
   const { data: comments, isLoading } = useStaffFeedComments(isOpen ? postId : null);
   const addComment = useAddStaffFeedComment(isOpen ? postId : null);
   const uploadCommentAtt = useUploadStaffFeedCommentAttachment(isOpen ? postId : null);
+  const updateComment = useUpdateStaffFeedComment(isOpen ? postId : null);
+  const deleteComment = useDeleteStaffFeedComment(isOpen ? postId : null);
+  const { data: session } = useAdminSession();
+  const myAdminId = getAdminId();
+  const canModerateComments =
+    Boolean(session?.roles?.includes("owner")) ||
+    Boolean(session?.permissions?.includes("staff.feed.comments.moderate"));
 
   const triggerCommentAttachPick = useCallback((mode: "doc" | "image") => {
     const el = commentFileRef.current;
@@ -229,6 +240,8 @@ function StaffFeedPostComments({
       setReplyTo(null);
       setPendingFiles([]);
       setFileHint(null);
+      setEditingCommentId(null);
+      setEditBody("");
     }
   }, [isOpen]);
 
@@ -280,7 +293,54 @@ function StaffFeedPostComments({
                       , —{" "}
                     </Text>
                   ) : null}
-                  {c.body.trim() ? (
+                  {c.deleted_at ? (
+                    <Text size="sm" c="dimmed" style={{ textDecoration: "line-through", whiteSpace: "pre-wrap" }}>
+                      <AppleEmojiRichText text={c.body || "Удалено"} />
+                    </Text>
+                  ) : editingCommentId === c.id ? (
+                    <Stack gap="xs">
+                      <AppleEmojiOverlayTextarea
+                        value={editBody}
+                        onChange={(e) => setEditBody(e.currentTarget.value)}
+                        minRows={2}
+                      />
+                      <Group justify="flex-end" gap="xs">
+                        <Button
+                          {...STAFF_FEED_CHROME.subtleButton}
+                          size="compact-xs"
+                          onClick={() => {
+                            setEditingCommentId(null);
+                            setEditBody("");
+                          }}
+                          disabled={updateComment.isPending}
+                        >
+                          Отмена
+                        </Button>
+                        <Button
+                          {...STAFF_FEED_CHROME.primaryButton}
+                          size="compact-xs"
+                          onClick={async () => {
+                            if (!editBody.trim()) return;
+                            try {
+                              await updateComment.mutateAsync({ commentId: c.id, body: editBody.trim() });
+                              setEditingCommentId(null);
+                              setEditBody("");
+                            } catch (e) {
+                              setFileHint(
+                                e instanceof ApiErrorWithCode
+                                  ? e.message
+                                  : "Не удалось сохранить комментарий. Попробуйте ещё раз."
+                              );
+                            }
+                          }}
+                          loading={updateComment.isPending}
+                          disabled={!editBody.trim() || updateComment.isPending}
+                        >
+                          Сохранить
+                        </Button>
+                      </Group>
+                    </Stack>
+                  ) : c.body.trim() ? (
                     <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
                       <AppleEmojiRichText text={c.body} />
                     </Text>
@@ -293,16 +353,61 @@ function StaffFeedPostComments({
                     </Stack>
                   ) : null}
                 </Stack>
-                <Button
-                  {...STAFF_FEED_CHROME.subtleButton}
-                  size="compact-xs"
-                  onClick={() => {
-                    setReplyTo(c);
-                    textareaRef.current?.focus();
-                  }}
-                >
-                  Ответить
-                </Button>
+                <Group gap="xs" align="center">
+                  <Button
+                    {...STAFF_FEED_CHROME.subtleButton}
+                    size="compact-xs"
+                    disabled={Boolean(c.deleted_at)}
+                    onClick={() => {
+                      setReplyTo(c);
+                      textareaRef.current?.focus();
+                    }}
+                  >
+                    Ответить
+                  </Button>
+                  {(!c.deleted_at && (c.author.id === myAdminId || canModerateComments)) ? (
+                    <Menu position="bottom-end" withinPortal>
+                      <Menu.Target>
+                        <ActionIcon {...STAFF_FEED_CHROME.actionIcon} size="sm" aria-label="Действия">
+                          <IconDots size={16} stroke={1.5} />
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        {c.author.id === myAdminId ? (
+                          <Menu.Item
+                            onClick={() => {
+                              setFileHint(null);
+                              setEditingCommentId(c.id);
+                              setEditBody(c.body ?? "");
+                            }}
+                          >
+                            Редактировать
+                          </Menu.Item>
+                        ) : null}
+                        <Menu.Item
+                          color="red"
+                          disabled={deleteComment.isPending}
+                          onClick={async () => {
+                            const ok = window.confirm("Удалить комментарий?");
+                            if (!ok) return;
+                            setFileHint(null);
+                            try {
+                              await deleteComment.mutateAsync(c.id);
+                            } catch (e) {
+                              setFileHint(
+                                e instanceof ApiErrorWithCode
+                                  ? e.message
+                                  : "Не удалось удалить комментарий. Попробуйте ещё раз."
+                              );
+                            }
+                          }}
+                        >
+                          Удалить
+                        </Menu.Item>
+                      </Menu.Dropdown>
+                    </Menu>
+                  ) : null}
+                </Group>
               </Group>
             </Card>
           ))}
@@ -916,6 +1021,7 @@ export default function AdminDashboardPage() {
           ) : (
             <Stack gap="sm">
               {staffPosts
+                .filter((p) => !p.is_announcement)
                 .slice()
                 .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                 .map((p) => (
@@ -937,7 +1043,7 @@ export default function AdminDashboardPage() {
                             </Text>
                           ) : null}
                           <Text size="xs" c="dimmed">
-                            {p.author.full_name?.trim() || "Сотрудник"} ·{" "}
+                            <PersonNameLink kind="staff" id={p.author.id} label={p.author.full_name} size="xs" /> ·{" "}
                             {new Date(p.created_at).toLocaleString()}
                           </Text>
                         </Stack>

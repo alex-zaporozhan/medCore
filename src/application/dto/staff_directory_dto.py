@@ -44,3 +44,5 @@ class StaffDirectoryAdminRead(BaseModel):
     employment_status: str
     profession_category_id: str | None
     profession_category_name: str | None
+    bio: str | None = None
+    avatar_url: str | None = None

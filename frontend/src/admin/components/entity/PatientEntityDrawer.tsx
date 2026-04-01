@@ -2,6 +2,13 @@ import {
   useAdminBookings,
   useAdminLoyaltySummaryByContact,
   useAddFamilyMember,
+  useAdminPatientDiagnoses,
+  useAdminPatientMedicalFiles,
+  useAdminPatientMedicalVisits,
+  useCreateAdminPatientDiagnosis,
+  useCreateAdminPatientMedicalVisit,
+  useUploadAdminPatientMedicalFile,
+  fetchAdminPatientMedicalFileDownloadUrl,
   useCreatePatient,
   useUpdatePatient,
   usePatients,
@@ -27,8 +34,11 @@ import {
   Tabs,
   Text,
   TextInput,
+  Textarea,
+  ScrollArea,
   Table,
   Skeleton,
+  Alert,
 } from "@mantine/core";
 import { IconCopy, IconPrinter, IconTrash, IconDotsVertical, IconMessageCircle } from "@tabler/icons-react";
 import { useState, useEffect } from "react";
@@ -108,6 +118,12 @@ export function PatientEntityDrawer({
   const updateMutation = useUpdatePatient();
   const aiInsightMutation = usePatientAiInsight(patientId);
   const addFamilyMember = useAddFamilyMember();
+  const medVisits = useAdminPatientMedicalVisits(currentClinicId, patientId);
+  const medDiagnoses = useAdminPatientDiagnoses(currentClinicId, patientId);
+  const medFiles = useAdminPatientMedicalFiles(currentClinicId, patientId);
+  const createVisit = useCreateAdminPatientMedicalVisit(currentClinicId ?? "", patientId ?? "");
+  const createDiagnosis = useCreateAdminPatientDiagnosis(currentClinicId ?? "", patientId ?? "");
+  const uploadMedicalFile = useUploadAdminPatientMedicalFile(currentClinicId ?? "", patientId ?? "");
   const { data: patientsList = [] } = usePatients({
     clinic_id: currentClinicId ?? undefined,
   });
@@ -123,6 +139,14 @@ export function PatientEntityDrawer({
       setFormEmail(initialForm.email ?? "");
     }
   }, [patient, initialForm]);
+
+  const [visitDate, setVisitDate] = useState(dayjs().format("YYYY-MM-DD"));
+  const [visitNotes, setVisitNotes] = useState("");
+  const [diagDate, setDiagDate] = useState(dayjs().format("YYYY-MM-DD"));
+  const [diagTitle, setDiagTitle] = useState("");
+  const [diagDescription, setDiagDescription] = useState("");
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [medicalDownloadError, setMedicalDownloadError] = useState<string | null>(null);
 
   const handleSave = () => {
     if (mode === "edit" && patientId) {
@@ -544,9 +568,251 @@ export function PatientEntityDrawer({
         </Tabs.Panel>
 
         <Tabs.Panel value="notes" pt="md">
-          <Text size="sm" c="dimmed">
-            Медкарта и заметки (RichText, прикрепление файлов) — при наличии API.
-          </Text>
+          {!patientId || !currentClinicId ? (
+            <Text size="sm" c="dimmed">
+              Сохраните пациента для работы с медкартой.
+            </Text>
+          ) : (
+            <ScrollArea.Autosize mah={560} offsetScrollbars>
+              <Stack gap="md" pr="md">
+                <EntityDrawerFieldBlock label="Визиты">
+                  <Stack gap="sm">
+                  <TextInput
+                    type="date"
+                    label="Дата"
+                    value={visitDate}
+                    onChange={(e) => setVisitDate(e.target.value)}
+                    disabled={mode === "view"}
+                  />
+                  <Textarea
+                    label="Заметки (Markdown)"
+                    value={visitNotes}
+                    onChange={(e) => setVisitNotes(e.target.value)}
+                    minRows={3}
+                    disabled={mode === "view"}
+                  />
+                  {mode !== "view" && (
+                    <Group justify="flex-end">
+                      <Button
+                        onClick={() =>
+                          createVisit.mutate({
+                            visit_date: visitDate,
+                            notes_md: visitNotes || null,
+                          })
+                        }
+                        loading={createVisit.isPending}
+                      >
+                        Добавить визит
+                      </Button>
+                    </Group>
+                  )}
+                  {medVisits.isLoading ? (
+                    <Skeleton height={80} />
+                  ) : medVisits.data?.length ? (
+                    <Table striped verticalSpacing="sm">
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th>Дата</Table.Th>
+                          <Table.Th>Заметки</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {medVisits.data.map((v) => (
+                          <Table.Tr key={v.id}>
+                            <Table.Td>{v.visit_date}</Table.Td>
+                            <Table.Td>
+                              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                                {v.notes_md || "—"}
+                              </Text>
+                            </Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      Пока нет визитов.
+                    </Text>
+                  )}
+                  </Stack>
+                </EntityDrawerFieldBlock>
+
+                <EntityDrawerFieldBlock label="Диагнозы">
+                  <Stack gap="sm">
+                  <Group grow>
+                    <TextInput
+                      type="date"
+                      label="Дата"
+                      value={diagDate}
+                      onChange={(e) => setDiagDate(e.target.value)}
+                      disabled={mode === "view"}
+                    />
+                    <TextInput
+                      label="Название"
+                      value={diagTitle}
+                      onChange={(e) => setDiagTitle(e.target.value)}
+                      disabled={mode === "view"}
+                    />
+                  </Group>
+                  <Textarea
+                    label="Описание"
+                    value={diagDescription}
+                    onChange={(e) => setDiagDescription(e.target.value)}
+                    minRows={2}
+                    disabled={mode === "view"}
+                  />
+                  {mode !== "view" && (
+                    <Group justify="flex-end">
+                      <Button
+                        onClick={() =>
+                          createDiagnosis.mutate({
+                            diagnosis_date: diagDate,
+                            title: diagTitle,
+                            description: diagDescription || null,
+                          })
+                        }
+                        loading={createDiagnosis.isPending}
+                        disabled={!diagTitle.trim()}
+                      >
+                        Добавить диагноз
+                      </Button>
+                    </Group>
+                  )}
+                  {medDiagnoses.isLoading ? (
+                    <Skeleton height={80} />
+                  ) : medDiagnoses.data?.length ? (
+                    <Table striped verticalSpacing="sm">
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th>Дата</Table.Th>
+                          <Table.Th>Диагноз</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {medDiagnoses.data.map((d) => (
+                          <Table.Tr key={d.id}>
+                            <Table.Td>{d.diagnosis_date}</Table.Td>
+                            <Table.Td>
+                              <Text fw={600} size="sm">
+                                {d.title}
+                              </Text>
+                              {d.description ? (
+                                <Text size="sm" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
+                                  {d.description}
+                                </Text>
+                              ) : null}
+                            </Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      Пока нет диагнозов.
+                    </Text>
+                  )}
+                  </Stack>
+                </EntityDrawerFieldBlock>
+
+                <EntityDrawerFieldBlock label="Файлы">
+                  <Stack gap="sm">
+                  {medicalDownloadError ? (
+                    <Alert
+                      color="red"
+                      title="Не удалось скачать файл"
+                      onClose={() => setMedicalDownloadError(null)}
+                      withCloseButton
+                    >
+                      {medicalDownloadError}
+                    </Alert>
+                  ) : null}
+                  <input
+                    type="file"
+                    onChange={(e) => setFileToUpload(e.target.files?.[0] ?? null)}
+                    disabled={mode === "view"}
+                  />
+                  {mode !== "view" && (
+                    <Group justify="flex-end">
+                      <Button
+                        onClick={async () => {
+                          if (!fileToUpload) return;
+                          await uploadMedicalFile.mutateAsync({ file: fileToUpload });
+                          setFileToUpload(null);
+                        }}
+                        loading={uploadMedicalFile.isPending}
+                        disabled={!fileToUpload}
+                      >
+                        Загрузить файл
+                      </Button>
+                    </Group>
+                  )}
+                  {medFiles.isLoading ? (
+                    <Skeleton height={80} />
+                  ) : medFiles.data?.length ? (
+                    <Table striped verticalSpacing="sm">
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th>Файл</Table.Th>
+                          <Table.Th>Тип</Table.Th>
+                          <Table.Th>Размер</Table.Th>
+                          <Table.Th />
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {medFiles.data.map((f) => (
+                          <Table.Tr key={f.id}>
+                            <Table.Td>{f.file_name}</Table.Td>
+                            <Table.Td>{f.content_type}</Table.Td>
+                            <Table.Td>{Math.round(f.size_bytes / 1024)} KB</Table.Td>
+                            <Table.Td>
+                              <Button
+                                size="xs"
+                                variant="light"
+                                onClick={async () => {
+                                  try {
+                                    setMedicalDownloadError(null);
+                                    const url = await fetchAdminPatientMedicalFileDownloadUrl({
+                                      clinicId: currentClinicId,
+                                      patientId,
+                                      fileId: f.id,
+                                    });
+                                    window.open(url, "_blank", "noopener,noreferrer");
+                                  } catch (e) {
+                                    setMedicalDownloadError(
+                                      e instanceof Error ? e.message : "Неизвестная ошибка"
+                                    );
+                                  }
+                                }}
+                              >
+                                Скачать
+                              </Button>
+                            </Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      Пока нет файлов.
+                    </Text>
+                  )}
+                  </Stack>
+                </EntityDrawerFieldBlock>
+
+                {(medVisits.isError || medDiagnoses.isError || medFiles.isError) && (
+                  <QueryErrorAlert
+                    error={
+                      (medVisits.isError && medVisits.error) ||
+                      (medDiagnoses.isError && medDiagnoses.error) ||
+                      (medFiles.isError && medFiles.error) ||
+                      null
+                    }
+                    title="Не удалось загрузить медкарту"
+                  />
+                )}
+              </Stack>
+            </ScrollArea.Autosize>
+          )}
         </Tabs.Panel>
 
         <Tabs.Panel value="comms" pt="md">

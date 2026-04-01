@@ -53,11 +53,24 @@ import {
   useRbacPolicies,
   useRbacUsers,
 } from "@/hooks";
+import { useStaffAnnouncementPublishPolicyAudit } from "@/hooks/useStaffCollab";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { ContextBar, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
 import { ADMIN_PERM_RBAC_MANAGE } from "@/shared/adminPermissions";
 import type { RbacPermissionRead } from "@/hooks/useAdminRbacManagement";
+
+const STAFF_ANNOUNCEMENTS_POLICY_AUDIT_VIEW = "staff.announcements.policy.audit.view";
+
+function downloadJson(filename: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 function sortedUnique(values: string[]): string[] {
   return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
@@ -83,6 +96,10 @@ export default function AdminRightsPoliciesPage() {
   const usersQ = useRbacUsers(effectiveClinicId);
   const policiesQ = useRbacPolicies(effectiveClinicId);
   const auditQ = useRbacAudit(100, effectiveClinicId);
+  const canViewAnnouncementsPolicyAudit =
+    Boolean(session?.roles?.includes("owner")) ||
+    Boolean(session?.permissions?.includes(STAFF_ANNOUNCEMENTS_POLICY_AUDIT_VIEW));
+  const announcementsAuditQ = useStaffAnnouncementPublishPolicyAudit(200);
   const patchRolePermissions = usePatchRolePermissions();
   const patchUserRoles = usePatchUserRoles();
   const patchUserPermissions = usePatchUserPermissions();
@@ -135,6 +152,40 @@ export default function AdminRightsPoliciesPage() {
     ai_supervisor_send_at_utc: "",
     ai_supervisor_recipient_chat_ids: "",
   });
+
+  const announcementsAuditItems = useMemo(() => announcementsAuditQ.data?.items ?? [], [announcementsAuditQ.data?.items]);
+
+  const exportAnnouncementsAuditCsv = useCallback(() => {
+    const rows: string[][] = [
+      ["created_at", "actor", "deny_roles", "deny_users"],
+      ...announcementsAuditItems.map((r) => {
+        const snapPolicies = (r.snapshot?.policies ?? []) as {
+          scope_type?: string;
+          scope_value?: string;
+          can_publish?: boolean;
+        }[];
+        const denyRoles = snapPolicies
+          .filter((p) => p.scope_type === "role" && p.can_publish === false)
+          .map((p) => p.scope_value)
+          .filter(Boolean);
+        const denyUsers = snapPolicies
+          .filter((p) => p.scope_type === "user" && p.can_publish === false)
+          .map((p) => p.scope_value)
+          .filter(Boolean);
+        return [
+          new Date(r.created_at).toLocaleString(),
+          r.actor_name || r.actor_admin_id || "",
+          denyRoles.join(", "),
+          denyUsers.join(", "),
+        ];
+      }),
+    ];
+    downloadUtf8Csv("announcement_policy_audit.csv", rows);
+  }, [announcementsAuditItems]);
+
+  const exportAnnouncementsAuditJson = useCallback(() => {
+    downloadJson("announcement_policy_audit.json", announcementsAuditItems);
+  }, [announcementsAuditItems]);
 
   const t = useMemo(() => getRbacRightsPoliciesCopy(uiLocale), [uiLocale]);
 
@@ -1332,6 +1383,68 @@ export default function AdminRightsPoliciesPage() {
               </Group>
             </Stack>
           </Card>
+
+          {canViewAnnouncementsPolicyAudit ? (
+            <Card withBorder mt="md">
+              <Stack gap="sm">
+                <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+                  <Stack gap={2}>
+                    <Text fw={600}>Журнал запретов публикации объявлений</Text>
+                    <Text size="sm" c="dimmed">
+                      История изменений политики запретов (кто менял и что было сохранено). Доступ по умолчанию только у владельца.
+                    </Text>
+                  </Stack>
+                  <Group gap="xs">
+                    <Button size="xs" variant="light" onClick={() => announcementsAuditQ.refetch()}>
+                      Обновить
+                    </Button>
+                    <Button size="xs" variant="light" onClick={exportAnnouncementsAuditCsv} disabled={announcementsAuditItems.length === 0}>
+                      Скачать CSV
+                    </Button>
+                    <Button size="xs" variant="light" onClick={exportAnnouncementsAuditJson} disabled={announcementsAuditItems.length === 0}>
+                      Скачать JSON
+                    </Button>
+                  </Group>
+                </Group>
+
+                {announcementsAuditQ.isLoading ? (
+                  <Text size="sm" c="dimmed">Загрузка…</Text>
+                ) : announcementsAuditQ.isError ? (
+                  <Alert color="red" title="Ошибка">
+                    Не удалось загрузить журнал.
+                  </Alert>
+                ) : announcementsAuditItems.length === 0 ? (
+                  <Text size="sm" c="dimmed">Пока нет записей.</Text>
+                ) : (
+                  <Table withRowBorders withTableBorder striped>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Когда</Table.Th>
+                        <Table.Th>Кто</Table.Th>
+                        <Table.Th>Запрещённые роли</Table.Th>
+                        <Table.Th>Запрещённые сотрудники</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {announcementsAuditItems.slice(0, 200).map((r) => {
+                        const snapPolicies = (r.snapshot?.policies ?? []) as { scope_type?: string; scope_value?: string; can_publish?: boolean }[];
+                        const denyRoles = snapPolicies.filter((p) => p.scope_type === "role" && p.can_publish === false).map((p) => p.scope_value).filter(Boolean);
+                        const denyUsers = snapPolicies.filter((p) => p.scope_type === "user" && p.can_publish === false).map((p) => p.scope_value).filter(Boolean);
+                        return (
+                          <Table.Tr key={r.id}>
+                            <Table.Td>{new Date(r.created_at).toLocaleString()}</Table.Td>
+                            <Table.Td>{r.actor_name || r.actor_admin_id || "—"}</Table.Td>
+                            <Table.Td>{denyRoles.length ? denyRoles.join(", ") : "—"}</Table.Td>
+                            <Table.Td>{denyUsers.length ? denyUsers.join(", ") : "—"}</Table.Td>
+                          </Table.Tr>
+                        );
+                      })}
+                    </Table.Tbody>
+                  </Table>
+                )}
+              </Stack>
+            </Card>
+          ) : null}
         </Tabs.Panel>
 
         <Tabs.Panel value="audit" pt="md">

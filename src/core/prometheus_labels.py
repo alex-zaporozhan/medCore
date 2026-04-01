@@ -20,3 +20,8 @@ def clinic_bucket_label(clinic_id: UUID | str | None) -> str:
 def account_bucket_label(account_id: UUID | str | None) -> str:
     """Same bucketing for omnichannel `business_account_id` (avoids per-tenant series explosion)."""
     return clinic_bucket_label(account_id)
+
+
+def admin_bucket_label(admin_id: UUID | str | None) -> str:
+    """Map admin id to one of 32 buckets (low-cardinality SOC signals)."""
+    return clinic_bucket_label(admin_id)

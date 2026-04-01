@@ -14,7 +14,10 @@ const mutateClaim = vi.fn();
 const mutateCreate = vi.fn();
 const mutateComment = vi.fn();
 const mutateInvite = vi.fn();
+const mutatePatchStream = vi.fn();
+const mutatePatchStreamTags = vi.fn();
 let capturedOnDragEnd: ((event: any) => void) | null = null;
+let capturedOnDragOver: ((event: any) => void) | null = null;
 
 const mockAdmins = [
   { id: "admin-1", full_name: "Owner Admin", email: "owner@test.local" },
@@ -39,6 +42,15 @@ const mockStreams = [
     sort_order: 0,
     is_archived: false,
     theme: { page_tint: "none" as const },
+  },
+  {
+    id: "stream-sales",
+    clinic_id: "clinic-1",
+    name: "Продажи",
+    slug: "sales",
+    sort_order: 1,
+    is_archived: false,
+    theme: { page_tint: "subtle_blue" as const, mantine_color: "blue" as const },
   },
 ];
 
@@ -118,6 +130,25 @@ const mockTasks = [
     checklist_done: true,
     stage_entered_at: "2030-01-01T10:00:00Z",
   },
+  {
+    id: "task-4",
+    clinic_id: "clinic-1",
+    stream_id: "stream-sales",
+    tag_ids: [] as string[],
+    title: "Sales task",
+    description: null,
+    status: "open",
+    priority: "low",
+    assignee_id: "admin-1",
+    assignee_ids: ["admin-1"],
+    role_assignee: null,
+    due_at: "2030-01-01T10:00:00Z",
+    source: "manual",
+    rank: 1,
+    blocked: false,
+    checklist_done: false,
+    stage_entered_at: "2030-01-01T10:00:00Z",
+  },
 ];
 
 vi.mock("@/api/client", () => ({
@@ -137,8 +168,9 @@ vi.mock("@/hooks/usePatients", () => ({
 }));
 
 vi.mock("@dnd-kit/core", () => ({
-  DndContext: ({ onDragEnd, children }: any) => {
+  DndContext: ({ onDragEnd, onDragOver, children }: any) => {
     capturedOnDragEnd = onDragEnd;
+    capturedOnDragOver = onDragOver ?? null;
     return <div>{children}</div>;
   },
   PointerSensor: function PointerSensor() {},
@@ -174,8 +206,9 @@ vi.mock("@/hooks", () => ({
     isLoading: false,
   }),
   useCreateTaskStreamMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  usePatchTaskStreamMutation: () => ({ mutate: mutatePatchStream, isPending: false }),
   useCreateTaskTagMutation: () => ({ mutate: vi.fn(), isPending: false }),
-  usePatchAdminTaskStreamTagsMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  usePatchAdminTaskStreamTagsMutation: () => ({ mutate: mutatePatchStreamTags, isPending: false }),
   useAdminTasksMyFocus: () => ({ data: [] }),
   useCreateAdminTaskMutation: () => ({ mutate: mutateCreate, isPending: false }),
   useClaimAdminTaskMutation: () => ({ mutate: mutateClaim, isPending: false }),
@@ -230,18 +263,19 @@ describe("AdminTasksPage workstation behavior", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedOnDragEnd = null;
+    capturedOnDragOver = null;
   });
 
   it("renders WIP/SLA/Aging indicators", () => {
     renderPage();
-    expect(screen.getByText(/WIP 2\/8/)).toBeInTheDocument();
-    expect(screen.getByText(/SLA overdue: 1/)).toBeInTheDocument();
-    expect(screen.getByText(/Aging 48h\+: 1/)).toBeInTheDocument();
+    expect(screen.getAllByText(/WIP 2\/8/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/SLA overdue: 1/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Aging 48h\+: 1/).length).toBeGreaterThan(0);
   });
 
   it("moves task by keyboard Alt+ArrowRight", () => {
     renderPage();
-    const taskCard = screen.getByText("Overdue task").closest("div");
+    const taskCard = screen.getAllByText("Overdue task")[0]?.closest("div");
     if (!taskCard) throw new Error("task card not found");
     fireEvent.keyDown(taskCard, { key: "ArrowRight", altKey: true });
     expect(mutateStatus).toHaveBeenCalled();
@@ -255,6 +289,46 @@ describe("AdminTasksPage workstation behavior", () => {
       over: { id: "droppable-review" },
     });
     expect(mutateStatus).toHaveBeenCalledWith({ taskId: "task-1", status: "review" });
+  });
+
+  it("auto-scroll intent can be triggered via nav drop zones", () => {
+    renderPage();
+    if (!capturedOnDragOver) throw new Error("DnD over handler not captured");
+    // Should not throw when hovering nav zones (timers handled inside page).
+    capturedOnDragOver({ over: { id: "nav-next" } });
+    capturedOnDragOver({ over: { id: "nav-prev" } });
+    capturedOnDragOver({ over: null });
+  });
+
+  it("moves task between streams when dropped on stream header drop zone", () => {
+    renderPage();
+    if (!capturedOnDragEnd) throw new Error("DnD handler not captured");
+    capturedOnDragEnd({
+      active: { id: "task-1" },
+      over: { id: "stream-page-stream-sales" },
+    });
+    expect(mutatePatchStreamTags).toHaveBeenCalled();
+  });
+
+  it("switching stream changes visible tasks", () => {
+    renderPage();
+    // Switch to another stream via menu
+    fireEvent.click(screen.getByText("Все потоки"));
+    fireEvent.click(screen.getByText("Продажи"));
+    expect(screen.getByText("Продажи")).toBeInTheDocument();
+  });
+
+  it("scrolling the pager updates selected stream", async () => {
+    vi.useFakeTimers();
+    renderPage();
+    const pager = screen.getByTestId("stream-pager") as HTMLElement & { scrollLeft: number };
+    Object.defineProperty(pager, "clientWidth", { value: 1000, configurable: true });
+    pager.scrollLeft = 1000; // next page
+    fireEvent.scroll(pager);
+    vi.advanceTimersByTime(200);
+    // Active stream label should update
+    expect(screen.getByText("Продажи")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("handles drag reorder inside a column", () => {

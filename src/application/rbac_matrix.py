@@ -49,6 +49,14 @@ PERMISSIONS: Final[list[PermissionDef]] = [
         "patients.pii.read",
         "Просмотр и изменение ПД пациентов (списки, карточки, телефоны); не для роли врача/линейного персонала",
     ),
+    PermissionDef(
+        "patients.medical.read",
+        "Просмотр медицинской карты пациента (визиты, диагнозы, файлы). Отдельно от ПД (PII).",
+    ),
+    PermissionDef(
+        "patients.medical.write",
+        "Изменение медицинской карты пациента (добавление визитов/диагнозов/файлов).",
+    ),
     PermissionDef("view_tasks", "Просмотр задач"),
     PermissionDef("manage_tasks", "Создание и изменение задач"),
     PermissionDef("assign_tasks", "Назначение задач другим пользователям"),
@@ -100,6 +108,14 @@ PERMISSIONS: Final[list[PermissionDef]] = [
         "Публикация и правка постов на стене, сообщения в чате персонала, календарь, статьи базы знаний",
     ),
     PermissionDef(
+        "staff.feed.comments.moderate",
+        "Модерация комментариев в ленте персонала (удаление чужих комментариев)",
+    ),
+    PermissionDef(
+        "staff.announcements.policy.audit.view",
+        "Просмотр журнала изменений политики запретов публикации объявлений",
+    ),
+    PermissionDef(
         "invite_staff_calendar_participants",
         "Приглашение участников на события календаря (совещания); без права — только личные события",
     ),
@@ -133,6 +149,8 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "view_crm",
         "manage_crm",
         "patients.pii.read",
+        "patients.medical.read",
+        "patients.medical.write",
         "view_tasks",
         "manage_tasks",
         "assign_tasks",
@@ -155,6 +173,7 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "ai.tasks.run",
         "view_staff_collab",
         "manage_staff_collab",
+        "staff.feed.comments.moderate",
         "invite_staff_calendar_participants",
         "omni.inbox.manage",
         "manage_staff_directory",
@@ -168,6 +187,8 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "view_crm",
         "manage_crm",
         "patients.pii.read",
+        "patients.medical.read",
+        "patients.medical.write",
         "view_tasks",
         "manage_tasks",
         "assign_tasks",
@@ -194,6 +215,8 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "tasks.change_status",
         "view_staff_collab",
         "manage_staff_collab",
+        "patients.medical.read",
+        "patients.medical.write",
     ],
 }
 

@@ -4,6 +4,8 @@ import logging
 import os
 import re
 import uuid
+import hashlib
+import shutil
 from pathlib import Path
 from uuid import UUID
 
@@ -31,12 +33,15 @@ from src.domain.interfaces.repositories.chat_message_repository import ChatMessa
 from src.domain.interfaces.repositories.conversation_repository import ConversationRepository
 from src.infrastructure.database.chat_message_repo_impl import ChatMessageRepositoryImpl
 from src.infrastructure.database.conversation_repo_impl import ConversationRepositoryImpl
+from src.infrastructure.database.redis_client import get_redis
+from src.core.metrics import chat_dedup_hits_total
 
 logger = logging.getLogger(__name__)
 
 BODY_MAX_LENGTH = 2000
 MESSAGES_DEFAULT_LIMIT = 50
 MESSAGES_MAX_LIMIT = 200
+DEDUP_TTL_SECONDS = 15
 
 
 def _sanitize_chat_filename(name: str) -> str:
@@ -56,6 +61,45 @@ def _allowed_clinic_chat_upload_mime(content_type: str) -> bool:
         "text/plain",
         "video/webm",
     )
+
+
+def _sniff_magic(buf: bytes) -> str | None:
+    if not buf:
+        return None
+    if buf.startswith(b"%PDF-"):
+        return "application/pdf"
+    if buf.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if buf.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if buf.startswith(b"GIF87a") or buf.startswith(b"GIF89a"):
+        return "image/gif"
+    if buf.startswith(b"RIFF") and buf[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _validate_magic_if_needed(content_type: str, first_bytes: bytes) -> None:
+    ct = (content_type or "").split(";")[0].strip().lower()
+    if ct in {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"}:
+        sniffed = _sniff_magic(first_bytes)
+        if sniffed != ct:
+            raise ValueError("file_magic_mismatch")
+
+
+def _dedup_key(*, kind: str, sender_id: UUID | None, conversation_id: UUID, message_type: str, body: str, sticker_key: str | None) -> str:
+    base = "|".join(
+        [
+            kind,
+            str(sender_id) if sender_id else "none",
+            str(conversation_id),
+            (message_type or "text")[:16],
+            (sticker_key or "")[:64],
+            body[:512],
+        ]
+    )
+    h = hashlib.sha256(base.encode("utf-8", errors="ignore")).hexdigest()
+    return f"dedup:{kind}:{conversation_id}:{h}"
 
 
 class ChatService:
@@ -168,6 +212,34 @@ class ChatService:
                 unread_by_patient_count=0,
             )
             conv = await self.conv_repo.create(conv)
+        # Dedup: suppress identical sends within a short window.
+        try:
+            redis = await get_redis()
+            dk = _dedup_key(
+                kind="patient_chat",
+                sender_id=patient_id,
+                conversation_id=conv.id,
+                message_type=message_type,
+                body=body_val,
+                sticker_key=sticker_key,
+            )
+            existing_id = await redis.get(dk)
+            if existing_id:
+                chat_dedup_hits_total.labels(kind="patient_chat").inc()
+                m = await self.msg_repo.get_by_id(UUID(existing_id))
+                if m is not None:
+                    return MessageDto(
+                        id=m.id,
+                        sender_type=m.sender_type,
+                        message_type=getattr(m, "message_type", "text"),
+                        body=m.body,
+                        sticker_key=getattr(m, "sticker_key", None),
+                        created_at=m.created_at,
+                        is_mine=True,
+                        attachments=[],
+                    )
+        except Exception:
+            pass
         now = utc_now_naive()
         msg = ChatMessage(
             clinic_id=clinic_id,
@@ -182,6 +254,11 @@ class ChatService:
             read_by_patient_at=None,
         )
         msg = await self.msg_repo.create(msg)
+        try:
+            redis = await get_redis()
+            await redis.setex(dk, DEDUP_TTL_SECONDS, str(msg.id))
+        except Exception:
+            pass
         conv.last_message_at = now
         conv.last_message_sender_type = "patient"
         conv.unread_by_admin_count = (conv.unread_by_admin_count or 0) + 1
@@ -207,12 +284,23 @@ class ChatService:
         body: str,
         file_name: str,
         content_type: str,
-        raw: bytes,
+        raw: bytes | None = None,
+        tmp_path: str | None = None,
+        size_bytes: int | None = None,
     ) -> MessageDto | None:
-        if not raw:
+        if raw is None and tmp_path is None:
             return None
-        if len(raw) > settings.staff_chat_max_attachment_bytes:
+        file_size = len(raw) if raw is not None else int(size_bytes or 0)
+        if file_size <= 0:
+            return None
+        if file_size > settings.staff_chat_max_attachment_bytes:
             raise ValueError("file_too_large")
+        # Sniff magic bytes for formats where we can; avoid trusting content_type blindly.
+        try:
+            first = raw[:16] if raw is not None else (open(tmp_path, "rb").read(16) if tmp_path else b"")
+        except Exception:
+            first = b""
+        _validate_magic_if_needed(content_type, first)
         if not _allowed_clinic_chat_upload_mime(content_type):
             raise ValueError("file_type_not_allowed")
         caption = (body or "").strip()
@@ -244,19 +332,36 @@ class ChatService:
             read_by_patient_at=None,
         )
         msg = await self.msg_repo.create(msg)
+        try:
+            redis = await get_redis()
+            dk = _dedup_key(
+                kind="patient_chat_upload",
+                sender_id=patient_id,
+                conversation_id=conv.id,
+                message_type="file",
+                body=caption,
+                sticker_key=None,
+            )
+            await redis.setex(dk, DEDUP_TTL_SECONDS, str(msg.id))
+        except Exception:
+            pass
         att_id = uuid.uuid4()
         safe = _sanitize_chat_filename(file_name)
         rel = f"{clinic_id}/clinic_chat/{att_id}_{safe}"
         fs_path = Path(settings.staff_chat_upload_root) / rel.replace("/", os.sep)
         fs_path.parent.mkdir(parents=True, exist_ok=True)
-        fs_path.write_bytes(raw)
+        if raw is not None:
+            fs_path.write_bytes(raw)
+        else:
+            with open(tmp_path, "rb") as src, open(fs_path, "wb") as dst:
+                shutil.copyfileobj(src, dst, length=1024 * 1024)
         att_row = ChatMessageAttachment(
             id=att_id,
             clinic_id=clinic_id,
             message_id=msg.id,
             file_name=(file_name or "file")[:500],
             content_type=(content_type or "application/octet-stream")[:128],
-            size_bytes=len(raw),
+            size_bytes=file_size,
             storage_path=rel.replace("\\", "/"),
         )
         self.session.add(att_row)
@@ -296,12 +401,22 @@ class ChatService:
         body: str,
         file_name: str,
         content_type: str,
-        raw: bytes,
+        raw: bytes | None = None,
+        tmp_path: str | None = None,
+        size_bytes: int | None = None,
     ) -> MessageDto | None:
-        if not raw:
+        if raw is None and tmp_path is None:
             return None
-        if len(raw) > settings.staff_chat_max_attachment_bytes:
+        file_size = len(raw) if raw is not None else int(size_bytes or 0)
+        if file_size <= 0:
+            return None
+        if file_size > settings.staff_chat_max_attachment_bytes:
             raise ValueError("file_too_large")
+        try:
+            first = raw[:16] if raw is not None else (open(tmp_path, "rb").read(16) if tmp_path else b"")
+        except Exception:
+            first = b""
+        _validate_magic_if_needed(content_type, first)
         if not _allowed_clinic_chat_upload_mime(content_type):
             raise ValueError("file_type_not_allowed")
         caption = (body or "").strip()
@@ -329,14 +444,18 @@ class ChatService:
         rel = f"{clinic_id}/clinic_chat/{att_id}_{safe}"
         fs_path = Path(settings.staff_chat_upload_root) / rel.replace("/", os.sep)
         fs_path.parent.mkdir(parents=True, exist_ok=True)
-        fs_path.write_bytes(raw)
+        if raw is not None:
+            fs_path.write_bytes(raw)
+        else:
+            with open(tmp_path, "rb") as src, open(fs_path, "wb") as dst:
+                shutil.copyfileobj(src, dst, length=1024 * 1024)
         att_row = ChatMessageAttachment(
             id=att_id,
             clinic_id=clinic_id,
             message_id=msg.id,
             file_name=(file_name or "file")[:500],
             content_type=(content_type or "application/octet-stream")[:128],
-            size_bytes=len(raw),
+            size_bytes=file_size,
             storage_path=rel.replace("\\", "/"),
         )
         self.session.add(att_row)
@@ -594,6 +713,34 @@ class ChatService:
         conv = await self.conv_repo.get_by_id(conversation_id)
         if conv is None or conv.clinic_id != clinic_id:
             return None
+        # Dedup: suppress identical sends within a short window.
+        try:
+            redis = await get_redis()
+            dk = _dedup_key(
+                kind="admin_chat",
+                sender_id=admin_id,
+                conversation_id=conv.id,
+                message_type=message_type,
+                body=body_val,
+                sticker_key=sticker_key,
+            )
+            existing_id = await redis.get(dk)
+            if existing_id:
+                chat_dedup_hits_total.labels(kind="admin_chat").inc()
+                m = await self.msg_repo.get_by_id(UUID(existing_id))
+                if m is not None:
+                    return MessageDto(
+                        id=m.id,
+                        sender_type=m.sender_type,
+                        message_type=getattr(m, "message_type", "text"),
+                        body=m.body,
+                        sticker_key=getattr(m, "sticker_key", None),
+                        created_at=m.created_at,
+                        is_mine=True,
+                        attachments=[],
+                    )
+        except Exception:
+            pass
         now = utc_now_naive()
         msg = ChatMessage(
             clinic_id=clinic_id,
@@ -608,6 +755,11 @@ class ChatService:
             read_by_patient_at=None,
         )
         msg = await self.msg_repo.create(msg)
+        try:
+            redis = await get_redis()
+            await redis.setex(dk, DEDUP_TTL_SECONDS, str(msg.id))
+        except Exception:
+            pass
         conv.last_message_at = now
         conv.last_message_sender_type = "admin"
         conv.unread_by_patient_count = (conv.unread_by_patient_count or 0) + 1

@@ -22,6 +22,8 @@ from src.core.user_messages import EMPTY_DB_NO_CLINIC
 from src.domain.entities.agreement_settings import AgreementSettings
 from src.infrastructure.database.redis_client import get_redis
 from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
+from src.application.services.turnstile_service import verify_turnstile
+from src.core.metrics import auth_captcha_required_total, auth_captcha_verified_total
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,26 @@ async def send_code(
     """Send SMS code to patient phone number."""
     client_ip = request.client.host if request.client else "unknown"
     try:
+        # Soft threshold: require captcha before we start hard-denying traffic.
+        if settings.turnstile_enabled:
+            try:
+                await rate_limiter.check_or_raise(
+                    key=f"rate:auth_send_code:captcha_soft:ip:{client_ip}",
+                    limit=settings.rate_auth_send_code_captcha_soft_ip_limit,
+                    window=settings.rate_auth_captcha_soft_window_seconds,
+                )
+            except RateLimitExceeded:
+                auth_captcha_required_total.labels(reason="auth_send_code_soft_limit").inc()
+                vr = await verify_turnstile(data.turnstile_token, remote_ip=client_ip)
+                auth_captcha_verified_total.labels(status="ok" if vr.ok else "denied").inc()
+                if not vr.ok:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail={
+                            "code": "CAPTCHA_REQUIRED",
+                            "site_key": settings.turnstile_site_key,
+                        },
+                    ) from None
         await rate_limiter.check_or_raise(
             key=f"rate:auth_send_code:ip:{client_ip}",
             limit=settings.rate_auth_send_code_ip_limit,
@@ -95,9 +117,31 @@ async def send_code(
 )
 async def verify_code(
     data: VerifyCodeRequest,
+    request: Request,
     session: AsyncSession = Depends(get_session),
+    rate_limiter=Depends(get_rate_limiter),
 ) -> AuthTokenResponse:
     """Verify SMS code and return access token."""
+    client_ip = request.client.host if request.client else "unknown"
+    if settings.turnstile_enabled:
+        try:
+            await rate_limiter.check_or_raise(
+                key=f"rate:auth_verify_code:captcha_soft:ip:{client_ip}",
+                limit=settings.rate_auth_verify_code_captcha_soft_ip_limit,
+                window=settings.rate_auth_captcha_soft_window_seconds,
+            )
+        except RateLimitExceeded:
+            auth_captcha_required_total.labels(reason="auth_verify_code_soft_limit").inc()
+            vr = await verify_turnstile(data.turnstile_token, remote_ip=client_ip)
+            auth_captcha_verified_total.labels(status="ok" if vr.ok else "denied").inc()
+            if not vr.ok:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "code": "CAPTCHA_REQUIRED",
+                        "site_key": settings.turnstile_site_key,
+                    },
+                ) from None
     service = AuthService(session)
     try:
         token, patient_id = await service.verify_code(

@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import re
 import uuid
+import hashlib
+import shutil
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -36,8 +38,13 @@ from src.application.dto.staff_collab_dto import (
     StaffChatRoomResponse,
     StaffFeedCommentCreate,
     StaffFeedCommentResponse,
+    StaffFeedCommentUpdate,
     StaffFeedPostCreate,
     StaffFeedPostResponse,
+    StaffAnnouncementPublishPolicyRow,
+    StaffAnnouncementPublishPolicyResponse,
+    StaffAnnouncementPublishPolicyAuditRow,
+    StaffAnnouncementPublishPolicyAuditListResponse,
     StaffRoomCreateGroup,
     StaffRoomInviteCreate,
 )
@@ -59,10 +66,17 @@ from src.domain.entities.staff_feed_post import StaffFeedPost
 from src.domain.entities.staff_feed_post_ack import StaffFeedPostAck
 from src.domain.entities.staff_feed_post_attachment import StaffFeedPostAttachment
 from src.domain.entities.staff_feed_post_like import StaffFeedPostLike
+from src.domain.entities.staff_announcement_publish_policy import StaffAnnouncementPublishPolicy
+from src.domain.entities.staff_announcement_publish_policy_audit import (
+    StaffAnnouncementPublishPolicyAudit,
+)
 from src.domain.entities.task import Task
 from src.domain.entities.task_assignee import TaskAssignee
 from src.domain.entities.role import Role
 from src.domain.entities.user_role import UserRole
+from src.infrastructure.database.redis_client import get_redis
+from src.core.metrics import chat_dedup_hits_total
+from src.domain.entities.staff_profile import StaffProfile
 
 GENERAL_ROOM_KIND = "GENERAL"
 DM_KIND = "DM"
@@ -75,6 +89,7 @@ MEMBERSHIP_GENERAL = "general"
 MEMBERSHIP_GROUP = "group"
 MEMBERSHIP_DM = "dm"
 
+STAFF_CHAT_DEDUP_TTL_SECONDS = 15
 
 def _sanitize_filename(name: str) -> str:
     base = os.path.basename(name or "file")
@@ -92,6 +107,28 @@ def _dt_naive_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _staff_chat_dedup_key(*, clinic_id: UUID, room_id: UUID, sender_admin_id: UUID, body: str) -> str:
+    base = f"{clinic_id}|{room_id}|{sender_admin_id}|{(body or '').strip()[:512]}"
+    h = hashlib.sha256(base.encode('utf-8', errors='ignore')).hexdigest()
+    return f"dedup:staff_chat:{room_id}:{h}"
+
+
+def _sniff_magic(buf: bytes) -> str | None:
+    if not buf:
+        return None
+    if buf.startswith(b"%PDF-"):
+        return "application/pdf"
+    if buf.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if buf.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if buf.startswith(b"GIF87a") or buf.startswith(b"GIF89a"):
+        return "image/gif"
+    if buf.startswith(b"RIFF") and buf[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 def _knowledge_visible(user_roles: set[str], visible_roles: list[str] | None) -> bool:
@@ -242,11 +279,19 @@ class StaffCollaborationService:
                 row.membership_kind = MEMBERSHIP_TASK_CORE
 
     async def _admin_brief(self, admin_id: UUID) -> NamedAdminBrief:
-        res = await self._session.execute(select(AdminUser).where(AdminUser.id == admin_id))
-        u = res.scalar_one_or_none()
-        if u is None:
-            return NamedAdminBrief(id=admin_id, full_name=None)
-        return NamedAdminBrief(id=u.id, full_name=u.full_name)
+        res = await self._session.execute(
+            select(AdminUser.id, AdminUser.full_name, StaffProfile.avatar_s3_key)
+            .select_from(AdminUser)
+            .outerjoin(StaffProfile, StaffProfile.admin_id == AdminUser.id)
+            .where(AdminUser.id == admin_id)
+            .limit(1)
+        )
+        row = res.first()
+        if row is None:
+            return NamedAdminBrief(id=admin_id, full_name=None, avatar_url=None)
+        aid, full_name, avatar_key = row
+        avatar_url = f"/v1/admin/staff/avatars/{aid}" if avatar_key else None
+        return NamedAdminBrief(id=aid, full_name=full_name, avatar_url=avatar_url)
 
     async def ensure_general_room(self, clinic_id: UUID) -> StaffChatRoom:
         res = await self._session.execute(
@@ -272,20 +317,171 @@ class StaffCollaborationService:
         general = await self.ensure_general_room(clinic_id)
         await self._sync_general_room_members(clinic_id, general.id)
         await self._session.flush()
-        res = await self._session.execute(
-            select(StaffChatRoom)
+        member_res = await self._session.execute(
+            select(StaffChatRoom, StaffChatRoomMember.last_read_at)
+            .select_from(StaffChatRoom)
             .join(StaffChatRoomMember, StaffChatRoomMember.room_id == StaffChatRoom.id)
             .where(
                 StaffChatRoom.clinic_id == clinic_id,
                 StaffChatRoomMember.admin_id == admin_id,
             )
-            .order_by(StaffChatRoom.created_at)
         )
-        rooms = res.scalars().all()
-        return [
-            StaffChatRoomResponse(id=r.id, kind=r.kind, title=r.title, task_id=r.task_id)
-            for r in rooms
-        ]
+        member_rows = list(member_res.all())
+        rooms = [r for r, _lr in member_rows]
+        room_ids = [r.id for r in rooms]
+        if not room_ids:
+            return []
+
+        # Last message per room (single shot).
+        last_at_sub = (
+            select(
+                StaffChatMessage.room_id.label("room_id"),
+                func.max(StaffChatMessage.created_at).label("last_at"),
+            )
+            .where(
+                StaffChatMessage.clinic_id == clinic_id,
+                StaffChatMessage.room_id.in_(room_ids),
+            )
+            .group_by(StaffChatMessage.room_id)
+            .subquery()
+        )
+
+        # NOTE: Postgres doesn't support MAX(uuid). We join on MAX(created_at) and pick the first row per room.
+        last_msg_res = await self._session.execute(
+            select(
+                StaffChatMessage.id,
+                StaffChatMessage.room_id,
+                StaffChatMessage.body,
+                StaffChatMessage.created_at,
+                StaffChatMessage.author_admin_id,
+            )
+            .select_from(StaffChatMessage)
+            .join(
+                last_at_sub,
+                (last_at_sub.c.room_id == StaffChatMessage.room_id)
+                & (last_at_sub.c.last_at == StaffChatMessage.created_at),
+            )
+            .order_by(StaffChatMessage.room_id.asc(), StaffChatMessage.created_at.desc(), StaffChatMessage.id.desc())
+        )
+        last_msg_by_room: dict[UUID, tuple[UUID, str, datetime, UUID]] = {}
+        for mid, rid, body, created_at, author_id in last_msg_res.all():
+            if rid in last_msg_by_room:
+                continue
+            last_msg_by_room[rid] = (mid, body, created_at, author_id)
+
+        # Unread counts per room (messages after last_read_at, excluding own messages).
+        epoch = datetime(1970, 1, 1)
+        unread_res = await self._session.execute(
+            select(
+                StaffChatMessage.room_id,
+                func.count().label("unread"),
+            )
+            .select_from(StaffChatMessage)
+            .join(
+                StaffChatRoomMember,
+                (StaffChatRoomMember.room_id == StaffChatMessage.room_id)
+                & (StaffChatRoomMember.admin_id == admin_id),
+            )
+            .where(
+                StaffChatMessage.clinic_id == clinic_id,
+                StaffChatMessage.room_id.in_(room_ids),
+                StaffChatMessage.author_admin_id != admin_id,
+                StaffChatMessage.created_at > func.coalesce(StaffChatRoomMember.last_read_at, epoch),
+            )
+            .group_by(StaffChatMessage.room_id)
+        )
+        unread_by_room = {rid: int(cnt or 0) for rid, cnt in unread_res.all()}
+
+        # DM peers: derive peer ids from dm_pair_key (stored as "uuidA:uuidB").
+        dm_peer_id_by_room: dict[UUID, UUID] = {}
+        dm_peer_ids: set[UUID] = set()
+        for r in rooms:
+            if r.kind != DM_KIND or not r.dm_pair_key:
+                continue
+            try:
+                a, b = (r.dm_pair_key or "").split(":", 1)
+                peer = UUID(a) if str(UUID(b)) == str(admin_id) else UUID(b)
+                if peer == admin_id:
+                    peer = UUID(a)
+                dm_peer_id_by_room[r.id] = peer
+                dm_peer_ids.add(peer)
+            except Exception:
+                continue
+
+        dm_peer_brief: dict[UUID, NamedAdminBrief] = {}
+        if dm_peer_ids:
+            peer_res = await self._session.execute(
+                select(AdminUser.id, AdminUser.full_name, StaffProfile.avatar_s3_key)
+                .select_from(AdminUser)
+                .outerjoin(StaffProfile, StaffProfile.admin_id == AdminUser.id)
+                .where(
+                    AdminUser.id.in_(list(dm_peer_ids)),
+                    AdminUser.clinic_id == clinic_id,
+                    AdminUser.deleted_at.is_(None),
+                    AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+                )
+            )
+            for pid, full_name, avatar_key in peer_res.all():
+                dm_peer_brief[pid] = NamedAdminBrief(
+                    id=pid,
+                    full_name=full_name,
+                    avatar_url=f"/v1/admin/staff/avatars/{pid}" if avatar_key else None,
+                )
+
+        def _preview(text: str) -> str:
+            t = (text or "").strip().replace("\n", " ")
+            if len(t) <= 160:
+                return t
+            return t[:160].rstrip() + "…"
+
+        # Build responses and sort by last activity.
+        out: list[StaffChatRoomResponse] = []
+        for r in rooms:
+            last = last_msg_by_room.get(r.id)
+            last_at = last[2] if last else None
+            preview = _preview(last[1]) if last else None
+            unread = unread_by_room.get(r.id, 0)
+            peer = dm_peer_brief.get(dm_peer_id_by_room.get(r.id)) if r.kind == DM_KIND else None
+            title = peer.full_name.strip() if (peer and peer.full_name and peer.full_name.strip()) else r.title
+            out.append(
+                StaffChatRoomResponse(
+                    id=r.id,
+                    kind=r.kind,
+                    title=title,
+                    task_id=r.task_id,
+                    last_message_at=last_at,
+                    last_message_preview=preview,
+                    unread_count=unread,
+                    dm_peer=peer,
+                )
+            )
+
+        out.sort(
+            key=lambda x: (
+                0 if x.last_message_at else 1,
+                -(int(x.last_message_at.timestamp()) if x.last_message_at else 0),
+                str(x.id),
+            )
+        )
+        return out
+
+
+    async def mark_chat_room_read(self, clinic_id: UUID, room_id: UUID, admin_id: UUID) -> bool:
+        res = await self._session.execute(
+            select(StaffChatRoomMember).join(
+                StaffChatRoom, StaffChatRoom.id == StaffChatRoomMember.room_id
+            ).where(
+                StaffChatRoomMember.room_id == room_id,
+                StaffChatRoomMember.admin_id == admin_id,
+                StaffChatRoom.clinic_id == clinic_id,
+            ).limit(1)
+        )
+        row = res.scalar_one_or_none()
+        if row is None:
+            return False
+        row.last_read_at = utc_now_naive()
+        await self._session.flush()
+        return True
 
     async def list_chat_messages(
         self,
@@ -357,15 +553,50 @@ class StaffCollaborationService:
             return None
         if not await self._is_room_member(room_id, author_admin_id):
             return None
+        body_val = (data.body or "").strip()
+        if not body_val:
+            return None
+
+        dk: str | None = None
+        try:
+            redis = await get_redis()
+            dk = _staff_chat_dedup_key(
+                clinic_id=clinic_id,
+                room_id=room_id,
+                sender_admin_id=author_admin_id,
+                body=body_val,
+            )
+            existing_id = await redis.get(dk)
+            if existing_id:
+                chat_dedup_hits_total.labels(kind="staff_chat").inc()
+                row = await self._session.get(StaffChatMessage, UUID(existing_id))
+                if row is not None:
+                    author = await self._admin_brief(author_admin_id)
+                    return StaffChatMessageResponse(
+                        id=row.id,
+                        body=row.body,
+                        author=author,
+                        created_at=row.created_at,
+                        attachments=[],
+                    )
+        except Exception:
+            dk = None
+
         msg = StaffChatMessage(
             id=uuid.uuid4(),
             clinic_id=clinic_id,
             room_id=room_id,
             author_admin_id=author_admin_id,
-            body=data.body.strip(),
+            body=body_val,
         )
         self._session.add(msg)
         await self._session.flush()
+        try:
+            if dk:
+                redis = await get_redis()
+                await redis.setex(dk, STAFF_CHAT_DEDUP_TTL_SECONDS, str(msg.id))
+        except Exception:
+            pass
         author = await self._admin_brief(author_admin_id)
         return StaffChatMessageResponse(
             id=msg.id,
@@ -461,6 +692,9 @@ class StaffCollaborationService:
 
     @staticmethod
     def _is_post_visible_to_admin(post: StaffFeedPost, admin_id: UUID | None, role_codes: set[str]) -> bool:
+        # Override: owner + managers can always see announcements (even if targeted).
+        if post.is_announcement and {"owner", "manager"}.intersection(role_codes):
+            return True
         role_scope = {str(x) for x in (post.audience_roles or []) if x}
         admin_scope = {str(x) for x in (post.audience_admin_ids or []) if x}
         if not role_scope and not admin_scope:
@@ -468,6 +702,134 @@ class StaffCollaborationService:
         if admin_id is not None and str(admin_id) in admin_scope:
             return True
         return bool(role_scope.intersection(role_codes))
+
+    async def _can_publish_announcement(
+        self,
+        clinic_id: UUID,
+        *,
+        actor_admin_id: UUID,
+        actor_role_codes: set[str],
+    ) -> bool:
+        # Owner can always publish announcements.
+        if "owner" in actor_role_codes:
+            return True
+
+        # Default allow unless explicitly denied by policy (user overrides role).
+        res = await self._session.execute(
+            select(StaffAnnouncementPublishPolicy).where(
+                StaffAnnouncementPublishPolicy.clinic_id == clinic_id
+            )
+        )
+        rows = list(res.scalars().all())
+        if not rows:
+            return True
+
+        actor_id_str = str(actor_admin_id)
+        user_rows = [r for r in rows if r.scope_type == "user" and r.scope_value == actor_id_str]
+        if user_rows:
+            # If multiple rows exist (shouldn't due to unique constraint), last one wins.
+            return bool(user_rows[-1].can_publish)
+
+        role_rows = [r for r in rows if r.scope_type == "role" and r.scope_value in actor_role_codes]
+        # Any explicit deny for any of actor roles disables publishing.
+        if any(not r.can_publish for r in role_rows):
+            return False
+        # Otherwise allow.
+        return True
+
+    async def list_announcement_publish_policies(self, clinic_id: UUID) -> StaffAnnouncementPublishPolicyResponse:
+        res = await self._session.execute(
+            select(StaffAnnouncementPublishPolicy).where(
+                StaffAnnouncementPublishPolicy.clinic_id == clinic_id
+            )
+        )
+        rows = list(res.scalars().all())
+        return StaffAnnouncementPublishPolicyResponse(
+            policies=[
+                StaffAnnouncementPublishPolicyRow(
+                    scope_type=r.scope_type,
+                    scope_value=r.scope_value,
+                    can_publish=bool(r.can_publish),
+                )
+                for r in rows
+            ]
+        )
+
+    async def upsert_announcement_publish_policies(
+        self,
+        clinic_id: UUID,
+        *,
+        actor_admin_id: UUID | None = None,
+        rows: list[StaffAnnouncementPublishPolicyRow],
+    ) -> StaffAnnouncementPublishPolicyResponse:
+        # Audit snapshot (who/when) for compliance / complaints wall.
+        self._session.add(
+            StaffAnnouncementPublishPolicyAudit(
+                id=uuid.uuid4(),
+                clinic_id=clinic_id,
+                actor_admin_id=actor_admin_id,
+                snapshot={"policies": [r.model_dump() for r in rows]},
+            )
+        )
+        # Full replace semantics: caller sends the whole desired policy set.
+        await self._session.execute(
+            delete(StaffAnnouncementPublishPolicy).where(
+                StaffAnnouncementPublishPolicy.clinic_id == clinic_id
+            )
+        )
+        for row in rows:
+            scope_type = (row.scope_type or "").strip()
+            scope_value = (row.scope_value or "").strip()
+            if scope_type not in ("role", "user"):
+                continue
+            if not scope_value:
+                continue
+            self._session.add(
+                StaffAnnouncementPublishPolicy(
+                    id=uuid.uuid4(),
+                    clinic_id=clinic_id,
+                    scope_type=scope_type,
+                    scope_value=scope_value,
+                    can_publish=bool(row.can_publish),
+                )
+            )
+        await self._session.flush()
+        return await self.list_announcement_publish_policies(clinic_id)
+
+    async def list_announcement_publish_policy_audits(
+        self,
+        clinic_id: UUID,
+        *,
+        limit: int = 200,
+    ) -> StaffAnnouncementPublishPolicyAuditListResponse:
+        limit = max(1, min(int(limit or 200), 500))
+        res = await self._session.execute(
+            select(
+                StaffAnnouncementPublishPolicyAudit,
+                AdminUser.full_name,
+            )
+            .select_from(StaffAnnouncementPublishPolicyAudit)
+            .join(
+                AdminUser,
+                AdminUser.id == StaffAnnouncementPublishPolicyAudit.actor_admin_id,
+                isouter=True,
+            )
+            .where(StaffAnnouncementPublishPolicyAudit.clinic_id == clinic_id)
+            .order_by(StaffAnnouncementPublishPolicyAudit.created_at.desc())
+            .limit(limit)
+        )
+        items: list[StaffAnnouncementPublishPolicyAuditRow] = []
+        for row, actor_name in res.all():
+            items.append(
+                StaffAnnouncementPublishPolicyAuditRow(
+                    id=row.id,
+                    created_at=row.created_at,
+                    actor_admin_id=row.actor_admin_id,
+                    actor_name=actor_name,
+                    snapshot=row.snapshot,
+                )
+            )
+        return StaffAnnouncementPublishPolicyAuditListResponse(items=items)
 
     async def _resolve_target_admin_ids(self, clinic_id: UUID, post: StaffFeedPost) -> set[UUID]:
         role_scope = {str(x) for x in (post.audience_roles or []) if x}
@@ -509,7 +871,11 @@ class StaffCollaborationService:
         viewer_admin_id: UUID | None = None,
         viewer_role_codes: set[str] | None = None,
         limit: int = 30,
+        only_announcements: bool = False,
+        exclude_announcements: bool = False,
     ) -> list[StaffFeedPostResponse]:
+        if only_announcements and exclude_announcements:
+            raise ValueError("invalid_feed_posts_filter")
         res = await self._session.execute(
             select(StaffFeedPost)
             .where(
@@ -520,6 +886,10 @@ class StaffCollaborationService:
             .limit(limit)
         )
         posts = list(res.scalars().all())
+        if only_announcements:
+            posts = [p for p in posts if bool(p.is_announcement)]
+        elif exclude_announcements:
+            posts = [p for p in posts if not bool(p.is_announcement)]
         role_codes = viewer_role_codes if viewer_role_codes is not None else await self._admin_role_codes(
             clinic_id,
             viewer_admin_id,
@@ -595,10 +965,23 @@ class StaffCollaborationService:
         clinic_id: UUID,
         author_admin_id: UUID,
         data: StaffFeedPostCreate,
+        *,
+        actor_role_codes: set[str] | None = None,
     ) -> StaffFeedPostResponse:
         title = data.title.strip() if data.title else None
         if title == "":
             title = None
+        role_codes = actor_role_codes if actor_role_codes is not None else await self._admin_role_codes(
+            clinic_id, author_admin_id
+        )
+        if data.is_announcement:
+            allowed = await self._can_publish_announcement(
+                clinic_id,
+                actor_admin_id=author_admin_id,
+                actor_role_codes=role_codes,
+            )
+            if not allowed:
+                raise ValueError("announcement_publish_denied")
         post = StaffFeedPost(
             id=uuid.uuid4(),
             clinic_id=clinic_id,
@@ -635,7 +1018,11 @@ class StaffCollaborationService:
         )
 
     async def list_feed_comments(
-        self, clinic_id: UUID, post_id: UUID
+        self,
+        clinic_id: UUID,
+        post_id: UUID,
+        *,
+        include_deleted: bool = False,
     ) -> list[StaffFeedCommentResponse] | None:
         chk = await self._session.execute(
             select(StaffFeedPost).where(
@@ -646,10 +1033,11 @@ class StaffCollaborationService:
         )
         if chk.scalar_one_or_none() is None:
             return None
+        base = select(StaffFeedComment).where(StaffFeedComment.post_id == post_id)
+        if not include_deleted:
+            base = base.where(StaffFeedComment.deleted_at.is_(None))
         res = await self._session.execute(
-            select(StaffFeedComment)
-            .where(StaffFeedComment.post_id == post_id)
-            .order_by(StaffFeedComment.created_at)
+            base.order_by(StaffFeedComment.created_at)
         )
         rows = list(res.scalars().all())
         parent_ids = {c.parent_comment_id for c in rows if c.parent_comment_id}
@@ -689,12 +1077,84 @@ class StaffCollaborationService:
                     body=c.body,
                     author=author,
                     created_at=c.created_at,
+                    updated_at=getattr(c, "updated_at", None),
                     parent_comment_id=c.parent_comment_id,
                     in_reply_to=in_reply_to,
                     attachments=att_map.get(c.id, []),
+                    deleted_at=getattr(c, "deleted_at", None),
+                    deleted_by_admin_id=getattr(c, "deleted_by_admin_id", None),
                 )
             )
         return out
+
+    async def update_feed_comment(
+        self,
+        clinic_id: UUID,
+        *,
+        comment_id: UUID,
+        editor_admin_id: UUID,
+        data: StaffFeedCommentUpdate,
+    ) -> StaffFeedCommentResponse | None:
+        res = await self._session.execute(
+            select(StaffFeedComment).where(
+                StaffFeedComment.id == comment_id,
+                StaffFeedComment.author_admin_id == editor_admin_id,
+            )
+        )
+        c = res.scalar_one_or_none()
+        if c is None:
+            return None
+        if c.deleted_at is not None:
+            raise ValueError("comment_deleted")
+        post_chk = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == c.post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        if post_chk.scalar_one_or_none() is None:
+            return None
+        c.body = data.body.strip()
+        await self._session.flush()
+        # Reuse list for full shape (incl. reply-to + attachments).
+        rows = await self.list_feed_comments(clinic_id, c.post_id, include_deleted=True)
+        if rows is None:
+            return None
+        for r in rows:
+            if r.id == c.id:
+                return r
+        return None
+
+    async def delete_feed_comment(
+        self,
+        clinic_id: UUID,
+        *,
+        comment_id: UUID,
+        actor_admin_id: UUID,
+        allow_moderate: bool,
+    ) -> bool:
+        res = await self._session.execute(select(StaffFeedComment).where(StaffFeedComment.id == comment_id))
+        c = res.scalar_one_or_none()
+        if c is None:
+            return False
+        post_chk = await self._session.execute(
+            select(StaffFeedPost).where(
+                StaffFeedPost.id == c.post_id,
+                StaffFeedPost.clinic_id == clinic_id,
+                StaffFeedPost.deleted_at.is_(None),
+            )
+        )
+        if post_chk.scalar_one_or_none() is None:
+            return False
+        if c.deleted_at is not None:
+            return True
+        if c.author_admin_id != actor_admin_id and not allow_moderate:
+            return False
+        c.deleted_at = utc_now_naive()
+        c.deleted_by_admin_id = actor_admin_id
+        await self._session.flush()
+        return True
 
     async def add_feed_comment(
         self,
@@ -1752,10 +2212,25 @@ class StaffCollaborationService:
         *,
         file_name: str,
         content_type: str,
-        raw: bytes,
+        raw: bytes | None = None,
+        tmp_path: str | None = None,
+        size_bytes: int | None = None,
     ) -> StaffAttachmentBrief | None:
-        if len(raw) > settings.staff_chat_max_attachment_bytes:
+        if raw is None and tmp_path is None:
+            return None
+        file_size = len(raw) if raw is not None else int(size_bytes or 0)
+        if file_size <= 0:
+            return None
+        if file_size > settings.staff_chat_max_attachment_bytes:
             raise ValueError("file_too_large")
+        try:
+            first = raw[:16] if raw is not None else (open(tmp_path, "rb").read(16) if tmp_path else b"")
+        except Exception:
+            first = b""
+        ct = (content_type or "").split(";")[0].strip().lower()
+        if ct in {"application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"}:
+            if _sniff_magic(first) != ct:
+                raise ValueError("file_magic_mismatch")
         msg_row = await self._session.execute(
             select(StaffChatMessage).where(
                 StaffChatMessage.id == message_id,
@@ -1773,14 +2248,19 @@ class StaffCollaborationService:
         subdir.mkdir(parents=True, exist_ok=True)
         rel = f"{clinic_id}/{att_id}_{safe}"
         path = Path(settings.staff_chat_upload_root) / rel
-        path.write_bytes(raw)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if raw is not None:
+            path.write_bytes(raw)
+        else:
+            with open(tmp_path, "rb") as src, open(path, "wb") as dst:
+                shutil.copyfileobj(src, dst, length=1024 * 1024)
         row = StaffChatMessageAttachment(
             id=att_id,
             clinic_id=clinic_id,
             message_id=message_id,
             file_name=file_name[:500],
             content_type=content_type[:128],
-            size_bytes=len(raw),
+            size_bytes=file_size,
             storage_path=rel.replace("\\", "/"),
         )
         self._session.add(row)

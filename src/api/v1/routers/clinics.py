@@ -6,9 +6,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session
+from src.api.v1.dependencies import AdminContext, get_session, require_permissions
+from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.dto.clinic_dto import ClinicCreate, ClinicRead, ClinicUpdate
 from src.application.services.clinic_service import ClinicService
+from src.domain.entities.admin_user import AdminUser
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +45,17 @@ async def get_clinic(
 async def create_clinic(
     data: ClinicCreate,
     session: AsyncSession = Depends(get_session),
+    _current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ) -> ClinicRead:
     """Create a new clinic."""
     service = ClinicService(session)
-    clinic = await service.create_clinic(data)
+    try:
+        clinic = await service.create_clinic(data)
+    except ValueError as e:
+        if str(e) == "invalid_clinic_slug":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недопустимый slug клиники") from e
+        raise
     logger.info("Clinic created via API", extra={"clinic_id": str(clinic.id)})
     return clinic
 
@@ -56,10 +65,17 @@ async def update_clinic(
     clinic_id: UUID,
     data: ClinicUpdate,
     session: AsyncSession = Depends(get_session),
+    _current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ) -> ClinicRead:
     """Update clinic."""
     service = ClinicService(session)
-    clinic = await service.update_clinic(clinic_id, data)
+    try:
+        clinic = await service.update_clinic(clinic_id, data)
+    except ValueError as e:
+        if str(e) == "invalid_clinic_slug":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недопустимый slug клиники") from e
+        raise
     if clinic is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
     logger.info("Clinic updated via API", extra={"clinic_id": str(clinic_id)})
@@ -70,6 +86,8 @@ async def update_clinic(
 async def delete_clinic(
     clinic_id: UUID,
     session: AsyncSession = Depends(get_session),
+    _current_admin: AdminUser = Depends(get_current_admin),
+    _perm_ctx: AdminContext = Depends(require_permissions("manage_marketing_campaigns")),
 ) -> None:
     """Soft delete clinic."""
     service = ClinicService(session)

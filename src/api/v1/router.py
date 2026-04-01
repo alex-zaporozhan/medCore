@@ -41,9 +41,11 @@ from src.api.v1.routers import (
     admin_ai_settings,
     admin_ai_status,
     admin_ai_tasks_settings,
+    admin_public_doctor_profiles,
     public_services,
     patient_notification_settings,
     public_marketing,
+    public_doctor_profiles,
     patient_chat,
     admin_omni_chat,
     integrations_gateway,
@@ -73,6 +75,8 @@ from src.api.v1.routers import (
     admin_omni_tools,
     admin_rbac_management,
     admin_staff_directory,
+    admin_staff_profile,
+    admin_patient_medical,
 )
 
 # Create main API router
@@ -98,6 +102,8 @@ api_router.include_router(admin_chat.router)
 api_router.include_router(admin_channel_configs.router)
 api_router.include_router(admin_admins.router)
 api_router.include_router(admin_staff_directory.router)
+api_router.include_router(admin_staff_profile.router)
+api_router.include_router(admin_patient_medical.router)
 api_router.include_router(admin_agreement.router)
 api_router.include_router(admin_auth.router)
 api_router.include_router(admin_client_reference.router)
@@ -112,6 +118,7 @@ api_router.include_router(admin_ai_settings.router)
 api_router.include_router(admin_ai_reports.router)
 api_router.include_router(admin_ai_status.router)
 api_router.include_router(admin_ai_tasks_settings.router)
+api_router.include_router(admin_public_doctor_profiles.router)
 api_router.include_router(admin_payment_gateway.router)
 api_router.include_router(admin_finance.router)
 api_router.include_router(admin_payroll.router)
@@ -126,6 +133,7 @@ api_router.include_router(patient_chat.router)
 api_router.include_router(patient_notification_settings.router)
 api_router.include_router(public_services.router)
 api_router.include_router(public_marketing.router)
+api_router.include_router(public_doctor_profiles.router)
 api_router.include_router(patients.router)
 api_router.include_router(schedule.router)
 api_router.include_router(bookings.router)

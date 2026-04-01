@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>«Ожидает» — 10 жёлтых палитр, затем карточки</title>
+  <!-- Активная палитра в проде: H · Персиковый янтарь → --calendar-scheduled-* в index.css -->
+  <style>
+    :root {
+      --ink: #0f1419;
+      --meta: #5c6d7a;
+      --page: #e8ebef;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+      background: var(--page);
+      color: #374151;
+      padding: 28px 20px 80px;
+      line-height: 1.45;
+    }
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 0 0 10px;
+      letter-spacing: -0.02em;
+      color: #111827;
+    }
+    h2.section {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 40px 0 8px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #cbd5e1;
+      color: #0f172a;
+      max-width: 1100px;
+    }
+    h2.section:first-of-type { margin-top: 0; }
+    .sub {
+      font-size: 0.88rem;
+      color: #64748b;
+      margin: 0 0 20px;
+      max-width: 720px;
+    }
+    .intro {
+      max-width: 760px;
+      font-size: 0.9rem;
+      color: #6b7280;
+      margin-bottom: 8px;
+    }
+    .intro code { font-size: 0.82em; background: #fff; padding: 2px 6px; border-radius: 4px; }
+
+    .decision {
+      max-width: 760px;
+      background: linear-gradient(135deg, #fffef8 0%, #f8fafc 100%);
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #ea580c;
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin: 0 0 20px;
+      font-size: 0.88rem;
+      color: #334155;
+      box-shadow: 0 1px 3px rgba(15, 20, 25, 0.06);
+    }
+    .decision strong { color: #0f172a; }
+    .decision ul { margin: 10px 0 0; padding-left: 1.2em; }
+    .decision li { margin: 6px 0; }
+    .decision a { color: #1e3a5f; }
+
+    /* —— Палитры: полоска свотчей —— */
+    .palette-strip {
+      max-width: 1100px;
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      padding: 14px 16px 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(15, 20, 25, 0.06);
+    }
+    .palette-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 8px 16px;
+      margin-bottom: 12px;
+    }
+    .palette-head .letter {
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      min-width: 2.2em;
+    }
+    .palette-head .name {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .palette-head .hint {
+      font-size: 0.78rem;
+      color: #64748b;
+      flex: 1 1 200px;
+    }
+    .swatches {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    .chip {
+      text-align: center;
+    }
+    .chip .sq {
+      width: 56px;
+      height: 56px;
+      border-radius: 10px;
+      border: 1px solid rgba(15, 20, 25, 0.08);
+      margin-bottom: 4px;
+    }
+    .chip .sq.wide { width: 72px; }
+    .chip .lbl {
+      font-size: 0.58rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #94a3b8;
+      margin-bottom: 2px;
+    }
+    .chip .hex {
+      font-size: 0.62rem;
+      font-family: ui-monospace, monospace;
+      color: #64748b;
+    }
+
+    /* —— Карточки слота —— */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+      max-width: 1100px;
+    }
+    .card-wrap {
+      background: #fff;
+      border-radius: 12px;
+      padding: 12px 14px 14px;
+      border: 1px solid #e2e8f0;
+    }
+    .card-wrap .ref {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #94a3b8;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+    .slot {
+      border-radius: 8px;
+      padding: 10px 10px 10px 12px;
+      position: relative;
+      box-shadow: inset 0 0 0 1px rgba(15, 20, 25, 0.05);
+    }
+    .slot::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      border-radius: 8px 0 0 8px;
+      background: var(--bar);
+    }
+    .slot .pill {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+    }
+    .slot .name {
+      font-weight: 700;
+      font-size: 0.82rem;
+      color: var(--title, #0f1419);
+      margin-bottom: 4px;
+    }
+    .slot .sub {
+      font-size: 0.72rem;
+      color: var(--sub, #5c6d7a);
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>«Ожидает» — 10 жёлтых палитр</h1>
+  <p class="intro">
+    <strong>В коде зафиксировано:</strong> вариант <strong>H · Персиковый янтарь</strong> (<code>--calendar-scheduled-*</code>).
+    Ниже — история выбора. Сначала сравните <strong>полоски цвета</strong> (фон карточки, полоска статуса, бейдж).
+    Текст бейджа везде — графитовый ink, не коричневый. Ниже — те же <strong>A–J</strong> на карточке слота.
+  </p>
+  <div class="decision">
+    <strong>Канон и артефакты (не менять без согласования):</strong>
+    <ul>
+      <li><strong>Палитра «ожидает» / scheduled:</strong> H — значения в <code>frontend/src/index.css</code> (<code>--calendar-scheduled-bg</code>, <code>--calendar-scheduled-bar</code>, <code>--calendar-scheduled-badge-*</code> и т.д.).</li>
+      <li><strong>Токены и обводка карточек:</strong> <code>docs/artifacts/85 plus/DESIGN_TOKENS_85_PLUS.json</code> — <code>cardBorder</code>, <code>cardShadow</code>, согласованные с <code>--calendar-card-border</code> / <code>--calendar-card-shadow</code>.</li>
+      <li><strong>Семантика слотов и модалки записи:</strong> <code>docs/artifacts/85 plus/DESIGN_SCHEDULE_MODAL_SEMANTICS_85_PLUS.md</code>.</li>
+      <li><strong>Задачи (Kanban + модалка):</strong> те же токены расписания — модуль <code>frontend/src/shared/taskStatusSemantic.ts</code>: фон и левая полоса по <em>статусу</em> задачи (<code>open</code> → scheduled/H, <code>in_progress</code> → in-progress, <code>on_hold</code> → system, <code>review</code> → attention-denim, <code>done</code> → completed, <code>cancelled</code> → negative); приоритет — отдельный бейдж.</li>
+    </ul>
+  </div>
+  <p class="sub">Блоки A–J ниже — сравнение альтернатив; активный перенос в код — только <strong>H</strong> через <code>--calendar-scheduled-*</code>.</p>
+
+  <h2 class="section">1. Палитры (только оттенки)</h2>
+
+  <!-- A -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">A</span>
+      <span class="name">Лимонный крем</span>
+      <span class="hint">Чистый, светлый, полоска ярче лимона.</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#fffef5"></div><div class="lbl">card bg</div><div class="hex">#fffef5</div></div>
+      <div class="chip"><div class="sq wide" style="background:#fff9c9"></div><div class="lbl">bg alt</div><div class="hex">#fff9c9</div></div>
+      <div class="chip"><div class="sq" style="background:#e6d200"></div><div class="lbl">bar</div><div class="hex">#e6d200</div></div>
+      <div class="chip"><div class="sq" style="background:#fffde7"></div><div class="lbl">badge</div><div class="hex">#fffde7</div></div>
+      <div class="chip"><div class="sq" style="background:#1c2e45"></div><div class="lbl">badge text</div><div class="hex">#1c2e45</div></div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">B</span>
+      <span class="name">Ванильное масло</span>
+      <span class="hint">Классический тёплый UI, слегка сливочный.</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#fffbeb"></div><div class="lbl">card bg</div><div class="hex">#fffbeb</div></div>
+      <div class="chip"><div class="sq wide" style="background:#fef3c7"></div><div class="lbl">bg alt</div><div class="hex">#fef3c7</div></div>
+      <div class="chip"><div class="sq" style="background:#eab308"></div><div class="lbl">bar</div><div class="hex">#eab308</div></div>
+      <div class="chip"><div class="sq" style="background:#fef9c3"></div><div class="lbl">badge</div><div class="hex">#fef9c3</div></div>
+      <div class="chip"><div class="sq" style="background:#1c2e45"></div><div class="lbl">badge text</div><div class="hex">#1c2e45</div></div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">C</span>
+      <span class="name">Шампань</span>
+      <span class="hint">Тёплый белый, золото без «грязи».</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#fffdf7"></div><div class="lbl">card bg</div><div class="hex">#fffdf7</div></div>
+      <div class="chip"><div class="sq wide" style="background:#fff7ed"></div><div class="lbl">bg alt</div><div class="hex">#fff7ed</div></div>
+      <div class="chip"><div class="sq" style="background:#c9a227"></div><div class="lbl">bar</div><div class="hex">#c9a227</div></div>
+      <div class="chip"><div class="sq" style="background:#fff7d6"></div><div class="lbl">badge</div><div class="hex">#fff7d6</div></div>
+      <div class="chip"><div class="sq" style="background:#1c2e45"></div><div class="lbl">badge text</div><div class="hex">#1c2e45</div></div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">D</span>
+      <span class="name">Мёд и воск</span>
+      <span class="hint">Глубже, «взрослый» янтарь; фон теплее.</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#fffbf0"></div><div class="lbl">card bg</div><div class="hex">#fffbf0</div></div>
+      <div class="chip"><div class="sq wide" style="background:#fef3e2"></div><div class="lbl">bg alt</div><div class="hex">#fef3e2</div></div>
+      <div class="chip"><div class="sq" style="background:#b45309"></div><div class="lbl">bar</div><div class="hex">#b45309</div></div>
+      <div class="chip"><div class="sq" style="background:#ffedd5"></div><div class="lbl">badge</div><div class="hex">#ffedd5</div></div>
+      <div class="chip"><div class="sq" style="background:#1c2e45"></div><div class="lbl">badge text</div><div class="hex">#1c2e45</div></div>
+    </div>
+  </div>
+
+  <!-- E -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">E</span>
+      <span class="name">Солнечный канареечный</span>
+      <span class="hint">Максимум жёлтого в читаемости; контраст на ink.</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#fffef0"></div><div class="lbl">card bg</div><div class="hex">#fffef0</div></div>
+      <div class="chip"><div class="sq wide" style="background:#fef9c3"></div><div class="lbl">bg alt</div><div class="hex">#fef9c3</div></div>
+      <div class="chip"><div class="sq" style="background:#facc15"></div><div class="lbl">bar</div><div class="hex">#facc15</div></div>
+      <div class="chip"><div class="sq" style="background:#fef08a"></div><div class="lbl">badge</div><div class="hex">#fef08a</div></div>
+      <div class="chip"><div class="sq" style="background:#0f172a"></div><div class="lbl">badge text</div><div class="hex">#0f172a</div></div>
+    </div>
+  </div>
+
+  <!-- F -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">F</span>
+      <span class="name">Пшеничный пепел</span>
+      <span class="hint">Приглушённое золото, почти нейтральный фон.</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#faf8f3"></div><div class="lbl">card bg</div><div class="hex">#faf8f3</div></div>
+      <div class="chip"><div class="sq wide" style="background:#f0ebe0"></div><div class="lbl">bg alt</div><div class="hex">#f0ebe0</div></div>
+      <div class="chip"><div class="sq" style="background:#b59f6b"></div><div class="lbl">bar</div><div class="hex">#b59f6b</div></div>
+      <div class="chip"><div class="sq" style="background:#e8e0d4"></div><div class="lbl">badge</div><div class="hex">#e8e0d4</div></div>
+      <div class="chip"><div class="sq" style="background:#1e293b"></div><div class="lbl">badge text</div><div class="hex">#1e293b</div></div>
+    </div>
+  </div>
+
+  <!-- G -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">G</span>
+      <span class="name">Цитрон лайм</span>
+      <span class="hint">Жёлто-зелёный «северный», не пересекается с зелёным приёмом.</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#f7fee7"></div><div class="lbl">card bg</div><div class="hex">#f7fee7</div></div>
+      <div class="chip"><div class="sq wide" style="background:#ecfccb"></div><div class="lbl">bg alt</div><div class="hex">#ecfccb</div></div>
+      <div class="chip"><div class="sq" style="background:#a3e635"></div><div class="lbl">bar</div><div class="hex">#a3e635</div></div>
+      <div class="chip"><div class="sq" style="background:#d9f99d"></div><div class="lbl">badge</div><div class="hex">#d9f99d</div></div>
+      <div class="chip"><div class="sq" style="background:#1c2e45"></div><div class="lbl">badge text</div><div class="hex">#1c2e45</div></div>
+    </div>
+  </div>
+
+  <!-- H -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">H</span>
+      <span class="name">Персиковый янтарь</span>
+      <span class="hint">Жёлто-оранжевый акцент, тёплый свет.</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#fffef8"></div><div class="lbl">card bg</div><div class="hex">#fffef8</div></div>
+      <div class="chip"><div class="sq wide" style="background:#ffedd5"></div><div class="lbl">bg alt</div><div class="hex">#ffedd5</div></div>
+      <div class="chip"><div class="sq" style="background:#ea580c"></div><div class="lbl">bar</div><div class="hex">#ea580c</div></div>
+      <div class="chip"><div class="sq" style="background:#fed7aa"></div><div class="lbl">badge</div><div class="hex">#fed7aa</div></div>
+      <div class="chip"><div class="sq" style="background:#1c2e45"></div><div class="lbl">badge text</div><div class="hex">#1c2e45</div></div>
+    </div>
+  </div>
+
+  <!-- I -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">I</span>
+      <span class="name">Платина и листовое золото</span>
+      <span class="hint">Холодный фон, благородная полоска; минимум «кремовости».</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#f7f7f5"></div><div class="lbl">card bg</div><div class="hex">#f7f7f5</div></div>
+      <div class="chip"><div class="sq wide" style="background:#eeece7"></div><div class="lbl">bg alt</div><div class="hex">#eeece7</div></div>
+      <div class="chip"><div class="sq" style="background:#b8860b"></div><div class="lbl">bar</div><div class="hex">#b8860b</div></div>
+      <div class="chip"><div class="sq" style="background:#f5f0e6"></div><div class="lbl">badge</div><div class="hex">#f5f0e6</div></div>
+      <div class="chip"><div class="sq" style="background:#1c2e45"></div><div class="lbl">badge text</div><div class="hex">#1c2e45</div></div>
+    </div>
+  </div>
+
+  <!-- J -->
+  <div class="palette-strip">
+    <div class="palette-head">
+      <span class="letter">J</span>
+      <span class="name">Сафран в масле</span>
+      <span class="hint">Насыщенная полоска, бейдж «жарче»; всё ещё в жёлтой семье.</span>
+    </div>
+    <div class="swatches">
+      <div class="chip"><div class="sq wide" style="background:#fffbeb"></div><div class="lbl">card bg</div><div class="hex">#fffbeb</div></div>
+      <div class="chip"><div class="sq wide" style="background:#fef3c7"></div><div class="lbl">bg alt</div><div class="hex">#fef3c7</div></div>
+      <div class="chip"><div class="sq" style="background:#d97706"></div><div class="lbl">bar</div><div class="hex">#d97706</div></div>
+      <div class="chip"><div class="sq" style="background:#fde68a"></div><div class="lbl">badge</div><div class="hex">#fde68a</div></div>
+      <div class="chip"><div class="sq" style="background:#1c2e45"></div><div class="lbl">badge text</div><div class="hex">#1c2e45</div></div>
+    </div>
+  </div>
+
+  <h2 class="section">2. Те же палитры — карточка слота</h2>
+  <p class="sub">Одинаковый текст; отличается только цвет. Сверху вниз соответствует A–J.</p>
+
+  <div class="cards-grid">
+    <div class="card-wrap">
+      <div class="ref">A · Лимонный крем</div>
+      <div class="slot" style="background:#fffef5; --bar:#e6d200; --badge-bg:#fffde7; --badge-text:#1c2e45;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="ref">B · Ванильное масло</div>
+      <div class="slot" style="background:#fffbeb; --bar:#eab308; --badge-bg:#fef9c3; --badge-text:#1c2e45;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="ref">C · Шампань</div>
+      <div class="slot" style="background:#fffdf7; --bar:#c9a227; --badge-bg:#fff7d6; --badge-text:#1c2e45;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="ref">D · Мёд и воск</div>
+      <div class="slot" style="background:#fffbf0; --bar:#b45309; --badge-bg:#ffedd5; --badge-text:#1c2e45;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="ref">E · Солнечный канареечный</div>
+      <div class="slot" style="background:#fffef0; --bar:#facc15; --badge-bg:#fef08a; --badge-text:#0f172a;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="ref">F · Пшеничный пепел</div>
+      <div class="slot" style="background:#faf8f3; --bar:#b59f6b; --badge-bg:#e8e0d4; --badge-text:#1e293b;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="ref">G · Цитрон лайм</div>
+      <div class="slot" style="background:#f7fee7; --bar:#a3e635; --badge-bg:#d9f99d; --badge-text:#1c2e45;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="ref">H · Персиковый янтарь</div>
+      <div class="slot" style="background:#fffef8; --bar:#ea580c; --badge-bg:#fed7aa; --badge-text:#1c2e45;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="ref">I · Платина и листовое золото</div>
+      <div class="slot" style="background:#f7f7f5; --bar:#b8860b; --badge-bg:#f5f0e6; --badge-text:#1c2e45;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+    <div class="card-wrap">
+      <div class="ref">J · Сафран в масле</div>
+      <div class="slot" style="background:#fffbeb; --bar:#d97706; --badge-bg:#fde68a; --badge-text:#1c2e45;">
+        <div class="pill">ОЖИДАЕТ</div>
+        <div class="name">Лебедева Ирина Викторовна</div>
+        <div class="sub">Дентальный имплант (работа)</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="intro" style="margin-top: 36px;">
+    Смена палитры «ожидает» после фиксации <strong>H</strong> — только через обновление <code>--calendar-scheduled-*</code> в <code>index.css</code>,
+    JSON токенов и при необходимости <code>taskStatusSemantic.ts</code> (для статуса <code>open</code>).
+  </p>
+</body>
+</html>
