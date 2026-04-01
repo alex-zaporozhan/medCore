@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Numeric, String, Text, Time, Integer, func
+from sqlalchemy import Boolean, ForeignKey, Numeric, String, Text, Time, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.database.base import Base
@@ -16,6 +16,11 @@ class Clinic(Base):
     __tablename__ = "clinics"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -55,6 +60,8 @@ class Clinic(Base):
     #: Внутренний чат персонала: `clinic_isolated` — только сотрудники этой клиники (строка clinics.id).
     #: `network` зарезервировано под сеть салонов (см. docs/architecture/STAFF_CHAT_MULTITENANCY.md).
     staff_chat_scope: Mapped[str] = mapped_column(String(32), nullable=False, server_default="clinic_isolated")
+    #: Public URL slug for client-facing pages (SEO). Unique across the system.
+    clinic_slug: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import { api, authApi } from "@/api/client";
 import type {
   ConversationResponse,
   MessagesResponse,
@@ -56,6 +56,37 @@ export function useSendPatientMessage(token: string | null) {
         { body, message_type, sticker_key: sticker_key ?? undefined },
         token
       ),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["patient-chat-conversation", variables.patientId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["patient-chat-messages", variables.patientId],
+      });
+    },
+  });
+}
+
+export function useSendPatientMessageWithFile(token: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      patientId,
+      body,
+      file,
+    }: {
+      patientId: string;
+      body: string;
+      file: File;
+    }) => {
+      const fd = new FormData();
+      fd.append("body", body);
+      fd.append("file", file);
+      return authApi(token).postFormData<ChatMessageDto>(
+        `/v1/patient/chat/conversation/messages/upload?patient_id=${patientId}`,
+        fd
+      );
+    },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["patient-chat-conversation", variables.patientId],

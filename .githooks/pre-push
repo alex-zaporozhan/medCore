@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+
+# Block direct pushes to main unless explicitly overridden.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ "${remote_ref}" == "refs/heads/main" ]] && [[ "${ALLOW_MAIN_PUSH:-0}" != "1" ]]; then
+    echo "Direct push to main is blocked by policy. Use PR merge flow."
+    echo "If this is an emergency, run: ALLOW_MAIN_PUSH=1 git push ..."
+    exit 1
+  fi
+done
+
+"${ROOT_DIR}/scripts/dev/pre_push_gate.sh"

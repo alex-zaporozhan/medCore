@@ -101,6 +101,35 @@ export function useSendAdminMessage() {
   });
 }
 
+export function useSendAdminMessageWithFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      conversationId,
+      body,
+      file,
+    }: {
+      conversationId: string;
+      body: string;
+      file: File;
+    }) => {
+      const fd = new FormData();
+      fd.append("body", body);
+      fd.append("file", file);
+      return api.postFormData<ChatMessageDto>(
+        `/v1/admin/chat/conversations/${conversationId}/messages/upload`,
+        fd
+      );
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-chat-conversations"] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-chat-messages", variables.conversationId],
+      });
+    },
+  });
+}
+
 export function useAdminAssignConversation() {
   const queryClient = useQueryClient();
   return useMutation({

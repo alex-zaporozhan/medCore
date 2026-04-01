@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAdminAiConflictReport } from "@/hooks/useAdminAiReports";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
-import { QueryErrorAlert } from "@/shared/ui";
+import { QueryErrorAlert, ContextBar, AdminDataTableToolbar, ADMIN_TABLE_PROPS } from "@/shared/ui";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   Button,
@@ -11,7 +11,6 @@ import {
   Table,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
 
 function AdminAiReportsPage() {
@@ -39,37 +38,37 @@ function AdminAiReportsPage() {
   };
 
   return (
-    <Stack gap="md">
-      <Title order={3}>AI‑отчёты по конфликтам</Title>
+    <Stack gap="md" className="admin-form-stack">
+      <ContextBar title="AI‑отчёты по конфликтам" />
+      <AdminDataTableToolbar>
+        <Group gap="sm" wrap="wrap" align="flex-end">
+          <TextInput
+            label="С даты"
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.currentTarget.value)}
+          />
+          <TextInput
+            label="По дату"
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.currentTarget.value)}
+          />
+          <Button
+            onClick={() => {
+              if (dateFrom && dateTo) {
+                refetch();
+              }
+            }}
+            disabled={!dateFrom || !dateTo}
+            loading={isFetching}
+          >
+            Обновить отчёт
+          </Button>
+        </Group>
+      </AdminDataTableToolbar>
       <Paper p="md" radius="md" withBorder>
         <Stack gap="sm">
-          <Group gap="sm" wrap="wrap">
-            <TextInput
-              label="С даты"
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.currentTarget.value)}
-            />
-            <TextInput
-              label="По дату"
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.currentTarget.value)}
-            />
-            <Button
-              mt="auto"
-              onClick={() => {
-                if (dateFrom && dateTo) {
-                  refetch();
-                }
-              }}
-              disabled={!dateFrom || !dateTo}
-              loading={isFetching}
-            >
-              Обновить отчёт
-            </Button>
-          </Group>
-
           {isLoading && !report && <DataSkeleton lines={4} />}
 
           {isError && !report && <QueryErrorAlert error={error} title="Не удалось загрузить отчёт" />}
@@ -98,8 +97,8 @@ function AdminAiReportsPage() {
           )}
 
           {!isLoading && !isError && items.length > 0 && (
-            <Paper p="sm" radius="md" withBorder>
-              <Table striped>
+            <Paper p="sm" radius="md" withBorder className="data-table-card">
+              <Table striped {...ADMIN_TABLE_PROPS}>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Дата</Table.Th>

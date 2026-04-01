@@ -11,6 +11,8 @@ import { queryKeys } from "@/queryKeys";
 export interface AdminTaskRow {
   id: string;
   clinic_id: string;
+  stream_id: string;
+  tag_ids?: string[];
   title: string;
   description: string | null;
   status: string;
@@ -68,19 +70,39 @@ export type AdminTaskOpenRow = Pick<
   "id" | "title" | "status" | "priority" | "due_at"
 >;
 
-function fetchAdminTasks(params?: { source?: string; assignee_id?: string; status?: string }) {
+function fetchAdminTasks(params?: {
+  source?: string;
+  assignee_id?: string;
+  status?: string;
+  stream_id?: string;
+  tag_ids?: string[];
+}) {
   const search = new URLSearchParams();
   if (params?.source) search.set("source", params.source);
   if (params?.assignee_id) search.set("assignee_id", params.assignee_id);
   if (params?.status) search.set("status", params.status);
+  if (params?.stream_id) search.set("stream_id", params.stream_id);
+  for (const id of params?.tag_ids ?? []) {
+    search.append("tag_ids", id);
+  }
   const qs = search.toString();
   return api.get<AdminTaskRow[]>(`/v1/admin/tasks${qs ? `?${qs}` : ""}`);
 }
 
-export function useAdminTasksList() {
+export function useAdminTasksList(
+  filters?: { streamId?: string | null; tagIds?: string[] },
+  options?: { enabled?: boolean }
+) {
+  const streamId = filters?.streamId ?? null;
+  const tagIds = filters?.tagIds ?? [];
   return useQuery({
-    queryKey: queryKeys.adminTasks.list(),
-    queryFn: () => fetchAdminTasks(),
+    queryKey: queryKeys.adminTasks.list(streamId, tagIds),
+    queryFn: () =>
+      fetchAdminTasks({
+        stream_id: streamId ?? undefined,
+        tag_ids: tagIds.length ? tagIds : undefined,
+      }),
+    enabled: options?.enabled !== false,
   });
 }
 
@@ -125,6 +147,8 @@ export function useCreateAdminTaskMutation() {
       title: string;
       description?: string | null;
       priority?: string;
+      stream_id?: string | null;
+      tag_ids?: string[];
       assignee_id?: string | null;
       assignee_ids?: string[];
       due_at: string | null;
@@ -213,6 +237,30 @@ export function useUpdateAdminTaskMetaMutation() {
         blocked_reason,
         checklist_done,
       }),
+    onSuccess: () => {
+      invalidateAllAdminTaskLists(qc);
+    },
+  });
+}
+
+/** PATCH assignee_ids (полная замена списка на бэкенде). */
+export function usePatchAdminTaskAssigneesMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, assignee_ids }: { taskId: string; assignee_ids: string[] }) =>
+      api.patch<AdminTaskRow>(`/v1/admin/tasks/${taskId}`, { assignee_ids }),
+    onSuccess: () => {
+      invalidateAllAdminTaskLists(qc);
+    },
+  });
+}
+
+/** PATCH due_at (ISO string or null). */
+export function usePatchAdminTaskDueMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, due_at }: { taskId: string; due_at: string | null }) =>
+      api.patch<AdminTaskRow>(`/v1/admin/tasks/${taskId}`, { due_at }),
     onSuccess: () => {
       invalidateAllAdminTaskLists(qc);
     },
@@ -318,6 +366,168 @@ export function usePostTaskComment(taskId: string | null) {
       api.post<TaskCommentRow>(`/v1/admin/tasks/${taskId}/comments`, { text }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin-tasks", "comments", taskId] as const });
+    },
+  });
+}
+
+/** GET /v1/admin/task-boards — раскладка Kanban (колонки = статусы). */
+export interface TaskBoardColumnRow {
+  id: string;
+  sort_order: number;
+  mapped_status: string;
+  label: string | null;
+}
+
+export interface TaskBoardRow {
+  id: string;
+  clinic_id: string;
+  name: string;
+  kind: string;
+  owner_admin_id: string | null;
+  columns: TaskBoardColumnRow[];
+}
+
+export function useTaskBoardsQuery() {
+  return useQuery({
+    queryKey: queryKeys.adminTaskBoards.list(),
+    queryFn: () => api.get<TaskBoardRow[]>("/v1/admin/task-boards"),
+  });
+}
+
+export function useReplaceTaskBoardColumnsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      boardId,
+      columns,
+    }: {
+      boardId: string;
+      columns: { mapped_status: string; label: string | null }[];
+    }) =>
+      api.put<TaskBoardRow>(`/v1/admin/task-boards/${boardId}/columns`, { columns }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.adminTaskBoards.list() });
+    },
+  });
+}
+
+export function useCreatePersonalTaskBoardMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      api.post<TaskBoardRow>("/v1/admin/task-boards", { name }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.adminTaskBoards.list() });
+    },
+  });
+}
+
+export interface TaskStreamRow {
+  id: string;
+  clinic_id: string;
+  name: string;
+  slug: string;
+  sort_order: number;
+  is_archived: boolean;
+  theme: Record<string, unknown>;
+}
+
+export type TaskStreamMantineColor =
+  | "gray"
+  | "red"
+  | "pink"
+  | "grape"
+  | "violet"
+  | "indigo"
+  | "blue"
+  | "cyan"
+  | "teal"
+  | "green"
+  | "lime"
+  | "yellow"
+  | "orange";
+
+export type TaskStreamPageTint =
+  | "none"
+  | "subtle_gray"
+  | "subtle_violet"
+  | "subtle_blue"
+  | "subtle_green"
+  | "subtle_amber";
+
+export interface TaskStreamThemeDto {
+  mantine_color?: TaskStreamMantineColor;
+  page_tint?: TaskStreamPageTint;
+}
+
+export interface TaskTagRow {
+  id: string;
+  clinic_id: string;
+  name: string;
+  color: string | null;
+}
+
+export function useTaskStreamsQuery() {
+  return useQuery({
+    queryKey: queryKeys.adminTaskStreams.list(),
+    queryFn: () => api.get<TaskStreamRow[]>("/v1/admin/task-streams"),
+  });
+}
+
+export function useTaskTagsQuery() {
+  return useQuery({
+    queryKey: queryKeys.adminTaskTags.list(),
+    queryFn: () => api.get<TaskTagRow[]>("/v1/admin/task-tags"),
+  });
+}
+
+export function useCreateTaskStreamMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; slug?: string | null }) =>
+      api.post<TaskStreamRow>("/v1/admin/task-streams", body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.adminTaskStreams.list() });
+    },
+  });
+}
+
+export function usePatchTaskStreamMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { streamId: string; name?: string | null; theme?: TaskStreamThemeDto | null; is_archived?: boolean | null }) =>
+      api.patch<TaskStreamRow>(`/v1/admin/task-streams/${args.streamId}`, {
+        ...(args.name !== undefined ? { name: args.name } : {}),
+        ...(args.theme !== undefined ? { theme: args.theme } : {}),
+        ...(args.is_archived !== undefined ? { is_archived: args.is_archived } : {}),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.adminTaskStreams.list() });
+    },
+  });
+}
+
+export function useCreateTaskTagMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; color?: string | null }) =>
+      api.post<TaskTagRow>("/v1/admin/task-tags", body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.adminTaskTags.list() });
+    },
+  });
+}
+
+export function usePatchAdminTaskStreamTagsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { taskId: string; stream_id?: string; tag_ids?: string[] }) =>
+      api.patch<AdminTaskRow>(`/v1/admin/tasks/${args.taskId}`, {
+        ...(args.stream_id !== undefined ? { stream_id: args.stream_id } : {}),
+        ...(args.tag_ids !== undefined ? { tag_ids: args.tag_ids } : {}),
+      }),
+    onSuccess: () => {
+      invalidateAllAdminTaskLists(qc);
     },
   });
 }

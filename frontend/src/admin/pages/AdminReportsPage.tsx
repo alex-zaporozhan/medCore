@@ -18,7 +18,15 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { AdminDrawer, ContextBar, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
+import {
+  AdminDrawer,
+  AdminDataTableSurface,
+  ADMIN_TABLE_PROPS,
+  ContextBar,
+  PageSkeleton,
+  QueryErrorAlert,
+  AdminDataTableToolbar,
+} from "@/shared/ui";
 import dayjs from "dayjs";
 import { useMemo, useState } from "react";
 import {
@@ -130,45 +138,52 @@ export default function AdminReportsPage() {
   return (
     <Stack>
       <ContextBar title="Отчёты и дашборд" />
-
-      <TextInput
-        label="Дата с"
-        type="date"
-        value={dateFrom}
-        onChange={(e) => setDateFrom(e.target.value)}
-      />
-      <TextInput
-        label="Дата по"
-        type="date"
-        value={dateTo}
-        onChange={(e) => setDateTo(e.target.value)}
-      />
-      {showEnterpriseMarketingAnalytics && (
+      <AdminDataTableToolbar>
         <Grid>
-          <Grid.Col span={{ base: 12, sm: 6 }}>
-            <Select
-              label="Источник трафика"
-              placeholder="Все источники"
-              data={trafficSourceOptions}
-              value={selectedTrafficSourceId}
-              onChange={setSelectedTrafficSourceId}
-              clearable
-              searchable
+          <Grid.Col span={{ base: 12, sm: 6, lg: 3 }}>
+            <TextInput
+              label="Дата с"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
             />
           </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6 }}>
-            <Select
-              label="Кампания"
-              placeholder="Все кампании"
-              data={campaignOptions}
-              value={selectedCampaignId}
-              onChange={setSelectedCampaignId}
-              clearable
-              searchable
+          <Grid.Col span={{ base: 12, sm: 6, lg: 3 }}>
+            <TextInput
+              label="Дата по"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
             />
           </Grid.Col>
+          {showEnterpriseMarketingAnalytics && (
+            <>
+              <Grid.Col span={{ base: 12, sm: 6, lg: 3 }}>
+                <Select
+                  label="Источник трафика"
+                  placeholder="Все источники"
+                  data={trafficSourceOptions}
+                  value={selectedTrafficSourceId}
+                  onChange={setSelectedTrafficSourceId}
+                  clearable
+                  searchable
+                />
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, sm: 6, lg: 3 }}>
+                <Select
+                  label="Кампания"
+                  placeholder="Все кампании"
+                  data={campaignOptions}
+                  value={selectedCampaignId}
+                  onChange={setSelectedCampaignId}
+                  clearable
+                  searchable
+                />
+              </Grid.Col>
+            </>
+          )}
         </Grid>
-      )}
+      </AdminDataTableToolbar>
 
       {anyError && (
         <>
@@ -366,11 +381,11 @@ export default function AdminReportsPage() {
       )}
 
       {showEnterpriseMarketingAnalytics && attribution && attribution.items.length > 0 && (
-        <Card shadow="sm" padding="md" withBorder>
+        <AdminDataTableSurface>
           <Text size="sm" fw={500} c="dimmed" mb="xs">
             Маркетинг и атрибуция (клик по строке — drill-down)
           </Text>
-          <Table withTableBorder withColumnBorders verticalSpacing="sm">
+          <Table withTableBorder {...ADMIN_TABLE_PROPS}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Канал / кампания</Table.Th>
@@ -387,7 +402,7 @@ export default function AdminReportsPage() {
               {attribution.items.map((row, idx) => (
                 <Table.Tr
                   key={`${row.traffic_source_code}-${row.campaign_code}-${idx}`}
-                  style={{ cursor: "pointer" }}
+                  className="data-table-clickable-row"
                   onClick={() => setDrillDownRow(row)}
                 >
                   <Table.Td>
@@ -411,7 +426,7 @@ export default function AdminReportsPage() {
               ))}
             </Table.Tbody>
           </Table>
-        </Card>
+        </AdminDataTableSurface>
       )}
 
       {showEnterpriseMarketingAnalytics && (

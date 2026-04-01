@@ -120,7 +120,7 @@ export default function AdminLoyaltyPage() {
             </Tabs.List>
 
         <Tabs.Panel value="packages" pt="md">
-          <Card shadow="sm" padding="md" withBorder>
+          <Card shadow="sm" padding="md" withBorder className="data-table-card">
             <Text size="sm" fw={500} mb="sm">
               Пакеты абонементов
             </Text>
@@ -130,7 +130,7 @@ export default function AdminLoyaltyPage() {
               </Text>
             )}
             {packages && packages.length > 0 && (
-              <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+              <Table withRowBorders highlightOnHover verticalSpacing="sm">
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Код</Table.Th>
@@ -164,13 +164,15 @@ export default function AdminLoyaltyPage() {
 
         <Tabs.Panel value="subscriptions" pt="md">
           <Stack>
-            <TextInput
-              label="ID пациента"
-              placeholder="Вставьте UUID пациента для поиска его абонементов"
-              value={patientIdFilter}
-              onChange={(e) => setPatientIdFilter(e.currentTarget.value)}
-            />
-            <Card shadow="sm" padding="md" withBorder>
+            <Card withBorder p="sm" className="data-toolbar-card">
+              <TextInput
+                label="ID пациента"
+                placeholder="Вставьте UUID пациента для поиска его абонементов"
+                value={patientIdFilter}
+                onChange={(e) => setPatientIdFilter(e.currentTarget.value)}
+              />
+            </Card>
+            <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Text size="sm" fw={500} mb="sm">
                 Абонементы пациента
               </Text>
@@ -180,7 +182,7 @@ export default function AdminLoyaltyPage() {
                 </Text>
               )}
               {subs && subs.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>ID</Table.Th>
@@ -225,13 +227,15 @@ export default function AdminLoyaltyPage() {
 
         <Tabs.Panel value="wallets" pt="md">
           <Stack>
-            <TextInput
-              label="ID пациента"
-              placeholder="Вставьте UUID пациента для поиска кошелька"
-              value={patientIdFilter}
-              onChange={(e) => setPatientIdFilter(e.currentTarget.value)}
-            />
-            <Card shadow="sm" padding="md" withBorder>
+            <Card withBorder p="sm" className="data-toolbar-card">
+              <TextInput
+                label="ID пациента"
+                placeholder="Вставьте UUID пациента для поиска кошелька"
+                value={patientIdFilter}
+                onChange={(e) => setPatientIdFilter(e.currentTarget.value)}
+              />
+            </Card>
+            <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Text size="sm" fw={500} mb="sm">
                 Кошелёк пациента
               </Text>
@@ -241,7 +245,7 @@ export default function AdminLoyaltyPage() {
                 </Text>
               )}
               {wallets && wallets.length > 0 && (
-                <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>ID</Table.Th>
@@ -255,7 +259,7 @@ export default function AdminLoyaltyPage() {
                       <Table.Tr
                         key={w.id}
                         onClick={() => setSelectedWalletId(w.id)}
-                        style={{ cursor: "pointer" }}
+                        className="data-table-clickable-row"
                       >
                         <Table.Td>{w.id.slice(0, 8)}…</Table.Td>
                         <Table.Td>{w.balance}</Table.Td>
@@ -268,7 +272,7 @@ export default function AdminLoyaltyPage() {
               )}
             </Card>
             {selectedWalletId && (
-              <Card shadow="sm" padding="md" withBorder>
+              <Card shadow="sm" padding="md" withBorder className="data-table-card">
                 <Text size="sm" fw={500} mb="sm">
                   Движения по кошельку
                 </Text>
@@ -278,7 +282,7 @@ export default function AdminLoyaltyPage() {
                   </Text>
                 )}
                 {walletTxs && walletTxs.length > 0 && (
-                  <Table highlightOnHover striped withColumnBorders verticalSpacing="sm">
+                  <Table withRowBorders highlightOnHover verticalSpacing="sm">
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th>Дата</Table.Th>

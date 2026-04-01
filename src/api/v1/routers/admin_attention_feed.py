@@ -117,7 +117,13 @@ async def get_tasks_for_attention_item(
         return []
     repo = TaskRepositoryImpl(session)
     amap = await repo.list_assignee_ids_for_task_ids([t.id for t in tasks])
-    return [task_entity_to_response(t, assignee_ids=amap.get(t.id, [])) for t in tasks]
+    tmap = await repo.list_tag_ids_for_task_ids([t.id for t in tasks])
+    return [
+        task_entity_to_response(
+            t, assignee_ids=amap.get(t.id, []), tag_ids=tmap.get(t.id, [])
+        )
+        for t in tasks
+    ]
 
 
 class CreateTaskFromAttentionBody(BaseModel):
@@ -170,7 +176,10 @@ async def create_task_from_attention_item(
     )
     repo = TaskRepositoryImpl(session)
     amap = await repo.list_assignee_ids_for_task_ids([task.id])
-    return task_entity_to_response(task, assignee_ids=amap.get(task.id, []))
+    tmap = await repo.list_tag_ids_for_task_ids([task.id])
+    return task_entity_to_response(
+        task, assignee_ids=amap.get(task.id, []), tag_ids=tmap.get(task.id, [])
+    )
 
 
 @router.post(

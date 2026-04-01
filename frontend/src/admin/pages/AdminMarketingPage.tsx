@@ -25,7 +25,6 @@ import {
   Button,
   Group,
   Loader,
-  Paper,
   Stack,
   Switch,
   Table,
@@ -34,7 +33,15 @@ import {
   Textarea,
   TextInput,
 } from "@mantine/core";
-import { AdminDrawer, ContextBar, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
+import {
+  ADMIN_TABLE_PROPS,
+  AdminDataTableSurface,
+  AdminDataTableToolbar,
+  AdminDrawer,
+  ContextBar,
+  PageSkeleton,
+  QueryErrorAlert,
+} from "@/shared/ui";
 import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useState } from "react";
 
@@ -156,48 +163,50 @@ function PostsTab({ clinicId }: { clinicId: string }) {
       {list.length === 0 ? (
         <EmptyStateHint title="Нет постов. Создайте акцию или новость." />
       ) : (
-        <Table withTableBorder withColumnBorders verticalSpacing="sm">
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Заголовок</Table.Th>
-              <Table.Th>Публикация</Table.Th>
-              <Table.Th />
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {list.map((p) => (
-              <Table.Tr key={p.id}>
-                <Table.Td>{p.title}</Table.Td>
-                <Table.Td>
-                  <Badge color={p.is_published ? "green" : "gray"}>
-                    {p.is_published ? "Опубликован" : "Черновик"}
-                  </Badge>
-                </Table.Td>
-                <Table.Td>
-                  <Group gap="xs">
-                    <Button
-                      size="xs"
-                      variant="light"
-                      onClick={() => {
-                        setEditing(p);
-                        setTitle(p.title);
-                        setBody(p.body);
-                        setImageUrl(p.image_url ?? "");
-                        setLink(p.link ?? "");
-                        setIsPublished(p.is_published);
-                        setSaveError(null);
-                        open();
-                      }}
-                    >
-                      Изменить
-                    </Button>
-                    <Button size="xs" variant="subtle" color="red" onClick={() => deleteMut.mutate(p.id)}>Удалить</Button>
-                  </Group>
-                </Table.Td>
+        <AdminDataTableSurface>
+          <Table withTableBorder {...ADMIN_TABLE_PROPS}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Заголовок</Table.Th>
+                <Table.Th>Публикация</Table.Th>
+                <Table.Th />
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
+            </Table.Thead>
+            <Table.Tbody>
+              {list.map((p) => (
+                <Table.Tr key={p.id}>
+                  <Table.Td>{p.title}</Table.Td>
+                  <Table.Td>
+                    <Badge color={p.is_published ? "green" : "gray"}>
+                      {p.is_published ? "Опубликован" : "Черновик"}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap="xs">
+                      <Button
+                        size="xs"
+                        variant="light"
+                        onClick={() => {
+                          setEditing(p);
+                          setTitle(p.title);
+                          setBody(p.body);
+                          setImageUrl(p.image_url ?? "");
+                          setLink(p.link ?? "");
+                          setIsPublished(p.is_published);
+                          setSaveError(null);
+                          open();
+                        }}
+                      >
+                        Изменить
+                      </Button>
+                      <Button size="xs" variant="subtle" color="red" onClick={() => deleteMut.mutate(p.id)}>Удалить</Button>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </AdminDataTableSurface>
       )}
       <AdminDrawer position="right" size="md" opened={opened} onClose={handleClose} title={editing ? "Изменить пост" : "Новый пост"}>
         <Stack>
@@ -294,7 +303,8 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
       {list.length === 0 ? (
         <EmptyStateHint title="Нет сторис. Добавьте карточки для полосы в PWA." />
       ) : (
-        <Table withTableBorder withColumnBorders verticalSpacing="sm">
+        <AdminDataTableSurface>
+        <Table withTableBorder {...ADMIN_TABLE_PROPS}>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Порядок</Table.Th>
@@ -331,6 +341,7 @@ function StoriesTab({ clinicId }: { clinicId: string }) {
             ))}
           </Table.Tbody>
         </Table>
+        </AdminDataTableSurface>
       )}
       <AdminDrawer position="right" size="md" opened={opened} onClose={handleCloseStories} title={editing ? "Изменить сторис" : "Новый сторис"}>
         <Stack>
@@ -389,30 +400,32 @@ function AttributionTab({ clinicId }: { clinicId: string }) {
 
   return (
     <Stack>
-      <Group align="flex-end" gap="sm">
-        <TextInput
-          type="date"
-          label="С"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.currentTarget.value || dateFrom)}
-          size="xs"
-        />
-        <TextInput
-          type="date"
-          label="По"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.currentTarget.value || dateTo)}
-          size="xs"
-        />
-      </Group>
+      <AdminDataTableToolbar>
+        <Group align="flex-end" gap="sm">
+          <TextInput
+            type="date"
+            label="С"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.currentTarget.value || dateFrom)}
+            size="xs"
+          />
+          <TextInput
+            type="date"
+            label="По"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.currentTarget.value || dateTo)}
+            size="xs"
+          />
+        </Group>
+      </AdminDataTableToolbar>
       <Text size="sm" c="dimmed">
         ROI по каналам и кампаниям. Клик по строке — детализация (лиды, записи, транзакции).
       </Text>
-      <Paper withBorder radius="md" p="sm">
+      <AdminDataTableSurface>
         {isLoading && <PageSkeleton variant="table" rows={4} />}
         {isError && <QueryErrorAlert error={error} />}
         {!isLoading && !isError && (
-          <Table striped highlightOnHover withTableBorder withColumnBorders verticalSpacing="sm">
+          <Table withTableBorder {...ADMIN_TABLE_PROPS}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Источник</Table.Th>
@@ -437,7 +450,7 @@ function AttributionTab({ clinicId }: { clinicId: string }) {
                 items.map((row, idx) => (
                   <Table.Tr
                     key={`${row.traffic_source_id ?? "ts"}-${row.campaign_id ?? "cmp"}-${idx}`}
-                    style={{ cursor: "pointer" }}
+                    className="data-table-clickable-row"
                     onClick={() => setSelectedRow(row)}
                   >
                     <Table.Td>{row.traffic_source_name ?? row.traffic_source_code ?? "—"}</Table.Td>
@@ -455,7 +468,7 @@ function AttributionTab({ clinicId }: { clinicId: string }) {
             </Table.Tbody>
           </Table>
         )}
-      </Paper>
+      </AdminDataTableSurface>
 
       <AdminDrawer
         opened={selectedRow !== null}

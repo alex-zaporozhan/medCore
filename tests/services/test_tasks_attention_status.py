@@ -112,6 +112,7 @@ async def test_attention_follow_up_status_changes_with_tasks(
     assert item.status == "in_progress"
 
     # Mark task as done -> Attention should become resolved
+    await task_service.update_task_fields(task_id=task.id, checklist_done=True)
     await task_service.update_task_status(
         task_id=task.id,
         status="done",
@@ -195,6 +196,7 @@ async def test_attention_retention_and_conflict_status_aggregation(
         attention_kind="retention_gap",
         attention_ref_id=item.id,
     )
+    await task_service.update_task_fields(task_id=task2.id, checklist_done=True)
     await task_service.update_task_status(
         task_id=task2.id,
         status="done",

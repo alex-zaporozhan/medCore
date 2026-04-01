@@ -19,7 +19,7 @@ import {
   Table,
 } from "@mantine/core";
 import { IconClock } from "@tabler/icons-react";
-import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
+import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert, CompactMonthPicker, PersonNameLink } from "@/shared/ui";
 import {
   useAdminAdmins,
   useAdminSession,
@@ -49,47 +49,50 @@ function chunkCalendarWeeks(days: CalendarDayCell[]): (CalendarDayCell | null)[]
   return rows;
 }
 
+/** LEAD: спокойная палитра (`--staff-cal-*` в index.css) */
 function staffEventChipSurface(isReminder: boolean, isUnseen: boolean): CSSProperties {
-  if (isReminder) {
-    return {
-      background: "var(--mantine-color-blue-0)",
-      borderRadius: "var(--mantine-radius-sm)",
-      border: "none",
-      borderLeft: "4px solid var(--mantine-color-blue-5)",
-      boxShadow: "none",
-      width: "100%",
-      boxSizing: "border-box",
-      padding: "4px 6px",
-    };
-  }
+  const base: CSSProperties = {
+    borderRadius: "var(--calendar-slot-radius)",
+    border: "1px solid rgba(15, 20, 25, 0.05)",
+    boxShadow: "var(--calendar-card-shadow)",
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "var(--space-xs) var(--space-6)",
+    borderLeftWidth: "var(--calendar-bar-width)",
+    borderLeftStyle: "solid",
+  };
   if (isUnseen) {
     return {
-      background: "var(--mantine-color-yellow-0)",
-      borderRadius: "var(--mantine-radius-sm)",
-      border: "none",
-      borderLeft: "4px solid var(--mantine-color-yellow-6)",
-      boxShadow: "none",
-      width: "100%",
-      boxSizing: "border-box",
-      padding: "4px 6px",
+      ...base,
+      background: "var(--staff-cal-chip-unseen-bg)",
+      borderLeftColor: "var(--staff-cal-chip-unseen-bar)",
+    };
+  }
+  if (isReminder) {
+    return {
+      ...base,
+      background: "var(--staff-cal-chip-reminder-bg)",
+      borderLeftColor: "var(--staff-cal-chip-reminder-bar)",
     };
   }
   return {
-    background: "var(--mantine-color-indigo-0)",
-    borderRadius: "var(--mantine-radius-sm)",
-    border: "none",
-    borderLeft: "4px solid var(--mantine-color-indigo-5)",
-    boxShadow: "none",
-    width: "100%",
-    boxSizing: "border-box",
-    padding: "4px 6px",
+    ...base,
+    background: "var(--staff-cal-chip-default-bg)",
+    borderLeftColor: "var(--staff-cal-chip-default-bar)",
   };
 }
 
-function staffEventTextColor(isReminder: boolean, isUnseen: boolean): string {
-  if (isReminder) return "var(--mantine-color-blue-9)";
-  if (isUnseen) return "var(--mantine-color-yellow-9)";
-  return "var(--mantine-color-indigo-9)";
+function staffEventTextColor(_isReminder: boolean, _isUnseen: boolean): string {
+  return "var(--staff-cal-chip-title)";
+}
+
+function formatTimeHHMMInput(raw: string): string {
+  const digits = (raw || "").replace(/[^\d]/g, "").slice(0, 4);
+  if (!digits) return "";
+  // Common UX: "930" -> "09:30"
+  const normalized = digits.length === 3 ? `0${digits}` : digits;
+  if (normalized.length <= 2) return normalized;
+  return `${normalized.slice(0, 2)}:${normalized.slice(2)}`;
 }
 
 type CalendarModalState =
@@ -252,6 +255,7 @@ export default function AdminStaffCalendarPage() {
   const [createMonthAnchor, setCreateMonthAnchor] = useState(() => dayjs().startOf("month"));
   const [createStartTime, setCreateStartTime] = useState<string>("");
   const [createEndTime, setCreateEndTime] = useState<string>("");
+  const [timeConflictWarning, setTimeConflictWarning] = useState<string | null>(null);
   const [timePickerKind, setTimePickerKind] = useState<"start" | "end" | null>(null);
   const [hideCreateMonthPicker, setHideCreateMonthPicker] = useState(false);
 
@@ -278,14 +282,6 @@ export default function AdminStaffCalendarPage() {
     setModal({ mode: "create" });
   };
 
-  const createMonthCells = useMemo(() => {
-    const monthStart = createMonthAnchor.startOf("month");
-    // Monday-first grid: dayjs().day() -> Sunday=0..Saturday=6, so shift to Monday index.
-    const mondayBasedDow = (monthStart.day() + 6) % 7; // Monday=0
-    const gridStart = monthStart.subtract(mondayBasedDow, "day");
-    return Array.from({ length: 42 }, (_, i) => gridStart.add(i, "day"));
-  }, [createMonthAnchor]);
-
   useEffect(() => {
     if (taskIdFromUrl) setLinkedTaskId(taskIdFromUrl);
   }, [taskIdFromUrl]);
@@ -305,6 +301,7 @@ export default function AdminStaffCalendarPage() {
     setCreateMonthAnchor(dayjs(dayIso).startOf("month"));
     setCreateStartTime("");
     setCreateEndTime("");
+    setTimeConflictWarning(null);
     setTimePickerKind(null);
     setHideCreateMonthPicker(false);
   };
@@ -581,6 +578,20 @@ export default function AdminStaffCalendarPage() {
     });
   };
 
+  const updateTimeConflictWarning = (nextStart: string, nextEnd: string) => {
+    if (!nextStart || !nextEnd) {
+      setTimeConflictWarning(null);
+      return;
+    }
+    const s = dayjs(`${createSelectedDayIso}T${nextStart}`);
+    const e = dayjs(`${createSelectedDayIso}T${nextEnd}`);
+    if (!s.isValid() || !e.isValid() || !e.isAfter(s)) {
+      setTimeConflictWarning(null);
+      return;
+    }
+    setTimeConflictWarning(eventsOverlap(s, e) ? "Интервал пересекается с другим событием в этот день." : null);
+  };
+
   /** Блокируется слот, если выбранный интервал пересекается с другим событием или невалиден по краям. */
   const isPickerSlotDisabled = (hour: number, minute5: number) => {
     if (!timePickerKind) return true;
@@ -657,8 +668,14 @@ export default function AdminStaffCalendarPage() {
     const mm = String((nextMinute + 60) % 60).padStart(2, "0");
     const next = `${hh}:${mm}`;
     if (isPickerSlotDisabled(nextHour, nextMinute)) return;
-    if (timePickerKind === "start") setCreateStartTime(next);
-    if (timePickerKind === "end") setCreateEndTime(next);
+    if (timePickerKind === "start") {
+      setCreateStartTime(next);
+      updateTimeConflictWarning(next, createEndTime);
+    }
+    if (timePickerKind === "end") {
+      setCreateEndTime(next);
+      updateTimeConflictWarning(createStartTime, next);
+    }
     // Время уже выбрано — не показываем выбор месяца (достаточно выбранной даты).
     setHideCreateMonthPicker(true);
   };
@@ -700,7 +717,7 @@ export default function AdminStaffCalendarPage() {
   }, [modal?.mode, timePickerKind, pickerHour, pickerMinuteIndex]);
 
   return (
-    <Stack gap="md">
+    <Stack gap="md" className="staff-cal-page">
       <ContextBar title="Календарь" />
       <Text size="sm" c="dimmed">
         Совещания и напоминания (Celery). Событие можно привязать к задаче Kanban — поле ниже или ссылка из задачи «В
@@ -708,29 +725,31 @@ export default function AdminStaffCalendarPage() {
         или старший администратор). Редактирование сохраняет изменения через PATCH.
       </Text>
       {lastCreatedEvent ? (
-        <Text size="sm" c="teal">
+        <Text size="sm" c="dimmed" style={{ color: "var(--accent-teal)" }}>
           Создано событие: {lastCreatedEvent.title} ({dayjs(lastCreatedEvent.dayIso).format("DD.MM.YYYY")}).
         </Text>
       ) : null}
-      <Group justify="space-between" align="center">
+      <Box className="staff-cal-toolbar">
         <Group gap="xs">
-          <Button variant="default" onClick={() => setMonthAnchor((m) => m.subtract(1, "month"))}>
+          <Button variant="default" radius="md" onClick={() => setMonthAnchor((m) => m.subtract(1, "month"))}>
             {"<<"}
           </Button>
-          <Button variant="default" onClick={() => setMonthAnchor(dayjs().startOf("month"))}>
+          <Button variant="default" radius="md" onClick={() => setMonthAnchor(dayjs().startOf("month"))}>
             Сегодня
           </Button>
         </Group>
-        <Text size="sm" fw={700}>
+        <Text size="sm" fw={700} style={{ letterSpacing: "0.02em" }}>
           {monthAnchor.format("MMMM YYYY")}
         </Text>
         <Group gap="xs">
-          <Button variant="default" onClick={() => setMonthAnchor((m) => m.add(1, "month"))}>
+          <Button variant="default" radius="md" onClick={() => setMonthAnchor((m) => m.add(1, "month"))}>
             {">>"}
           </Button>
-          <Button onClick={openCreate}>Новое событие</Button>
+          <Button radius="md" onClick={openCreate}>
+            Новое событие
+          </Button>
         </Group>
-      </Group>
+      </Box>
 
       {isLoading ? (
         <PageSkeleton variant="table" rows={10} />
@@ -740,14 +759,13 @@ export default function AdminStaffCalendarPage() {
         <EmptyState title="Нет событий" description="Создайте совещание или напоминание." />
       ) : (
         <Stack gap="xs">
-          <Box style={{ overflow: "auto" }}>
+          <Box className="staff-cal-month-shell" style={{ overflow: "auto" }}>
             <Table
               withTableBorder
-              withColumnBorders
               withRowBorders
               striped={false}
-              horizontalSpacing={4}
-              verticalSpacing={4}
+              horizontalSpacing={6}
+              verticalSpacing={6}
               style={{ tableLayout: "fixed", width: "100%" }}
             >
               <Table.Thead>
@@ -771,7 +789,7 @@ export default function AdminStaffCalendarPage() {
                           style={{
                             height: 120,
                             verticalAlign: "top",
-                            padding: 4,
+                            padding: "var(--space-xs)",
                             backgroundColor: "var(--mantine-color-gray-0)",
                           }}
                         />
@@ -790,19 +808,18 @@ export default function AdminStaffCalendarPage() {
                         return (
                           <Table.Td
                             key={day.date}
+                            className={`staff-cal-day-cell${flashDay ? " staff-cal-day-cell--flash" : ""}`}
                             style={{
                               height: 120,
                               minHeight: 120,
                               verticalAlign: "top",
-                              padding: 4,
+                              padding: "var(--space-sm)",
                               cursor: "pointer",
                               backgroundColor: flashDay
-                                ? "rgba(255, 228, 99, 0.22)"
+                                ? undefined
                                 : day.is_in_current_month
-                                  ? "#ffffff"
+                                  ? "var(--bg-card)"
                                   : "var(--mantine-color-gray-0)",
-                              outline: flashDay ? "2px solid rgba(255, 193, 7, 0.55)" : undefined,
-                              outlineOffset: -1,
                             }}
                             onClick={() => setDayDrawerDate(day.date)}
                           >
@@ -814,20 +831,43 @@ export default function AdminStaffCalendarPage() {
                               </Text>
                               <Group gap={4} wrap="nowrap">
                                 {day.events.length > 0 ? (
-                                  <Badge color="indigo" size="xs" variant="light">
+                                  <Badge
+                                    size="xs"
+                                    variant="transparent"
+                                    styles={{
+                                      root: {
+                                        backgroundColor: "var(--staff-cal-badge-count-bg)",
+                                        color: "var(--staff-cal-badge-count-text)",
+                                      },
+                                    }}
+                                  >
                                     {day.events.length}
                                   </Badge>
                                 ) : null}
                                 {day.unseen_invite_count > 0 ? (
-                                  <Badge color="yellow" size="xs" variant="light">
+                                  <Badge
+                                    size="xs"
+                                    variant="transparent"
+                                    styles={{
+                                      root: {
+                                        backgroundColor: "var(--staff-cal-badge-unseen-bg)",
+                                        color: "var(--staff-cal-badge-unseen-text)",
+                                      },
+                                    }}
+                                  >
                                     {`+${day.unseen_invite_count}`}
                                   </Badge>
                                 ) : null}
                                 {day.reminder_event_ids.length > 0 ? (
                                   <Badge
-                                    color="blue"
                                     size="xs"
-                                    variant="light"
+                                    variant="transparent"
+                                    styles={{
+                                      root: {
+                                        backgroundColor: "var(--staff-cal-badge-reminder-bg)",
+                                        color: "var(--staff-cal-badge-reminder-text)",
+                                      },
+                                    }}
                                     style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
                                   >
                                     <IconClock size={12} />
@@ -845,6 +885,7 @@ export default function AdminStaffCalendarPage() {
                                   return (
                                     <Box
                                       key={ev.id}
+                                      className="staff-cal-event-chip"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         openDetails(ev.id);
@@ -856,10 +897,19 @@ export default function AdminStaffCalendarPage() {
                                     >
                                       <Group gap={6} wrap="nowrap" align="center">
                                         {isReminder ? (
-                                          <IconClock size={12} color="var(--mantine-color-blue-6)" />
+                                          <IconClock size={12} color="var(--staff-cal-chip-reminder-bar)" />
                                         ) : null}
                                         {isUnseen ? (
-                                          <Badge size="xs" color="yellow" variant="light">
+                                          <Badge
+                                            size="xs"
+                                            variant="transparent"
+                                            styles={{
+                                              root: {
+                                                backgroundColor: "var(--staff-cal-badge-unseen-bg)",
+                                                color: "var(--staff-cal-badge-unseen-text)",
+                                              },
+                                            }}
+                                          >
                                             Нов
                                           </Badge>
                                         ) : null}
@@ -905,6 +955,8 @@ export default function AdminStaffCalendarPage() {
         title={dayDrawerDate ? `События ${dayjs(dayDrawerDate).format("DD MMM YYYY")}` : "События"}
         centered
         size={dayDrawerSize}
+        radius="lg"
+        classNames={{ content: "staff-cal-modal-content" }}
       >
         <Stack>
           {dayForDrawer ? (
@@ -914,8 +966,8 @@ export default function AdminStaffCalendarPage() {
               </Text>
               <Button
                 variant="filled"
-                color="indigo"
                 size="sm"
+                radius="md"
                 onClick={() => {
                   openCreateWithDay(dayForDrawer.date);
                   setDayDrawerDate(null);
@@ -950,7 +1002,7 @@ export default function AdminStaffCalendarPage() {
               </SimpleGrid>
             </Stack>
           ) : (
-            <ScrollArea style={{ height: dayDrawerScrollHeight }}>
+            <ScrollArea className="staff-cal-time-scroll" style={{ height: dayDrawerScrollHeight }}>
               <Stack gap="xs">
                 {dayForDrawer.events
                   .slice()
@@ -970,11 +1022,12 @@ export default function AdminStaffCalendarPage() {
                     return (
                       <Box
                         key={ev.id}
+                        className="staff-cal-event-chip"
                         onClick={() => openDetails(ev.id)}
                         style={{
                           ...staffEventChipSurface(isReminder, isUnseen),
                           cursor: "pointer",
-                          padding: "8px 10px",
+                          padding: "var(--space-sm) var(--space-10)",
                         }}
                       >
                         <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
@@ -989,13 +1042,33 @@ export default function AdminStaffCalendarPage() {
                             </Text>
                             <Group gap={6} wrap="wrap">
                               {isReminder ? (
-                                <Badge size="xs" variant="light" color="blue">
+                                <Badge
+                                  size="xs"
+                                  variant="light"
+                                  color="gray"
+                                  styles={{
+                                    root: {
+                                      backgroundColor: "var(--staff-cal-badge-reminder-bg)",
+                                      color: "var(--staff-cal-badge-reminder-text)",
+                                    },
+                                  }}
+                                >
                                   <IconClock size={12} style={{ marginRight: 6 }} />
                                   Напоминание
                                 </Badge>
                               ) : null}
                               {isUnseen ? (
-                                <Badge size="xs" color="yellow" variant="light">
+                                <Badge
+                                  size="xs"
+                                  variant="light"
+                                  color="gray"
+                                  styles={{
+                                    root: {
+                                      backgroundColor: "var(--staff-cal-badge-unseen-bg)",
+                                      color: "var(--staff-cal-badge-unseen-text)",
+                                    },
+                                  }}
+                                >
                                   Новое для меня
                                 </Badge>
                               ) : null}
@@ -1038,402 +1111,372 @@ export default function AdminStaffCalendarPage() {
               : "Событие"
         }
         centered
+        size={modal?.mode === "details" ? "lg" : "xl"}
+        radius="lg"
+        classNames={{ content: "staff-cal-modal-content" }}
+        styles={{
+          content: { display: "flex", flexDirection: "column" },
+          body: {
+            // Scroll is handled by Mantine modal body (see global CSS),
+            // footer is sticky to keep actions accessible.
+            padding: 0,
+          },
+        }}
       >
-        <Stack gap="sm">
-          {modal?.mode === "details" ? (
-            detailsLoading ? (
-              <PageSkeleton variant="table" rows={4} />
-            ) : detailsIsError ? (
-              <QueryErrorAlert error={detailsError} />
-            ) : !eventDetails ? null : (
-              <Stack gap="xs">
-                <Text fw={800} size="md">
-                  {eventDetails.event.title}
-                </Text>
-                <Text size="sm" c="dimmed">
-                  {dayjs(eventDetails.event.starts_at).format("DD.MM.YYYY HH:mm")} —{" "}
-                  {dayjs(eventDetails.event.ends_at).format("DD.MM.YYYY HH:mm")}
-                </Text>
-                {eventDetails.event.description ? (
-                  <Text size="sm">{eventDetails.event.description}</Text>
-                ) : null}
-
-                <Group gap="xs" wrap="wrap">
-                  {eventDetails.event.all_day ? <Badge size="sm">Весь день</Badge> : null}
-                  {eventDetails.event.task_id ? <Badge size="sm" color="teal">Задача</Badge> : null}
-                  {eventDetails.reminder.reminder_minutes_before != null && eventDetails.reminder.reminder_minutes_before > 0 ? (
-                    <Badge size="sm" variant="light" color="blue">
-                      Напоминание: за {eventDetails.reminder.reminder_minutes_before} мин
-                    </Badge>
-                  ) : (
-                    <Badge size="sm" variant="light" color="gray">
-                      Напоминание: выключено
-                    </Badge>
-                  )}
-                </Group>
-
-                {eventDetails.event.participants?.length ? (
-                  <Text size="sm" c="dimmed">
-                    Участники:{" "}
-                    {eventDetails.event.participants
-                      .map((p) => p.full_name?.trim() || "—")
-                      .join(", ")}
-                  </Text>
-                ) : null}
-
-                {eventDetails.creator_ack_summary ? (
-                  <Text size="sm" c="dimmed">
-                    Подтвердили: {eventDetails.creator_ack_summary.acknowledged_participants}/{eventDetails.creator_ack_summary.total_participants}
-                  </Text>
-                ) : null}
-
-                <Group justify="space-between" mt="xs">
-                  {!isDetailsModalCreator ? (
-                    eventDetails.invitation_acknowledged_at ? (
-                      <Badge color="green" size="sm">Вы подтвердили что увидели</Badge>
-                    ) : (
-                      <Button
-                        onClick={() =>
-                          ackMut.mutate(eventDetails.event.id, {
-                            onSuccess: () => closeModal(),
-                          })
-                        }
-                        loading={ackMut.isPending}
-                      >
-                        Подтвердить что увидел
-                      </Button>
-                    )
-                  ) : (
-                    <Box />
-                  )}
-
-                  <Group gap="xs">
-                    {canEditCalendar ? (
-                      <Button variant="light" onClick={() => openEdit(eventDetails.event)}>
-                        Изменить
-                      </Button>
-                    ) : null}
-                    <Button variant="default" onClick={closeModal}>
-                      Закрыть
-                    </Button>
-                  </Group>
-                </Group>
-              </Stack>
-            )
-          ) : (
-            <>
-              {formError ? (
-                <Text size="sm" c="red">
-                  {formError}
-                </Text>
-              ) : null}
-              <TextInput label="Заголовок" value={title} onChange={(e) => setTitle(e.currentTarget.value)} />
-              <Textarea
-                label="Описание"
-                value={description}
-                onChange={(e) => setDescription(e.currentTarget.value)}
-                minRows={2}
-              />
-              <Switch
-                label="Весь день"
-                checked={allDay}
-                onChange={(e) => {
-                  const checked = e.currentTarget.checked;
-                  setAllDay(checked);
-                  // В create-режиме время выбирается вручную пользователем.
-                  if (modal?.mode === "create" && !checked) {
-                    setCreateStartTime("");
-                    setCreateEndTime("");
-                  }
-                }}
-              />
-              {modal?.mode === "edit" ? (
-                <>
-                  <TextInput
-                    label="Начало"
-                    type="datetime-local"
-                    value={startsLocal}
-                    onChange={(e) => setStartsLocal(e.currentTarget.value)}
-                  />
-                  <TextInput
-                    label="Окончание"
-                    type="datetime-local"
-                    value={endsLocal}
-                    onChange={(e) => setEndsLocal(e.currentTarget.value)}
-                  />
-                </>
-              ) : (
-                <>
-                  {hideCreateMonthPicker ? (
-                    <Group justify="space-between" align="center" mt={6}>
-                      <Stack gap={0}>
-                        <Text size="sm" fw={700}>
-                          Дата
-                        </Text>
-                        <Text size="xs" c="dimmed">
-                          {dayjs(createSelectedDayIso).format("DD.MM.YYYY")}
-                        </Text>
-                      </Stack>
-                      <Button
-                        variant="subtle"
-                        size="xs"
-                        onClick={() => setHideCreateMonthPicker(false)}
-                        style={{ background: "#ffffff", boxShadow: "0 4px 18px rgba(0, 0, 0, 0.06)" }}
-                      >
-                        Изменить
-                      </Button>
-                    </Group>
-                  ) : (
-                    <>
-                      <Text size="sm" fw={700}>
-                        Дата
-                      </Text>
-                      <Box
-                        mt={6}
-                        style={{
-                          background: "#ffffff",
-                          borderRadius: 12,
-                          border: "1px solid var(--input-border)",
-                          padding: 10,
-                          boxShadow: "0 10px 30px rgba(0, 0, 0, 0.06)",
-                          transition: "transform 0.15s ease",
-                        }}
-                      >
-                        <Group justify="space-between" align="center">
-                          <ActionIcon
-                            variant="subtle"
-                            size="lg"
-                            radius="md"
-                            onClick={() => setCreateMonthAnchor((m) => m.subtract(1, "month"))}
-                            aria-label="Предыдущий месяц"
-                            style={{ background: "#ffffff", boxShadow: "0 4px 18px rgba(0,0,0,0.06)" }}
-                          >
-                            {"←"}
-                          </ActionIcon>
-                          <Text size="sm" fw={900} style={{ textAlign: "center" }}>
-                            {createMonthAnchor.format("MMMM YYYY")}
-                          </Text>
-                          <ActionIcon
-                            variant="subtle"
-                            size="lg"
-                            radius="md"
-                            onClick={() => setCreateMonthAnchor((m) => m.add(1, "month"))}
-                            aria-label="Следующий месяц"
-                            style={{ background: "#ffffff", boxShadow: "0 4px 18px rgba(0,0,0,0.06)" }}
-                          >
-                            {"→"}
-                          </ActionIcon>
-                        </Group>
-
-                        <SimpleGrid cols={7} spacing={4} mt={8}>
-                          {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((w) => (
-                            <Text key={w} size="xs" fw={800} c="dimmed" style={{ textAlign: "center" }}>
-                              {w}
-                            </Text>
-                          ))}
-                        </SimpleGrid>
-
-                        <SimpleGrid cols={7} spacing={4} mt={4}>
-                          {createMonthCells.map((d) => {
-                            const iso = d.format("YYYY-MM-DD");
-                            const isSel = iso === createSelectedDayIso;
-                            const isThisMonth = d.month() === createMonthAnchor.month();
-                            return (
-                              <Button
-                                key={`${iso}-${createMonthAnchor.format("YYYY-MM")}`}
-                                size="xs"
-                                variant={isSel ? "filled" : "light"}
-                                color={isSel ? "blue" : "gray"}
-                                onClick={() => {
-                                  setCreateSelectedDayIso(iso);
-                                  setCreateMonthAnchor(d.startOf("month"));
-                                }}
-                                style={{
-                                  background: "#ffffff",
-                                  opacity: isThisMonth ? 1 : 0.35,
-                                  boxShadow: isSel ? "0 10px 30px rgba(59, 130, 246, 0.18)" : "0 6px 18px rgba(0,0,0,0.04)",
-                                  transform: isSel ? "translateY(-1px)" : undefined,
-                                  transition: "transform 0.12s ease, box-shadow 0.2s ease",
-                                  borderRadius: 10,
-                                }}
-                              >
-                                {d.date()}
-                              </Button>
-                            );
-                          })}
-                        </SimpleGrid>
-                      </Box>
-                    </>
-                  )}
-
-                  {allDay ? (
-                    <Text size="xs" c="dimmed" mt={4}>
-                      Для события “Весь день” время не выбирается.
+        <Stack gap="sm" p="md" pb="xl">
+              {modal?.mode === "details" ? (
+                detailsLoading ? (
+                  <PageSkeleton variant="table" rows={4} />
+                ) : detailsIsError ? (
+                  <QueryErrorAlert error={detailsError} />
+                ) : !eventDetails ? null : (
+                  <Stack gap="xs">
+                    <Text fw={800} size="md">
+                      {eventDetails.event.title}
                     </Text>
-                  ) : (
-                    <Stack gap={10} mt={6}>
-                      <Box>
-                        <Text size="sm" fw={700}>
-                          Время начала
-                        </Text>
-                        <Group mt={6} grow align="flex-end" gap="xs">
-                          <TextInput
-                            type="time"
-                            value={createStartTime}
-                            placeholder="—"
-                            onChange={(e) => {
-                              const next = e.currentTarget.value || "";
-                              if (!next) {
-                                setCreateStartTime("");
-                                setFormError(null);
-                                return;
-                              }
-                              if (createEndTime) {
-                                const candStart = dayjs(`${createSelectedDayIso}T${next}`);
-                                const candEnd = dayjs(`${createSelectedDayIso}T${createEndTime}`);
-                                if (eventsOverlap(candStart, candEnd)) {
-                                  setFormError("Это время пересекается с другим событием.");
-                                  return;
-                                }
-                              }
-                              setFormError(null);
-                              setCreateStartTime(next);
-                            }}
-                            styles={{
-                              input: {
-                                background: "#ffffff",
-                                borderRadius: 10,
-                                boxShadow: "0 6px 18px rgba(0,0,0,0.04)",
-                              },
-                            }}
-                          />
-                          <ActionIcon
-                            variant="light"
-                            size="lg"
-                            radius="md"
-                            aria-label="Выбрать время начала"
-                            onClick={() => setTimePickerKind("start")}
-                            style={{ boxShadow: "0 6px 18px rgba(0,0,0,0.04)" }}
-                          >
-                            <IconClock size={18} />
-                          </ActionIcon>
-                        </Group>
-                      </Box>
+                    <Text size="sm" c="dimmed">
+                      {dayjs(eventDetails.event.starts_at).format("DD.MM.YYYY HH:mm")} —{" "}
+                      {dayjs(eventDetails.event.ends_at).format("DD.MM.YYYY HH:mm")}
+                    </Text>
+                    {eventDetails.event.description ? <Text size="sm">{eventDetails.event.description}</Text> : null}
 
-                      <Box>
-                        <Text size="sm" fw={700}>
-                          Время окончания
+                    <Group gap="xs" wrap="wrap">
+                      {eventDetails.event.all_day ? <Badge size="sm">Весь день</Badge> : null}
+                      {eventDetails.event.task_id ? <Badge size="sm" color="teal">Задача</Badge> : null}
+                      {eventDetails.reminder.reminder_minutes_before != null &&
+                      eventDetails.reminder.reminder_minutes_before > 0 ? (
+                        <Badge size="sm" variant="light" color="blue">
+                          Напоминание: за {eventDetails.reminder.reminder_minutes_before} мин
+                        </Badge>
+                      ) : (
+                        <Badge size="sm" variant="light" color="gray">
+                          Напоминание: выключено
+                        </Badge>
+                      )}
+                    </Group>
+
+                    {eventDetails.event.participants?.length ? (
+                      <Text size="sm" c="dimmed">
+                        Участники:{" "}
+                        {eventDetails.event.participants.map((p, idx) => (
+                          <span key={p.id}>
+                            <PersonNameLink kind="staff" id={p.id} label={p.full_name} />
+                            {idx < (eventDetails.event.participants?.length ?? 0) - 1 ? ", " : ""}
+                          </span>
+                        ))}
+                      </Text>
+                    ) : null}
+
+                    {eventDetails.creator_ack_summary ? (
+                      <Text size="sm" c="dimmed">
+                        Подтвердили: {eventDetails.creator_ack_summary.acknowledged_participants}/
+                        {eventDetails.creator_ack_summary.total_participants}
+                      </Text>
+                    ) : null}
+                  </Stack>
+                )
+              ) : (
+                <>
+                  {formError ? (
+                    <Text size="sm" c="red">
+                      {formError}
+                    </Text>
+                  ) : null}
+
+                  <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                    <Stack gap="sm">
+                      <TextInput label="Заголовок" value={title} onChange={(e) => setTitle(e.currentTarget.value)} />
+                      <Textarea
+                        label="Описание"
+                        value={description}
+                        onChange={(e) => setDescription(e.currentTarget.value)}
+                        minRows={6}
+                      />
+                      {canInviteParticipants ? (
+                        <MultiSelect
+                          label="Участники совещания"
+                          description={
+                            modal?.mode === "edit"
+                              ? "Полная замена списка; организатор будет добавлен автоматически, если его нет в списке"
+                              : "Кого видеть в календаре и напоминаниях; вы всегда в списке как организатор"
+                          }
+                          placeholder="Выберите сотрудников"
+                          data={participantOptions}
+                          value={participantAdminIds}
+                          onChange={setParticipantAdminIds}
+                          searchable
+                          hidePickedOptions
+                          clearable
+                          comboboxProps={{ withinPortal: true }}
+                        />
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          Чтобы приглашать коллег или менять состав участников, нужно право «приглашение участников календаря».
+                          Сейчас групповые права централизованы владельцем; детальная политика scope (owner-driven) будет включена
+                          отдельным этапом (P6).
                         </Text>
-                        <Group mt={6} grow align="flex-end" gap="xs">
-                          <TextInput
-                            type="time"
-                            value={createEndTime}
-                            placeholder="—"
-                            onChange={(e) => {
-                              const next = e.currentTarget.value || "";
-                              if (!next) {
-                                setCreateEndTime("");
-                                setFormError(null);
-                                return;
-                              }
-                              if (createStartTime) {
-                                const candStart = dayjs(`${createSelectedDayIso}T${createStartTime}`);
-                                const candEnd = dayjs(`${createSelectedDayIso}T${next}`);
-                                if (eventsOverlap(candStart, candEnd)) {
-                                  setFormError("Это время пересекается с другим событием.");
-                                  return;
-                                }
-                              }
-                              setFormError(null);
-                              setCreateEndTime(next);
-                            }}
-                            styles={{
-                              input: {
-                                background: "#ffffff",
-                                borderRadius: 10,
-                                boxShadow: "0 6px 18px rgba(0,0,0,0.04)",
-                              },
-                            }}
-                          />
-                          <ActionIcon
-                            variant="light"
-                            size="lg"
-                            radius="md"
-                            aria-label="Выбрать время окончания"
-                            onClick={() => setTimePickerKind("end")}
-                            style={{ boxShadow: "0 6px 18px rgba(0,0,0,0.04)" }}
-                          >
-                            <IconClock size={18} />
-                          </ActionIcon>
-                        </Group>
-                      </Box>
+                      )}
+                      <Switch
+                        label="Весь день"
+                        checked={allDay}
+                        onChange={(e) => {
+                          const checked = e.currentTarget.checked;
+                          setAllDay(checked);
+                          if (modal?.mode === "create" && !checked) {
+                            setCreateStartTime("");
+                            setCreateEndTime("");
+                          }
+                        }}
+                      />
+                      <Select
+                        label="Напоминание"
+                        description="За сколько минут до начала отправить напоминание (0 — не напоминать)"
+                        data={[
+                          { value: "0", label: "Не напоминать" },
+                          { value: "5", label: "За 5 минут" },
+                          { value: "15", label: "За 15 минут" },
+                          { value: "30", label: "За 30 минут" },
+                          { value: "60", label: "За 1 час" },
+                          { value: "120", label: "За 2 часа" },
+                          { value: "1440", label: "За сутки" },
+                        ]}
+                        value={reminderMinutes}
+                        onChange={(v) => setReminderMinutes(v ?? "15")}
+                      />
                     </Stack>
-                  )}
+
+                    <Stack gap="sm">
+                      {modal?.mode === "edit" ? (
+                        <>
+                          <TextInput
+                            label="Начало"
+                            type="datetime-local"
+                            value={startsLocal}
+                            onChange={(e) => setStartsLocal(e.currentTarget.value)}
+                          />
+                          <TextInput
+                            label="Окончание"
+                            type="datetime-local"
+                            value={endsLocal}
+                            onChange={(e) => setEndsLocal(e.currentTarget.value)}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          {hideCreateMonthPicker ? (
+                            <Group justify="space-between" align="center">
+                              <Stack gap={0}>
+                                <Text size="sm" fw={700}>
+                                  Дата
+                                </Text>
+                                <Text size="xs" c="dimmed">
+                                  {dayjs(createSelectedDayIso).format("DD.MM.YYYY")}
+                                </Text>
+                              </Stack>
+                              <Button
+                                variant="subtle"
+                                size="xs"
+                                onClick={() => setHideCreateMonthPicker(false)}
+                                style={{ background: "var(--bg-card)", boxShadow: "var(--shadow-soft-sm)" }}
+                              >
+                                Изменить
+                              </Button>
+                            </Group>
+                          ) : (
+                            <>
+                              <Text size="sm" fw={700}>
+                                Дата
+                              </Text>
+                              <Box mt={6}>
+                                <CompactMonthPicker
+                                  value={createSelectedDayIso}
+                                  onChange={(iso) => {
+                                    setCreateSelectedDayIso(iso);
+                                    setCreateMonthAnchor(dayjs(iso).startOf("month"));
+                                  }}
+                                  monthAnchor={createMonthAnchor}
+                                  onMonthAnchorChange={setCreateMonthAnchor}
+                                  size="comfortable"
+                                />
+                              </Box>
+                            </>
+                          )}
+
+                          {allDay ? (
+                            <Text size="xs" c="dimmed">
+                              Для события “Весь день” время не выбирается.
+                            </Text>
+                          ) : (
+                            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                              <Box>
+                                <Text size="sm" fw={700}>
+                                  Время начала
+                                </Text>
+                                <Group mt={6} grow align="flex-end" gap="xs" wrap="nowrap">
+                                  <TextInput
+                                    type="text"
+                                    placeholder="HH:MM"
+                                    value={createStartTime}
+                                    onChange={(e) => {
+                                      const next = formatTimeHHMMInput(e.currentTarget.value || "");
+                                      if (!next) {
+                                        setCreateStartTime("");
+                                        setTimeConflictWarning(null);
+                                        return;
+                                      }
+                                      setCreateStartTime(next);
+                                      updateTimeConflictWarning(next, createEndTime);
+                                    }}
+                                    styles={{
+                                      root: { flex: 1, minWidth: 0 },
+                                      input: {
+                                        background: "var(--bg-card)",
+                                        borderRadius: "var(--radius-md)",
+                                        boxShadow: "var(--shadow-soft-sm)",
+                                      },
+                                    }}
+                                  />
+                                  <ActionIcon
+                                    variant="light"
+                                    size="lg"
+                                    radius="md"
+                                    aria-label="Выбрать время начала"
+                                    onClick={() => setTimePickerKind("start")}
+                                    style={{ boxShadow: "var(--shadow-soft-sm)" }}
+                                  >
+                                    <IconClock size={18} />
+                                  </ActionIcon>
+                                </Group>
+                              </Box>
+
+                              <Box>
+                                <Text size="sm" fw={700}>
+                                  Время окончания
+                                </Text>
+                                <Group mt={6} grow align="flex-end" gap="xs" wrap="nowrap">
+                                  <TextInput
+                                    type="text"
+                                    placeholder="HH:MM"
+                                    value={createEndTime}
+                                    onChange={(e) => {
+                                      const next = formatTimeHHMMInput(e.currentTarget.value || "");
+                                      if (!next) {
+                                        setCreateEndTime("");
+                                        setTimeConflictWarning(null);
+                                        return;
+                                      }
+                                      setCreateEndTime(next);
+                                      updateTimeConflictWarning(createStartTime, next);
+                                    }}
+                                    styles={{
+                                      root: { flex: 1, minWidth: 0 },
+                                      input: {
+                                        background: "var(--bg-card)",
+                                        borderRadius: "var(--radius-md)",
+                                        boxShadow: "var(--shadow-soft-sm)",
+                                      },
+                                    }}
+                                  />
+                                  <ActionIcon
+                                    variant="light"
+                                    size="lg"
+                                    radius="md"
+                                    aria-label="Выбрать время окончания"
+                                    onClick={() => setTimePickerKind("end")}
+                                    style={{ boxShadow: "var(--shadow-soft-sm)" }}
+                                  >
+                                    <IconClock size={18} />
+                                  </ActionIcon>
+                                </Group>
+                              </Box>
+                            </SimpleGrid>
+                          )}
+
+                          {timeConflictWarning ? (
+                            <Text size="xs" c="orange" mt={6}>
+                              {timeConflictWarning} Можно продолжать ввод — проверка применится при сохранении.
+                            </Text>
+                          ) : null}
+                        </>
+                      )}
+
+                      <TextInput
+                        label="ID задачи (необязательно)"
+                        description="UUID задачи из раздела «Задачи» — для связи с календарём; оставьте пустым, чтобы снять привязку"
+                        value={linkedTaskId}
+                        onChange={(e) => setLinkedTaskId(e.currentTarget.value)}
+                        placeholder="например из ссылки «В календарь»"
+                      />
+                    </Stack>
+                  </SimpleGrid>
                 </>
               )}
-              <TextInput
-                label="ID задачи (необязательно)"
-                description="UUID задачи из раздела «Задачи» — для связи с календарём; оставьте пустым, чтобы снять привязку"
-                value={linkedTaskId}
-                onChange={(e) => setLinkedTaskId(e.currentTarget.value)}
-                placeholder="например из ссылки «В календарь»"
-              />
-              {canInviteParticipants ? (
-                <MultiSelect
-                  label="Участники совещания"
-                  description={
-                    modal?.mode === "edit"
-                      ? "Полная замена списка; организатор будет добавлен автоматически, если его нет в списке"
-                      : "Кого видеть в календаре и напоминаниях; вы всегда в списке как организатор"
-                  }
-                  placeholder="Выберите сотрудников"
-                  data={participantOptions}
-                  value={participantAdminIds}
-                  onChange={setParticipantAdminIds}
-                  searchable
-                  hidePickedOptions
-                  clearable
-                />
+        </Stack>
+
+        <Box
+          p="md"
+          pt="sm"
+          style={{
+            position: "sticky",
+            bottom: 0,
+            borderTop: "1px solid var(--divider)",
+            background: "var(--overlay-glass-surface)",
+            zIndex: 2,
+          }}
+        >
+          {modal?.mode === "details" ? (
+            <Group justify="space-between">
+              {!isDetailsModalCreator ? (
+                eventDetails?.invitation_acknowledged_at ? (
+                  <Badge color="green" size="sm">
+                    Вы подтвердили что увидели
+                  </Badge>
+                ) : eventDetails?.event?.id ? (
+                  <Button
+                    onClick={() =>
+                      ackMut.mutate(eventDetails.event.id, {
+                        onSuccess: () => closeModal(),
+                      })
+                    }
+                    loading={ackMut.isPending}
+                  >
+                    Подтвердить что увидел
+                  </Button>
+                ) : (
+                  <Box />
+                )
               ) : (
-                <Text size="xs" c="dimmed">
-                  Чтобы приглашать коллег или менять состав участников, нужно право «приглашение участников календаря».
-                  Сейчас групповые права централизованы владельцем; детальная политика scope (owner-driven) будет включена
-                  отдельным этапом (P6).
-                </Text>
+                <Box />
               )}
-              <Select
-                label="Напоминание"
-                description="За сколько минут до начала отправить напоминание (0 — не напоминать)"
-                data={[
-                  { value: "0", label: "Не напоминать" },
-                  { value: "5", label: "За 5 минут" },
-                  { value: "15", label: "За 15 минут" },
-                  { value: "30", label: "За 30 минут" },
-                  { value: "60", label: "За 1 час" },
-                  { value: "120", label: "За 2 часа" },
-                  { value: "1440", label: "За сутки" },
-                ]}
-                value={reminderMinutes}
-                onChange={(v) => setReminderMinutes(v ?? "15")}
-              />
-              <Group justify="flex-end">
+
+              <Group gap="xs">
+                {canEditCalendar && eventDetails?.event ? (
+                  <Button variant="light" onClick={() => openEdit(eventDetails.event)}>
+                    Изменить
+                  </Button>
+                ) : null}
                 <Button variant="default" onClick={closeModal}>
-                  Отмена
-                </Button>
-                <Button
-                  onClick={submitModal}
-                  loading={pending}
-                  disabled={
-                    !title.trim() ||
-                    (modal?.mode === "create" && !allDay && (!createStartTime || !createEndTime))
-                  }
-                >
-                  {modal?.mode === "edit" ? "Сохранить" : "Создать"}
+                  Закрыть
                 </Button>
               </Group>
-            </>
+            </Group>
+          ) : (
+            <Group justify="flex-end">
+              <Button variant="default" onClick={closeModal}>
+                Отмена
+              </Button>
+              <Button
+                onClick={submitModal}
+                loading={pending}
+                disabled={
+                  !title.trim() || (modal?.mode === "create" && !allDay && (!createStartTime || !createEndTime))
+                }
+              >
+                {modal?.mode === "edit" ? "Сохранить" : "Создать"}
+              </Button>
+            </Group>
           )}
-        </Stack>
+        </Box>
       </Modal>
 
       <Modal
@@ -1442,6 +1485,8 @@ export default function AdminStaffCalendarPage() {
         title={timePickerKind === "end" ? "Время окончания" : "Время начала"}
         centered
         size="xs"
+        radius="lg"
+        classNames={{ content: "staff-cal-modal-content" }}
       >
         <Stack gap="sm">
           <Group justify="space-between" gap="xs">
@@ -1463,11 +1508,12 @@ export default function AdminStaffCalendarPage() {
 
           <Group grow gap="xs" align="stretch">
             <ScrollArea
-                ref={hoursPickerScrollRef}
+              ref={hoursPickerScrollRef}
+              className="staff-cal-time-scroll"
               style={{
-                height: 220,
-                borderRadius: 12,
-                background: "#ffffff",
+                height: 240,
+                borderRadius: "var(--radius-md)",
+                background: "var(--bg-card-soft)",
                 border: "1px solid var(--input-border)",
               }}
               onWheel={onWheelHours}
@@ -1486,25 +1532,33 @@ export default function AdminStaffCalendarPage() {
                           applyPickerTime(h, minute5);
                       }}
                       style={{
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                          background: isDisabled ? "#f1f3f5" : isSel ? "rgba(59, 130, 246, 0.15)" : "#ffffff",
-                          border: isDisabled
-                            ? "1px solid #e9ecef"
-                            : isSel
-                              ? "1px solid rgba(59, 130, 246, 0.55)"
-                              : "1px solid transparent",
-                          cursor: isDisabled ? "not-allowed" : "pointer",
-                          boxShadow: isDisabled ? "none" : isSel ? "0 10px 30px rgba(59, 130, 246, 0.18)" : "0 6px 18px rgba(0,0,0,0.04)",
-                        transition: "transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease",
-                          transform: isDisabled ? undefined : isSel ? "translateY(-1px)" : undefined,
+                        padding: "var(--space-10) var(--space-md)",
+                        borderRadius: "var(--radius-md)",
+                        background: isDisabled
+                          ? "var(--mantine-color-gray-1)"
+                          : isSel
+                            ? "var(--staff-cal-time-selected-bg)"
+                            : "var(--bg-card)",
+                        border: isDisabled
+                          ? "1px solid var(--mantine-color-gray-2)"
+                          : isSel
+                            ? "1px solid var(--staff-cal-time-selected-border)"
+                            : "1px solid transparent",
+                        cursor: isDisabled ? "not-allowed" : "pointer",
+                        boxShadow: isDisabled ? "none" : isSel ? "var(--shadow-soft-sm)" : "none",
+                        transition:
+                          "transform 0.14s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
+                        transform: isDisabled ? undefined : isSel ? "translateY(-1px)" : undefined,
                       }}
                     >
                       <Text
                         size="sm"
                         fw={900}
-                        c={isDisabled ? "dimmed" : isSel ? "blue" : "dark"}
-                        style={{ textAlign: "center" }}
+                        c={isDisabled ? "dimmed" : isSel ? undefined : "dark"}
+                        style={{
+                          textAlign: "center",
+                          ...(!isDisabled && isSel ? { color: "var(--staff-cal-time-selected-text)" } : {}),
+                        }}
                       >
                         {String(h).padStart(2, "0")}
                       </Text>
@@ -1516,10 +1570,11 @@ export default function AdminStaffCalendarPage() {
 
             <ScrollArea
               ref={minutesPickerScrollRef}
+              className="staff-cal-time-scroll"
               style={{
-                height: 220,
-                borderRadius: 12,
-                background: "#ffffff",
+                height: 240,
+                borderRadius: "var(--radius-md)",
+                background: "var(--bg-card-soft)",
                 border: "1px solid var(--input-border)",
               }}
               onWheel={onWheelMinutes}
@@ -1537,25 +1592,33 @@ export default function AdminStaffCalendarPage() {
                         applyPickerTime(pickerHour, m5);
                       }}
                       style={{
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                        background: isDisabled ? "#f1f3f5" : isSel ? "rgba(59, 130, 246, 0.15)" : "#ffffff",
-                        border: isDisabled
-                          ? "1px solid #e9ecef"
+                        padding: "var(--space-10) var(--space-md)",
+                        borderRadius: "var(--radius-md)",
+                        background: isDisabled
+                          ? "var(--mantine-color-gray-1)"
                           : isSel
-                            ? "1px solid rgba(59, 130, 246, 0.55)"
+                            ? "var(--staff-cal-time-selected-bg)"
+                            : "var(--bg-card)",
+                        border: isDisabled
+                          ? "1px solid var(--mantine-color-gray-2)"
+                          : isSel
+                            ? "1px solid var(--staff-cal-time-selected-border)"
                             : "1px solid transparent",
                         cursor: isDisabled ? "not-allowed" : "pointer",
-                        boxShadow: isDisabled ? "none" : isSel ? "0 10px 30px rgba(59, 130, 246, 0.18)" : "0 6px 18px rgba(0,0,0,0.04)",
-                        transition: "transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease",
+                        boxShadow: isDisabled ? "none" : isSel ? "var(--shadow-soft-sm)" : "none",
+                        transition:
+                          "transform 0.14s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
                         transform: isDisabled ? undefined : isSel ? "translateY(-1px)" : undefined,
                       }}
                     >
                       <Text
                         size="sm"
                         fw={900}
-                        c={isDisabled ? "dimmed" : isSel ? "blue" : "dark"}
-                        style={{ textAlign: "center" }}
+                        c={isDisabled ? "dimmed" : isSel ? undefined : "dark"}
+                        style={{
+                          textAlign: "center",
+                          ...(isDisabled || !isSel ? {} : { color: "var(--staff-cal-time-selected-text)" }),
+                        }}
                       >
                         {String(m5).padStart(2, "0")}
                       </Text>

@@ -82,6 +82,7 @@ export interface PaymentOption {
 
 export interface Clinic {
   id: string;
+  clinic_slug?: string | null;
   name: string;
   phone: string | null;
   email: string | null;
@@ -104,6 +105,39 @@ export interface Clinic {
   person_label_plural?: string | null;
   staff_label_plural?: string | null;
   business_lexicon?: BusinessLexicon;
+}
+
+export interface PublicDoctorProfile {
+  id: string;
+  clinic_id: string;
+  doctor_id: string;
+  doctor_slug: string;
+  is_published: boolean;
+  public_photo_url: string | null;
+  short_bio: string | null;
+  about_md: string | null;
+  languages?: Record<string, unknown> | null;
+  education?: Record<string, unknown> | null;
+  certifications?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublicDoctorProfilePublicDto {
+  clinic_id: string;
+  clinic_slug: string;
+  doctor_id: string;
+  doctor_slug: string;
+  doctor_full_name: string;
+  doctor_specialization: string;
+  doctor_photo_url: string | null;
+  doctor_display_role?: string | null;
+  public_photo_url: string | null;
+  short_bio: string | null;
+  about_md: string | null;
+  languages?: Record<string, unknown> | null;
+  education?: Record<string, unknown> | null;
+  certifications?: Record<string, unknown> | null;
 }
 
 export interface Service {
@@ -355,6 +389,13 @@ export interface CreatePaymentResponse {
   prepayment_required?: boolean;
 }
 
+export interface ChatAttachmentBriefDto {
+  id: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+}
+
 export interface ChatMessageDto {
   id: string;
   sender_type: string;
@@ -363,6 +404,7 @@ export interface ChatMessageDto {
   sticker_key?: string | null;
   created_at: string;
   is_mine: boolean;
+  attachments?: ChatAttachmentBriefDto[];
 }
 
 export interface ConversationResponse {

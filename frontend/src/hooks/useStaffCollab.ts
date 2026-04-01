@@ -5,6 +5,7 @@ import { queryKeys } from "@/queryKeys";
 export interface NamedAdminBrief {
   id: string;
   full_name: string | null;
+  avatar_url?: string | null;
 }
 
 export interface StaffAttachmentBrief {
@@ -22,6 +23,15 @@ export interface StaffFeedPostResponse {
   created_at: string;
   comments_count: number;
   likes_count: number;
+  liked_by_me?: boolean;
+  acknowledged_by_me?: boolean;
+  acknowledged_count?: number;
+  audience_total?: number;
+  is_announcement?: boolean;
+  requires_ack?: boolean;
+  priority_level?: "normal" | "priority" | "critical";
+  audience_roles?: string[];
+  audience_admin_ids?: string[];
   attachments?: StaffAttachmentBrief[];
 }
 
@@ -30,6 +40,12 @@ export interface StaffFeedCommentResponse {
   body: string;
   author: NamedAdminBrief;
   created_at: string;
+  updated_at?: string | null;
+  parent_comment_id?: string | null;
+  in_reply_to?: NamedAdminBrief | null;
+  attachments?: StaffAttachmentBrief[];
+  deleted_at?: string | null;
+  deleted_by_admin_id?: string | null;
 }
 
 export interface StaffChatRoomResponse {
@@ -37,6 +53,10 @@ export interface StaffChatRoomResponse {
   kind: string;
   title: string;
   task_id?: string | null;
+  last_message_at?: string | null;
+  last_message_preview?: string | null;
+  unread_count?: number;
+  dm_peer?: NamedAdminBrief | null;
 }
 
 export interface StaffChatMessageResponse {
@@ -139,13 +159,36 @@ export function useStaffFeedPosts(limit = 30) {
   });
 }
 
+export function useStaffAnnouncements(limit = 50) {
+  return useQuery({
+    queryKey: ["staff-collab", "announcements", "posts", limit] as const,
+    queryFn: () =>
+      api.get<StaffFeedPostResponse[]>(
+        `/v1/admin/staff/feed/announcements?limit=${encodeURIComponent(String(limit))}`
+      ),
+  });
+}
+
 export function useCreateStaffFeedPost() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { title?: string | null; body: string }) =>
+    mutationFn: (payload: {
+      title?: string | null;
+      body: string;
+      is_announcement?: boolean;
+      requires_ack?: boolean;
+      priority_level?: "normal" | "priority" | "critical";
+      audience_roles?: string[];
+      audience_admin_ids?: string[];
+    }) =>
       api.post<StaffFeedPostResponse>(`/v1/admin/staff/feed/posts`, {
         title: payload.title?.trim() ? payload.title.trim() : null,
         body: payload.body,
+        is_announcement: Boolean(payload.is_announcement),
+        requires_ack: Boolean(payload.requires_ack),
+        priority_level: payload.priority_level ?? "normal",
+        audience_roles: payload.audience_roles ?? [],
+        audience_admin_ids: payload.audience_admin_ids ?? [],
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
@@ -161,10 +204,48 @@ export interface StaffFeedPostLikeResponse {
 export function useToggleStaffFeedPostLike() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (postId: string) => api.post<StaffFeedPostLikeResponse>(`/v1/admin/staff/feed/posts/${postId}/like`),
+    mutationFn: (postId: string) =>
+      api.post<StaffFeedPostLikeResponse>(`/v1/admin/staff/feed/posts/${postId}/like`),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
     },
+  });
+}
+
+export interface StaffFeedPostAckResponse {
+  acknowledged: boolean;
+  acknowledged_count: number;
+}
+
+export function useAckStaffFeedPost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (postId: string) =>
+      api.post<StaffFeedPostAckResponse>(`/v1/admin/staff/feed/posts/${postId}/ack`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
+    },
+  });
+}
+
+export interface StaffFeedAckStatusRow {
+  admin_id: string;
+  admin_name: string | null;
+  acknowledged_at: string | null;
+}
+
+export interface StaffFeedPostAckStatusResponse {
+  post_id: string;
+  acknowledged: StaffFeedAckStatusRow[];
+  pending: StaffFeedAckStatusRow[];
+}
+
+export function useStaffFeedPostAckStatus(postId: string | null) {
+  return useQuery({
+    queryKey: ["staff-collab", "feed-post-ack-status", postId] as const,
+    queryFn: () =>
+      api.get<StaffFeedPostAckStatusResponse>(`/v1/admin/staff/feed/posts/${postId}/ack-status`),
+    enabled: !!postId,
   });
 }
 
@@ -227,21 +308,130 @@ export async function downloadStaffFeedPostAttachmentFile(attachmentId: string, 
 
 export function useStaffFeedComments(postId: string | null) {
   return useQuery({
-    queryKey: ["staff-collab", "feed-comments", postId] as const,
+    queryKey: queryKeys.staffCollab.feedComments(postId),
     queryFn: () =>
       api.get<StaffFeedCommentResponse[]>(`/v1/admin/staff/feed/posts/${postId}/comments`),
     enabled: !!postId,
   });
 }
 
+export function useUpdateStaffFeedComment(postId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { commentId: string; body: string }) =>
+      api.patch<StaffFeedCommentResponse>(`/v1/admin/staff/feed/comments/${vars.commentId}`, {
+        body: vars.body,
+      }),
+    onSuccess: () => {
+      if (postId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedComments(postId) });
+      }
+    },
+  });
+}
+
+export function useDeleteStaffFeedComment(postId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (commentId: string) => api.delete<void>(`/v1/admin/staff/feed/comments/${commentId}`),
+    onSuccess: () => {
+      if (postId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedComments(postId) });
+      }
+      void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
+    },
+  });
+}
+
+export interface StaffAnnouncementPublishPolicyRow {
+  scope_type: "role" | "user";
+  scope_value: string;
+  can_publish: boolean;
+}
+
+export interface StaffAnnouncementPublishPolicyResponse {
+  policies: StaffAnnouncementPublishPolicyRow[];
+}
+
+export function useStaffAnnouncementPublishPolicy() {
+  return useQuery({
+    queryKey: ["staff-collab", "announcements", "publish-policy"] as const,
+    queryFn: () =>
+      api.get<StaffAnnouncementPublishPolicyResponse>(`/v1/admin/staff/feed/announcements/publish-policy`),
+  });
+}
+
+export function useUpdateStaffAnnouncementPublishPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rows: StaffAnnouncementPublishPolicyRow[]) =>
+      api.put<StaffAnnouncementPublishPolicyResponse>(
+        `/v1/admin/staff/feed/announcements/publish-policy`,
+        rows
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["staff-collab", "announcements", "publish-policy"] as const });
+    },
+  });
+}
+
+export interface StaffAnnouncementPublishPolicyAuditRow {
+  id: string;
+  created_at: string;
+  actor_admin_id?: string | null;
+  actor_name?: string | null;
+  snapshot?: any;
+}
+
+export interface StaffAnnouncementPublishPolicyAuditListResponse {
+  items: StaffAnnouncementPublishPolicyAuditRow[];
+}
+
+export function useStaffAnnouncementPublishPolicyAudit(limit = 200) {
+  return useQuery({
+    queryKey: ["staff-collab", "announcements", "publish-policy", "audit", limit] as const,
+    queryFn: () =>
+      api.get<StaffAnnouncementPublishPolicyAuditListResponse>(
+        `/v1/admin/staff/feed/announcements/publish-policy/audit?limit=${encodeURIComponent(String(limit))}`
+      ),
+  });
+}
+
 export function useAddStaffFeedComment(postId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) =>
-      api.post<StaffFeedCommentResponse>(`/v1/admin/staff/feed/posts/${postId}/comments`, { body }),
+    mutationFn: (payload: { body: string; parent_comment_id?: string | null }) => {
+      if (!postId) throw new Error("post");
+      return api.post<StaffFeedCommentResponse>(`/v1/admin/staff/feed/posts/${postId}/comments`, {
+        body: payload.body,
+        parent_comment_id: payload.parent_comment_id ?? null,
+      });
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
-      void qc.invalidateQueries({ queryKey: ["staff-collab", "feed-comments", postId] as const });
+      if (postId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedComments(postId) });
+      }
+    },
+  });
+}
+
+export function useUploadStaffFeedCommentAttachment(postId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ commentId, file }: { commentId: string; file: File }) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return api.postFormData<StaffAttachmentBrief>(
+        `/v1/admin/staff/feed/comments/${commentId}/attachments`,
+        fd
+      );
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
+      if (postId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.feedComments(postId) });
+      }
     },
   });
 }
@@ -250,6 +440,19 @@ export function useStaffChatRooms() {
   return useQuery({
     queryKey: queryKeys.staffCollab.chatRooms(),
     queryFn: () => api.get<StaffChatRoomResponse[]>(`/v1/admin/staff/chat/rooms`),
+  });
+}
+
+export function useMarkStaffChatRoomRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (roomId: string) => {
+      if (!roomId) throw new Error("room");
+      return api.post<void>(`/v1/admin/staff/chat/rooms/${roomId}/read`, {});
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.staffCollab.chatRooms() });
+    },
   });
 }
 

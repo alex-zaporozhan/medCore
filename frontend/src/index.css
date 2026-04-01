@@ -1,53 +1,67 @@
 /*
- * Глобальные токены + админ-навигация (Crisp SaaS): см. docs/ARCH_FRONTEND_UI_LOGIC.md.
- * Mantine: primary indigo в `theme.ts`; палитра `dark` (slate) сохранена для вторичных акцентов.
+ * Глобальные токены + админ-навигация (Swiss Slate / Ink): см. docs/ARCH_FRONTEND_UI_LOGIC.md,
+ * docs/artifacts/85 plus/DESIGN_ENTERPRISE_85_PLUS_CONCEPT.md §3.6.
+ * Mantine: primaryColor brand (ink) в `theme.ts`; `indigo` в теме = алиас той же шкалы.
+ * Семантика success/warn/danger — hex как в `DESIGN_PALETTE_SPECTRUM_SWATCHES.html` §1 Swiss.
  */
 :root {
-  /* Surfaces — Crisp SaaS: main = Mantine gray.0 (синхрон с theme / §7) */
-  --bg-main: var(--mantine-color-gray-0, #f8f9fa);
+  /* Surfaces — Swiss: app #f4f6f8 = Mantine gray.0 */
+  --surface-app: #f4f6f8;
+  --bg-main: var(--mantine-color-gray-0, #f4f6f8);
   --bg-card: #ffffff;
-  --bg-card-soft: #f1f5f9;
-  --bg-sidebar: #f1f5f9;
+  --bg-card-soft: #eef1f4;
+  --bg-sidebar: #ffffff;
 
-  /* Primary — indigo.6 (согласовано с Mantine primary) */
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-active: #3730a3;
-  --primary-light: #eef2ff;
+  /* Primary — brand.6 / ink #1c2e45 (один hue с alpha и focus) */
+  --primary: #1c2e45;
+  --primary-hover: #152338;
+  --primary-active: #0f1a28;
+  --primary-light: #e8eef3;
 
-  --accent-slate: #64748b;
+  --accent-slate: #5c6d7a;
   --accent-teal: #0d9488;
   --accent-teal-soft: #ecfdf5;
 
-  --input-border: #e2e8f0;
-  --input-focus: #64748b;
-  --divider: #e2e8f0;
+  --input-border: #e2e6ea;
+  --input-focus: #5c6d7a;
+  --divider: #e2e6ea;
 
-  --text-main: #0f172a;
-  --text-muted: #64748b;
+  --text-main: #0f1419;
+  --text-muted: #5c6d7a;
   --text-on-primary: #ffffff;
 
   --accent-gold: #b8860b;
-  --success: #10b981;
-  --danger: #ef4444;
-  --warning: #f59e0b;
+  /* Семантика Swiss §1 свотчи */
+  --success: #065f46;
+  --success-bg: #ecfdf5;
+  --warning: #b45309;
+  --warning-bg: #fffbeb;
+  --danger: #b42318;
+  --danger-text: #7f1d1d;
+  --danger-bg: #fef2f2;
 
-  --focus-ring: rgba(79, 70, 229, 0.22);
+  --focus-ring: rgba(28, 46, 69, 0.22);
+  --overlay-backdrop: rgba(0, 0, 0, 0.08);
+  --overlay-glass-surface: rgba(255, 255, 255, 0.92);
+  --drawer-glass-surface: rgba(255, 255, 255, 0.96);
+  --contextbar-surface: rgba(255, 255, 255, 0.7);
 
-  /* Админка: белый сайдбар; активный пункт — Mantine indigo.0 / indigo.6 (ARCH §2.6) */
+  /* Админка: белый сайдбар; активный пункт — brand.0 / brand.6 (ink) */
   --admin-sidebar-bg: #ffffff;
   --admin-sidebar-border: var(--mantine-color-gray-2);
   --admin-sidebar-text: #334155;
-  --admin-sidebar-text-muted: #64748b;
+  --admin-sidebar-text-muted: #5c6d7a;
   --admin-sidebar-footer-bg: var(--mantine-color-gray-0);
-  --admin-nav-active-bg: var(--mantine-color-indigo-0);
-  --admin-nav-active-text: var(--mantine-color-indigo-6);
-  --admin-nav-active-indicator: var(--mantine-color-indigo-6);
+  --admin-nav-active-bg: var(--mantine-color-brand-0);
+  --admin-nav-active-text: var(--mantine-color-brand-6);
+  --admin-nav-active-indicator: var(--mantine-color-brand-6);
 
   --semantic-ai: #7c3aed;
   --semantic-ai-soft: rgba(124, 58, 237, 0.12);
-  --admin-nav-hover-bg: #f8f9fa;
-  --admin-nav-active-stripe-shadow: 2px 0 8px rgba(79, 70, 229, 0.25);
+  /* INFO — `DESIGN_TOKENS_85_PLUS.json` semantic.info; Mantine `blue` scale aligned */
+  --semantic-info: #3b82f6;
+  --admin-nav-hover-bg: #eef1f4;
+  --admin-nav-active-stripe-shadow: 2px 0 8px rgba(28, 46, 69, 0.25);
 
   /* RADII & SHADOWS — объём без жёсткого контраста */
   --radius-xs: 4px;
@@ -55,11 +69,37 @@
   --radius-md: 10px;
   --radius-lg: 16px;
 
-  --shadow-soft-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.06);
-  --shadow-soft-md: 0 4px 8px rgba(15, 23, 42, 0.05), 0 14px 36px rgba(15, 23, 42, 0.08);
-  --shadow-card: 0 2px 5px rgba(15, 23, 42, 0.05), 0 8px 24px rgba(15, 23, 42, 0.07);
+  --shadow-soft-sm: 0 1px 2px rgba(15, 20, 25, 0.05), 0 4px 12px rgba(15, 20, 25, 0.06);
+  --shadow-soft-md: 0 4px 8px rgba(15, 20, 25, 0.06), 0 16px 40px rgba(15, 20, 25, 0.08);
+  --shadow-card: 0 2px 5px rgba(15, 20, 25, 0.05), 0 8px 24px rgba(15, 20, 25, 0.07);
+
+  /* Alpha brand — RGB ink #1c2e45 = 28, 46, 69 */
+  --primary-alpha-02: rgba(28, 46, 69, 0.02);
+  --primary-alpha-06: rgba(28, 46, 69, 0.06);
+  --primary-alpha-08: rgba(28, 46, 69, 0.08);
+  --primary-alpha-12: rgba(28, 46, 69, 0.12);
+  --primary-alpha-25: rgba(28, 46, 69, 0.25);
+
+  --dark-alpha-02: rgba(15, 23, 42, 0.02);
+  --dark-alpha-06: rgba(15, 23, 42, 0.06);
+
+  --muted-alpha-02: rgba(148, 163, 184, 0.2);
+  --muted-alpha-20: rgba(148, 163, 184, 0.2);
+  --muted-alpha-40: rgba(148, 163, 184, 0.4);
+
+  --orange-alpha-06: rgba(253, 126, 20, 0.06);
+
+  --overlay-black-alpha-05: rgba(0, 0, 0, 0.5);
+
+  --admin-emergency-blink-shadow-outer: rgba(250, 140, 0, 0.4);
+  --admin-emergency-blink-shadow-ring: rgba(250, 140, 0, 0.15);
 
   /* SPACING TOKENS */
+  --space-2: 2px;
+  --space-6: 6px;
+  --space-10: 10px;
+  --space-20: 20px;
+
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 12px;
@@ -68,6 +108,122 @@
 
   /* Layout constraints */
   --layout-max-width: 1200px;
+
+  /*
+   * Календарь админки — Swiss semantic (свотч + DESIGN_CALENDAR_SEMANTIC_MAPPING.md)
+   * Полоска 3px. Записи: ожидает — мёд/золото; подтверждено — denim; на приёме — изумруд; коралл — отдельно (события персонала).
+   */
+  --calendar-bar-width: 3px;
+  --calendar-slot-radius: var(--radius-sm);
+  /* Единый «каркас» карточки слота — DESIGN_SCHEDULE_MODAL_SEMANTICS_85_PLUS §1 */
+  --calendar-card-border: rgba(15, 20, 25, 0.07);
+  --calendar-card-shadow: 0 1px 2px rgba(15, 20, 25, 0.05), 0 2px 8px rgba(15, 20, 25, 0.04);
+
+  --calendar-completed-bg: #f4f6f8;
+  --calendar-completed-bar: #1c2e45;
+  --calendar-completed-title: #0f1419;
+  --calendar-completed-meta: #5c6d7a;
+  --calendar-completed-badge-bg: #e8eef3;
+  --calendar-completed-badge-text: #1c2e45;
+
+  --calendar-in-progress-bg: #d1fae5;
+  --calendar-in-progress-bar: #059669;
+  --calendar-in-progress-title: #065f46;
+  --calendar-in-progress-meta: #047857;
+  --calendar-in-progress-badge-bg: #ecfdf5;
+  --calendar-in-progress-badge-text: #065f46;
+  --calendar-in-progress-badge-border: #a7f3d0;
+
+  /* Ожидает (pending) / fallback «Занято» — персиковый янтарь (DESIGN_PENDING_SLOT_PALETTE_OPTIONS.html · H) */
+  --calendar-scheduled-bg: #fffef8;
+  --calendar-scheduled-bg-alt: #ffedd5;
+  --calendar-scheduled-bar: #ea580c;
+  --calendar-scheduled-title: #0f1419;
+  --calendar-scheduled-meta: #5c6d7a;
+  --calendar-scheduled-badge-bg: #fed7aa;
+  --calendar-scheduled-badge-text: #1c2e45;
+
+  /* Пустой слот / нейтраль без записи */
+  --calendar-neutral-bg: #ffffff;
+  --calendar-neutral-bar: #8a9faf;
+  --calendar-neutral-title: #0f1419;
+  --calendar-neutral-meta: #5c6d7a;
+  --calendar-neutral-badge-bg: #e8eef3;
+  --calendar-neutral-badge-text: #4a5f73;
+
+  /* Служебное внимание (холодный slate) — редко */
+  --calendar-attention-bg: #f8fafc;
+  --calendar-attention-bar: #4a5f73;
+  --calendar-attention-title: #0f1419;
+  --calendar-attention-meta: #5c6d7a;
+  --calendar-attention-badge-bg: #e8eef3;
+  --calendar-attention-badge-text: #4a5f73;
+
+  /* Пудровый коралл — события «новое для меня», не слот pending врача (§3a Swiss свотч) */
+  --calendar-attention-coral-bg: #fff5f5;
+  --calendar-attention-coral-bar: #fb7185;
+  --calendar-attention-coral-title: #0f1419;
+  --calendar-attention-coral-meta: #64748b;
+  --calendar-attention-coral-badge-bg: #ffe4e6;
+  --calendar-attention-coral-badge-text: #9d174d;
+
+  /* Чуть светлее для близости к surface.main / единству с «завершён» */
+  --calendar-attention-denim-bg: #f5f7fa;
+  --calendar-attention-denim-bar: #5b7c9a;
+  --calendar-attention-denim-title: #0f1419;
+  --calendar-attention-denim-meta: #475569;
+  --calendar-attention-denim-badge-bg: #e2eaf2;
+  --calendar-attention-denim-badge-text: #334155;
+
+  --calendar-attention-ice-bg: #f0f9ff;
+  --calendar-attention-ice-bar: #0284c7;
+  --calendar-attention-ice-title: #0f1419;
+  --calendar-attention-ice-meta: #5c6d7a;
+  --calendar-attention-ice-badge-bg: #e0f2fe;
+  --calendar-attention-ice-badge-text: #0369a1;
+
+  --calendar-negative-bg: #f7f1f3;
+  --calendar-negative-bar: #9f1239;
+  --calendar-negative-title: #881337;
+  --calendar-negative-meta: #6b1a2e;
+  --calendar-negative-badge-bg: #fce8ee;
+  --calendar-negative-badge-text: #881337;
+
+  --calendar-negative-plum-bg: #f3f0f7;
+  --calendar-negative-plum-bar: #6b2d5c;
+  --calendar-negative-plum-title: #4c1d42;
+  --calendar-negative-plum-meta: #4c1d42;
+
+  --calendar-system-bg: #eef2f7;
+  --calendar-system-bar: #64748b;
+  --calendar-system-title: #334155;
+  --calendar-system-meta: #475569;
+  --calendar-system-badge-bg: #e2e8f0;
+  --calendar-system-badge-text: #475569;
+
+  /*
+   * Календарь персонала /admin/calendar (LEAD) — спокойная палитра: серый, крем, едва зелёный.
+   * Не трогает --calendar-* для расписания врачей (ScheduleCalendarGrid).
+   */
+  --staff-cal-chip-default-bg: #f4f6f8;
+  --staff-cal-chip-default-bar: #94a3b8;
+  --staff-cal-chip-reminder-bg: #fffdf6;
+  --staff-cal-chip-reminder-bar: #c9b896;
+  --staff-cal-chip-unseen-bg: #f2f7f4;
+  --staff-cal-chip-unseen-bar: #8fb3a0;
+  --staff-cal-chip-title: #0f1419;
+  --staff-cal-badge-count-bg: #e8eef3;
+  --staff-cal-badge-count-text: #4a5f73;
+  --staff-cal-badge-unseen-bg: #eef4f0;
+  --staff-cal-badge-unseen-text: #3d5a4a;
+  --staff-cal-badge-reminder-bg: #f5f0e6;
+  --staff-cal-badge-reminder-text: #5c5340;
+  --staff-cal-day-hover-bg: rgba(28, 46, 69, 0.045);
+  --staff-cal-day-flash-bg: #fffbf0;
+  --staff-cal-day-flash-outline: rgba(180, 160, 110, 0.45);
+  --staff-cal-time-selected-bg: #eef2f6;
+  --staff-cal-time-selected-border: rgba(28, 46, 69, 0.22);
+  --staff-cal-time-selected-text: #1c2e45;
 }
 
 /* —— Inputs: чёткая граница + фокус graphite —— */
@@ -77,7 +233,7 @@
 .mantine-DateInput-input {
   background: #ffffff !important;
   border: 1px solid var(--input-border) !important;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 .mantine-TextInput-input:focus,
 .mantine-NumberInput-input:focus,
@@ -117,23 +273,34 @@
 /* —— Modal: glass effect (business-class) —— */
 .mantine-Modal-overlay {
   backdrop-filter: blur(10px);
-  background: rgba(0, 0, 0, 0.08);
+  background: var(--overlay-backdrop);
 }
 .mantine-Modal-content {
   backdrop-filter: blur(10px);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12);
+  background: var(--overlay-glass-surface);
+  box-shadow: var(--shadow-soft-md);
+  /* Critical: long modals must not clip content / hide footer actions */
+  max-height: min(92vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+
+.mantine-Modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Sticky context / таблицы — ARCH §2.5 */
 .glass-light {
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--contextbar-surface);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--mantine-color-gray-2);
 }
 
-/* Админка: активный пункт — indigo-подложка + полоска слева */
+/* Админка: активный пункт — ink-подложка + полоска слева */
 .admin-nav-link {
   position: relative;
 }
@@ -188,6 +355,38 @@ body {
   box-shadow: none;
 }
 
+/* Shared data UI contracts (B1/B2): unified toolbar + table behavior */
+.data-toolbar-card {
+  background: var(--bg-card);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft-sm);
+}
+
+.data-table-card {
+  background: var(--bg-card);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft-sm);
+}
+
+.data-table-clickable-row {
+  cursor: pointer;
+}
+
+/* P1 settings-style forms: один вертикальный ритм (DGN-P1-02) */
+.admin-form-stack {
+  gap: var(--mantine-spacing-md);
+}
+.admin-form-stack .mantine-Paper-root,
+.admin-form-stack .mantine-Card-root {
+  border-color: var(--divider);
+}
+
+.interactive-card {
+  cursor: pointer;
+}
+
 /* PAW: нижняя навигация — тонкая граница по токену divider */
 .app-patient-bottom-nav {
   border-top: 1px solid var(--divider);
@@ -227,4 +426,180 @@ body {
     rgba(51, 65, 85, 0.06),
     transparent 55%
   );
+}
+
+/* emoji-mart: Apple set через self-hosted spritesheet (без cdn.jsdelivr.net) */
+.emoji-mart-picker-shell {
+  border-radius: var(--radius-md);
+  filter: drop-shadow(0 4px 12px rgba(15, 20, 25, 0.08))
+    drop-shadow(0 2px 4px rgba(15, 20, 25, 0.04));
+}
+
+.emoji-mart-picker-shell em-emoji-picker {
+  --rgb-background: 255, 255, 255;
+  --rgb-input: 238, 241, 244;
+  --rgb-color: 15, 20, 25;
+  --rgb-accent: 28, 46, 69;
+  --border-radius: var(--radius-md);
+  --font-family: var(--mantine-font-family), system-ui, sans-serif;
+  --font-size: 14px;
+  height: min(380px, 52vh);
+  width: min(100vw - 32px, 360px);
+}
+
+/* Расписание: лёгкий сдвиг при смене дня (вперёд / назад) */
+@keyframes scheduleCalendarSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--schedule-slide, 1) * 14px));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.schedule-calendar-day-enter {
+  animation: scheduleCalendarSlideIn 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* —— /admin/calendar: премиум-сетка, hover дня, модалки —— */
+.staff-cal-page .staff-cal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft-sm);
+}
+
+.staff-cal-month-shell {
+  background: var(--bg-card);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft-sm);
+  overflow: hidden;
+}
+
+.staff-cal-month-shell .mantine-Table-thead .mantine-Table-tr {
+  background: linear-gradient(180deg, rgba(28, 46, 69, 0.03), rgba(28, 46, 69, 0.01));
+}
+
+.staff-cal-month-shell .mantine-Table-th {
+  border-bottom: 1px solid var(--divider);
+  padding-top: var(--space-sm);
+  padding-bottom: var(--space-sm);
+}
+
+.staff-cal-month-shell .mantine-Table-td {
+  border-color: rgba(226, 230, 234, 0.9);
+}
+
+.staff-cal-day-cell {
+  position: relative;
+  transition:
+    background-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  border-radius: var(--radius-sm);
+}
+
+.staff-cal-day-cell:not(.staff-cal-day-cell--flash):hover {
+  background-color: var(--staff-cal-day-hover-bg) !important;
+  box-shadow: inset 0 0 0 1px var(--primary-alpha-08);
+  transform: translateY(-1px);
+}
+
+.staff-cal-day-cell--flash {
+  background-color: var(--staff-cal-day-flash-bg) !important;
+  outline: 2px solid var(--staff-cal-day-flash-outline);
+  outline-offset: -1px;
+}
+
+.staff-cal-day-cell--flash:hover {
+  box-shadow: inset 0 0 0 1px var(--primary-alpha-12);
+}
+
+.staff-cal-modal-content.mantine-Modal-content {
+  border: 1px solid rgba(226, 230, 234, 0.95);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  /* Keep rounded corners; body is responsible for scrolling. */
+  overflow: hidden;
+  max-height: min(92vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+
+.staff-cal-modal-content .mantine-Modal-header {
+  border-bottom: 1px solid var(--divider);
+  padding-top: var(--space-lg);
+  padding-bottom: var(--space-md);
+}
+
+.staff-cal-modal-content .mantine-Modal-body {
+  padding-top: var(--space-md);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.staff-cal-time-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary-alpha-12) transparent;
+}
+
+.staff-cal-time-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.staff-cal-time-scroll::-webkit-scrollbar-thumb {
+  background: var(--primary-alpha-12);
+  border-radius: 999px;
+}
+
+.staff-cal-time-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.staff-cal-event-chip {
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease;
+}
+
+.staff-cal-event-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft-sm);
+}
+
+/* Task streams: subtle header tint per semantic context (preset keys from API theme.page_tint). */
+.admin-tasks-context[data-page-tint="subtle_gray"] {
+  background: linear-gradient(180deg, rgba(120, 128, 140, 0.1) 0%, transparent 160px);
+}
+.admin-tasks-context[data-page-tint="subtle_violet"] {
+  background: linear-gradient(180deg, rgba(124, 58, 237, 0.08) 0%, transparent 160px);
+}
+.admin-tasks-context[data-page-tint="subtle_blue"] {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08) 0%, transparent 160px);
+}
+.admin-tasks-context[data-page-tint="subtle_green"] {
+  background: linear-gradient(180deg, rgba(5, 150, 105, 0.08) 0%, transparent 160px);
+}
+.admin-tasks-context[data-page-tint="subtle_amber"] {
+  background: linear-gradient(180deg, rgba(217, 119, 6, 0.09) 0%, transparent 160px);
+}
+
+/* Hide horizontal scrollbar for stream pager (keep swipe/trackpad). */
+.admin-stream-pager {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.admin-stream-pager::-webkit-scrollbar {
+  height: 0;
 }

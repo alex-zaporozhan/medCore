@@ -1,0 +1,16 @@
+name: Nightly regression (disabled)
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  nightly-regression:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disabled by policy
+        run: |
+          echo "Nightly regression is intentionally disabled."
+          echo "Enable by changing job condition from false to true."

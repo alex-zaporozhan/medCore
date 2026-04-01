@@ -8,6 +8,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import uuid
+from pathlib import Path
 from uuid import UUID
 
 import httpx
@@ -138,51 +141,120 @@ class OmnichannelOutboundDispatcher:
             )
             return
 
+        from src.application.services.omni_media_storage import OMNI_FILES_META_KEY, read_omni_file_bytes
+
+        omni_files: list = []
+        if isinstance(message.source_metadata, dict):
+            lst = message.source_metadata.get(OMNI_FILES_META_KEY)
+            if isinstance(lst, list):
+                omni_files = lst
+
+        async def _telegram_post_with_retries(
+            build_request,
+        ) -> bool:
+            last_err: Exception | None = None
+            for attempt in range(3):
+                try:
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        resp = await build_request(client)
+                        resp.raise_for_status()
+                    data = resp.json()
+                    if not data.get("ok"):
+                        logger.warning(
+                            "OmnichannelOutboundDispatcher: Telegram API not ok",
+                            extra={"message_id": str(message.id), "description": data.get("description")},
+                        )
+                        return False
+                    meta = dict(message.source_metadata or {})
+                    meta["delivery_status"] = "DELIVERED"
+                    meta["delivery_channel"] = "TELEGRAM_BOT"
+                    provider_payload = data.get("result") if isinstance(data.get("result"), dict) else None
+                    if provider_payload and provider_payload.get("message_id") is not None:
+                        meta["provider_message_id"] = str(provider_payload.get("message_id"))
+                    message.source_metadata = meta
+                    await self.session.flush()
+                    return True
+                except (httpx.HTTPStatusError, httpx.RequestError, OSError) as e:
+                    last_err = e
+                    if attempt < 2:
+                        delay = 1 * (2**attempt)
+                        logger.warning(
+                            "OmnichannelOutboundDispatcher: Telegram send attempt failed, retrying",
+                            extra={
+                                "message_id": str(message.id),
+                                "attempt": attempt + 1,
+                                "error": str(e),
+                                "delay_seconds": delay,
+                            },
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.exception(
+                            "OmnichannelOutboundDispatcher: Telegram send failed after retries",
+                            extra={"message_id": str(message.id), "error": str(last_err)},
+                        )
+                        return False
+            return False
+
+        if omni_files:
+            cap_left = (message.content or "").strip()[:1024]
+            first = True
+            for f in omni_files:
+                if not isinstance(f, dict):
+                    continue
+                raw_b = read_omni_file_bytes(str(f.get("storage_rel") or ""))
+                if not raw_b:
+                    continue
+                fn = str(f.get("file_name") or "file")
+                ct = (str(f.get("content_type") or "application/octet-stream")).lower()
+                cap = cap_left if first else ""
+                first = False
+
+                def _build(client: httpx.AsyncClient, c=cap, r=raw_b, n=fn, t=ct):
+                    tg = f"{TELEGRAM_API_BASE}/bot{token}"
+                    if t.startswith("image/"):
+                        return client.post(
+                            f"{tg}/sendPhoto",
+                            data={"chat_id": telegram_chat_id, "caption": c},
+                            files={"photo": (n, r, t)},
+                        )
+                    if t.startswith("audio/") and ("ogg" in t or n.lower().endswith(".ogg")):
+                        return client.post(
+                            f"{tg}/sendVoice",
+                            data={"chat_id": telegram_chat_id, "caption": c},
+                            files={"voice": (n, r, t or "audio/ogg")},
+                        )
+                    return client.post(
+                        f"{tg}/sendDocument",
+                        data={"chat_id": telegram_chat_id, "caption": c},
+                        files={"document": (n, r, t)},
+                    )
+
+                ok = await _telegram_post_with_retries(lambda cl: _build(cl))
+                if not ok:
+                    return
+            logger.info(
+                "OmnichannelOutboundDispatcher: Telegram media sent",
+                extra={"message_id": str(message.id), "chat_id": str(message.chat_id)},
+            )
+            return
+
+        text_body = (message.content or "").strip()
+        if not text_body:
+            logger.info(
+                "OmnichannelOutboundDispatcher: Telegram skip empty text message",
+                extra={"message_id": str(message.id)},
+            )
+            return
+
         url = f"{TELEGRAM_API_BASE}/bot{token}/sendMessage"
-        payload = {"chat_id": telegram_chat_id, "text": message.content or ""}
-        last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.post(url, json=payload)
-                    resp.raise_for_status()
-                data = resp.json()
-                if not data.get("ok"):
-                    logger.warning(
-                        "OmnichannelOutboundDispatcher: Telegram API not ok",
-                        extra={"message_id": str(message.id), "description": data.get("description")},
-                    )
-                    return
-                # Persist provider ack in metadata so admin UI can show delivery status.
-                meta = dict(message.source_metadata or {})
-                meta["delivery_status"] = "DELIVERED"
-                meta["delivery_channel"] = "TELEGRAM_BOT"
-                provider_payload = data.get("result") if isinstance(data.get("result"), dict) else None
-                if provider_payload and provider_payload.get("message_id") is not None:
-                    meta["provider_message_id"] = str(provider_payload.get("message_id"))
-                message.source_metadata = meta
-                await self.session.flush()
-                break
-            except (httpx.HTTPStatusError, httpx.RequestError, OSError) as e:
-                last_error = e
-                if attempt < 2:
-                    delay = 1 * (2**attempt)
-                    logger.warning(
-                        "OmnichannelOutboundDispatcher: Telegram send attempt failed, retrying",
-                        extra={
-                            "message_id": str(message.id),
-                            "attempt": attempt + 1,
-                            "error": str(e),
-                            "delay_seconds": delay,
-                        },
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    logger.exception(
-                        "OmnichannelOutboundDispatcher: Telegram send failed after retries",
-                        extra={"message_id": str(message.id), "error": str(last_error)},
-                    )
-                    return
+        payload = {"chat_id": telegram_chat_id, "text": text_body}
+
+        async def _send_text(client: httpx.AsyncClient):
+            return await client.post(url, json=payload)
+
+        if not await _telegram_post_with_retries(_send_text):
+            return
 
         logger.info(
             "OmnichannelOutboundDispatcher: Telegram sent",
@@ -244,19 +316,70 @@ class OmnichannelOutboundDispatcher:
             )
             return
         now = utc_now_naive()
+        admin_uid = message.sender_admin_id if message.actor_type == "HUMAN_ADMIN" else None
+
+        from src.application.services.omni_media_storage import (
+            OMNI_FILES_META_KEY,
+            read_omni_file_bytes,
+            sanitize_omni_filename,
+        )
+        from src.domain.entities.chat_message_attachment import ChatMessageAttachment
+
+        omni_files: list = []
+        sm = message.source_metadata
+        if isinstance(sm, dict):
+            raw_list = sm.get(OMNI_FILES_META_KEY)
+            if isinstance(raw_list, list):
+                omni_files = raw_list
+
+        # Не дублировать служебные подписи в PWA, если вложения уже копируются в clinic_chat.
+        _pwa_placeholder_only = frozenset(
+            {"", "[Изображение]", "[Вложение]", "[Голосовое сообщение]"},
+        )
+        body_val = (message.content or "").strip()
+        if omni_files and body_val in _pwa_placeholder_only:
+            body_val = ""
+
         admin_msg = ChatMessage(
             clinic_id=business_account_id,
             conversation_id=conv.id,
             patient_id=patient_id,
-            admin_id=None,
+            admin_id=admin_uid,
             sender_type="admin",
             message_type="text",
-            body=message.content or "",
+            body=body_val,
             sticker_key=None,
             read_by_admin_at=None,
             read_by_patient_at=None,
         )
         await msg_repo.create(admin_msg)
+        for f in omni_files:
+            if not isinstance(f, dict):
+                continue
+            rel = f.get("storage_rel")
+            if not rel:
+                continue
+            raw_bytes = read_omni_file_bytes(str(rel))
+            if not raw_bytes:
+                continue
+            att_id = uuid.uuid4()
+            safe = sanitize_omni_filename(str(f.get("file_name") or "file"))
+            rel_chat = f"{business_account_id}/clinic_chat/{att_id}_{safe}"
+            fs_path = Path(settings.staff_chat_upload_root) / rel_chat.replace("/", os.sep)
+            fs_path.parent.mkdir(parents=True, exist_ok=True)
+            fs_path.write_bytes(raw_bytes)
+            self.session.add(
+                ChatMessageAttachment(
+                    id=att_id,
+                    clinic_id=business_account_id,
+                    message_id=admin_msg.id,
+                    file_name=str(f.get("file_name") or "file")[:500],
+                    content_type=str(f.get("content_type") or "application/octet-stream")[:128],
+                    size_bytes=len(raw_bytes),
+                    storage_path=rel_chat.replace("\\", "/"),
+                )
+            )
+
         conv.last_message_at = now
         conv.last_message_sender_type = "admin"
         conv.unread_by_patient_count = (conv.unread_by_patient_count or 0) + 1

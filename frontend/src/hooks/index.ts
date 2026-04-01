@@ -16,6 +16,21 @@ export {
 export { useServices, useService } from "./useServices";
 export { usePatients, usePatient } from "./usePatients";
 export {
+  useAdminPublicDoctorProfileByDoctor,
+  useCreateAdminPublicDoctorProfileMutation,
+  usePatchAdminPublicDoctorProfileMutation,
+} from "./useAdminPublicDoctorProfiles";
+export { usePublicDoctorProfileBySlugs } from "./usePublicDoctorProfile";
+export {
+  useAdminPatientMedicalVisits,
+  useCreateAdminPatientMedicalVisit,
+  useAdminPatientDiagnoses,
+  useCreateAdminPatientDiagnosis,
+  useAdminPatientMedicalFiles,
+  useUploadAdminPatientMedicalFile,
+  fetchAdminPatientMedicalFileDownloadUrl,
+} from "./useAdminPatientMedical";
+export {
   useCheckoutInfo,
   useAdminBookings,
   useRescheduleBookingAdmin,
@@ -64,9 +79,21 @@ export {
   useCreateAdminMutation,
   usePatchAdminEmploymentMutation,
 } from "./useAdminAdmins";
+export {
+  useCreateStaffDirectoryAdminMutation,
+  useCreateStaffProfessionCategoryMutation,
+  usePatchStaffProfessionCategoryMutation,
+  useDeleteStaffProfessionCategoryMutation,
+  usePatchStaffDirectoryAdminMutation,
+  useStaffDirectoryAdmins,
+  useStaffProfessionCategories,
+} from "./useStaffDirectory";
+export type { StaffDirectoryAdminRow, StaffProfessionCategoryRow } from "./useStaffDirectory";
 export type { AdminUserRow } from "./useAdminAdmins";
 export { useAdminSession } from "./useAdminSession";
 export type { AdminSessionPayload } from "./useAdminSession";
+export { useMyStaffProfile, usePatchMyStaffProfile, useUploadMyStaffAvatar } from "./useMyStaffCabinet";
+export type { MyStaffProfileDto } from "./useMyStaffCabinet";
 export {
   useAdminTasksList,
   useAdminTasksMyFocus,
@@ -76,6 +103,8 @@ export {
   useClaimAdminTaskMutation,
   useUpdateAdminTaskStatusMutation,
   useUpdateAdminTaskMetaMutation,
+  usePatchAdminTaskAssigneesMutation,
+  usePatchAdminTaskDueMutation,
   useReorderAdminTasksMutation,
   useBulkUpdateAdminTaskStatusMutation,
   useTaskTransitions,
@@ -84,6 +113,15 @@ export {
   useInviteTaskCalendarParticipants,
   useTaskComments,
   usePostTaskComment,
+  useTaskBoardsQuery,
+  useReplaceTaskBoardColumnsMutation,
+  useCreatePersonalTaskBoardMutation,
+  useTaskStreamsQuery,
+  useTaskTagsQuery,
+  useCreateTaskStreamMutation,
+  usePatchTaskStreamMutation,
+  useCreateTaskTagMutation,
+  usePatchAdminTaskStreamTagsMutation,
 } from "./useAdminTasks";
 export type {
   AdminTaskRow,
@@ -92,8 +130,17 @@ export type {
   TaskTransitionRow,
   TaskCalendarEventContextRow,
   TaskCalendarParticipantAckRow,
+  TaskBoardRow,
+  TaskBoardColumnRow,
+  TaskStreamRow,
+  TaskTagRow,
+  TaskStreamMantineColor,
+  TaskStreamPageTint,
+  TaskStreamThemeDto,
 } from "./useAdminTasks";
 export { useAdminTaskDetails } from "./useAdminTaskDetails";
+export { useStaffProfile } from "./useStaffProfile";
+export type { StaffProfileDto } from "./useStaffProfile";
 export {
   useAdminDiscounts,
   useCreateAdminDiscountMutation,
@@ -156,6 +203,7 @@ export {
   usePatientConversation,
   usePatientChatMessages,
   useSendPatientMessage,
+  useSendPatientMessageWithFile,
   useDeletePatientMessage,
   usePatientMarkRead,
 } from "./usePatientChat";
@@ -163,6 +211,7 @@ export {
   useAdminChatConversations,
   useAdminChatMessages,
   useSendAdminMessage,
+  useSendAdminMessageWithFile,
   useAdminAssignConversation,
   useAdminChatMarkRead,
   useDeleteAdminMessage,
@@ -241,6 +290,18 @@ export {
   useAdminReportsRevenue,
   useOwnerDashboard,
 } from "./useAdminReports";
+export {
+  useRbacCatalog,
+  useRbacUsers,
+  useRbacPolicies,
+  useRbacAudit,
+  useCreateClinicRole,
+  useDeleteClinicRole,
+  usePatchRolePermissions,
+  usePatchUserRoles,
+  usePatchUserPermissions,
+  usePatchRbacPolicies,
+} from "./useAdminRbacManagement";
 export {
   useAdminOmniChats,
   useAdminOmniChatDetail,

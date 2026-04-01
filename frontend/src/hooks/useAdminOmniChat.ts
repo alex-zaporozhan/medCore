@@ -47,11 +47,22 @@ export interface OmniChatDetail {
   assignee_name?: string | null;
 }
 
+export interface OmniMessageAttachmentDto {
+  id: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  source: "omni" | "clinic_chat";
+  conversation_id?: string | null;
+}
+
 export interface OmniMessageDto {
   id: string;
   direction: string;
   actor_type: string;
   content: string;
+  message_content_type?: string;
+  attachments?: OmniMessageAttachmentDto[];
   created_at: string | null;
   ui_hidden?: boolean;
   hidden_reason?: string | null;
@@ -308,6 +319,43 @@ export function useSendAdminOmniMessage() {
         content,
         ...(reply_channel_id ? { reply_channel_id } : {}),
       }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-omni-chats"] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-omni-chat-messages", variables.chatId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-omni-chat-detail", variables.chatId],
+      });
+    },
+  });
+}
+
+export function useSendAdminOmniMessageWithFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      chatId,
+      body,
+      file,
+      reply_channel_id,
+    }: {
+      chatId: string;
+      body: string;
+      file: File;
+      reply_channel_id?: string | null;
+    }) => {
+      const fd = new FormData();
+      fd.append("body", body);
+      fd.append("file", file);
+      if (reply_channel_id) {
+        fd.append("reply_channel_id", reply_channel_id);
+      }
+      return api.postFormData<OmniMessageDto>(
+        `/v1/admin/omni-chats/${chatId}/messages/upload`,
+        fd
+      );
+    },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["admin-omni-chats"] });
       queryClient.invalidateQueries({

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon,
-  Anchor,
+  Avatar,
+  Badge,
   Box,
   Button,
   Card,
+  Divider,
   Group,
   Modal,
   MultiSelect,
@@ -12,16 +14,15 @@ import {
   Select,
   Stack,
   Text,
-  Textarea,
   TextInput,
 } from "@mantine/core";
 import { useSearchParams } from "react-router-dom";
-import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert } from "@/shared/ui";
+import { ContextBar, EmptyState, PageSkeleton, QueryErrorAlert, PersonNameLink } from "@/shared/ui";
 import { useAdminAdmins } from "@/hooks/useAdminAdmins";
 import {
-  downloadStaffChatAttachmentFile,
   useCreateStaffDmRoom,
   useCreateStaffGroupRoom,
+  useMarkStaffChatRoomRead,
   usePostStaffChatMessage,
   useStaffChatMessages,
   useStaffChatRooms,
@@ -29,29 +30,33 @@ import {
   useUploadStaffChatAttachment,
   useInviteStaffRoomMember,
 } from "@/hooks/useStaffCollab";
-import type { StaffChatRoomResponse } from "@/hooks/useStaffCollab";
 import { getAdminId } from "@/api/client";
 import dayjs from "dayjs";
-import { IconMicrophone, IconPaperclip, IconPhoto } from "@tabler/icons-react";
-
-function staffRoomSelectLabel(r: StaffChatRoomResponse): string {
-  const k = r.kind;
-  if (k === "GENERAL") return `Общий · ${r.title || "канал"}`;
-  if (k === "DM") return `Личные · ${r.title}`;
-  if (k === "GROUP") return `Группа · ${r.title}`;
-  if (k === "TASK") return r.title || "Задача";
-  return r.title || r.id.slice(0, 8);
-}
-
-function formatFileSize(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
+import {
+  IconCheckbox,
+  IconHash,
+  IconMessageCircle,
+  IconPaperclip,
+  IconPhoto,
+  IconUsers,
+  IconVolume,
+} from "@tabler/icons-react";
+import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
+import { ClinicChatAttachments } from "@/shared/ClinicChatAttachments";
+import { shouldOmitChatBodyForAudioAttachment } from "@/shared/chatMessageBodyDisplay";
+import { EmojiMartPopoverPicker, AppleEmojiOverlayTextarea } from "@/shared/ui";
+import { VoiceNoteRecorderButton } from "@/shared/ui/VoiceNoteRecorderButton";
+import { api } from "@/api/client";
+import { useAdminSession } from "@/hooks/useAdminSession";
+import { ADMIN_CHAT_MESSAGES_REGION, adminChatIncomingBubbleStyle, adminChatOutgoingBubbleStyle } from "@/shared/adminChatChrome";
 
 export default function AdminStaffChatPage() {
+  const { data: adminSession } = useAdminSession();
+  const allowAudioAttachmentDownload = adminSession?.roles?.includes("owner") ?? false;
+
   const [searchParams] = useSearchParams();
   const taskIdFromUrl = searchParams.get("task");
+  const dmPeerFromUrl = searchParams.get("dm_peer_id")?.trim() || null;
 
   const { data: rooms, isLoading: roomsLoading, isError: roomsErr, error: roomsError } =
     useStaffChatRooms();
@@ -63,9 +68,12 @@ export default function AdminStaffChatPage() {
   const [draft, setDraft] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [roomSearch, setRoomSearch] = useState("");
 
   const [dmOpened, setDmOpened] = useState(false);
   const [dmPeerId, setDmPeerId] = useState<string | null>(null);
+  const [staffFinderOpened, setStaffFinderOpened] = useState(false);
+  const [staffFinderSearch, setStaffFinderSearch] = useState("");
   const [groupOpened, setGroupOpened] = useState(false);
   const [groupTitle, setGroupTitle] = useState("");
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
@@ -74,16 +82,59 @@ export default function AdminStaffChatPage() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const attachFileRef = useRef<HTMLInputElement>(null);
+  const draftInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const triggerAttachPick = useCallback((accept?: string) => {
+    const el = attachFileRef.current;
+    if (!el) return;
+    el.accept = accept ?? "";
+    el.value = "";
+    el.click();
+  }, []);
+
+  const staffChatSubtitle = (
+    <Text size="sm" c="dimmed" maw={720} lh={1.4}>
+      Внутренний чат клиники (без сторонних мессенджеров). Текст, файлы и{" "}
+      <strong>голосовые</strong> — кнопка микрофона или файл аудио. Видео-кружки не используются.
+    </Text>
+  );
+
+  const getStaffChatAttachmentBlob = useCallback(
+    (attachmentId: string) => api.getBlob(`/v1/admin/staff/attachments/${attachmentId}/file`),
+    []
+  );
 
   const dmMut = useCreateStaffDmRoom();
   const groupMut = useCreateStaffGroupRoom();
   const inviteMut = useInviteStaffRoomMember(roomId);
+  const markReadMut = useMarkStaffChatRoomRead();
+  const [autoOpenedDmPeer, setAutoOpenedDmPeer] = useState<string | null>(null);
 
   useEffect(() => {
     if (taskIdFromUrl && taskRoomFromUrl?.id) {
       setRoomId(taskRoomFromUrl.id);
     }
   }, [taskIdFromUrl, taskRoomFromUrl?.id]);
+
+  // Deep-link: open/create DM room with a specific colleague.
+  useEffect(() => {
+    if (!dmPeerFromUrl) return;
+    if (!currentAdminId) return;
+    if (dmPeerFromUrl === currentAdminId) return;
+    if (autoOpenedDmPeer === dmPeerFromUrl) return;
+    if (dmMut.isPending) return;
+    dmMut.mutate(dmPeerFromUrl, {
+      onSuccess: (room) => {
+        setRoomId(room.id);
+        setAutoOpenedDmPeer(dmPeerFromUrl);
+        setDmOpened(false);
+        setDmPeerId(null);
+      },
+      onError: () => {
+        setAutoOpenedDmPeer(dmPeerFromUrl);
+      },
+    });
+  }, [dmPeerFromUrl, currentAdminId, autoOpenedDmPeer, dmMut]);
 
   const {
     data: messages,
@@ -105,6 +156,29 @@ export default function AdminStaffChatPage() {
     currentRoom && (currentRoom.kind === "GROUP" || currentRoom.kind === "TASK")
   );
 
+  const filteredRooms = useMemo(() => {
+    const s = roomSearch.trim().toLowerCase();
+    const items = rooms ?? [];
+    if (!s) return items;
+    return items.filter((r) => {
+      const hay = `${r.title || ""} ${(r.last_message_preview || "")} ${(r.dm_peer?.full_name || "")}`.toLowerCase();
+      return hay.includes(s);
+    });
+  }, [rooms, roomSearch]);
+
+  const staffFinderRows = useMemo(() => {
+    const s = staffFinderSearch.trim().toLowerCase();
+    const base = admins.filter((a) => a.id !== currentAdminId);
+    const rows = !s
+      ? base
+      : base.filter((a) => {
+          const name = (a.full_name || "").toLowerCase();
+          const email = (a.email || "").toLowerCase();
+          return name.includes(s) || email.includes(s);
+        });
+    return rows.sort((a, b) => (a.full_name || a.email || "").localeCompare(b.full_name || b.email || ""));
+  }, [admins, staffFinderSearch, currentAdminId]);
+
   const adminPeerOptions = useMemo(() => {
     return admins
       .filter((a) => a.id !== currentAdminId)
@@ -116,9 +190,10 @@ export default function AdminStaffChatPage() {
 
   const onSend = () => {
     const t = draft.trim();
-    if (!t || !roomId) return;
+    if ((!t && !pendingFile) || !roomId) return;
     setAttachError(null);
-    postMut.mutate(t, {
+    const body = t;
+    postMut.mutate(body, {
       onSuccess: async (msg) => {
         setDraft("");
         if (pendingFile) {
@@ -134,6 +209,11 @@ export default function AdminStaffChatPage() {
     });
   };
 
+  const onPickRoom = (rid: string) => {
+    setRoomId(rid);
+    markReadMut.mutate(rid);
+  };
+
   const onCreateDm = () => {
     if (!dmPeerId) return;
     dmMut.mutate(dmPeerId, {
@@ -141,6 +221,7 @@ export default function AdminStaffChatPage() {
         setRoomId(room.id);
         setDmOpened(false);
         setDmPeerId(null);
+        markReadMut.mutate(room.id);
       },
     });
   };
@@ -174,7 +255,7 @@ export default function AdminStaffChatPage() {
   if (roomsLoading) {
     return (
       <Stack gap="md">
-        <ContextBar title="Мессенджер персонала" />
+        <ContextBar title="Чат команды" breadcrumbs={staffChatSubtitle} />
         <PageSkeleton variant="cards" cardsCount={2} />
       </Stack>
     );
@@ -183,7 +264,7 @@ export default function AdminStaffChatPage() {
   if (roomsErr) {
     return (
       <Stack gap="md">
-        <ContextBar title="Мессенджер персонала" />
+        <ContextBar title="Чат команды" breadcrumbs={staffChatSubtitle} />
         <QueryErrorAlert error={roomsError} />
       </Stack>
     );
@@ -191,10 +272,7 @@ export default function AdminStaffChatPage() {
 
   return (
     <Stack gap="md" style={{ height: "calc(100vh - 96px)", minHeight: 400 }}>
-      <ContextBar title="Мессенджер персонала" />
-      <Text size="sm" c="dimmed">
-        Внутренний контур, отдельно от чата с клиентом. Личные сообщения, группы и вложения к сообщениям.
-      </Text>
+      <ContextBar title="Чат команды" breadcrumbs={staffChatSubtitle} />
 
       {taskIdFromUrl && taskRoomLoading ? (
         <PageSkeleton variant="table" rows={2} />
@@ -214,39 +292,95 @@ export default function AdminStaffChatPage() {
               <Text size="xs" fw={600} c="dimmed" tt="uppercase">
                 Чаты
               </Text>
-              <Button size="xs" variant="light" onClick={() => setDmOpened(true)}>
-                Найти / личный чат
-              </Button>
+              <TextInput
+                size="xs"
+                placeholder="Поиск чатов…"
+                value={roomSearch}
+                onChange={(e) => setRoomSearch(e.currentTarget.value)}
+              />
               <Button size="xs" variant="light" onClick={() => setGroupOpened(true)}>
                 Новая группа
               </Button>
-              <ScrollArea h={220} type="auto">
-                <Stack gap={4}>
-                  {(rooms ?? []).map((r) => (
-                    <Button
-                      key={r.id}
-                      size="xs"
-                      variant={roomId === r.id ? "filled" : "subtle"}
-                      justify="flex-start"
-                      onClick={() => setRoomId(r.id)}
-                    >
-                      {staffRoomSelectLabel(r)}
-                    </Button>
-                  ))}
-                </Stack>
-              </ScrollArea>
-              <Text size="xs" fw={600} c="dimmed" tt="uppercase">
-                Персонал клиники
-              </Text>
-              <ScrollArea h={160} type="auto">
-                <Stack gap={4}>
-                  {adminPeerOptions.map((o) => (
-                    <Text key={o.value} size="xs" c="dimmed">
-                      {o.label}
+              <ScrollArea h={300} type="auto">
+                <Stack gap={6}>
+                  {filteredRooms.length === 0 ? (
+                    <Text size="xs" c="dimmed">
+                      Ничего не найдено
                     </Text>
-                  ))}
+                  ) : (
+                    filteredRooms.map((r) => {
+                      const selected = roomId === r.id;
+                      const unread = Math.max(0, Number(r.unread_count ?? 0));
+                      const icon =
+                        r.kind === "GROUP" ? (
+                          <IconUsers size={16} />
+                        ) : r.kind === "TASK" ? (
+                          <IconCheckbox size={16} />
+                        ) : r.kind === "GENERAL" ? (
+                          <IconHash size={16} />
+                        ) : (
+                          <IconMessageCircle size={16} />
+                        );
+                      const avatarUrl = r.kind === "DM" ? (r.dm_peer?.avatar_url ?? null) : null;
+                      const avatarLabel = r.kind === "DM" ? (r.dm_peer?.full_name ?? r.title) : r.title;
+                      const initials = String(avatarLabel || "")
+                        .trim()
+                        .split(/\s+/)
+                        .slice(0, 2)
+                        .map((x) => x[0]?.toUpperCase())
+                        .join("");
+                      const lastTime = r.last_message_at ? dayjs(r.last_message_at).format("HH:mm") : null;
+                      return (
+                        <Card
+                          key={r.id}
+                          withBorder={false}
+                          radius="md"
+                          p="xs"
+                          style={{
+                            cursor: "pointer",
+                            background: selected ? "var(--mantine-color-gray-0)" : undefined,
+                            border: selected ? "1px solid var(--mantine-color-gray-3)" : "1px solid transparent",
+                          }}
+                          onClick={() => onPickRoom(r.id)}
+                        >
+                          <Group gap="xs" wrap="nowrap" align="flex-start">
+                            <Avatar src={avatarUrl} radius="xl" color="gray" size={34}>
+                              {initials || "?"}
+                            </Avatar>
+                            <Box style={{ flex: 1, minWidth: 0 }}>
+                              <Group justify="space-between" gap="xs" wrap="nowrap">
+                                <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                                  <Box style={{ color: "var(--mantine-color-gray-7)" }}>{icon}</Box>
+                                  <Text size="sm" fw={600} lineClamp={1} style={{ flex: 1 }}>
+                                    {r.title}
+                                  </Text>
+                                </Group>
+                                <Text size="xs" c="dimmed">
+                                  {lastTime ?? ""}
+                                </Text>
+                              </Group>
+                              <Group justify="space-between" gap="xs" wrap="nowrap" mt={2}>
+                                <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>
+                                  {r.last_message_preview?.trim() || "—"}
+                                </Text>
+                                {unread > 0 ? (
+                                  <Badge size="sm" variant="filled" color="red" radius="xl">
+                                    {unread}
+                                  </Badge>
+                                ) : null}
+                              </Group>
+                            </Box>
+                          </Group>
+                        </Card>
+                      );
+                    })
+                  )}
                 </Stack>
               </ScrollArea>
+              <Divider my={4} />
+              <Button size="xs" variant="light" onClick={() => setStaffFinderOpened(true)}>
+                Персонал клиники
+              </Button>
             </Stack>
           </Card>
 
@@ -285,43 +419,50 @@ export default function AdminStaffChatPage() {
                   ) : !messages?.length ? (
                     <EmptyState
                       title="Пока пусто"
-                      description="Напишите первое сообщение. Вложение — скрепкой (после отправки текста)."
+                      description="Напишите сообщение или запишите голос (микрофон). Файл или фото — иконками; вложение добавляется к последнему отправленному тексту."
                     />
                   ) : (
-                    <Stack gap="sm">
-                      {messages.map((m) => (
-                        <Card key={m.id} padding="sm" radius="md" withBorder bg="var(--mantine-color-gray-0)">
-                          <Group justify="space-between" mb={4}>
-                            <Text size="sm" fw={600}>
-                              {m.author.full_name?.trim() || "Сотрудник"}
-                            </Text>
-                            <Text size="xs" c="dimmed">
-                              {dayjs(m.created_at).format("DD.MM.YYYY HH:mm")}
-                            </Text>
-                          </Group>
-                          <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                            {m.body}
-                          </Text>
-                          {(m.attachments ?? []).length > 0 ? (
-                            <Stack gap={4} mt="xs">
-                              {(m.attachments ?? []).map((att) => (
-                                <Anchor
-                                  key={att.id}
-                                  component="button"
-                                  type="button"
-                                  size="sm"
-                                  onClick={() =>
-                                    void downloadStaffChatAttachmentFile(att.id, att.file_name)
-                                  }
-                                  style={{ textAlign: "left", cursor: "pointer" }}
-                                >
-                                  {att.file_name} ({formatFileSize(att.size_bytes)})
-                                </Anchor>
-                              ))}
-                            </Stack>
-                          ) : null}
-                        </Card>
-                      ))}
+                    <Stack gap="sm" {...ADMIN_CHAT_MESSAGES_REGION}>
+                      {messages.map((m) => {
+                        const isMine = m.author.id === currentAdminId;
+                        const audioMinW = (m.attachments ?? []).some((a) =>
+                          (a.content_type || "").toLowerCase().startsWith("audio/")
+                        )
+                          ? 280
+                          : undefined;
+                        return (
+                          <Box
+                            key={m.id}
+                            px="xs"
+                            py="xs"
+                            style={{
+                              alignSelf: isMine ? "flex-end" : "flex-start",
+                              maxWidth: "80%",
+                              minWidth: audioMinW,
+                              ...(isMine ? adminChatOutgoingBubbleStyle() : adminChatIncomingBubbleStyle()),
+                            }}
+                          >
+                            <Group justify="space-between" mb={4} wrap="nowrap" gap="xs">
+                              <PersonNameLink kind="staff" id={m.author.id} label={m.author.full_name} size="sm" />
+                              <Text size="xs" c="dimmed">
+                                {dayjs(m.created_at).format("DD.MM.YYYY HH:mm")}
+                              </Text>
+                            </Group>
+                            {shouldOmitChatBodyForAudioAttachment(m.body, m.attachments ?? []) ? null : (
+                              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                                <AppleEmojiRichText text={m.body} />
+                              </Text>
+                            )}
+                            {(m.attachments ?? []).length > 0 ? (
+                              <ClinicChatAttachments
+                                attachments={m.attachments ?? []}
+                                getBlob={getStaffChatAttachmentBlob}
+                                allowAudioAttachmentDownload={allowAudioAttachmentDownload}
+                              />
+                            ) : null}
+                          </Box>
+                        );
+                      })}
                       <div ref={bottomRef} />
                     </Stack>
                   )}
@@ -335,6 +476,7 @@ export default function AdminStaffChatPage() {
                       const f = e.target.files?.[0] ?? null;
                       setPendingFile(f);
                       setAttachError(null);
+                      e.target.value = "";
                     }}
                   />
                   <Group gap="xs">
@@ -342,7 +484,7 @@ export default function AdminStaffChatPage() {
                       variant="light"
                       size="lg"
                       aria-label="Файл"
-                      onClick={() => attachFileRef.current?.click()}
+                      onClick={() => triggerAttachPick()}
                     >
                       <IconPaperclip size={20} />
                     </ActionIcon>
@@ -350,20 +492,32 @@ export default function AdminStaffChatPage() {
                       variant="light"
                       size="lg"
                       aria-label="Фото"
-                      onClick={() => attachFileRef.current?.click()}
+                      onClick={() => triggerAttachPick("image/*")}
                     >
                       <IconPhoto size={20} />
                     </ActionIcon>
                     <ActionIcon
                       variant="light"
                       size="lg"
-                      color="gray"
-                      aria-label="Аудио (в разработке)"
-                      title="Аудио: глобальный контур записи и хранения — в плане"
-                      disabled
+                      aria-label="Аудио файл"
+                      title="Выбрать аудиофайл (без видео)"
+                      onClick={() => triggerAttachPick("audio/*")}
                     >
-                      <IconMicrophone size={20} />
+                      <IconVolume size={20} />
                     </ActionIcon>
+                    <VoiceNoteRecorderButton
+                      disabled={postMut.isPending || uploadMut.isPending}
+                      onError={(msg) => setAttachError(msg)}
+                      onRecorded={(file) => {
+                        setAttachError(null);
+                        setPendingFile(file);
+                      }}
+                    />
+                    <EmojiMartPopoverPicker
+                      actionIconProps={{ variant: "light", size: "lg", color: "gray" }}
+                      onPick={(native) => setDraft((prev) => prev + native)}
+                      onInserted={() => draftInputRef.current?.focus()}
+                    />
                     {pendingFile ? (
                       <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>
                         {pendingFile.name}
@@ -375,7 +529,8 @@ export default function AdminStaffChatPage() {
                       {attachError}
                     </Text>
                   ) : null}
-                  <Textarea
+                  <AppleEmojiOverlayTextarea
+                    ref={draftInputRef}
                     placeholder="Сообщение…"
                     minRows={2}
                     value={draft}
@@ -391,13 +546,14 @@ export default function AdminStaffChatPage() {
                     <Button
                       onClick={onSend}
                       loading={postMut.isPending || uploadMut.isPending}
-                      disabled={!draft.trim()}
+                      disabled={!draft.trim() && !pendingFile}
                     >
                       Отправить
                     </Button>
                   </Group>
                   <Text size="xs" c="dimmed">
-                    Ctrl+Enter — отправить. Файл к последнему отправленному сообщению.
+                    Ctrl+Enter — отправить. Голос — микрофоном или файлом аудио; вложение к последнему отправленному
+                    сообщению.
                   </Text>
                 </Stack>
               </>
@@ -422,6 +578,76 @@ export default function AdminStaffChatPage() {
             </Button>
             <Button onClick={onCreateDm} loading={dmMut.isPending} disabled={!dmPeerId}>
               Открыть чат
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal opened={staffFinderOpened} onClose={() => setStaffFinderOpened(false)} title="Персонал клиники" centered>
+        <Stack gap="sm">
+          <TextInput
+            placeholder="Поиск по имени или email…"
+            value={staffFinderSearch}
+            onChange={(e) => setStaffFinderSearch(e.currentTarget.value)}
+          />
+          <ScrollArea h={320} type="auto">
+            <Stack gap={6}>
+              {staffFinderRows.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  Ничего не найдено
+                </Text>
+              ) : (
+                staffFinderRows.map((a) => {
+                  const label = a.full_name?.trim() || a.email || a.id.slice(0, 8);
+                  const initials = label
+                    .trim()
+                    .split(/\s+/)
+                    .slice(0, 2)
+                    .map((x) => x[0]?.toUpperCase())
+                    .join("");
+                  return (
+                    <Card
+                      key={a.id}
+                      p="xs"
+                      radius="md"
+                      withBorder
+                      style={{ cursor: "pointer" }}
+                      onClick={() => {
+                        setStaffFinderOpened(false);
+                        setStaffFinderSearch("");
+                        dmMut.mutate(a.id, {
+                          onSuccess: (room) => {
+                            setRoomId(room.id);
+                            markReadMut.mutate(room.id);
+                          },
+                        });
+                      }}
+                    >
+                      <Group gap="sm" wrap="nowrap">
+                        <Avatar radius="xl" color="gray" size={34}>
+                          {initials || "?"}
+                        </Avatar>
+                        <Box style={{ flex: 1, minWidth: 0 }}>
+                          <Text fw={600} size="sm" lineClamp={1}>
+                            {label}
+                          </Text>
+                          <Text size="xs" c="dimmed" lineClamp={1}>
+                            {a.email || ""}
+                          </Text>
+                        </Box>
+                        <Button size="xs" variant="light" onClick={(e) => e.preventDefault()}>
+                          Написать
+                        </Button>
+                      </Group>
+                    </Card>
+                  );
+                })
+              )}
+            </Stack>
+          </ScrollArea>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setStaffFinderOpened(false)}>
+              Закрыть
             </Button>
           </Group>
         </Stack>

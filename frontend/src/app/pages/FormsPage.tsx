@@ -200,7 +200,7 @@ export default function FormsPage() {
             withBorder
             radius="md"
             shadow="xs"
-            style={{ cursor: "pointer" }}
+            className="interactive-card"
             onClick={() => handleStart(t)}
           >
             <Stack gap={4}>

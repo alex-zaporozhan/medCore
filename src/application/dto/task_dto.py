@@ -22,6 +22,9 @@ class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
     priority: str = Field(default="medium", pattern="^(low|medium|high|urgent)$")
+    stream_id: UUID | None = None
+    """Если не задан — поток ``general`` клиники (или первый активный)."""
+    tag_ids: list[UUID] | None = None
     assignee_id: UUID | None = None
     """Один исполнитель (совместимо со старыми клиентами); приоритет ниже assignee_ids."""
     assignee_ids: list[UUID] | None = None
@@ -40,6 +43,8 @@ class TaskUpdate(BaseModel):
     status: str | None = Field(
         None, pattern="^(open|in_progress|on_hold|review|done|cancelled)$"
     )
+    stream_id: UUID | None = None
+    tag_ids: list[UUID] | None = None
     assignee_id: UUID | None = None
     assignee_ids: list[UUID] | None = None
     role_assignee: str | None = None
@@ -65,6 +70,8 @@ class TaskResponse(BaseModel):
 
     id: UUID
     clinic_id: UUID
+    stream_id: UUID
+    tag_ids: list[UUID] = Field(default_factory=list)
     title: str
     description: str | None
     status: str
@@ -115,12 +122,16 @@ def task_entity_to_response(
     task: "Task",
     *,
     assignee_ids: list[UUID] | None = None,
+    tag_ids: list[UUID] | None = None,
 ) -> TaskResponse:
     """Build TaskResponse from domain Task entity."""
     aids = assignee_ids if assignee_ids is not None else []
+    tids = tag_ids if tag_ids is not None else []
     return TaskResponse(
         id=task.id,
         clinic_id=task.clinic_id,
+        stream_id=task.stream_id,
+        tag_ids=tids,
         title=task.title,
         description=task.description,
         status=task.status,

@@ -66,9 +66,10 @@ class BookingRescheduleRequest(BaseModel):
 
 
 class BookingPatchAdmin(BaseModel):
-    """Partial admin update (P2: комментарий к записи)."""
+    """Partial admin update: комментарий и/или статус (переходы через BookingStatusService)."""
 
     notes: str | None = Field(None, max_length=2000)
+    status: str | None = Field(None, max_length=32)
 
 
 class EligibleSubscriptionItem(BaseModel):

@@ -192,6 +192,96 @@ multitenancy_clinic_mismatch_total = Counter(  # type: ignore[call-arg]
     ["source"],
 )
 
+# ------------------------------------------------------------------------------
+# Medical files (PHI) access metrics (enterprise hardening)
+# ------------------------------------------------------------------------------
+
+medical_file_download_token_issued_total = Counter(  # type: ignore[call-arg]
+    "medical_file_download_token_issued_total",
+    "Medical file download tokens issued (PHI).",
+    ["clinic_bucket", "result"],
+)
+
+medical_file_stream_started_total = Counter(  # type: ignore[call-arg]
+    "medical_file_stream_started_total",
+    "Medical file streaming responses started (PHI).",
+    ["clinic_bucket", "result"],
+)
+
+medical_file_stream_completed_total = Counter(  # type: ignore[call-arg]
+    "medical_file_stream_completed_total",
+    "Medical file streaming responses completed (PHI).",
+    ["clinic_bucket", "result"],
+)
+
+medical_file_stream_bytes_sent_total = Counter(  # type: ignore[call-arg]
+    "medical_file_stream_bytes_sent_total",
+    "Total bytes sent when streaming medical files (PHI).",
+    ["clinic_bucket"],
+)
+
+medical_file_download_security_denials_total = Counter(  # type: ignore[call-arg]
+    "medical_file_download_security_denials_total",
+    "Security denials for medical file downloads by reason (PHI).",
+    ["clinic_bucket", "reason"],
+)
+
+medical_download_tokens_issued_total = Counter(  # type: ignore[call-arg]
+    "medical_download_tokens_issued_total",
+    "Medical download tokens issued by admin bucket (SOC anomaly signal).",
+    ["admin_bucket"],
+)
+
+medical_download_streams_started_total = Counter(  # type: ignore[call-arg]
+    "medical_download_streams_started_total",
+    "Medical download streams started by admin bucket (SOC anomaly signal).",
+    ["admin_bucket"],
+)
+
+medical_download_security_denials_by_admin_total = Counter(  # type: ignore[call-arg]
+    "medical_download_security_denials_by_admin_total",
+    "Security denials for medical downloads by admin bucket and reason (SOC signal).",
+    ["admin_bucket", "reason"],
+)
+
+# ------------------------------------------------------------------------------
+# Chat anti-spam metrics
+# ------------------------------------------------------------------------------
+
+chat_rate_limited_total = Counter(  # type: ignore[call-arg]
+    "chat_rate_limited_total",
+    "Chat send operations rate-limited by kind.",
+    ["kind"],
+)
+
+chat_dedup_hits_total = Counter(  # type: ignore[call-arg]
+    "chat_dedup_hits_total",
+    "Duplicate message suppression hits by chat kind.",
+    ["kind"],
+)
+
+# ------------------------------------------------------------------------------
+# Adaptive captcha (Turnstile)
+# ------------------------------------------------------------------------------
+
+auth_captcha_required_total = Counter(  # type: ignore[call-arg]
+    "auth_captcha_required_total",
+    "Adaptive captcha required by reason.",
+    ["reason"],
+)
+
+auth_captcha_verified_total = Counter(  # type: ignore[call-arg]
+    "auth_captcha_verified_total",
+    "Captcha verification attempts by status (ok/denied/error).",
+    ["status"],
+)
+
+chat_upload_rejected_total = Counter(  # type: ignore[call-arg]
+    "chat_upload_rejected_total",
+    "Chat upload rejections by kind and reason.",
+    ["kind", "reason"],
+)
+
 # Booking / payment structured errors (BKG_ERRORS_005, QA_ARCH W7 BE4).
 booking_errors_total = Counter(  # type: ignore[call-arg]
     "booking_errors_total",
@@ -390,6 +480,12 @@ task_bulk_status_total = Counter(  # type: ignore[call-arg]
     "task_bulk_status_total",
     "Bulk status update outcomes by clinic bucket, target status and outcome.",
     ["clinic_bucket", "to_status", "outcome"],
+)
+
+task_context_admin_events_total = Counter(  # type: ignore[call-arg]
+    "task_context_admin_events_total",
+    "Task streams/tags admin: lifecycle, PATCH task context, list-filter validation failures.",
+    ["clinic_bucket", "event"],
 )
 
 # ------------------------------------------------------------------------------

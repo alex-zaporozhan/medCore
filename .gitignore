@@ -34,9 +34,11 @@ ENV/
 *~
 
 # Docs
-/docs
+# Docs are part of the repo (runbooks, passports, artifacts).
+# Do not ignore the whole directory; ignore only bulky/derived outputs if needed.
 .cursorrules
 .cursorignore
+/docs_archives
 
 
 # Environment
@@ -72,5 +74,10 @@ frontend/.env
 pgdata/
 __pycache__/
 frontend/node_modules/
+frontend/public/emoji-datasource/
 frontend/playwright-report/
 frontend/test-results/
+.tmp_ci_logs/
+
+# Local runtime uploads / storage (never commit)
+data/
