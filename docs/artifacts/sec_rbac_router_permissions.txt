@@ -2,6 +2,8 @@ assign_tasks
 attribution.reports.read
 erp.owner_reports.read
 export_forms
+leads.log.manage
+leads.log.view
 manage_ai_settings
 manage_crm
 manage_finance
@@ -12,9 +14,13 @@ manage_loyalty_campaigns
 manage_marketing_campaigns
 manage_payroll
 manage_staff_collab
+manage_staff_directory
 manage_tasks
 omni.inbox.manage
+patients.medical.read
+patients.medical.write
 patients.pii.read
+rbac.manage
 run_loyalty_campaigns
 tasks.bulk_status
 tasks.change_status
