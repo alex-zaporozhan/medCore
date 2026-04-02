@@ -237,6 +237,18 @@ vi.mock("@/hooks", () => ({
       ],
     },
   }),
+  useAdminLeadLogDetail: () => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+  useAdminLeadLogRoutingRules: () => ({
+    data: [],
+    isLoading: false,
+  }),
+  useSimulateAdminLeadLogRoutingMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useReplaceAdminLeadLogRoutingRulesMutation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 const testQueryClient = new QueryClient({
