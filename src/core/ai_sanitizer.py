@@ -3,11 +3,12 @@
 from dataclasses import dataclass
 import re
 
-from src.application.ai.tokenization import extract_token_strings
+from src.application.ai.tokenization import TOKEN_RE, extract_token_strings
 
 
-# Phone regex must not match arbitrary digit-hyphen sequences (e.g. inside
-# PATIENT#<uuid> tokens). Require an explicit +7 or 8 prefix.
+# Phone regex must not match arbitrary digit-hyphen sequences. UUID segments can look
+# like `8-xxxx-xxxx` and falsely match; entity tokens are shielded in sanitize() before
+# PHONE_RE runs (see _shield_entity_tokens).
 PHONE_RE = re.compile(r"(?:\+7|8)\s*[\d\-\s()]{7,}")
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
@@ -16,6 +17,26 @@ EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 # enabling them later does not silently change behaviour for existing deployments.
 NAME_RE = re.compile(r"")
 ADDRESS_RE = re.compile(r"")
+
+_TOKEN_SHIELD = "__AI_ENTITY_TOKEN_{}__"
+
+
+def _shield_entity_tokens(text: str) -> tuple[str, list[str]]:
+    """Replace PATIENT#/BOOKING#/… spans so PHONE_RE cannot corrupt UUIDs inside tokens."""
+    found: list[str] = []
+
+    def _repl(m: re.Match[str]) -> str:
+        found.append(m.group(0))
+        return _TOKEN_SHIELD.format(len(found) - 1)
+
+    return TOKEN_RE.sub(_repl, text), found
+
+
+def _unshield_entity_tokens(text: str, tokens: list[str]) -> str:
+    out = text
+    for i, raw in enumerate(tokens):
+        out = out.replace(_TOKEN_SHIELD.format(i), raw)
+    return out
 
 
 @dataclass
@@ -50,8 +71,9 @@ class AiSanitizer:
             # Pass-through mode: keep text as is (assuming proper consents and compliant provider).
             return SanitizedText(original=text, sanitized=text)
 
-        masked = PHONE_RE.sub("[PHONE]", text)
+        shielded, token_parts = _shield_entity_tokens(text)
+        masked = PHONE_RE.sub("[PHONE]", shielded)
         masked = EMAIL_RE.sub("[EMAIL]", masked)
-        # Tokens are not modified: they do not match PHONE/EMAIL patterns by design.
+        masked = _unshield_entity_tokens(masked, token_parts)
         return SanitizedText(original=text, sanitized=masked)
 
