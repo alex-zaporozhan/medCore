@@ -33,7 +33,7 @@ def resolve_platform_founder_jwt_signing_key() -> str | None:
         return raw
     if str(settings.app_env).lower() == "production":
         return None
-    return settings.jwt_secret_key
+    return cast(str, settings.jwt_secret_key)
 
 
 def is_platform_founder_jwt_configured() -> bool:
@@ -93,10 +93,10 @@ def _validate_platform_founder_iss_aud(
 
 def _infer_tenant_token_audience(data: dict[str, Any]) -> str:
     if data.get("type") == "admin":
-        return settings.jwt_audience_admin
+        return cast(str, settings.jwt_audience_admin)
     if data.get("role") == "patient":
-        return settings.jwt_audience_patient
-    return settings.jwt_audience_admin
+        return cast(str, settings.jwt_audience_patient)
+    return cast(str, settings.jwt_audience_admin)
 
 
 def create_access_token(
