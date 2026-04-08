@@ -49,6 +49,8 @@ celery_app = Celery(
         "src.infrastructure.messaging.tasks.erp_tasks",
         "src.infrastructure.messaging.tasks.crm_tasks",
         "src.infrastructure.messaging.tasks.staff_collab_tasks",
+        "src.infrastructure.messaging.tasks.platform_billing_tasks",
+        "src.infrastructure.messaging.tasks.domain_outbox_tasks",
     ],
 )
 
@@ -103,6 +105,18 @@ celery_app.conf.update(
         "staff-calendar-reminders": {
             "task": "staff_collab_tasks.send_calendar_reminders",
             "schedule": 300.0,  # every 5 minutes
+        },
+        "platform-billing-retry-provisions": {
+            "task": "platform_billing.retry_due_provisions",
+            "schedule": 60.0,
+        },
+        "platform-billing-expire-stale-signup-intents": {
+            "task": "platform_billing.expire_stale_signup_intents",
+            "schedule": 3600.0,
+        },
+        "domain-outbox-dispatch-pending": {
+            "task": "domain_outbox.dispatch_pending",
+            "schedule": 30.0,
         },
     },
 )

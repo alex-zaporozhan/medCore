@@ -53,6 +53,11 @@ import {
   IconUser,
   IconCalendarEvent,
   IconTarget,
+  IconCode,
+  IconShoppingCart,
+  IconDatabase,
+  IconDownload,
+  IconCoin,
 } from "@tabler/icons-react";
 import type { SpotlightActionData } from "@mantine/spotlight";
 import { useAdminSearch } from "@/hooks/useAdminSearch";
@@ -64,7 +69,9 @@ import { ADMIN_PERM_PATIENTS_PII_READ, ADMIN_PERM_RBAC_MANAGE } from "@/shared/a
 import { SEMANTIC } from "@/shared/semanticUi";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { BOX_HIDDEN_ADMIN_PATHS, isBoxEdition } from "@/config/edition";
+import { ADMIN_NAV_PATH_ENTITLEMENT_KEY } from "@/shared/adminEntitlementNav";
 import { PersonCardModalHost, PersonCardProvider } from "@/shared/ui";
+import { AdminOwnerSubscriptionStrip } from "@/admin/components/AdminOwnerSubscriptionStrip";
 
 const NAVBAR_COLLAPSED_KEY = "admin_navbar_collapsed";
 const PERM_LEADS_LOG_VIEW = "leads.log.view";
@@ -74,6 +81,8 @@ type NavItem = {
   label: string;
   icon: React.ComponentType<Record<string, unknown>>;
   badgeKey?: string;
+  /** Только для роли owner (подписка SaaS и т.д.). */
+  ownerOnly?: boolean;
 };
 
 const navGroups: { title: string; items: NavItem[] }[] = [
@@ -104,6 +113,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     items: [
       { to: ROUTE_PATHS.admin.sales, label: "CRM & Sales", icon: IconBriefcase },
       { to: ROUTE_PATHS.admin.finance, label: "Finance", icon: IconCash },
+      { to: ROUTE_PATHS.admin.commerce, label: "Магазин (Commerce)", icon: IconShoppingCart },
       { to: ROUTE_PATHS.admin.loyalty, label: "Loyalty", icon: IconGift },
       { to: ROUTE_PATHS.admin.reports, label: "Analytics / Reports", icon: IconChartBar },
       { to: ROUTE_PATHS.admin.bookings, label: "Записи", icon: IconClipboardList },
@@ -118,6 +128,15 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: "SYSTEM",
     items: [
       { to: ROUTE_PATHS.admin.settings, label: "Настройки", icon: IconSettings },
+      {
+        to: ROUTE_PATHS.admin.subscription,
+        label: "Подписка платформы",
+        icon: IconCoin,
+        ownerOnly: true,
+      },
+      { to: ROUTE_PATHS.admin.embed, label: "Встраивание (embed)", icon: IconCode },
+      { to: ROUTE_PATHS.admin.ragKb, label: "RAG (организация)", icon: IconDatabase },
+      { to: ROUTE_PATHS.admin.dataExport, label: "Экспорт данных", icon: IconDownload },
       { to: ROUTE_PATHS.admin.me, label: "Личный кабинет", icon: IconUser },
       { to: ROUTE_PATHS.admin.doctors, label: "Врачи", icon: IconStethoscope },
       { to: ROUTE_PATHS.admin.doctorSchedule, label: "Расписание врачей", icon: IconCalendarWeek },
@@ -135,6 +154,7 @@ function navGroupsVisible(
   canPatientsPii: boolean,
   canRbacManage: boolean,
   canLeadsLogView: boolean,
+  isOwner: boolean,
 ): typeof navGroups {
   return groups.map((g) => ({
     ...g,
@@ -142,6 +162,7 @@ function navGroupsVisible(
       if ("to" in item && item.to === ROUTE_PATHS.admin.patients && !canPatientsPii) return false;
       if ("to" in item && item.to === ROUTE_PATHS.admin.rightsPolicies && !canRbacManage) return false;
       if ("to" in item && item.to === ROUTE_PATHS.admin.leadsLog && !canLeadsLogView) return false;
+      if ("ownerOnly" in item && item.ownerOnly && !isOwner) return false;
       return true;
     }),
   }));
@@ -156,6 +177,23 @@ function navGroupsForBoxEdition(
   return groups.map((g) => ({
     ...g,
     items: g.items.filter((item) => !("to" in item && hidden.has(item.to))),
+  }));
+}
+
+function navGroupsForEntitlements(
+  groups: typeof navGroups,
+  enforced: boolean,
+  keys: string[] | undefined,
+): typeof navGroups {
+  if (!enforced || !keys?.length) return groups;
+  return groups.map((g) => ({
+    ...g,
+    items: g.items.filter((item) => {
+      if (!("to" in item)) return true;
+      const need = ADMIN_NAV_PATH_ENTITLEMENT_KEY[item.to];
+      if (!need) return true;
+      return keys.includes(need);
+    }),
   }));
 }
 
@@ -196,32 +234,40 @@ export default function AdminLayout() {
   const canRbacManage =
     adminSession?.permissions?.includes(ADMIN_PERM_RBAC_MANAGE) ?? false;
   const canLeadsLogView = adminSession?.permissions?.includes(PERM_LEADS_LOG_VIEW) ?? false;
+  const isOwner = adminSession?.roles?.includes("owner") ?? false;
   const boxEdition = isBoxEdition();
+  const entEnforced = adminSession?.entitlement_enforced ?? false;
+  const entKeys = adminSession?.entitlement_keys;
   const sidebarNavGroups = useMemo(
     () =>
-      navGroupsForBoxEdition(
-        navGroupsVisible(
-          // Inject leads-log item next to tasks (kanban surface).
-          navGroups.map((g) => {
-            if (g.title !== "СОТРУДНИКИ") return g;
-            const nextItems = [...g.items];
-            const idx = nextItems.findIndex((x) => x.to === ROUTE_PATHS.admin.tasks);
-            if (idx >= 0) {
-              nextItems.splice(idx + 1, 0, {
-                to: ROUTE_PATHS.admin.leadsLog,
-                label: "Лиды (лог)",
-                icon: IconListCheck,
-              });
-            }
-            return { ...g, items: nextItems };
-          }),
-          canPatientsPii,
-          canRbacManage,
-          canLeadsLogView,
+      navGroupsForEntitlements(
+        navGroupsForBoxEdition(
+          navGroupsVisible(
+            // Inject leads-log item next to tasks (kanban surface).
+            navGroups.map((g) => {
+              if (g.title !== "СОТРУДНИКИ") return g;
+              const nextItems = [...g.items];
+              const idx = nextItems.findIndex((x) => x.to === ROUTE_PATHS.admin.tasks);
+              if (idx >= 0) {
+                nextItems.splice(idx + 1, 0, {
+                  to: ROUTE_PATHS.admin.leadsLog,
+                  label: "Лиды (лог)",
+                  icon: IconListCheck,
+                });
+              }
+              return { ...g, items: nextItems };
+            }),
+            canPatientsPii,
+            canRbacManage,
+            canLeadsLogView,
+            isOwner,
+          ),
+          boxEdition,
         ),
-        boxEdition,
+        entEnforced,
+        entKeys,
       ),
-    [canPatientsPii, canRbacManage, canLeadsLogView, boxEdition],
+    [canPatientsPii, canRbacManage, canLeadsLogView, isOwner, boxEdition, entEnforced, entKeys],
   );
 
   const clinicOptions =
@@ -550,7 +596,7 @@ export default function AdminLayout() {
           <>
             {clinicsError ? (
               <Alert m="md" color="red" title="Ошибка загрузки данных">
-                Не удалось загрузить список клиник. Убедитесь, что бэкенд запущен (порт 8000). Подробнее: docs/RUN_SERVICES.md
+                Не удалось загрузить список клиник. Убедитесь, что бэкенд запущен (порт 8000). См. корневой README и каталог docs/ репозитория.
               </Alert>
             ) : null}
             <Box style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -561,8 +607,11 @@ export default function AdminLayout() {
           <Container size="xl" py="md">
             {clinicsError ? (
               <Alert mb="md" color="red" title="Ошибка загрузки данных">
-                Не удалось загрузить список клиник. Убедитесь, что бэкенд запущен (порт 8000). Подробнее: docs/RUN_SERVICES.md
+                Не удалось загрузить список клиник. Убедитесь, что бэкенд запущен (порт 8000). См. корневой README и каталог docs/ репозитория.
               </Alert>
+            ) : null}
+            {location.pathname !== ROUTE_PATHS.admin.subscription ? (
+              <AdminOwnerSubscriptionStrip />
             ) : null}
             <Paper
               radius="md"
@@ -577,7 +626,7 @@ export default function AdminLayout() {
         )}
       </AppShell.Main>
 
-        {/* Спросить AI (Spotlight → вкладка/режим по техпаспорту) */}
+        {/* Спросить AI (Spotlight) */}
         <Modal
           opened={askAiOpen}
           onClose={() => {

@@ -346,7 +346,7 @@ async def test_admin_crm_change_lead_stage_enforce_semantic_blocks_invalid(
     )
     assert r.status_code == 400, r.text
     err = r.json()
-    assert err.get("code") == "SEMANTIC_TRANSITION_INVALID"
+    assert err.get("code") == "semantic_transition_invalid"
 
     r_ok = await client.patch(
         f"/api/v1/admin/crm/leads/{lead_id}/stage",

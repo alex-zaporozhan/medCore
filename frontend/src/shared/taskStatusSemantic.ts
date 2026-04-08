@@ -1,7 +1,7 @@
 /**
  * Семантика карточек задач Kanban / деталей — тот же каркас, что у слотов расписания
  * (`--calendar-card-border`, `--calendar-card-shadow`, левая полоса + фон по статусу).
- * Канон: `DESIGN_SCHEDULE_MODAL_SEMANTICS_85_PLUS.md` · палитра «ожидает» H — `DESIGN_PENDING_SLOT_PALETTE_OPTIONS.html`.
+ * Семантика статусов задач для UI — константы ниже; при смене правил обновлять тесты и подписи в админке.
  */
 import type { CSSProperties } from "react";
 

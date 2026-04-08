@@ -1,6 +1,6 @@
 /**
- * Дерево маршрутов и зоны — техпаспорт §2; §7: не менять разделение `/admin` / `/app` и цепочки guard’ов
- * (`AdminAuthGuard`, `PatientAuthProvider` + `AppLayout`) без архитектурного эпика.
+ * Дерево маршрутов: маркетинг `/`, вход клиники `/admin/login`, основатель `/platform/login`,
+ * пациент только `/c/:clinicSlug/sign-in`, legacy `/sign-in` → редиректы.
  */
 import { ErrorBoundary } from "@/shared/ErrorBoundary";
 import { PatientAuthProvider } from "@/contexts/PatientAuthContext";
@@ -24,20 +24,24 @@ import AdminOmniAiSettingsPage from "@/admin/pages/AdminOmniAiSettingsPage";
 import AdminChannelsPage from "@/admin/pages/AdminChannelsPage";
 import AdminOmniChannelsPage from "@/admin/pages/AdminOmniChannelsPage";
 import AdminIntegrationsPage from "@/admin/pages/AdminIntegrationsPage";
+import AdminEmbedPage from "@/admin/pages/AdminEmbedPage";
+import AdminRagKbPage from "@/admin/pages/AdminRagKbPage";
+import AdminDataExportPage from "@/admin/pages/AdminDataExportPage";
 import AdminOmniVaultPage from "@/admin/pages/AdminOmniVaultPage";
 import AdminStylingPage from "@/admin/pages/AdminStylingPage";
 import AdminStickersPage from "@/admin/pages/AdminStickersPage";
 import AdminClientReferencePage from "@/admin/pages/AdminClientReferencePage";
 import AdminDiscountsPage from "@/admin/pages/AdminDiscountsPage";
 import AdminFinancePage from "@/admin/pages/AdminFinancePage";
+import AdminCommercePage from "@/admin/pages/AdminCommercePage";
 import AdminLoyaltyPage from "@/admin/pages/AdminLoyaltyPage";
 import AdminFormsPage from "@/admin/pages/AdminFormsPage";
 import AdminNotificationPolicyPage from "@/admin/pages/AdminNotificationPolicyPage";
 import AdminAgreementsPage from "@/admin/pages/AdminAgreementsPage";
 import AdminSettingsPage from "@/admin/pages/AdminSettingsPage";
+import AdminSubscriptionPage from "@/admin/pages/AdminSubscriptionPage";
 import AdminRightsPoliciesPage from "@/admin/pages/AdminRightsPoliciesPage";
 import AdminPaymentGatewayPage from "@/admin/pages/AdminPaymentGatewayPage";
-import AdminLoginPage from "@/admin/pages/AdminLoginPage";
 import AdminAdministratorsPage from "@/admin/pages/AdminAdministratorsPage";
 import AdminSalesPipelinePage from "@/admin/pages/AdminSalesPipelinePage";
 import AdminTasksPage from "@/admin/pages/AdminTasksPage";
@@ -59,10 +63,22 @@ import ChatPage from "@/app/pages/ChatPage";
 import FeedPage from "@/app/pages/FeedPage";
 import HomePage from "@/app/pages/HomePage";
 import ProfilePage from "@/app/pages/ProfilePage";
-import LoginPage from "@/app/pages/LoginPage";
+import ClinicSignInPage from "@/auth/ClinicSignInPage";
+import LegacySignInRedirect from "@/auth/LegacySignInRedirect";
+import PatientSignInPage from "@/auth/PatientSignInPage";
 import OAuthResultPage from "@/app/pages/OAuthResultPage";
 import FormsPage from "@/app/pages/FormsPage";
 import PublicDoctorProfilePage from "@/marketing/pages/PublicDoctorProfilePage";
+import LegalPrivacyPage from "@/marketing/pages/LegalPrivacyPage";
+import LegalTermsPage from "@/marketing/pages/LegalTermsPage";
+import PlatformFounderLayout from "@/marketing/layouts/PlatformFounderLayout";
+import PlatformFounderDashboardPage from "@/marketing/pages/PlatformFounderDashboardPage";
+import PlatformFounderProvisionQueuePage from "@/marketing/pages/PlatformFounderProvisionQueuePage";
+import PlatformFounderLoginPage from "@/marketing/pages/PlatformFounderLoginPage";
+import PlatformFounderMfaPage from "@/marketing/pages/PlatformFounderMfaPage";
+import PricingPage from "@/marketing/pages/PricingPage";
+import SignupPage from "@/marketing/pages/SignupPage";
+import { PatientEntryBoundary } from "@/contexts/PatientEntryContext";
 import {
   ADMIN_SHELL_ROUTE_SEGMENTS,
   PATIENT_APP_ROUTE_SEGMENTS,
@@ -71,15 +87,38 @@ import {
   type PatientAppSegment,
 } from "@/routePaths";
 import { isAdminSegmentBlockedInBox } from "@/config/edition";
-import { Box, Button, Container, Grid, Paper, Stack, Text, Title } from "@mantine/core";
-import { createElement, type ComponentType } from "react";
+import {
+  adminShellSegmentEntitlementKey,
+  isAdminSegmentBlockedByEntitlements,
+} from "@/shared/adminEntitlementNav";
+import { useAdminSession } from "@/hooks/useAdminSession";
+import {
+  Alert,
+  Anchor,
+  Box,
+  Button,
+  Center,
+  Container,
+  Grid,
+  Group,
+  Loader,
+  Paper,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { createElement, type ComponentType, useMemo, useState } from "react";
 import {
   createBrowserRouter,
+  createRoutesFromElements,
+  createSearchParams,
   Link,
   Navigate,
-  RouterProvider,
   Route,
-  createRoutesFromElements,
+  RouterProvider,
+  useNavigate,
+  useSearchParams,
 } from "react-router-dom";
 
 const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
@@ -102,6 +141,7 @@ const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
   attention: AdminEmergencyNotificationsPage,
   reports: AdminReportsPage,
   finance: AdminFinancePage,
+  commerce: AdminCommercePage,
   loyalty: AdminLoyaltyPage,
   forms: AdminFormsPage,
   doctors: AdminDoctorsPage,
@@ -112,10 +152,14 @@ const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
   "omni-ai-settings": AdminOmniAiSettingsPage,
   channels: AdminChannelsPage,
   integrations: AdminIntegrationsPage,
+  embed: AdminEmbedPage,
+  "rag-kb": AdminRagKbPage,
+  "data-export": AdminDataExportPage,
   "omni-vault": AdminOmniVaultPage,
   styling: AdminStylingPage,
   stickers: AdminStickersPage,
   settings: AdminSettingsPage,
+  subscription: AdminSubscriptionPage,
   administrators: AdminAdministratorsPage,
   "payment-gateway": AdminPaymentGatewayPage,
   "client-reference": AdminClientReferencePage,
@@ -136,7 +180,29 @@ const PATIENT_APP_PAGE_BY_SEGMENT: Record<PatientAppSegment, ComponentType> = {
 };
 
 function AdminShellSegmentPage({ seg }: { seg: AdminShellSegment }) {
+  const { data: adminSession, isLoading, isFetching } = useAdminSession();
   if (isAdminSegmentBlockedInBox(seg)) {
+    return <Navigate to={ROUTE_PATHS.admin.dashboard} replace />;
+  }
+  const segmentEntitlementKey = adminShellSegmentEntitlementKey(seg);
+  if (
+    segmentEntitlementKey &&
+    adminSession === undefined &&
+    (isLoading || isFetching)
+  ) {
+    return (
+      <Center h="min(50vh, 320px)">
+        <Loader size="md" />
+      </Center>
+    );
+  }
+  if (
+    isAdminSegmentBlockedByEntitlements(
+      seg,
+      adminSession?.entitlement_enforced ?? false,
+      adminSession?.entitlement_keys,
+    )
+  ) {
     return <Navigate to={ROUTE_PATHS.admin.dashboard} replace />;
   }
   const Page = ADMIN_SHELL_PAGE_BY_SEGMENT[seg];
@@ -144,6 +210,35 @@ function AdminShellSegmentPage({ seg }: { seg: AdminShellSegment }) {
 }
 
 function LandingPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [patientSlug, setPatientSlug] = useState("");
+
+  const patientEntryHint = useMemo(() => {
+    const v = searchParams.get("patientEntry");
+    if (v === "need-clinic") {
+      return "Войдите по ссылке вашей клиники или укажите адрес клиники ниже (как в ссылке …/c/адрес-клиники/…).";
+    }
+    if (v === "patient-url-needs-clinic-slug") {
+      return "В ссылке для входа пациента должен быть адрес клиники: /c/ваш-slug/sign-in (три части пути после домена), а не /c/sign-in.";
+    }
+    if (v === "session-expired") {
+      return "Сессия истекла. Войдите снова по ссылке клиники.";
+    }
+    if (v === "oauth-cancelled" || v === "oauth-error") {
+      return "Вход через соцсеть прерван или не удался. Используйте ссылку клиники и вход по телефону.";
+    }
+    return null;
+  }, [searchParams]);
+
+  const goPatientBySlug = () => {
+    const raw = patientSlug.trim().replace(/^\/+|\/+$/g, "");
+    if (!raw) return;
+    const slug = raw.replace(/^c\//i, "").split("/")[0]?.trim();
+    if (!slug) return;
+    navigate(`/c/${encodeURIComponent(slug)}/sign-in`);
+  };
+
   return (
     <Box
       style={{
@@ -157,6 +252,11 @@ function LandingPage() {
     >
       <Container size="lg">
         <Stack gap="xl">
+          {patientEntryHint ? (
+            <Alert color="teal" variant="light" title="Вход для пациентов">
+              {patientEntryHint}
+            </Alert>
+          ) : null}
           <Paper
             p="xl"
             radius="md"
@@ -182,21 +282,48 @@ function LandingPage() {
                   <Stack gap="sm">
                     <Button
                       component={Link}
-                      to={ROUTE_PATHS.patient.home}
+                      to={{
+                        pathname: ROUTE_PATHS.admin.login,
+                        search: `?${createSearchParams({
+                          returnTo: ROUTE_PATHS.admin.dashboard,
+                        }).toString()}`,
+                      }}
                       size="lg"
                       variant="filled"
-                      color="teal"
-                    >
-                      Приложение пациента
-                    </Button>
-                    <Button
-                      component={Link}
-                      to={ROUTE_PATHS.admin.dashboard}
-                      size="md"
-                      variant="outline"
                       color="dark"
                     >
-                      Войти в Business OS (админка)
+                      Войти в Business OS (клиника)
+                    </Button>
+                    <Text size="sm" fw={600} c="dimmed">
+                      Пациентам
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      У каждой клиники свой адрес в ссылке. Вставьте адрес из приглашения (поддомен / путь после{" "}
+                      <Text span ff="monospace">
+                        /c/
+                      </Text>
+                      ).
+                    </Text>
+                    <Group gap="xs" align="flex-end" wrap="nowrap">
+                      <TextInput
+                        flex={1}
+                        label="Адрес клиники"
+                        placeholder="например demo-clinic"
+                        value={patientSlug}
+                        onChange={(e) => setPatientSlug(e.currentTarget.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") goPatientBySlug();
+                        }}
+                      />
+                      <Button variant="filled" color="teal" onClick={goPatientBySlug}>
+                        Войти
+                      </Button>
+                    </Group>
+                    <Button component={Link} to={ROUTE_PATHS.marketing.signup} size="md" variant="light">
+                      Подключить клинику (тариф и оплата)
+                    </Button>
+                    <Button component={Link} to={ROUTE_PATHS.marketing.pricing} size="md" variant="light">
+                      Смотреть тарифы
                     </Button>
                   </Stack>
                 </Stack>
@@ -288,6 +415,21 @@ function LandingPage() {
               </Grid>
             </Stack>
           </Paper>
+
+          <Group gap="lg" justify="center" wrap="wrap" py="md">
+            <Anchor component={Link} size="sm" c="dimmed" to={ROUTE_PATHS.marketing.pricing}>
+              Тарифы
+            </Anchor>
+            <Anchor component={Link} size="sm" c="dimmed" to={ROUTE_PATHS.marketing.legalPrivacy}>
+              Конфиденциальность
+            </Anchor>
+            <Anchor component={Link} size="sm" c="dimmed" to={ROUTE_PATHS.marketing.legalTerms}>
+              Условия использования
+            </Anchor>
+            <Anchor component={Link} size="sm" c="dimmed" to={ROUTE_PATHS.platform.provisionQueue}>
+              Очередь провижининга
+            </Anchor>
+          </Group>
         </Stack>
       </Container>
     </Box>
@@ -298,9 +440,20 @@ const router = createBrowserRouter(
   createRoutesFromElements(
     <>
       <Route path={ROUTE_PATHS.marketing.landing} element={<LandingPage />} />
+      <Route path={ROUTE_PATHS.marketing.pricing} element={<PricingPage />} />
+      <Route path={ROUTE_PATHS.marketing.signup} element={<SignupPage />} />
+      <Route path={ROUTE_PATHS.marketing.legalPrivacy} element={<LegalPrivacyPage />} />
+      <Route path={ROUTE_PATHS.marketing.legalTerms} element={<LegalTermsPage />} />
+      <Route path={ROUTE_PATHS.platform.loginMfa} element={<PlatformFounderMfaPage />} />
+      <Route path={ROUTE_PATHS.platform.login} element={<PlatformFounderLoginPage />} />
+      <Route path="/platform" element={<PlatformFounderLayout />}>
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="dashboard" element={<PlatformFounderDashboardPage />} />
+        <Route path="provision-queue" element={<PlatformFounderProvisionQueuePage />} />
+      </Route>
       <Route path="/:clinicSlug/doctors/:doctorSlug" element={<PublicDoctorProfilePage />} />
       <Route path={ROUTE_PATHS.admin.dashboard} element={<AdminAuthGuard />}>
-        <Route path="login" element={<AdminLoginPage />} />
+        <Route path="login" element={<ClinicSignInPage />} />
         <Route
           path=""
           element={
@@ -322,13 +475,10 @@ const router = createBrowserRouter(
           ))}
         </Route>
       </Route>
+      <Route path={ROUTE_PATHS.other.signIn} element={<LegacySignInRedirect />} />
       <Route
         path={ROUTE_PATHS.other.login}
-        element={
-          <PatientAuthProvider>
-            <LoginPage />
-          </PatientAuthProvider>
-        }
+        element={<Navigate to={`${ROUTE_PATHS.marketing.landing}?patientEntry=need-clinic`} replace />}
       />
       <Route
         path={ROUTE_PATHS.other.oauthResult}
@@ -354,6 +504,51 @@ const router = createBrowserRouter(
             element={createElement(PATIENT_APP_PAGE_BY_SEGMENT[seg])}
           />
         ))}
+      </Route>
+      {/**
+       * Без этого `/c/sign-in` матчится как `/c/:clinicSlug` с clinicSlug=`sign-in`, а вложенный `sign-in`
+       * ждёт путь `/c/…/sign-in/sign-in` — Outlet пустой (белый экран).
+       */}
+      <Route
+        path="/c/sign-in"
+        element={
+          <Navigate
+            to={`${ROUTE_PATHS.marketing.landing}?patientEntry=patient-url-needs-clinic-slug`}
+            replace
+          />
+        }
+      />
+      <Route path="/c/:clinicSlug" element={<PatientEntryBoundary />}>
+        {/** `/c/demo` → `/c/demo/sign-in`, иначе только родитель без дочернего — пустой Outlet */}
+        <Route
+          index
+          element={<Navigate to="sign-in" replace />}
+        />
+        <Route
+          path="sign-in"
+          element={
+            <PatientAuthProvider>
+              <PatientSignInPage />
+            </PatientAuthProvider>
+          }
+        />
+        <Route
+          path="app"
+          element={
+            <PatientAuthProvider>
+              <AppLayout />
+            </PatientAuthProvider>
+          }
+        >
+          <Route index element={<HomePage />} />
+          {PATIENT_APP_ROUTE_SEGMENTS.map((seg) => (
+            <Route
+              key={`c-${seg}`}
+              path={seg}
+              element={createElement(PATIENT_APP_PAGE_BY_SEGMENT[seg])}
+            />
+          ))}
+        </Route>
       </Route>
       <Route path={ROUTE_PATHS.other.bookingSuccess} element={<BookingSuccessPage />} />
     </>

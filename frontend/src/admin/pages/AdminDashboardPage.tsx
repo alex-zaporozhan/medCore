@@ -71,7 +71,7 @@ import {
 } from "@tabler/icons-react";
 
 const BACKEND_HINT =
-  "Если данные не загружаются, проверьте, что бэкенд запущен на порту 8000 (см. docs/RUN_SERVICES.md).";
+  "Если данные не загружаются, проверьте, что бэкенд запущен на порту 8000 (см. корневой README репозитория).";
 
 const metricCardShell = {
   bg: "white" as const,

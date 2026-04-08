@@ -1,27 +1,28 @@
 """Auth API router for patient SMS-based auth."""
 
+import json
 import logging
 import secrets
 from typing import Any
 
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_default_clinic_id, get_session
+from src.api.v1.dependencies import get_session
 from src.application.dto.agreement_dto import AgreementSettingsRead
 from src.application.dto.auth_dto import AuthTokenResponse, SendCodeRequest, VerifyCodeRequest
 from src.application.services.auth_service import AuthService
 from src.application.services.oauth_auth_service import OAuthAuthService
+from src.application.services.patient_entry_clinic import resolve_clinic_for_patient_entry
 from src.core.config import settings
+from src.core.patient_messages import AUTH_CLINIC_SLUG_REQUIRED, AUTH_UNKNOWN_CLINIC_SLUG
 from src.core.user_messages import EMPTY_DB_NO_CLINIC
 from src.domain.entities.agreement_settings import AgreementSettings
 from src.infrastructure.database.redis_client import get_redis
-from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
+from src.infrastructure.rate_limiter import RateLimitExceeded, RateLimiter, get_rate_limiter
 from src.application.services.turnstile_service import verify_turnstile
 from src.core.metrics import auth_captcha_required_total, auth_captcha_verified_total
 
@@ -33,6 +34,48 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 OAUTH_STATE_TTL_SECONDS = 600
 
 
+async def _guard_unknown_clinic_slug_probe_or_raise(
+    rate_limiter: RateLimiter,
+    client_ip: str,
+) -> None:
+    """Anti-enumeration: each 400 UNKNOWN_CLINIC_SLUG counts toward per-IP bucket; 429 when exceeded."""
+    if settings.rate_auth_unknown_clinic_slug_ip_limit <= 0:
+        return
+    try:
+        await rate_limiter.check_or_raise(
+            key=f"rate:auth:unknown_clinic_slug:ip:{client_ip}",
+            limit=settings.rate_auth_unknown_clinic_slug_ip_limit,
+            window=settings.rate_auth_unknown_clinic_slug_ip_window_seconds,
+        )
+    except RateLimitExceeded:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Слишком много запросов с неверной ссылкой клиники. Попробуйте позже.",
+        ) from None
+
+
+async def _oauth_unknown_slug_probe_redirect_or_none(
+    rate_limiter: RateLimiter,
+    client_ip: str,
+    redirect_path: str,
+    oauth_provider: str,
+) -> Response | None:
+    if settings.rate_auth_unknown_clinic_slug_ip_limit <= 0:
+        return None
+    try:
+        await rate_limiter.check_or_raise(
+            key=f"rate:auth:unknown_clinic_slug:ip:{client_ip}",
+            limit=settings.rate_auth_unknown_clinic_slug_ip_limit,
+            window=settings.rate_auth_unknown_clinic_slug_ip_window_seconds,
+        )
+    except RateLimitExceeded:
+        return RedirectResponse(
+            url=f"{redirect_path}?oauth={oauth_provider}&status=rate_limited",
+            status_code=status.HTTP_302_FOUND,
+        )
+    return None
+
+
 def _is_safe_redirect_path(value: str | None) -> bool:
     if not value:
         return False
@@ -41,6 +84,39 @@ def _is_safe_redirect_path(value: str | None) -> bool:
     if "://" in value:
         return False
     return value.startswith("/")
+
+
+def _oauth_state_blob(*, redirect_path: str, clinic_slug: str | None) -> str:
+    return json.dumps({"redirect": redirect_path, "clinic_slug": clinic_slug})
+
+
+def _parse_oauth_state(raw: bytes | str | None) -> tuple[str, str | None]:
+    """Returns (redirect_path, clinic_slug)."""
+    if raw is None:
+        return "/app/login", None
+    text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict):
+            r = obj.get("redirect")
+            if isinstance(r, str) and _is_safe_redirect_path(r):
+                redir = r
+            else:
+                redir = "/app/login"
+            c = obj.get("clinic_slug")
+            if isinstance(c, str) and c.strip():
+                return redir, c.strip()
+            return redir, None
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+    if '"redirect": "' in text:
+        try:
+            redirect_path = text.split('"redirect": "')[1].split('"', 1)[0]
+            if _is_safe_redirect_path(redirect_path):
+                return redirect_path, None
+        except (IndexError, ValueError):
+            pass
+    return "/app/login", None
 
 
 @router.post(
@@ -73,7 +149,8 @@ async def send_code(
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail={
-                            "code": "CAPTCHA_REQUIRED",
+                            "code": "captcha_required",
+                            "message": "Требуется подтверждение Turnstile.",
                             "site_key": settings.turnstile_site_key,
                         },
                     ) from None
@@ -96,7 +173,20 @@ async def send_code(
 
     service = AuthService(session)
     try:
-        await service.send_code(phone=data.phone)
+        await service.send_code(phone=data.phone, clinic_slug=data.clinic_slug)
+    except ValueError as exc:
+        if str(exc) == AUTH_CLINIC_SLUG_REQUIRED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "CLINIC_SLUG_REQUIRED", "message": str(exc)},
+            ) from exc
+        if str(exc) == AUTH_UNKNOWN_CLINIC_SLUG:
+            await _guard_unknown_clinic_slug_probe_or_raise(rate_limiter, client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "UNKNOWN_CLINIC_SLUG", "message": str(exc)},
+            ) from exc
+        raise
     except RuntimeError as exc:
         if "No clinic" in str(exc):
             raise HTTPException(
@@ -138,7 +228,8 @@ async def verify_code(
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail={
-                        "code": "CAPTCHA_REQUIRED",
+                        "code": "captcha_required",
+                        "message": "Требуется подтверждение Turnstile.",
                         "site_key": settings.turnstile_site_key,
                     },
                 ) from None
@@ -159,8 +250,20 @@ async def verify_code(
             utm_term=data.utm_term,
             landing_page=data.landing_page,
             anchor=data.anchor,
+            clinic_slug=data.clinic_slug,
         )
     except ValueError as exc:
+        if str(exc) == AUTH_CLINIC_SLUG_REQUIRED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "CLINIC_SLUG_REQUIRED", "message": str(exc)},
+            ) from exc
+        if str(exc) == AUTH_UNKNOWN_CLINIC_SLUG:
+            await _guard_unknown_clinic_slug_probe_or_raise(rate_limiter, client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "UNKNOWN_CLINIC_SLUG", "message": str(exc)},
+            ) from exc
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
@@ -182,10 +285,40 @@ async def verify_code(
 
 @router.get("/agreement", response_model=AgreementSettingsRead)
 async def get_agreement_for_login(
+    request: Request,
     session: AsyncSession = Depends(get_session),
-    clinic_id: UUID = Depends(get_default_clinic_id),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
+    clinic_slug: str | None = Query(
+        None,
+        max_length=120,
+        description="Публичный slug клиники; если не задан — первая клиника в БД (legacy).",
+    ),
 ) -> AgreementSettingsRead:
-    """Return agreement settings for the default clinic (for login/registration form)."""
+    """Return agreement settings for patient login/registration (per clinic slug or default)."""
+    client_ip = request.client.host if request.client else "unknown"
+    try:
+        clinic = await resolve_clinic_for_patient_entry(session, clinic_slug)
+    except ValueError as exc:
+        if str(exc) == AUTH_CLINIC_SLUG_REQUIRED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "CLINIC_SLUG_REQUIRED", "message": str(exc)},
+            ) from exc
+        if str(exc) == AUTH_UNKNOWN_CLINIC_SLUG:
+            await _guard_unknown_clinic_slug_probe_or_raise(rate_limiter, client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "UNKNOWN_CLINIC_SLUG", "message": str(exc)},
+            ) from exc
+        raise
+    except RuntimeError as exc:
+        if "No clinic" in str(exc):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=EMPTY_DB_NO_CLINIC,
+            ) from exc
+        raise
+    clinic_id = clinic.id
     result = await session.execute(
         select(AgreementSettings).where(AgreementSettings.clinic_id == clinic_id)
     )
@@ -204,10 +337,13 @@ async def get_agreement_for_login(
 
 
 @router.get("/oauth/vk/start")
-async def oauth_vk_start(redirect: str | None = None) -> Response:
+async def oauth_vk_start(
+    redirect: str | None = None,
+    clinic_slug: str | None = Query(None, max_length=120),
+) -> Response:
     """Start VK OAuth flow by redirecting to VK authorize URL.
 
-    This is a skeleton; @ARCH/@DEV should complete scopes and state handling.
+    Skeleton: extend scopes, state handling, and token exchange as needed.
     """
     if not settings.vk_client_id or not settings.vk_redirect_uri:
         raise HTTPException(
@@ -217,12 +353,13 @@ async def oauth_vk_start(redirect: str | None = None) -> Response:
 
     state = secrets.token_urlsafe(32)
     redirect_path = redirect if _is_safe_redirect_path(redirect) else "/app"
+    slug = clinic_slug.strip() if clinic_slug and clinic_slug.strip() else None
 
     redis = await get_redis()
     await redis.setex(
         f"auth:vk:state:{state}",
         OAUTH_STATE_TTL_SECONDS,
-        '{"redirect": "' + redirect_path + '"}',
+        _oauth_state_blob(redirect_path=redirect_path, clinic_slug=slug),
     )
 
     params = [
@@ -237,10 +374,13 @@ async def oauth_vk_start(redirect: str | None = None) -> Response:
 
 
 @router.get("/oauth/yandex/start")
-async def oauth_yandex_start(redirect: str | None = None) -> Response:
+async def oauth_yandex_start(
+    redirect: str | None = None,
+    clinic_slug: str | None = Query(None, max_length=120),
+) -> Response:
     """Start Yandex OAuth flow by redirecting to Yandex authorize URL.
 
-    This is a skeleton; @ARCH/@DEV should complete scopes and state handling.
+    Skeleton: extend scopes, state handling, and token exchange as needed.
     """
     if not settings.yandex_client_id or not settings.yandex_redirect_uri:
         raise HTTPException(
@@ -250,12 +390,13 @@ async def oauth_yandex_start(redirect: str | None = None) -> Response:
 
     state = secrets.token_urlsafe(32)
     redirect_path = redirect if _is_safe_redirect_path(redirect) else "/app"
+    slug = clinic_slug.strip() if clinic_slug and clinic_slug.strip() else None
 
     redis = await get_redis()
     await redis.setex(
         f"auth:yandex:state:{state}",
         OAUTH_STATE_TTL_SECONDS,
-        '{"redirect": "' + redirect_path + '"}',
+        _oauth_state_blob(redirect_path=redirect_path, clinic_slug=slug),
     )
 
     params = [
@@ -277,26 +418,18 @@ async def oauth_vk_callback(
     state: str | None = None,
     error: str | None = None,
     session: AsyncSession = Depends(get_session),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> Response:
-    """VK OAuth callback skeleton.
-
-    @ARCH: описать маппинг VK-профиля → Patient.
-    @DEV: реализовать обмен code→token, загрузку профиля, поиск/создание пациента и выдачу JWT.
-    """
+    """VK OAuth callback (complete token exchange and patient mapping as needed)."""
     redis = await get_redis()
 
     redirect_path = "/app/login"
-    state_key = None
-    if state:
-        state_key = f"auth:vk:state:{state}"
-        raw = await redis.get(state_key)
-        if raw:
-            await redis.delete(state_key)
-            try:
-                if '"redirect": "' in raw:
-                    redirect_path = raw.split('"redirect": "')[1].split('"', 1)[0]
-            except Exception:  # noqa: BLE001
-                logger.exception("Failed to parse VK state payload", extra={"raw": raw})
+    oauth_clinic_slug: str | None = None
+    state_key = f"auth:vk:state:{state}" if state else None
+    raw = await redis.get(state_key) if state_key else None
+    if state_key and raw is not None:
+        await redis.delete(state_key)
+        redirect_path, oauth_clinic_slug = _parse_oauth_state(raw)
 
     if error:
         return RedirectResponse(
@@ -304,7 +437,7 @@ async def oauth_vk_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
-    if not state or not state_key or not await redis.exists(state_key):
+    if not state or raw is None:
         return RedirectResponse(
             url="/app/login?oauth=vk&status=state_invalid",
             status_code=status.HTTP_302_FOUND,
@@ -358,7 +491,29 @@ async def oauth_vk_callback(
             "user_id": str(user_id),
             "email": email or None,
         }
-        token, patient_id = await service.authenticate_vk(vk_profile)
+        token, patient_id = await service.authenticate_vk(vk_profile, clinic_slug=oauth_clinic_slug)
+    except ValueError as exc:
+        client_ip = request.client.host if request.client else "unknown"
+        if str(exc) == AUTH_CLINIC_SLUG_REQUIRED:
+            return RedirectResponse(
+                url=f"{redirect_path}?oauth=vk&status=error&code=CLINIC_SLUG_REQUIRED",
+                status_code=status.HTTP_302_FOUND,
+            )
+        if str(exc) == AUTH_UNKNOWN_CLINIC_SLUG:
+            rate_redirect = await _oauth_unknown_slug_probe_redirect_or_none(
+                rate_limiter, client_ip, redirect_path, "vk"
+            )
+            if rate_redirect is not None:
+                return rate_redirect
+            return RedirectResponse(
+                url=f"{redirect_path}?oauth=vk&status=error&code=UNKNOWN_CLINIC_SLUG",
+                status_code=status.HTTP_302_FOUND,
+            )
+        logger.exception("Failed to authenticate VK user")
+        return RedirectResponse(
+            url=f"{redirect_path}?oauth=vk&status=error",
+            status_code=status.HTTP_302_FOUND,
+        )
     except Exception:
         logger.exception("Failed to authenticate VK user")
         return RedirectResponse(
@@ -379,26 +534,18 @@ async def oauth_yandex_callback(
     state: str | None = None,
     error: str | None = None,
     session: AsyncSession = Depends(get_session),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> Response:
-    """Yandex OAuth callback skeleton.
-
-    @ARCH: описать маппинг Яндекс-профиля → Patient.
-    @DEV: реализовать обмен code→token, загрузку профиля, поиск/создания пациента и выдачу JWT.
-    """
+    """Yandex OAuth callback (complete token exchange and patient mapping as needed)."""
     redis = await get_redis()
 
     redirect_path = "/app/login"
-    state_key = None
-    if state:
-        state_key = f"auth:yandex:state:{state}"
-        raw = await redis.get(state_key)
-        if raw:
-            await redis.delete(state_key)
-            try:
-                if '"redirect": "' in raw:
-                    redirect_path = raw.split('"redirect": "')[1].split('"', 1)[0]
-            except Exception:  # noqa: BLE001
-                logger.exception("Failed to parse Yandex state payload", extra={"raw": raw})
+    oauth_clinic_slug: str | None = None
+    state_key = f"auth:yandex:state:{state}" if state else None
+    raw = await redis.get(state_key) if state_key else None
+    if state_key and raw is not None:
+        await redis.delete(state_key)
+        redirect_path, oauth_clinic_slug = _parse_oauth_state(raw)
 
     if error:
         return RedirectResponse(
@@ -406,7 +553,7 @@ async def oauth_yandex_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
-    if not state or not state_key or not await redis.exists(state_key):
+    if not state or raw is None:
         return RedirectResponse(
             url="/app/login?oauth=yandex&status=state_invalid",
             status_code=status.HTTP_302_FOUND,
@@ -484,7 +631,29 @@ async def oauth_yandex_callback(
             "email": email or None,
             "login": login_value or None,
         }
-        token, patient_id = await service.authenticate_yandex(yandex_profile)
+        token, patient_id = await service.authenticate_yandex(yandex_profile, clinic_slug=oauth_clinic_slug)
+    except ValueError as exc:
+        client_ip = request.client.host if request.client else "unknown"
+        if str(exc) == AUTH_CLINIC_SLUG_REQUIRED:
+            return RedirectResponse(
+                url=f"{redirect_path}?oauth=yandex&status=error&code=CLINIC_SLUG_REQUIRED",
+                status_code=status.HTTP_302_FOUND,
+            )
+        if str(exc) == AUTH_UNKNOWN_CLINIC_SLUG:
+            rate_redirect = await _oauth_unknown_slug_probe_redirect_or_none(
+                rate_limiter, client_ip, redirect_path, "yandex"
+            )
+            if rate_redirect is not None:
+                return rate_redirect
+            return RedirectResponse(
+                url=f"{redirect_path}?oauth=yandex&status=error&code=UNKNOWN_CLINIC_SLUG",
+                status_code=status.HTTP_302_FOUND,
+            )
+        logger.exception("Failed to authenticate Yandex user")
+        return RedirectResponse(
+            url=f"{redirect_path}?oauth=yandex&status=error",
+            status_code=status.HTTP_302_FOUND,
+        )
     except Exception:
         logger.exception("Failed to authenticate Yandex user")
         return RedirectResponse(

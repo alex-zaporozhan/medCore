@@ -19,8 +19,8 @@ from src.core.patient_messages import (
     AUTH_INVALID_OR_EXPIRED_CODE,
 )
 from src.core.security import create_access_token
-from src.domain.entities.clinic import Clinic
 from src.domain.entities.patient import Patient
+from src.application.services.patient_entry_clinic import resolve_clinic_for_patient_entry
 from src.infrastructure.database.redis_client import get_redis
 from src.infrastructure.external_apis.sms_client import SmsClient, SmsClientError
 
@@ -34,14 +34,6 @@ class AuthService:
         """Initialize service with database session."""
         self.session = session
         self._sms_client = SmsClient(timeout_seconds=settings.smsc_timeout_seconds, enabled=settings.smsc_enabled)
-
-    async def _get_default_clinic(self) -> Clinic:
-        """Get default clinic for single-clinic instance."""
-        result = await self.session.execute(select(Clinic).limit(1))
-        clinic = result.scalar_one_or_none()
-        if clinic is None:
-            raise RuntimeError("No clinic configured for auth")
-        return clinic
 
     async def _get_redis(self) -> Redis:
         """Get Redis client instance."""
@@ -82,9 +74,9 @@ class AuthService:
         """Build Redis key for auth code."""
         return f"auth:code:{clinic_id}:{phone}"
 
-    async def send_code(self, phone: str) -> None:
+    async def send_code(self, phone: str, clinic_slug: str | None = None) -> None:
         """Generate and store SMS code, ensure patient exists."""
-        clinic = await self._get_default_clinic()
+        clinic = await resolve_clinic_for_patient_entry(self.session, clinic_slug)
         normalized_phone = self._normalize_phone(phone)
         redis = await self._get_redis()
 
@@ -167,9 +159,10 @@ class AuthService:
         utm_term: str | None = None,
         landing_page: str | None = None,
         anchor: str | None = None,
+        clinic_slug: str | None = None,
     ) -> tuple[str, UUID]:
         """Verify SMS code and issue access token. Store consent and optional FIO/DOB."""
-        clinic = await self._get_default_clinic()
+        clinic = await resolve_clinic_for_patient_entry(self.session, clinic_slug)
         normalized_phone = self._normalize_phone(phone)
         redis = await self._get_redis()
 
@@ -260,8 +253,7 @@ class AuthService:
                 await self.session.flush()
 
         # Issue JWT access token for patient.
-        # Token revocation (versioning/blacklist) is intentionally not implemented here and
-        # will be added according to ARCH_AUTH_SESSIONS.md when moving to the next hardening level.
+        # Token revocation (versioning/blacklist) is intentionally not implemented here (future hardening).
         token = create_access_token(
             data={
                 "sub": str(patient.id),

@@ -110,9 +110,9 @@ async def test_admin_tasks_list_rejects_unknown_stream_id(client, admin_auth):
     bad = str(uuid.uuid4())
     resp = await client.get(f"/api/v1/admin/tasks?stream_id={bad}", headers=headers)
     assert resp.status_code == 400, resp.text
-    err = resp.json().get("detail") or {}
-    assert err.get("code") == "STREAM_NOT_IN_CLINIC"
-    assert err.get("field") == "stream_id"
+    j = resp.json()
+    assert j.get("code") == "stream_not_in_clinic"
+    assert j.get("details", {}).get("field") == "stream_id"
 
 
 @pytest.mark.asyncio
@@ -121,9 +121,9 @@ async def test_admin_tasks_list_rejects_unknown_tag_ids(client, admin_auth):
     bad = str(uuid.uuid4())
     resp = await client.get(f"/api/v1/admin/tasks?tag_ids={bad}", headers=headers)
     assert resp.status_code == 400, resp.text
-    err = resp.json().get("detail") or {}
-    assert err.get("code") == "TAG_INVALID"
-    assert err.get("field") == "tag_ids"
+    j = resp.json()
+    assert j.get("code") == "tag_invalid"
+    assert j.get("details", {}).get("field") == "tag_ids"
 
 
 @pytest.mark.asyncio
@@ -141,7 +141,7 @@ async def test_admin_task_stream_slug_conflict(client, admin_auth):
         json={"name": "Unique slug row"},
     )
     assert dup.status_code == 409, dup.text
-    assert dup.json().get("detail", {}).get("code") == "STREAM_SLUG_CONFLICT"
+    assert dup.json().get("code") == "stream_slug_conflict"
 
 
 @pytest.mark.asyncio
@@ -206,7 +206,7 @@ async def test_admin_task_patch_rejects_archived_stream(client, admin_auth):
         json={"stream_id": sid},
     )
     assert move.status_code == 422, move.text
-    assert move.json().get("detail", {}).get("code") == "STREAM_INVALID"
+    assert move.json().get("code") == "stream_invalid"
 
 
 @pytest.mark.asyncio
@@ -218,4 +218,4 @@ async def test_doctor_can_list_streams_and_get_task_list_filter_errors(client, d
     bad_stream = str(uuid.uuid4())
     tasks = await client.get(f"/api/v1/admin/tasks?stream_id={bad_stream}", headers=headers)
     assert tasks.status_code == 400, tasks.text
-    assert tasks.json().get("detail", {}).get("code") == "STREAM_NOT_IN_CLINIC"
+    assert tasks.json().get("code") == "stream_not_in_clinic"

@@ -11,11 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import (
     get_current_patient,
-    get_session,
+    get_session_booking_domain_outbox,
     get_request_context,
     require_permissions,
 )
 from src.application.dto.booking_dto import (
+    BookingAdminSetStatusBody,
     BookingCreateAdmin,
     BookingCreatePatient,
     BookingPatchAdmin,
@@ -31,7 +32,7 @@ from src.application.dto.booking_dto import (
 from src.application.multitenancy import ClinicForbiddenError
 from src.application.services.multitenancy_alert_service import record_multitenancy_mismatch_for_admin
 from src.api.v1.multitenancy_http import clinic_forbidden_admin_detail
-from src.core.patient_messages import BOOKING_NOT_FOUND
+from src.core.patient_messages import BOOKING_INVALID_STATUS, BOOKING_NOT_FOUND
 from src.core.context import RequestContext
 from src.application.dto.card_dto import (
     BookingCardConsumableItem,
@@ -45,7 +46,7 @@ from src.application.services.booking_completion_service import (
     booking_completion_erp_retry_total,
 )
 from src.core.prometheus_labels import clinic_bucket_label
-from src.domain.entities.booking import Booking
+from src.domain.entities.booking import Booking, BookingStatus
 from src.application.errors import (
     booking_error_from_completion_result,
     booking_error_from_value_error,
@@ -98,7 +99,7 @@ def _booking_not_found_error(ctx: RequestContext | None) -> BookingErrorResponse
 async def get_patient_bookings(
     skip: int = 0,
     limit: int = 100,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_patient=Depends(get_current_patient),
 ):
     """Get bookings for current patient."""
@@ -114,7 +115,7 @@ async def get_patient_bookings(
 )
 async def create_patient_booking(
     data: BookingCreatePatient,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_patient=Depends(get_current_patient),
     context: RequestContext = Depends(get_request_context),
 ):
@@ -144,7 +145,7 @@ async def create_patient_booking(
 )
 async def cancel_own_booking(
     booking_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_patient=Depends(get_current_patient),
     context: RequestContext = Depends(get_request_context),
 ):
@@ -194,7 +195,7 @@ async def cancel_own_booking(
 )
 async def get_booking_checkout_info(
     booking_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> CheckoutInfoResponse:
     """Eligible subscriptions for this booking (Checkout Hub)."""
@@ -237,7 +238,7 @@ async def get_booking_checkout_info(
 )
 async def get_booking_card(
     booking_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> BookingCardResponse:
     """Rich booking card for drawer: booking, services, consumables, tasks."""
@@ -327,7 +328,7 @@ async def get_admin_bookings(
     patient_phone: str | None = None,
     skip: int = 0,
     limit: int = 100,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
     """Admin search for bookings with filters."""
@@ -360,7 +361,7 @@ async def get_admin_bookings(
 )
 async def create_admin_booking(
     data: BookingCreateAdmin,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
     context: RequestContext = Depends(get_request_context),
 ):
@@ -395,7 +396,7 @@ async def create_admin_booking(
 )
 async def cancel_booking_admin(
     booking_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
     context: RequestContext = Depends(get_request_context),
 ):
@@ -443,7 +444,7 @@ async def complete_booking_admin(
     booking_id: UUID,
     request: Request,
     body: CompleteBookingRequest | None = Body(None),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
     """
@@ -490,7 +491,7 @@ async def retry_complete_booking_admin(
     booking_id: UUID,
     request: Request,
     body: CompleteBookingRequest | None = Body(None),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
     """
@@ -567,7 +568,7 @@ async def retry_complete_booking_admin(
 )
 async def mark_no_show_admin(
     booking_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
     context: RequestContext = Depends(get_request_context),
 ):
@@ -598,6 +599,154 @@ async def mark_no_show_admin(
     return booking
 
 
+@router.put(
+    "/admin/bookings/{booking_id}/status",
+    response_model=BookingRead,
+    responses={
+        400: BOOKING_ERROR_OPENAPI[400],
+        403: {"description": "Нет права manage_finance для завершения визита (status=completed)"},
+        404: BOOKING_ERROR_OPENAPI[404],
+    },
+)
+async def set_booking_status_admin(
+    booking_id: UUID,
+    body: BookingAdminSetStatusBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
+    current_admin: AdminUser = Depends(get_current_admin),
+    context: RequestContext = Depends(get_request_context),
+):
+    """
+    Смена статуса админом: cancel / complete / no_show делегируются узким сервисам;
+    прочие переходы — через state machine без «тихого» PATCH.
+    """
+    try:
+        target = BookingStatus(body.status)
+    except ValueError:
+        error = _booking_error_from_value_error(ValueError(BOOKING_INVALID_STATUS), context)
+        await _emit_booking_api_error(
+            status.HTTP_400_BAD_REQUEST,
+            error,
+            current_admin.clinic_id,
+        )
+
+    service = BookingService(session)
+
+    if target == BookingStatus.CANCELLED:
+        try:
+            return await service.cancel_booking(
+                current_admin.clinic_id,
+                booking_id,
+                context=context,
+            )
+        except ClinicForbiddenError as exc:
+            await record_multitenancy_mismatch_for_admin(session, current_admin, exc)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=clinic_forbidden_admin_detail(exc, context),
+            ) from exc
+        except LookupError:
+            error = _booking_not_found_error(context)
+            await _emit_booking_api_error(
+                status.HTTP_404_NOT_FOUND,
+                error,
+                current_admin.clinic_id,
+            )
+        except ValueError as exc:
+            error = _booking_error_from_value_error(exc, context)
+            await _emit_booking_api_error(
+                status.HTTP_400_BAD_REQUEST,
+                error,
+                current_admin.clinic_id,
+            )
+
+    if target == BookingStatus.NO_SHOW:
+        try:
+            return await service.mark_no_show(current_admin.clinic_id, booking_id, context=context)
+        except ClinicForbiddenError as exc:
+            await record_multitenancy_mismatch_for_admin(session, current_admin, exc)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=clinic_forbidden_admin_detail(exc, context),
+            ) from exc
+        except LookupError:
+            error = _booking_not_found_error(context)
+            await _emit_booking_api_error(
+                status.HTTP_404_NOT_FOUND,
+                error,
+                current_admin.clinic_id,
+            )
+        except ValueError as exc:
+            error = _booking_error_from_value_error(exc, context)
+            await _emit_booking_api_error(
+                status.HTTP_400_BAD_REQUEST,
+                error,
+                current_admin.clinic_id,
+            )
+
+    if target == BookingStatus.COMPLETED:
+        if "manage_finance" not in context.permissions:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        trace_id = getattr(request.state, "trace_id", None)
+        completion_service = BookingCompletionService(session)
+        result = await completion_service.complete_visit(
+            booking_id=booking_id,
+            actor=current_admin,
+            use_subscription_id=body.use_subscription_id,
+        )
+        if not result.success:
+            err = booking_error_from_completion_result(result, None, trace_id=trace_id)
+            await record_booking_error_event(
+                clinic_id=current_admin.clinic_id,
+                code=err.code,
+                source="api",
+                trace_id=err.trace_id,
+            )
+            status_code = (
+                status.HTTP_404_NOT_FOUND
+                if result.error_code == "booking_not_found"
+                else status.HTTP_400_BAD_REQUEST
+            )
+            raise HTTPException(status_code=status_code, detail=err.model_dump())
+        row = await session.get(Booking, booking_id)
+        if row is None or row.clinic_id != current_admin.clinic_id:
+            error = _booking_not_found_error(context)
+            await _emit_booking_api_error(
+                status.HTTP_404_NOT_FOUND,
+                error,
+                current_admin.clinic_id,
+            )
+        return BookingRead.model_validate(row)
+
+    try:
+        return await service.transition_booking_status_admin_light(
+            current_admin.clinic_id,
+            booking_id,
+            target,
+            context=context,
+        )
+    except ClinicForbiddenError as exc:
+        await record_multitenancy_mismatch_for_admin(session, current_admin, exc)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=clinic_forbidden_admin_detail(exc, context),
+        ) from exc
+    except LookupError:
+        error = _booking_not_found_error(context)
+        await _emit_booking_api_error(
+            status.HTTP_404_NOT_FOUND,
+            error,
+            current_admin.clinic_id,
+        )
+    except ValueError as exc:
+        error = _booking_error_from_value_error(exc, context)
+        await _emit_booking_api_error(
+            status.HTTP_400_BAD_REQUEST,
+            error,
+            current_admin.clinic_id,
+        )
+
+
 @router.patch(
     "/admin/bookings/{booking_id}",
     response_model=BookingRead,
@@ -606,7 +755,7 @@ async def mark_no_show_admin(
 async def patch_booking_admin(
     booking_id: UUID,
     data: BookingPatchAdmin,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
     context: RequestContext = Depends(get_request_context),
 ):
@@ -638,7 +787,7 @@ async def patch_booking_admin(
 async def reschedule_booking_admin(
     booking_id: UUID,
     data: BookingRescheduleRequest,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session_booking_domain_outbox),
     current_admin: AdminUser = Depends(get_current_admin),
     context: RequestContext = Depends(get_request_context),
 ):

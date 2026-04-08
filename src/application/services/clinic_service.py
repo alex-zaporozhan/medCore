@@ -11,6 +11,7 @@ from src.application.dto.clinic_dto import (
     ClinicRead,
     ClinicUpdate,
     PaymentOptionRead,
+    clinic_read_scrub_public_pii,
 )
 from src.core.encryption import encrypt_plaintext
 from src.domain.entities.clinic import Clinic
@@ -115,6 +116,28 @@ class ClinicService:
             dto.business_lexicon = build_business_lexicon(clinic)
             dto.payment_options = _build_payment_options(clinic)
             result.append(dto)
+        return result
+
+    async def get_clinics_for_unauthenticated_discovery(self) -> list[ClinicRead]:
+        """
+        Clinics visible without admin auth: non-deleted rows with a non-empty clinic_slug.
+        Exception: exactly one active clinic in the DB may be listed without slug (legacy single-tenant).
+
+        Each row is returned with PII scrubbed (caller may still use full schema).
+        """
+        clinics = list(await self.repository.get_all(include_deleted=False))
+        if not clinics:
+            return []
+        if len(clinics) == 1:
+            selected = clinics
+        else:
+            selected = [c for c in clinics if (getattr(c, "clinic_slug", None) or "").strip()]
+        result: list[ClinicRead] = []
+        for clinic in selected:
+            dto = ClinicRead.model_validate(clinic)
+            dto.business_lexicon = build_business_lexicon(clinic)
+            dto.payment_options = _build_payment_options(clinic)
+            result.append(clinic_read_scrub_public_pii(dto))
         return result
 
     async def update_clinic(self, clinic_id: UUID, data: ClinicUpdate) -> ClinicRead | None:

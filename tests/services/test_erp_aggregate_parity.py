@@ -1,4 +1,4 @@
-"""Engine L2: ERP visit-revenue vitrine totals match canonical raw query (ARCH_PERF §3.3)."""
+"""Engine L2: ERP visit-revenue vitrine totals match canonical raw query."""
 
 from __future__ import annotations
 

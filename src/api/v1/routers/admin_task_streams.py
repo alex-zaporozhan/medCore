@@ -5,6 +5,8 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from src.api.v1.entitlement_dependencies import require_entitlement
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +23,11 @@ from src.core.metrics import task_context_admin_events_total
 from src.core.prometheus_labels import clinic_bucket_label
 from src.domain.entities.task_stream import TaskStream
 
-router = APIRouter(prefix="/admin/task-streams", tags=["admin-task-streams"])
+router = APIRouter(
+    prefix="/admin/task-streams",
+    tags=["admin-task-streams"],
+    dependencies=[Depends(require_entitlement("tasks.kanban"))],
+)
 
 
 def err_payload(detail: str, code: str, field: str | None = None) -> dict:

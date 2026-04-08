@@ -1,22 +1,23 @@
 /**
  * Thin API client: base URL /api, Bearer token, error parsing.
  * No caching or business logic — transport only.
- * On 401 for patient session (см. `shouldClearPatientSessionOn401`): очистка пациентских ключей и редирект на `/login`.
+ * On 401 for patient session (см. `shouldClearPatientSessionOn401`): очистка пациентских ключей и редирект на главную или `/c/…/sign-in`.
  *
- * §7 техпаспорта: не менять префикс API, семантику `API_STORAGE_KEYS` и правила 401 без эпика (бэкенд + деплой).
+ * Не менять префикс API, семантику `API_STORAGE_KEYS` и правила 401 без согласованного изменения бэкенда/деплоя.
+ * Транспорт только: префикс API и семантика 401 — согласованы с бэкендом (`src/main.py`, зависимости auth).
  */
 
 import type { ApiErrorResponseBody } from "@/api/types";
 import { ROUTE_PATHS } from "@/routePaths";
 import { isPatientLoginPath } from "@/routePathUtils";
 
-/** Базовый префикс HTTP-моста — техпаспорт §3.1; dev-прокси в `vite.config.ts` не менять без деплоя. */
+/** Базовый префикс HTTP-моста; dev-прокси в `vite.config.ts` не менять без согласования с деплоем. */
 export const API_BASE = "/api";
 
 const BASE = API_BASE;
 
 /**
- * Ключи `localStorage` для API — техпаспорт §3.2.
+ * Ключи `localStorage` для API (единый реестр).
  * Не дублировать строки в других модулях: использовать отсюда или `getPatientToken` / админские геттеры.
  */
 export const API_STORAGE_KEYS = {
@@ -27,7 +28,8 @@ export const API_STORAGE_KEYS = {
   adminClinicId: "dental_booking_admin_clinic_id",
 } as const;
 
-function newOutboundRequestId(): string {
+/** Корреляция с логами бэкенда для публичных fetch вне `api.*` (маркетинг, embed). */
+export function newOutboundRequestId(): string {
   try {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
       return crypto.randomUUID();
@@ -140,7 +142,11 @@ function clearPatientAuth(): void {
     // ignore
   }
   if (typeof window !== "undefined" && !isPatientLoginPath(window.location.pathname)) {
-    window.location.href = ROUTE_PATHS.other.login;
+    const path = window.location.pathname;
+    const scoped = path.match(/^\/c\/([^/]+)\//);
+    window.location.href = scoped
+      ? `/c/${scoped[1]}/sign-in`
+      : `${ROUTE_PATHS.marketing.landing}?patientEntry=session-expired`;
   }
 }
 
@@ -159,7 +165,7 @@ export function shouldClearPatientSessionOn401(
   return Boolean(resolvedToken && resolvedToken === getPatientToken());
 }
 
-interface ParsedApiFailureBody {
+export interface ParsedApiFailureBody {
   rawMessage: string;
   code?: string;
   traceId?: string;
@@ -190,7 +196,7 @@ function formatValidationDetailArray(detail: unknown[]): string {
   return parts.join("; ");
 }
 
-function parseFastApiErrorBody(bodyText: string): ParsedApiFailureBody {
+export function parseFastApiErrorBody(bodyText: string): ParsedApiFailureBody {
   let rawMessage = bodyText || "";
   let code: string | undefined;
   let traceId: string | undefined;
@@ -198,6 +204,12 @@ function parseFastApiErrorBody(bodyText: string): ParsedApiFailureBody {
   try {
     const json = JSON.parse(bodyText) as ApiErrorResponseBody;
     code = json.code;
+    if (typeof json.trace_id === "string" && json.trace_id.trim()) {
+      traceId = json.trace_id.trim();
+    }
+    if (json.details && typeof json.details === "object" && !Array.isArray(json.details)) {
+      details = { ...(details ?? {}), ...json.details };
+    }
     if (Array.isArray(json.detail)) {
       rawMessage = formatValidationDetailArray(json.detail);
       if (!rawMessage.trim()) {
@@ -222,10 +234,11 @@ function parseFastApiErrorBody(bodyText: string): ParsedApiFailureBody {
       rawMessage = nestedText || rawMessage;
       code = d.code ?? json.code;
       traceId = d.trace_id;
-      details =
-        d.details && typeof d.details === "object"
-          ? d.details
-          : (json.detail as Record<string, unknown>);
+      const nestedDetails =
+        d.details && typeof d.details === "object" && !Array.isArray(d.details) ? d.details : null;
+      if (nestedDetails) {
+        details = { ...(details ?? {}), ...nestedDetails };
+      }
     } else if (typeof json.message === "string" && json.message.trim()) {
       rawMessage = json.message;
     }
@@ -316,11 +329,16 @@ async function request<T>(
     headers["X-Request-Id"] = newOutboundRequestId();
   }
   const method = options.method || "GET";
+  const barePath = path.split("?")[0];
+  const isClinicsTenantPath =
+    barePath === "/v1/clinics" || barePath.startsWith("/v1/clinics/");
+  const adminTok = getAdminToken();
   const needsAdminToken =
     (path.startsWith("/v1/admin") && !path.includes("/v1/admin/auth/login")) ||
     path.startsWith("/v1/owner/") ||
     (path.startsWith("/v1/patients") && !isPatientsPublicCreatePost(path, method));
-  const resolvedToken = token ?? (needsAdminToken ? getAdminToken() : null);
+  const resolvedToken =
+    token ?? (needsAdminToken ? adminTok : null) ?? (isClinicsTenantPath && adminTok ? adminTok : null);
   if (resolvedToken) {
     headers["Authorization"] = `Bearer ${resolvedToken}`;
   }
@@ -333,10 +351,13 @@ async function request<T>(
   }
   const res = await fetch(url, { ...options, headers: headers as HeadersInit });
   const bodyText = await res.text();
+  const sentAdminOnClinics =
+    isClinicsTenantPath && Boolean(resolvedToken && resolvedToken === adminTok);
   const isAdminOrOwnerUnauthorized =
     (path.includes("/v1/admin") && !path.includes("/v1/admin/auth/login")) ||
     path.startsWith("/v1/owner/") ||
-    (path.startsWith("/v1/patients") && !isPatientsPublicCreatePost(path, method));
+    (path.startsWith("/v1/patients") && !isPatientsPublicCreatePost(path, method)) ||
+    sentAdminOnClinics;
   if (res.status === 401 && isAdminOrOwnerUnauthorized) {
     clearAdminToken();
     if (typeof window !== "undefined") {

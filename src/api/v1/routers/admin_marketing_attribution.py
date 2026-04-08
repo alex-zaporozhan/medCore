@@ -4,6 +4,8 @@ from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from src.api.v1.entitlement_dependencies import require_entitlement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import AdminContext, get_session, require_permissions
@@ -19,6 +21,7 @@ from src.application.services.marketing_attribution_service import (
 router = APIRouter(
     prefix="/admin/attribution",
     tags=["admin-marketing-attribution"],
+    dependencies=[Depends(require_entitlement("marketing.attribution"))],
 )
 
 

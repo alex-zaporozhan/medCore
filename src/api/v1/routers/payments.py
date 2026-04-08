@@ -6,9 +6,20 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.v1.dependencies import get_session, get_request_context
+from src.api.v1.dependencies import get_request_context, get_session, get_session_payment_webhook
 from src.core.metrics import payment_webhook_failures_total
-from src.application.dto.payment_dto import CreatePaymentRequest, CreatePaymentResponse
+from src.core.payment_webhook_governance import (
+    PATIENT_PAYMENT_WEBHOOK_SECRET_HEADER,
+    verify_patient_payment_webhook_secret,
+)
+from src.core.config import settings
+from src.core.request_ip import client_ip_for_public_rate_limit
+from src.infrastructure.rate_limiter import RateLimitExceeded, RateLimiter, get_rate_limiter
+from src.application.dto.payment_dto import (
+    CreatePaymentRequest,
+    CreatePaymentResponse,
+    PaymentWebhookOkResponse,
+)
 from src.application.dto.booking_dto import BookingErrorResponse
 from src.application.booking_error_observability import record_booking_error_event
 from src.core.context import RequestContext
@@ -93,16 +104,68 @@ async def create_payment(
     )
 
 
-@router.post("/webhook")
+@router.post(
+    "/webhook",
+    response_model=PaymentWebhookOkResponse,
+    summary="YooKassa webhook (contour A — tenant booking payments)",
+    responses={
+        400: {"description": "Malformed JSON body (`code`: `invalid_json`)"},
+        403: {
+            "description": (
+                "Missing or invalid **X-Patient-Payment-Webhook-Secret** when "
+                "`PATIENT_PAYMENT_WEBHOOK_SECRET` is configured (`code`: `webhook_forbidden`)"
+            ),
+        },
+        429: {"description": "Per-IP rate limit (contour A; `code`: `rate_limited`)"},
+        500: {"description": "Processing error after body parse (`code`: `webhook_processing_failed`)"},
+    },
+)
 async def payments_webhook(
     request: Request,
-    session: AsyncSession = Depends(get_session),
-):
+    session: AsyncSession = Depends(get_session_payment_webhook),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
+) -> PaymentWebhookOkResponse:
     """
-    Webhook endpoint for YooKassa notifications. No auth in MVP; optionally
-    verify signature/secret via request headers or body later.
+    Webhook endpoint for YooKassa notifications (contour A — tenant booking payments).
+
+    When `PATIENT_PAYMENT_WEBHOOK_SECRET` is set, the request must include header
+    **X-Patient-Payment-Webhook-Secret** with the same value (constant-time compare).
+    Contour B uses `/platform/billing/webhooks/...` and **PLATFORM_BILLING_WEBHOOK_SECRET** — never reuse the same secret (U-006).
     """
     trace_id = getattr(request.state, "trace_id", None)
+    if (settings.patient_payment_webhook_secret or "").strip():
+        hdr = request.headers.get(PATIENT_PAYMENT_WEBHOOK_SECRET_HEADER)
+        if not verify_patient_payment_webhook_secret(hdr):
+            payment_webhook_failures_total.labels(reason="invalid_secret").inc()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "webhook_forbidden",
+                    "message": "Invalid or missing patient payment webhook secret",
+                    "trace_id": trace_id,
+                },
+            )
+    client_ip = client_ip_for_public_rate_limit(
+        request,
+        trusted_proxy_cidrs=settings.public_rate_limit_trusted_proxy_cidrs,
+    )
+    if settings.rate_patient_payment_webhook_ip_limit > 0:
+        try:
+            await rate_limiter.check_or_raise(
+                key=f"rate:patient_payment_webhook:ip:{client_ip}",
+                limit=settings.rate_patient_payment_webhook_ip_limit,
+                window=settings.rate_patient_payment_webhook_ip_window_seconds,
+            )
+        except RateLimitExceeded:
+            payment_webhook_failures_total.labels(reason="rate_limited").inc()
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "code": "rate_limited",
+                    "message": "Too many payment webhook requests",
+                    "trace_id": trace_id,
+                },
+            ) from None
     try:
         payload: dict[str, Any] = await request.json()
     except Exception as e:
@@ -135,4 +198,4 @@ async def payments_webhook(
             },
         ) from e
 
-    return {"status": "ok"}
+    return PaymentWebhookOkResponse()

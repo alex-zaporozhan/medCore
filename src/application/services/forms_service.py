@@ -1,7 +1,7 @@
 """Forms service for DigitalFormTemplate and DigitalFormSubmission (Paperless / FormInstance).
 
 filled_data lives in submission.data; do not send raw field values to external AI without
-AiSanitizer/tokenization (see ARCH_DEV_OMNI_POLICY / ARCH_DEV_AI_TOKENIZATION).
+AiSanitizer/tokenization (see ``src/core/ai_sanitizer.py``).
 """
 
 from __future__ import annotations

@@ -106,6 +106,76 @@ class YooKassaClient:
         )
         return pid, url
 
+    def create_platform_subscription_payment(
+        self,
+        amount: Decimal,
+        return_url: str,
+        description: str,
+        signup_intent_id: UUID,
+        idempotence_key: str,
+    ) -> tuple[str, str]:
+        """
+        Create payment for SaaS platform signup (contour B). Metadata carries signup_intent_id for webhooks.
+        """
+        if not self.is_configured():
+            logger.warning("YooKassa not configured (missing shop_id or secret_key)")
+            raise YooKassaClientError("YooKassa is not configured")
+
+        payload = {
+            "amount": {
+                "value": f"{amount:.2f}",
+                "currency": "RUB",
+            },
+            "confirmation": {
+                "type": "redirect",
+                "return_url": return_url,
+            },
+            "description": description[:255],
+            "metadata": {
+                "signup_intent_id": str(signup_intent_id),
+                "kind": "platform_saas_subscription",
+            },
+            "capture": True,
+        }
+
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                f"{YOOKASSA_API_BASE}/payments",
+                json=payload,
+                headers={
+                    "Idempotence-Key": idempotence_key[:200],
+                    "Content-Type": "application/json",
+                    "Authorization": f"Basic {self._auth}",
+                },
+            )
+
+        if response.status_code != 200:
+            logger.error(
+                "YooKassa platform subscription payment create failed",
+                extra={
+                    "status_code": response.status_code,
+                    "body": response.text[:500],
+                    "signup_intent_id": str(signup_intent_id),
+                },
+            )
+            raise YooKassaClientError(
+                f"YooKassa API error: {response.status_code} {response.text[:200]}"
+            )
+
+        data = response.json()
+        pid = data.get("id")
+        confirmation = data.get("confirmation") or {}
+        url = confirmation.get("confirmation_url") or ""
+
+        if not pid or not url:
+            raise YooKassaClientError("YooKassa response missing id or confirmation_url")
+
+        logger.info(
+            "YooKassa platform subscription payment created",
+            extra={"provider_payment_id": pid, "signup_intent_id": str(signup_intent_id)},
+        )
+        return str(pid), url
+
     def get_payment(self, provider_payment_id: str) -> dict:
         """
         Fetch payment by ID from YooKassa. Returns raw payment object.

@@ -17,6 +17,7 @@ from src.domain.entities.omnichannel_contact import Contact as OmniContact
 from src.domain.entities.omni_lead_log import OmniLeadLog
 
 
+# Лог лидов omni — операционный контур; гейт только RBAC (не SKU `crm.pipeline`, иначе блок без CRM).
 router = APIRouter(prefix="/admin/lead-logs", tags=["admin-lead-logs"])
 
 class LeadLogsOutcomeStatDto(BaseModel):

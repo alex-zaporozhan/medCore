@@ -1,0 +1,13 @@
+# Merge into receivers (same file or AM merge) for Telegram delivery.
+# Do not commit real tokens. Prefer bot_token_file + Docker secret mount.
+#
+# receivers:
+#   - name: team-telegram
+#     telegram_configs:
+#       - bot_token_file: /run/secrets/alertmanager_telegram_bot_token
+#         chat_id: <YOUR_CHAT_ID>
+#         parse_mode: HTML
+#         message: '{{ template "telegram.default" . }}'
+#
+# route:
+#   receiver: team-telegram   # or use route continue: true to fan-out to webhook + telegram

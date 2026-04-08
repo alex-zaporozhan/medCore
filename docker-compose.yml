@@ -3,7 +3,7 @@
 # задаются только в .env; .env не коммитить (см. .gitignore).
 # Контейнеры приложения получают .env через env_file: - .env
 #
-# Образы приложения:
+# Образы приложения (релиз: Jenkins → push в GHCR; Docker Hub не используется):
 # - production/staging: фиксируйте digest (GHCR), например:
 #   BACKEND_IMAGE=ghcr.io/<GHCR_OWNER>/dental-booking-backend@sha256:<immutable_digest>
 #   FRONTEND_IMAGE=ghcr.io/<GHCR_OWNER>/dental-booking-frontend@sha256:<immutable_digest>
@@ -11,8 +11,8 @@
 #   BACKEND_IMAGE=dental-booking-backend:local
 #   FRONTEND_IMAGE=dental-booking-frontend:local
 #
-# Сборка: ошибка dockerhub1.beget.com + 127.0.0.1:12334 — см. docs/DOCKER_INFRA_PASSPORT.md §6.1
-# (прокси в Docker Desktop и/или registry-mirrors; отключение VPN это не сбрасывает).
+# Сборка: при ошибках зеркала registry (Beget и т.п.) и странном прокси 127.0.0.1 — проверьте
+# Docker Desktop → proxies и daemon.json (registry-mirrors); VPN сам по себе прокси не отключает.
 #
 # env_file с required: false — Docker Compose v2.24+ (Docker Desktop). Если файла нет, compose не падает.
 # Секреты для приложения: скопируйте .env.example → .env или задайте SECRET_KEY / JWT_SECRET_KEY в окружении хоста.
@@ -178,6 +178,69 @@ services:
         required: false
     depends_on:
       - backend
+    restart: unless-stopped
+
+  # Observability stack (Phase 1d): Prometheus scrapes backend /metrics, Alertmanager → HTTP echo (staging proof), Grafana (localhost only).
+  # Usage: docker compose --profile observability up -d
+  # Grafana: http://127.0.0.1:3001 (admin / $GRAFANA_ADMIN_PASSWORD, default admin). Prometheus: http://127.0.0.1:9090 — bind to loopback only (MP §11 M5).
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    profiles: ["observability"]
+    container_name: dental_booking_prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/dental_booking_alerts.yml:/etc/prometheus/rules/dental_booking_alerts.yml:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      alertmanager:
+        condition: service_started
+    restart: unless-stopped
+
+  alertmanager-webhook-echo:
+    image: mendhak/http-https-echo:35
+    profiles: ["observability"]
+    container_name: dental_booking_alertmanager_echo
+    ports:
+      - "127.0.0.1:8888:8080"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    profiles: ["observability"]
+    container_name: dental_booking_alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    depends_on:
+      - alertmanager-webhook-echo
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["observability"]
+    container_name: dental_booking_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_HTTP_PORT: "3000"
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
     restart: unless-stopped
 
   # Playwright E2E (headless) against running compose stack.

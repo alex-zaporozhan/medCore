@@ -1,0 +1,60 @@
+# U-009 / PRC-E2 — повторяемость restore (ADR-008, DR_RUNBOOK §6). Только workflow_dispatch (OPS).
+name: DR restore drill
+
+on:
+  workflow_dispatch:
+
+env:
+  PGPASSWORD: postgres
+  PGHOST: localhost
+  PGUSER: postgres
+  SECRET_KEY: restore-drill-ci-secret
+  JWT_SECRET_KEY: restore-drill-ci-jwt
+  DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/drill_source
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: drill_source
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install "poetry<3"
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-ansi
+
+      - name: Alembic upgrade (source DB)
+        run: poetry run python -m alembic -c alembic.ini upgrade head
+
+      - name: Dump, restore, verify revision
+        run: |
+          pg_dump -h localhost -U postgres -Fc drill_source -f /tmp/drill.dump
+          psql -h localhost -U postgres -c "CREATE DATABASE drill_target;"
+          pg_restore -h localhost -U postgres -d drill_target --no-owner /tmp/drill.dump
+          v1=$(psql -h localhost -U postgres -d drill_source -tA -c "select version_num from alembic_version limit 1;")
+          v2=$(psql -h localhost -U postgres -d drill_target -tA -c "select version_num from alembic_version limit 1;")
+          test -n "$v1" && test "$v1" = "$v2"
+          echo "RESTORE_DRILL_OK revision=$v1"

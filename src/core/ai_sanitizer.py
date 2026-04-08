@@ -48,7 +48,7 @@ class SanitizedText:
 class AiSanitizer:
     """Simple sanitizer that can optionally mask personal data.
 
-    Policy (see ARCH_DEV_OMNI_POLICY_016 / ARCH_DEV_AI_TOKENIZATION_025):
+    Policy (masking rules for external AI when allow_personal_data is False):
     - when allow_personal_data is False, external AI must not see raw phones/emails;
     - tokens like PATIENT#<uuid> / BOOKING#<uuid> are preserved and can be used as
       stable references for downstream services;

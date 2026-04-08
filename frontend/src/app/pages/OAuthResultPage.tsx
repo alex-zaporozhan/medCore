@@ -32,19 +32,19 @@ export default function OAuthResultPage() {
     }
 
     if (status === "cancelled") {
-      navigate(ROUTE_PATHS.other.login, { replace: true });
+      navigate(`${ROUTE_PATHS.marketing.landing}?patientEntry=oauth-cancelled`, { replace: true });
       return;
     }
 
     if (status && ["error", "state_invalid", "provider_error"].includes(status)) {
       // stay on this page to show error, then redirect back to login after short delay
       const timeout = setTimeout(() => {
-        navigate(ROUTE_PATHS.other.login, { replace: true });
+        navigate(`${ROUTE_PATHS.marketing.landing}?patientEntry=oauth-error`, { replace: true });
       }, 3000);
       return () => clearTimeout(timeout);
     }
 
-    navigate(ROUTE_PATHS.other.login, { replace: true });
+    navigate(`${ROUTE_PATHS.marketing.landing}?patientEntry=need-clinic`, { replace: true });
   }, [status, token, patientId, login, navigate]);
 
   let message = "Обрабатываем результат входа...";

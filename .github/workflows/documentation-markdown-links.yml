@@ -1,0 +1,46 @@
+# Проверка относительных ссылок в docs/ и корневой политике (см. .markdown-link-check.json)
+name: Documentation markdown links
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "DOCUMENTATION_POLICY.md"
+      - "README.md"
+      - ".github/workflows/documentation-markdown-links.yml"
+      - ".markdown-link-check.json"
+  push:
+    branches: [main, master]
+    paths:
+      - "docs/**"
+      - "DOCUMENTATION_POLICY.md"
+      - "README.md"
+      - ".github/workflows/documentation-markdown-links.yml"
+      - ".markdown-link-check.json"
+
+jobs:
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: "yes"
+          use-verbose-mode: "no"
+          folder-path: "docs"
+          config-file: ".markdown-link-check.json"
+
+      - uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: "yes"
+          use-verbose-mode: "no"
+          file-path: "./DOCUMENTATION_POLICY.md"
+          config-file: ".markdown-link-check.json"
+
+      - uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: "yes"
+          use-verbose-mode: "no"
+          file-path: "./README.md"
+          config-file: ".markdown-link-check.json"

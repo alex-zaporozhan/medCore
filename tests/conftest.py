@@ -4,7 +4,7 @@ Pytest fixtures for Dental Booking API tests.
 Run from project root: poetry run pytest tests/
 
 Пошаговая настройка тестовой БД (ошибка database "dental_booking_test" does not exist):
-  docs/development/TEST_DATABASE.md
+  docs/RUN_SERVICES (repository docs folder)
 
 Пароль и тестовая БД:
   Ошибка "password authentication failed for user postgres" значит: к Postgres подключаются с тем паролем,
@@ -21,7 +21,7 @@ Run from project root: poetry run pytest tests/
 
   Схема: при прогоне pytest `init_db` выполняет `alembic upgrade head` (тот же путь, что `scripts/upgrade_test_db.py`).
   Вручную один раз: `python scripts/upgrade_test_db.py`.
-  Если таблицы уже есть, но alembic_version пуста или рассинхронизирована — см. docs/MIGRATION_UPGRADE.md (stamp/upgrade).
+  Если таблицы уже есть, но alembic_version пуста или рассинхронизирована — согласуйте stamp/upgrade с командой (опасные шаги не документируются здесь).
 
 - If connection to the test DB fails, tests are SKIPPED with a hint.
 - TRUNCATE runs only when the DB name contains "test". Never point at production.
@@ -32,6 +32,7 @@ import subprocess
 import sys
 import uuid
 from datetime import date, time
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -50,6 +51,11 @@ except Exception:
 # Set test env before any src import so app uses test DB/Redis
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key")
+os.environ.setdefault(
+    "PLATFORM_BILLING_WEBHOOK_SECRET",
+    "test-platform-billing-webhook-secret",
+)
+os.environ.setdefault("PATIENT_PAYMENT_WEBHOOK_SECRET", "")
 os.environ["TESTING"] = "1"
 
 # Load .env from project root so DATABASE_URL_TEST/REDIS_URL_TEST exist when not set in shell
@@ -156,7 +162,7 @@ else:
                 )
             if "does not exist" in err_s and "database" in err_s:
                 pytest.skip(
-                    "Test database is missing. Create it (see docs/development/TEST_DATABASE.md), then re-run."
+                    "Test database is missing. Create it (see repository README and docs/RUN_SERVICES), then re-run."
                 )
             msg = err_s
             type_name = type(e).__name__.lower()
@@ -232,6 +238,7 @@ else:
         patient_id = uuid.uuid4()
         admin_id = uuid.uuid4()
         doctor_admin_id = uuid.uuid4()
+        platform_founder_id = uuid.uuid4()
         tomorrow = date.today()
         weekday = tomorrow.weekday()
 
@@ -241,6 +248,7 @@ else:
                 id=clinic_id,
                 name="Test Clinic",
                 prepayment_amount=500,
+                clinic_slug=f"test-seed-{clinic_id.hex[:12]}",
             )
             session.add(clinic)
             from src.domain.entities.task_stream import TaskStream
@@ -306,6 +314,16 @@ else:
                     email=admin_email,
                     password_hash=hash_password("password123"),
                     full_name="Test Admin",
+                )
+            )
+            from src.domain.entities.platform_founder_user import PlatformFounderUser
+
+            platform_founder_email = f"pf-{platform_founder_id.hex[:12]}@test.platform.local"
+            session.add(
+                PlatformFounderUser(
+                    id=platform_founder_id,
+                    email=platform_founder_email,
+                    password_hash=hash_password("password123"),
                 )
             )
             # RBAC: test admin as clinic owner with all permissions (forms, etc.)
@@ -390,10 +408,127 @@ else:
                     clinic_id=clinic_id,
                 )
             )
+
+            # TRUNCATE сбрасывает seed из миграций; восстанавливаем глобальный SaaS-каталог для Phase 1b тестов.
+            from src.domain.entities.platform_catalog_option import PlatformCatalogOption
+            from src.domain.entities.platform_catalog_plan import PlatformCatalogPlan
+
+            if (
+                await session.execute(
+                    select(PlatformCatalogPlan).where(PlatformCatalogPlan.slug == "starter_rf").limit(1)
+                )
+            ).scalar_one_or_none() is None:
+                session.add(
+                    PlatformCatalogPlan(
+                        id=uuid.UUID("b0000001-0000-4000-8000-000000000001"),
+                        slug="starter_rf",
+                        display_name="Старт (РФ)",
+                        description="База + задачи — пресет для лендинга",
+                        option_keys=["core.base", "tasks.kanban"],
+                        price_monthly_rub=Decimal("4990.00"),
+                        price_annual_rub=Decimal("49900.00"),
+                        is_active=True,
+                        sort_order=0,
+                    )
+                )
+            catalog_opts = [
+                (
+                    uuid.UUID("a0000001-0000-4000-8000-000000000001"),
+                    "core.base",
+                    "Базовый пакет",
+                    "Орг, клиника, RBAC, расписание, базовые платежи",
+                    None,
+                    0,
+                ),
+                (
+                    uuid.UUID("a0000001-0000-4000-8000-000000000002"),
+                    "tasks.kanban",
+                    "Задачи / канбан",
+                    None,
+                    Decimal("1500.00"),
+                    10,
+                ),
+                (
+                    uuid.UUID("a0000001-0000-4000-8000-000000000003"),
+                    "crm.pipeline",
+                    "CRM / воронка",
+                    None,
+                    Decimal("2800.00"),
+                    20,
+                ),
+                (
+                    uuid.UUID("a0000001-0000-4000-8000-000000000004"),
+                    "marketing.attribution",
+                    "Маркетинг / атрибуция",
+                    None,
+                    Decimal("1200.00"),
+                    15,
+                ),
+                (
+                    uuid.UUID("a0000001-0000-4000-8000-000000000005"),
+                    "retention.bundle",
+                    "Ретеншн / возврат пациентов",
+                    None,
+                    Decimal("1800.00"),
+                    18,
+                ),
+                (
+                    uuid.UUID("a0000001-0000-4000-8000-000000000006"),
+                    "omni.embed.bundle",
+                    "Embed-виджет + публичный периметр (§24)",
+                    "Моно-пакет встраивания; API keys и webhook-инбокс",
+                    Decimal("4900.00"),
+                    40,
+                ),
+                (
+                    uuid.UUID("a0000001-0000-4000-8000-000000000007"),
+                    "ai.assistant.chat",
+                    "AI-ассистент в чате (§24.2)",
+                    None,
+                    Decimal("2900.00"),
+                    50,
+                ),
+                (
+                    uuid.UUID("a0000001-0000-4000-8000-000000000008"),
+                    "ai.rag.org_kb",
+                    "RAG база знаний организации (§24.3)",
+                    None,
+                    Decimal("3900.00"),
+                    60,
+                ),
+                (
+                    uuid.UUID("a0000001-0000-4000-8000-000000000009"),
+                    "import.crm_v1",
+                    "Импорт CRM v1",
+                    "ADR-010 Phase 3+",
+                    Decimal("1990.00"),
+                    70,
+                ),
+            ]
+            for oid, ekey, dname, desc, price, sort_o in catalog_opts:
+                exo = await session.execute(
+                    select(PlatformCatalogOption)
+                    .where(PlatformCatalogOption.entitlement_key == ekey)
+                    .limit(1)
+                )
+                if exo.scalar_one_or_none() is None:
+                    session.add(
+                        PlatformCatalogOption(
+                            id=oid,
+                            entitlement_key=ekey,
+                            display_name=dname,
+                            description=desc,
+                            list_price_rub=price,
+                            is_active=True,
+                            sort_order=sort_o,
+                        )
+                    )
+
             await session.commit()
 
         yield {
             "clinic_id": clinic_id,
+            "clinic_slug": f"test-seed-{clinic_id.hex[:12]}",
             "doctor_id": doctor_id,
             "service_id": service_id,
             "patient_id": patient_id,
@@ -401,6 +536,9 @@ else:
             "doctor_admin_id": doctor_admin_id,
             "admin_email": admin_email,
             "doctor_email": doctor_email,
+            "platform_founder_id": platform_founder_id,
+            "platform_founder_email": platform_founder_email,
+            "platform_founder_password": "password123",
             "date": tomorrow,
         }
 
@@ -436,6 +574,23 @@ else:
             "patient_id": UUID(data["patient_id"]),
             "access_token": data["access_token"],
             "phone": phone,
+        }
+
+    @pytest.fixture
+    async def platform_founder_auth(client, seed_data):
+        """Login as platform founder (1a-E2 seed user)."""
+        r = await client.post(
+            "/api/v1/platform/auth/login",
+            json={
+                "email": seed_data["platform_founder_email"],
+                "password": seed_data["platform_founder_password"],
+            },
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        return {
+            "access_token": data["access_token"],
+            "founder_id": data["founder_id"],
         }
 
     @pytest.fixture

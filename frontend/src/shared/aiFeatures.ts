@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
-/** Техдолг (техпаспорт §4): `useAiFeatures` — хук TanStack Query; целевое место — `hooks/`, реэкспорт из `@/hooks` (отдельный эпик, без смены контракта). */
+/** Техдолг: `useAiFeatures` — хук TanStack Query; целевое место — `hooks/`, реэкспорт из `@/hooks` (отдельная задача, без смены контракта). */
 
 export type AiFeatureStatus = "stub" | "beta" | "prod";
 

@@ -131,7 +131,7 @@ async def test_admin_resolve_conflicts_on_active_lease_unless_force(init_db, see
             )
         assert e.value.status_code == 409
         assert isinstance(e.value.detail, dict)
-        assert e.value.detail.get("code") == "OMNI_CHAT_ACTIVE_LEASE"
+        assert e.value.detail.get("code") == "omni_chat_active_lease"
 
     async with db_base.AsyncSessionLocal() as session:
         dto = await _resolve_chat_to_lead_log_task(

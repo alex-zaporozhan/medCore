@@ -1,5 +1,7 @@
 """Clinic DTOs."""
 
+from __future__ import annotations
+
 from datetime import time, datetime
 from decimal import Decimal
 from typing import Literal
@@ -26,6 +28,22 @@ class PaymentOptionRead(BaseModel):
 
     gateway_id: str
     display_name: str
+
+
+def clinic_read_scrub_public_pii(read: "ClinicRead") -> "ClinicRead":
+    """
+    Strip tenant PII / payment identifiers for unauthenticated clinic list (U-011).
+    Full ClinicRead is returned only when a valid admin Bearer token is presented.
+    """
+
+    return read.model_copy(
+        update={
+            "phone": None,
+            "email": None,
+            "address": None,
+            "yookassa_shop_id": None,
+        }
+    )
 
 
 class ClinicRead(BaseModel):

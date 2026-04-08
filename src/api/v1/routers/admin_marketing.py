@@ -4,6 +4,8 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
+from src.api.v1.entitlement_dependencies import require_entitlement
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +26,11 @@ from src.domain.entities.story import Story
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/admin/clinics", tags=["admin-marketing"])
+router = APIRouter(
+    prefix="/admin/clinics",
+    tags=["admin-marketing"],
+    dependencies=[Depends(require_entitlement("marketing.attribution"))],
+)
 
 
 @router.get("/{clinic_id}/marketing/posts", response_model=list[PromoPostRead])

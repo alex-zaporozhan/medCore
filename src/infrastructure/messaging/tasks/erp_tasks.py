@@ -44,7 +44,7 @@ async def _refresh_clinic_window_async(
 
 @celery_app.task(name="erp_tasks.run_daily_visit_revenue_parity_sample")
 def run_daily_visit_revenue_parity_sample() -> None:
-    """Optional trust signal: one clinic × yesterday, raw vs visit_revenue vitrine (see NONFUNCTIONAL_AUDIT_NEXT §5.2)."""
+    """Optional trust signal: one clinic × yesterday, raw vs visit_revenue vitrine."""
     try:
         asyncio.run(run_daily_visit_revenue_parity_sample_async())
     except Exception:

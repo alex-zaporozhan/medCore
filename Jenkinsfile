@@ -1,3 +1,5 @@
+// CI/CD canonical pipeline for this repo: Jenkins (not GitHub Actions for image publish/deploy).
+// Container registry: ghcr.io (GHCR). Docker Hub is not required; no paid Docker Hub assumption.
 pipeline {
   agent any
 

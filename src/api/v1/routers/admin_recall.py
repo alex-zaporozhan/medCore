@@ -3,6 +3,8 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
+from src.api.v1.entitlement_dependencies import require_entitlement
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +39,11 @@ from src.domain.entities.recall_log import RecallLog
 from src.domain.entities.recall_segment import RecallSegment
 from src.domain.entities.recall_template import RecallTemplate
 
-router = APIRouter(prefix="/admin/clinics", tags=["admin-recall"])
+router = APIRouter(
+    prefix="/admin/clinics",
+    tags=["admin-recall"],
+    dependencies=[Depends(require_entitlement("marketing.attribution"))],
+)
 
 
 # --- Segments ---

@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from src.api.v1.entitlement_dependencies import require_entitlement
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -44,6 +46,7 @@ from src.infrastructure.database.task_repo_impl import TaskRepositoryImpl
 router = APIRouter(
     prefix="/admin/tasks",
     tags=["admin-tasks"],
+    dependencies=[Depends(require_entitlement("tasks.kanban"))],
 )
 
 

@@ -2,9 +2,11 @@ import { Link } from "react-router-dom";
 import { Anchor, Stack, Text } from "@mantine/core";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { ROUTE_PATHS } from "@/routePaths";
+import { AdminSubscriptionCapabilitiesCard } from "@/admin/components/AdminSubscriptionCapabilitiesCard";
 
 /** Единая точка входа: пункты убраны из бокового меню, чтобы не дублировать «Настройки» (`MASTER` §4). */
 const links = [
+  { to: ROUTE_PATHS.admin.subscription, label: "Подписка платформы" },
   { to: ROUTE_PATHS.admin.paymentGateway, label: "Касса / платёжный шлюз" },
   { to: ROUTE_PATHS.admin.agreements, label: "Соглашения" },
   { to: ROUTE_PATHS.admin.channels, label: "Каналы уведомлений (SMS, Telegram, Email)" },
@@ -23,10 +25,12 @@ const links = [
 
 export default function AdminSettingsPage() {
   return (
-    <Stack gap="md">
+    <Stack gap="lg">
       <ContextBar title="Настройки" />
+      <AdminSubscriptionCapabilitiesCard />
       <Text size="sm" c="dimmed">
-        Все разделы конфигурации клиники — одна точка входа. Маршруты не изменились; из левого меню дубли убраны.
+        Все разделы конфигурации клиники — одна точка входа. Маршруты не изменились; из левого меню дубли
+        убраны.
       </Text>
       <Stack gap="xs">
         {links.map(({ to, label }) => (

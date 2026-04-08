@@ -12,10 +12,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import AdminContext, get_session, require_permissions
+from src.application.services.organization_entitlement_access import session_entitlement_view
+from src.application.services.platform_billing_access import organization_has_platform_billing_revoked
 from src.core.config import settings
-from src.core.security import create_access_token, parse_access_token
+from src.core.metrics import record_tenant_jwt_claim_reject
+from src.core.security import JwtClaimValidationError, create_access_token, parse_access_token
+from src.core.user_messages import ADMIN_ORG_PLATFORM_BILLING_REVOKED
+from src.core.industry_profile import INDUSTRY_PROFILE_DENTAL
 from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
 from src.domain.entities.clinic import Clinic
+from src.domain.entities.organization import Organization
 from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -45,6 +51,11 @@ class AdminSessionResponse(BaseModel):
     roles: list[str]
     organization_id: str | None = None
     accessible_clinic_ids: list[str] = Field(default_factory=list)
+    #: True when org has rows in organization_entitlements — UI скрывает опции вне списка.
+    entitlement_enforced: bool = False
+    entitlement_keys: list[str] = Field(default_factory=list)
+    #: Профиль отрасли организации клиники (МП §14); legacy без org — dental по умолчанию.
+    industry_profile: str = INDUSTRY_PROFILE_DENTAL
 
 
 def hash_password(password: str) -> str:
@@ -98,8 +109,14 @@ async def admin_login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный email или пароль",
         )
-    # Admin access token: short-lived; explicit token revocation will be implemented
-    # separately according to ARCH_AUTH_SESSIONS.md (token version/blacklist pattern).
+    if admin.organization_id is not None and await organization_has_platform_billing_revoked(
+        session, admin.organization_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ADMIN_ORG_PLATFORM_BILLING_REVOKED,
+        )
+    # Admin access token: short-lived; explicit token revocation (version/blacklist) — отдельная задача харднинга.
     token = create_access_token(
         data={
             "sub": str(admin.id),
@@ -131,7 +148,13 @@ def get_current_admin_dependency():
             )
         token = authorization[7:].strip()
         try:
-            payload = parse_access_token(token)
+            payload = parse_access_token(token, expected_audience=settings.jwt_audience_admin)
+        except JwtClaimValidationError as e:
+            record_tenant_jwt_claim_reject(code=e.code)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": e.code, "message": "Недействительный токен (issuer/audience)"},
+            )
         except jwt.exceptions.InvalidTokenError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -152,6 +175,13 @@ def get_current_admin_dependency():
         admin = result.scalar_one_or_none()
         if not admin:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
+        if admin.organization_id is not None and await organization_has_platform_billing_revoked(
+            session, admin.organization_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=ADMIN_ORG_PLATFORM_BILLING_REVOKED,
+            )
         return admin
 
     return _get_current_admin
@@ -188,12 +218,22 @@ async def admin_session(
         accessible = [str(r[0]) for r in res.all()]
     elif current_admin.organization_id:
         org_id = str(current_admin.organization_id)
+    enforced, ent_keys = await session_entitlement_view(session, current_admin)
+    industry_profile = INDUSTRY_PROFILE_DENTAL
+    clinic_row = await session.get(Clinic, cid)
+    if clinic_row and clinic_row.organization_id is not None:
+        org_row = await session.get(Organization, clinic_row.organization_id)
+        if org_row is not None:
+            industry_profile = org_row.industry_profile
     return AdminSessionResponse(
         clinic_id=str(cid),
         permissions=sorted(admin_ctx.permissions),
         roles=sorted(admin_ctx.roles),
         organization_id=org_id,
         accessible_clinic_ids=accessible,
+        entitlement_enforced=enforced,
+        entitlement_keys=ent_keys,
+        industry_profile=industry_profile,
     )
 
 
@@ -214,7 +254,13 @@ def get_current_admin_sse_dependency():
                 detail="Требуется авторизация",
             )
         try:
-            payload = parse_access_token(token)
+            payload = parse_access_token(token, expected_audience=settings.jwt_audience_admin)
+        except JwtClaimValidationError as e:
+            record_tenant_jwt_claim_reject(code=e.code)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": e.code, "message": "Недействительный токен (issuer/audience)"},
+            ) from None
         except jwt.exceptions.InvalidTokenError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -235,6 +281,13 @@ def get_current_admin_sse_dependency():
         admin = result.scalar_one_or_none()
         if not admin:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
+        if admin.organization_id is not None and await organization_has_platform_billing_revoked(
+            session, admin.organization_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=ADMIN_ORG_PLATFORM_BILLING_REVOKED,
+            )
         return admin
 
     return _get_current_admin_sse
@@ -255,9 +308,18 @@ def get_current_admin_optional_dependency():
             return None
         token = authorization[7:].strip()
         try:
-            payload = parse_access_token(token)
+            payload = parse_access_token(token, expected_audience=settings.jwt_audience_admin)
+        except JwtClaimValidationError as e:
+            record_tenant_jwt_claim_reject(code=e.code)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": e.code, "message": "Недействительный токен (issuer/audience)"},
+            )
         except jwt.exceptions.InvalidTokenError:
-            return None
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Недействительный или истёкший токен",
+            )
         if payload.get("type") != "admin":
             return None
         admin_id = payload.get("sub")
@@ -270,7 +332,17 @@ def get_current_admin_optional_dependency():
                 AdminUser.employment_status == EMPLOYMENT_ACTIVE,
             ).limit(1)
         )
-        return result.scalar_one_or_none()
+        admin = result.scalar_one_or_none()
+        if admin is None:
+            return None
+        if admin.organization_id is not None and await organization_has_platform_billing_revoked(
+            session, admin.organization_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=ADMIN_ORG_PLATFORM_BILLING_REVOKED,
+            )
+        return admin
 
     return _get
 

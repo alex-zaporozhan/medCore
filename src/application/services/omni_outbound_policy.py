@@ -80,7 +80,7 @@ async def resolve_reply_channel_id_for_admin(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
-                    "code": "OMNI_REPLY_CHANNEL_UNRESOLVED",
+                    "code": "omni_reply_channel_unresolved",
                     "message": "Chat primary channel is missing or invalid; pass reply_channel_id.",
                 },
             )
@@ -94,7 +94,7 @@ async def resolve_reply_channel_id_for_admin(
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail={
-            "code": "OMNI_REPLY_CHANNEL_UNRESOLVED",
+            "code": "omni_reply_channel_unresolved",
             "message": (
                 "Reply channel could not be determined; configure the chat channel or pass reply_channel_id."
             ),

@@ -29,6 +29,7 @@ from src.infrastructure.external_apis.yookassa_client import (
 )
 from src.application.events.event_bus import get_event_bus
 from src.application.events.standard_events import make_payment_success_event
+from src.application.services.domain_outbox_service import enqueue_payment_success_event
 from src.domain.entities.booking import BookingStatus
 from src.application.services.booking_status_service import BookingStatusService
 
@@ -285,22 +286,23 @@ class PaymentService:
         if not booking:
             return
 
-        event_bus = get_event_bus()
-
         if our_status == "succeeded":
             if booking.status in (BookingStatus.PENDING, BookingStatus.AWAITING_PAYMENT):
                 await self.status_service.transition(booking, BookingStatus.CONFIRMED, context={})
                 await self.booking_repository.update(booking)
-                try:
-                    await event_bus.publish(make_payment_success_event(payment_record))
-                except Exception:
-                    logger.exception(
-                        "Failed to publish PaymentSuccess event",
-                        extra={
-                            "booking_id": str(booking.id),
-                            "payment_id": str(payment_record.id),
-                        },
-                    )
+                if settings.domain_outbox_payment_webhook_enabled:
+                    await enqueue_payment_success_event(self.session, payment_record)
+                else:
+                    try:
+                        await get_event_bus().publish(make_payment_success_event(payment_record))
+                    except Exception:
+                        logger.exception(
+                            "Failed to publish PaymentSuccess event",
+                            extra={
+                                "booking_id": str(booking.id),
+                                "payment_id": str(payment_record.id),
+                            },
+                        )
                 logger.info(
                     "Booking confirmed after payment",
                     extra={

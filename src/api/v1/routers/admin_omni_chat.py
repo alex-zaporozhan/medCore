@@ -241,10 +241,12 @@ async def omni_chat_event_stream(
 ) -> StreamingResponse:
     """SSE: `message.created` for current clinic (no message body). ARCH §6."""
     clinic_id = current_admin.clinic_id
+    if clinic_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     # RBAC for SSE: EventSource может передавать токен в query и не попадает в require_permissions().
     # Поэтому проверяем права вручную через RBAC сервис.
     rbac = RbacServiceImpl(RbacRepositoryImpl(session))
-    perms = await rbac.get_admin_permissions(current_admin.id)
+    perms = await rbac.get_permissions_for_user(current_admin.id, clinic_id)
     if "omni.inbox.manage" not in perms:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     channel = f"{OMNI_EVENTS_CHANNEL_PREFIX}:{clinic_id}"
@@ -406,7 +408,7 @@ async def list_omni_chats(
         if normalized_assignee not in {"me", "unassigned"}:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={"code": "OMNI_ASSIGNEE_INVALID", "message": "assignee must be exactly 'me' when provided"},
+                detail={"code": "omni_assignee_invalid", "message": "assignee must be exactly 'me' when provided"},
             )
         if normalized_assignee == "me":
             assignee_admin_id = admin_id
@@ -430,7 +432,7 @@ async def list_omni_chats(
                 continue
             if len(tt) > 32:
                 raise _err(
-                    "OMNI_CHANNEL_TYPE_INVALID",
+                    "omni_channel_type_invalid",
                     "channel_type слишком длинный",
                     http_status=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 )
@@ -581,7 +583,7 @@ async def claim_omni_chat(
     if chat.assignee_admin_id and chat.assignee_admin_id != admin_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "OMNI_CHAT_ALREADY_CLAIMED", "message": "Chat already claimed by another admin"},
+            detail={"code": "omni_chat_already_claimed", "message": "Chat already claimed by another admin"},
         )
 
     now = datetime.utcnow()
@@ -595,10 +597,7 @@ async def claim_omni_chat(
     await session.flush()
     await publish_omni_chat_updated(clinic_id=clinic_id, chat_id=chat.id, reason="claim")
 
-    current_admin = await session.get(AdminUser, admin_id)
-    if current_admin is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-    detail = await get_omni_chat(chat_id=chat_id, session=session, current_admin=current_admin)
+    detail = await _build_omni_chat_detail_dto(session, admin_ctx, chat_id)
     return OmniChatClaimResponse(chat=detail)
 
 
@@ -892,7 +891,7 @@ async def close_omni_chat(
     if chat.assignee_admin_id is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "OMNI_CHAT_NOT_CLAIMED", "message": "Chat must be claimed before closing"},
+            detail={"code": "omni_chat_not_claimed", "message": "Chat must be claimed before closing"},
         )
     if chat.assignee_admin_id != admin_id and "owner" not in (admin_ctx.roles or set()):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
@@ -910,7 +909,7 @@ async def close_omni_chat(
         if len(found) != len(tag_ids):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={"code": "OMNI_CLOSURE_TAG_INVALID", "message": "Some tag_ids are invalid for this clinic"},
+                detail={"code": "omni_closure_tag_invalid", "message": "Some tag_ids are invalid for this clinic"},
             )
 
     now = datetime.utcnow()
@@ -945,10 +944,7 @@ async def close_omni_chat(
     await session.flush()
     await publish_omni_chat_updated(clinic_id=clinic_id, chat_id=chat.id, reason="close")
 
-    current_admin = await session.get(AdminUser, admin_id)
-    if current_admin is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-    detail = await get_omni_chat(chat_id=chat_id, session=session, current_admin=current_admin)
+    detail = await _build_omni_chat_detail_dto(session, admin_ctx, chat_id)
     return OmniChatCloseResponse(chat=detail)
 
 
@@ -1062,7 +1058,7 @@ async def _resolve_chat_to_lead_log_task(
         ).inc()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "OMNI_CHAT_NOT_CLAIMED", "message": "Chat must be claimed before resolving"},
+            detail={"code": "omni_chat_not_claimed", "message": "Chat must be claimed before resolving"},
         )
     if chat.assignee_admin_id != admin_id and "owner" not in (admin_ctx.roles or set()):
         omni_lead_logs_resolve_errors_total.labels(
@@ -1085,7 +1081,7 @@ async def _resolve_chat_to_lead_log_task(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "code": "OMNI_CHAT_ACTIVE_LEASE",
+                "code": "omni_chat_active_lease",
                 "message": "Chat has an active lease; wait until operator leaves or use force resolve",
             },
         )
@@ -1277,12 +1273,12 @@ async def omni_chat_analytics(
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "OMNI_ANALYTICS_DATE_INVALID", "message": "date_from/date_to must be YYYY-MM-DD"},
+            detail={"code": "omni_analytics_date_invalid", "message": "date_from/date_to must be YYYY-MM-DD"},
         )
     if not (df < dt):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "OMNI_ANALYTICS_DATE_RANGE_INVALID", "message": "date_from must be < date_to"},
+            detail={"code": "omni_analytics_date_range_invalid", "message": "date_from must be < date_to"},
         )
 
     start_dt = datetime(df.year, df.month, df.day)
@@ -1412,13 +1408,12 @@ async def omni_chat_analytics(
     )
 
 
-@router.get("/{chat_id}", response_model=OmniChatDetailDto)
-async def get_omni_chat(
+async def _build_omni_chat_detail_dto(
+    session: AsyncSession,
+    admin_ctx: AdminContext,
     chat_id: UUID,
-    session: AsyncSession = Depends(get_session),
-    admin_ctx: AdminContext = Depends(require_permissions("omni.inbox.manage")),
 ) -> OmniChatDetailDto:
-    """Return single omnichannel chat by id for current business."""
+    """Shared body for GET /{chat_id} and post-mutation responses (claim/close/patch)."""
     business_account_id: UUID | None = admin_ctx.clinic_id
     if business_account_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Требуется контекст клиники")
@@ -1499,6 +1494,16 @@ async def get_omni_chat(
     )
 
 
+@router.get("/{chat_id}", response_model=OmniChatDetailDto)
+async def get_omni_chat(
+    chat_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    admin_ctx: AdminContext = Depends(require_permissions("omni.inbox.manage")),
+) -> OmniChatDetailDto:
+    """Return single omnichannel chat by id for current business."""
+    return await _build_omni_chat_detail_dto(session, admin_ctx, chat_id)
+
+
 @router.patch("/{chat_id}", response_model=OmniChatDetailDto)
 async def patch_omni_chat(
     chat_id: UUID,
@@ -1539,11 +1544,7 @@ async def patch_omni_chat(
         chat.status = body.status
     await session.flush()
 
-    admin_result = await session.execute(select(AdminUser).where(AdminUser.id == admin_ctx.user_id))
-    admin_user = admin_result.scalar_one_or_none()
-    if admin_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
-    return await get_omni_chat(chat_id, session, admin_user)
+    return await _build_omni_chat_detail_dto(session, admin_ctx, chat_id)
 
 
 @router.get("/{chat_id}/messages", response_model=OmniMessagesResponse)
@@ -1598,7 +1599,7 @@ async def get_omni_chat_messages(
     responses={
         400: {"description": "Invalid reply_channel_id or channel does not support outbound"},
         404: {"description": "Chat not found"},
-        409: {"description": "Reply channel could not be resolved (OMNI_REPLY_CHANNEL_UNRESOLVED)"},
+        409: {"description": "Reply channel could not be resolved (code omni_reply_channel_unresolved)"},
         429: {"description": "Outbound send rate limit (per admin, default 30/min)"},
     },
 )
@@ -1621,7 +1622,7 @@ async def send_admin_omni_message(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
-                "code": "OMNI_SEND_RATE_LIMITED",
+                "code": "omni_send_rate_limited",
                 "message": "Слишком много исходящих сообщений. Подождите и повторите.",
             },
         ) from None
@@ -1664,7 +1665,7 @@ async def send_admin_omni_message(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "code": "OMNI_CHAT_ALREADY_CLAIMED",
+                "code": "omni_chat_already_claimed",
                 "message": "Chat already claimed by another admin",
             },
         )
@@ -1729,7 +1730,7 @@ async def send_admin_omni_message_upload(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
-                "code": "OMNI_SEND_RATE_LIMITED",
+                "code": "omni_send_rate_limited",
                 "message": "Слишком много исходящих сообщений. Подождите и повторите.",
             },
         ) from None
@@ -1784,7 +1785,7 @@ async def send_admin_omni_message_upload(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "code": "OMNI_CHAT_ALREADY_CLAIMED",
+                "code": "omni_chat_already_claimed",
                 "message": "Chat already claimed by another admin",
             },
         )

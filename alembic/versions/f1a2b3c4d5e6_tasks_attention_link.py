@@ -6,7 +6,7 @@ Create Date: 2026-03-17 18:05:00.000000
 
 This migration adds optional link fields from tasks to owner's attention feed
 items. Instead of a separate AttentionTaskLink table we follow the alternative
-design from ARCH_DEV_TASKS_MODEL_020_TASKS and store:
+design (tasks ↔ attention feed) and store:
 
 - attention_kind: logical kind of attention item (follow_up|retention_gap|conflict)
 - attention_ref_id: UUID of the underlying source entity (chat message, booking, patient, etc.)

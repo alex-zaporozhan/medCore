@@ -18,7 +18,7 @@ Procedure when matrix evolves:
      from ``seed_rbac_baseline``; link new permissions to those rows as well as
      per-clinic role copies (see migration ``v2w3x4y5z6_patients_pii_read_global_roles.py``).
 3. Keep require_permissions(...) usage in routers aligned with these codes
-   (see DEV_PROMPTS_RBAC_AND_TASKS.md and ARCH_RBAC_AND_TASKS.md).
+   (keep require_permissions(...) in routers aligned with this matrix; inventory: scripts/audit_rbac_endpoints.py).
 """
 
 from __future__ import annotations
@@ -143,6 +143,14 @@ PERMISSIONS: Final[list[PermissionDef]] = [
         "manage_staff_directory",
         "Каталог персонала: категории профессий и учётные записи сотрудников клиники",
     ),
+    PermissionDef(
+        "view_embed_settings",
+        "Просмотр настроек встраивания (ключи по префиксу, URL webhook)",
+    ),
+    PermissionDef(
+        "manage_embed_settings",
+        "Выпуск и отзыв embed API keys, ротация webhook secret",
+    ),
 ]
 
 
@@ -192,6 +200,7 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "leads.log.view",
         "leads.log.manage",
         "manage_staff_directory",
+        "view_embed_settings",
         # SR5 (QA_ARCH W7): managers may review ERP owner reports + attribution read-only.
         "erp.owner_reports.read",
         "attribution.reports.read",
@@ -224,6 +233,7 @@ ROLE_PERMISSIONS: Final[dict[str, list[str]]] = {
         "omni.chat.resolve.override",
         "rbac.manage",
         "manage_staff_directory",
+        "view_embed_settings",
     ],
     # Doctor: minimal read-only access to tasks (scoped by visibility rules).
     "doctor": [

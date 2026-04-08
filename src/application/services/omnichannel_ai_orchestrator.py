@@ -531,7 +531,7 @@ class OmnichannelAIOrchestrator:
                     self.session.add(event)
 
                     # Tasks/Attention сигнал для повторяющихся/критичных ошибок tools.
-                    # V1 (ARCH_DEV_BKG_AI_TOOLS_006): создаём Task при ошибке выполнения tool,
+                    # V1: создаём Task при ошибке выполнения tool,
                     # чтобы владелец/админ увидел это в Tasks/Attention.
                     try:
                         # Throttle: do not create Tasks for simple validation mistakes

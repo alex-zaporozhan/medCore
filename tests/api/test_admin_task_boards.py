@@ -38,4 +38,4 @@ async def test_task_boards_replace_columns_requires_full_status_set(client, admi
         },
     )
     assert bad.status_code == 422, bad.text
-    assert bad.json().get("detail", {}).get("code") == "INVALID_COLUMN_SET"
+    assert bad.json().get("code") == "invalid_column_set"

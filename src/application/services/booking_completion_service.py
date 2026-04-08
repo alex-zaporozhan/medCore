@@ -29,6 +29,8 @@ from src.application.services.loyalty_service import (
 )
 from src.application.events.event_bus import get_event_bus
 from src.application.events.standard_events import make_booking_completed_event
+from src.application.services.domain_outbox_service import enqueue_domain_event
+from src.core.config import settings
 from src.core.context import RequestContext
 from src.core.prometheus_labels import clinic_bucket_label
 from src.core.patient_messages import (
@@ -631,11 +633,19 @@ class BookingCompletionService:
                 subscription_id=w.subscription_id,
             )
 
+        completed_event = make_booking_completed_event(
+            booking,
+            trace_id=getattr(actor, "trace_id", None),
+            visit_revenue=None,
+        )
+        if settings.domain_outbox_booking_events_enabled:
+            await enqueue_domain_event(self.session, completed_event)
+
         # Event subscribers (CRM, loyalty, …) open new DB sessions. Commit first so they
         # see ERP rows (e.g. financial_transactions) written in this transaction.
         await self.session.commit()
 
-        # Publish BookingCompleted event (legacy integration with other domains).
+        # Publish BookingCompleted (in-process bus) or drain outbox after commit (ADR-009).
         logger.info(
             "BookingCompletionService: publishing BookingCompleted for CRM/subscribers",
             extra={
@@ -646,15 +656,10 @@ class BookingCompletionService:
                 "step": "crm_publish",
             },
         )
-        event_bus = get_event_bus()
         try:
-            await event_bus.publish(
-                make_booking_completed_event(
-                    booking,
-                    trace_id=getattr(actor, "trace_id", None),
-                    visit_revenue=None,
-                )
-            )
+            if not settings.domain_outbox_booking_events_enabled:
+                event_bus = get_event_bus()
+                await event_bus.publish(completed_event)
         except Exception:
             # Сохраняем успешное завершение, но добавляем предупреждение в сводку ERP.
             if erp_summary is None:

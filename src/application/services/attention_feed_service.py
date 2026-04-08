@@ -575,7 +575,7 @@ class AttentionFeedService:
     ) -> None:
         """Attach aggregated task info and compute attention status for each item.
 
-        Mapping rules (ARCH_DEV_TASKS_MODEL_020_TASKS):
+        Mapping rules (tasks ↔ attention feed):
         - new: нет связанных задач
         - in_progress: есть хотя бы одна задача open|in_progress
         - resolved: все задачи done|cancelled

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from enum import Enum
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class BookingRead(BaseModel):
@@ -66,10 +66,27 @@ class BookingRescheduleRequest(BaseModel):
 
 
 class BookingPatchAdmin(BaseModel):
-    """Partial admin update: комментарий и/или статус (переходы через BookingStatusService)."""
+    """Partial admin update: только комментарий. Статус — PUT /admin/bookings/{id}/status (LEAD / QA_ARCH Phase 2)."""
 
     notes: str | None = Field(None, max_length=2000)
-    status: str | None = Field(None, max_length=32)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BookingAdminSetStatusBody(BaseModel):
+    """Смена статуса записи админом: узкие побочные эффекты через маршрутизацию на cancel/complete/no_show/light transition."""
+
+    status: str = Field(..., max_length=32, description="Целевой статус (значение BookingStatus).")
+    use_subscription_id: UUID | None = Field(
+        None,
+        description="Только при status=completed — передать в фасад завершения визита (абонемент).",
+    )
+
+    @model_validator(mode="after")
+    def _subscription_only_for_completed(self) -> "BookingAdminSetStatusBody":
+        if self.use_subscription_id is not None and self.status != "completed":
+            raise ValueError("use_subscription_id допустим только при status=completed")
+        return self
 
 
 class EligibleSubscriptionItem(BaseModel):

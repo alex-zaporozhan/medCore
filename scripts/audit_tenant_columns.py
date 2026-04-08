@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ORM-аудит изоляции tenant: колонка clinic_id или business_account_id (омниканал), иначе allowlist.
 
-См. `docs/artifacts/ARCH_DATA_MULTITENANT_AND_OPERATIONS_2026.md`.
+Ожидаемые колонки области tenant: clinic_id или business_account_id (или allowlist в скрипте).
 """
 
 from __future__ import annotations

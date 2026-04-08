@@ -149,18 +149,45 @@ export function useCreateAdminBooking() {
 export interface PatchBookingAdminPayload {
   id: string;
   notes?: string | null;
-  status?: string;
 }
 
 export function usePatchBookingAdmin() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, notes, status }: PatchBookingAdminPayload) => {
+    mutationFn: ({ id, notes }: PatchBookingAdminPayload) => {
       const body: Record<string, unknown> = {};
       if (notes !== undefined) body.notes = notes;
-      if (status !== undefined) body.status = status;
       return api.patch<Booking>(`/v1/admin/bookings/${id}`, body);
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["reports-dashboard"] });
+    },
+  });
+}
+
+export interface SetBookingStatusAdminPayload {
+  id: string;
+  status: string;
+  use_subscription_id?: string | null;
+}
+
+/** Смена статуса: PUT /v1/admin/bookings/{id}/status (cancel/complete/no_show делегируются узким сервисам). */
+export function useSetBookingStatusAdmin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      status: nextStatus,
+      use_subscription_id,
+    }: SetBookingStatusAdminPayload) =>
+      api.put<Booking>(`/v1/admin/bookings/${id}/status`, {
+        status: nextStatus,
+        ...(use_subscription_id != null && use_subscription_id !== ""
+          ? { use_subscription_id }
+          : {}),
+      }),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-bookings"] });
       queryClient.invalidateQueries({ queryKey: ["admin-schedule"] });
