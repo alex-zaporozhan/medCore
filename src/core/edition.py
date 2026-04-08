@@ -1,6 +1,6 @@
 """Product edition (Box vs Enterprise) — сервер как источник правды для гейтов API.
 
-См. `MASTER_PRODUCT_ROADMAP_2026`, фронт: `VITE_EDITION`; бэкенд: переменная окружения `EDITION`.
+Фронт: `VITE_EDITION` в `frontend/src/config/edition.ts`; бэкенд: `EDITION` env (см. `.env.example`).
 Значения коробки: `box`, `basic` (как на фронте). По умолчанию — Enterprise-режим API.
 """
 

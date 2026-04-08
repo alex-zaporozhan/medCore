@@ -69,4 +69,16 @@ from src.domain.entities.user_permission_grant import UserPermissionGrant  # noq
 from src.domain.entities.rbac_audit_log import RbacAuditLog  # noqa: F401
 from src.domain.entities.medical_file_audit_log import MedicalFileAuditLog  # noqa: F401
 from src.domain.entities.organization import Organization  # noqa: F401
+from src.domain.entities.crm_import_staging_job import CrmImportStagingJob  # noqa: F401
+from src.domain.entities.crm_import_job_audit import CrmImportJobAudit  # noqa: F401
+from src.domain.entities.organization_embed_audit_log import OrganizationEmbedAuditLog  # noqa: F401
+from src.domain.entities.organization_rag_kb_document import OrganizationRagKbDocument  # noqa: F401
+from src.domain.entities.organization_rag_kb_audit_log import OrganizationRagKbAuditLog  # noqa: F401
+from src.domain.entities.organization_industry_profile_audit import (  # noqa: F401
+    OrganizationIndustryProfileAudit,
+)
+from src.domain.entities.organization_data_export_request import (  # noqa: F401
+    OrganizationDataExportRequest,
+)
+from src.domain.entities.commerce_import_job import CommerceImportJob  # noqa: F401
 from src.domain.entities.staff_profession_category import StaffProfessionCategory  # noqa: F401

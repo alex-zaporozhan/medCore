@@ -1,11 +1,25 @@
 /**
- * Канонические публичные path по зонам — техпаспорт §2 (`ARCH_FRONTEND_TECH_PASSPORT_DENTAL_BOOKING.md`).
- * Сегменты `ADMIN_SHELL_ROUTE_SEGMENTS` / `PATIENT_APP_ROUTE_SEGMENTS` — единый источник для `App.tsx` и списка path.
+ * Канонические публичные path по зонам. Сегменты `ADMIN_SHELL_ROUTE_SEGMENTS` / `PATIENT_APP_ROUTE_SEGMENTS`
+ * — единый источник для `App.tsx` и списка path (см. также `buildDerivedPublicAppPaths`).
  */
 
 export const ROUTE_PATHS = {
   marketing: {
     landing: "/",
+    /** Публичная витрина тарифов (каталог + checkout). */
+    pricing: "/pricing",
+    /** Регистрация клиники: согласия PII + checkout (FE-E1). */
+    signup: "/signup",
+    legalPrivacy: "/legal/privacy",
+    legalTerms: "/legal/terms",
+  },
+  /** Кабинет Основателя платформы (JWT platform_founder), отдельно от /admin. */
+  platform: {
+    login: "/platform/login",
+    /** Шаг 2 входа основателя (TOTP), после проверки email/пароля. */
+    loginMfa: "/platform/login/mfa",
+    dashboard: "/platform/dashboard",
+    provisionQueue: "/platform/provision-queue",
   },
   admin: {
     login: "/admin/login",
@@ -31,6 +45,8 @@ export const ROUTE_PATHS = {
     attention: "/admin/attention",
     reports: "/admin/reports",
     finance: "/admin/finance",
+    /** Магазин / Commerce (Фаза 4, entitlement commerce.store_network). */
+    commerce: "/admin/commerce",
     loyalty: "/admin/loyalty",
     forms: "/admin/forms",
     doctors: "/admin/doctors",
@@ -42,10 +58,18 @@ export const ROUTE_PATHS = {
     omniAiSettings: "/admin/omni-ai-settings",
     channels: "/admin/channels",
     integrations: "/admin/integrations",
+    /** API keys и webhook inbox для встраивания (§24, entitlement omni.embed.bundle). */
+    embed: "/admin/embed",
+    /** Per-org RAG KB (§24.3, entitlement ai.rag.org_kb). */
+    ragKb: "/admin/rag-kb",
+    /** Экспорт / offboarding для владельца (Phase 1e-F3). */
+    dataExport: "/admin/data-export",
     omniVault: "/admin/omni-vault",
     styling: "/admin/styling",
     stickers: "/admin/stickers",
     settings: "/admin/settings",
+    /** Подписка SaaS: возможности org + витрина тарифов (апгрейд — без автоного checkout до контура owner). */
+    subscription: "/admin/subscription",
     administrators: "/admin/administrators",
     paymentGateway: "/admin/payment-gateway",
     clientReference: "/admin/client-reference",
@@ -65,6 +89,9 @@ export const ROUTE_PATHS = {
     profile: "/app/profile",
   },
   other: {
+    /** Legacy: редирект на `/admin/login`, `/platform/login` или главную (пациент). */
+    signIn: "/sign-in",
+    /** Legacy `/login` → главная с подсказкой для пациента. */
     login: "/login",
     oauthResult: "/oauth/result",
     bookingSuccess: "/booking/success",
@@ -95,6 +122,7 @@ export const ADMIN_SHELL_ROUTE_SEGMENTS = [
   "attention",
   "reports",
   "finance",
+  "commerce",
   "loyalty",
   "forms",
   "doctors",
@@ -105,10 +133,14 @@ export const ADMIN_SHELL_ROUTE_SEGMENTS = [
   "omni-ai-settings",
   "channels",
   "integrations",
+  "embed",
+  "rag-kb",
+  "data-export",
   "omni-vault",
   "styling",
   "stickers",
   "settings",
+  "subscription",
   "administrators",
   "payment-gateway",
   "client-reference",
@@ -133,10 +165,23 @@ export const PATIENT_APP_ROUTE_SEGMENTS = [
 
 export type PatientAppSegment = (typeof PATIENT_APP_ROUTE_SEGMENTS)[number];
 
-/** Сборка полного списка публичных path §2 (для тестов и приёмки). */
-export function buildDerivedAllTechPassportPaths(): readonly string[] {
+/**
+ * Фиксированный набор path для регрессионных тестов и проверки уникальности URL.
+ * Не включает шаблоны с параметрами (например `/:clinicSlug/doctors/:doctorSlug`) — заданы в `App.tsx` отдельным маршрутом.
+ * Канон зон и таблица админ-сегментов — тот же документ §5.2–5.3.
+ */
+export function buildDerivedPublicAppPaths(): readonly string[] {
   return [
     ROUTE_PATHS.marketing.landing,
+    ROUTE_PATHS.marketing.pricing,
+    ROUTE_PATHS.marketing.signup,
+    ROUTE_PATHS.marketing.legalPrivacy,
+    ROUTE_PATHS.marketing.legalTerms,
+    ROUTE_PATHS.platform.login,
+    ROUTE_PATHS.platform.loginMfa,
+    ROUTE_PATHS.platform.dashboard,
+    ROUTE_PATHS.platform.provisionQueue,
+    ROUTE_PATHS.other.signIn,
     ROUTE_PATHS.admin.login,
     ROUTE_PATHS.admin.dashboard,
     ...ADMIN_SHELL_ROUTE_SEGMENTS.map((s) => `/admin/${s}`),
@@ -148,5 +193,5 @@ export function buildDerivedAllTechPassportPaths(): readonly string[] {
   ];
 }
 
-/** Все path из §2 для проверок (уникальность, паритет с `ROUTE_PATHS`). */
-export const ALL_TECH_PASSPORT_PATHS: readonly string[] = buildDerivedAllTechPassportPaths();
+/** Все публичные path для проверок (уникальность, паритет с `ROUTE_PATHS`). */
+export const ALL_PUBLIC_APP_PATHS: readonly string[] = buildDerivedPublicAppPaths();

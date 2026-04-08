@@ -1,8 +1,8 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import {
-  TECH_PASSPORT_ADMIN_MANTINE_DRAWER_PATH,
-  TECH_PASSPORT_PARALLEL_UI_KIT_PATHS,
+  RESTRICTED_ADMIN_MANTINE_DRAWER_PATH,
+  RESTRICTED_PARALLEL_UI_KIT_PATHS,
 } from "./eslint-restricted-ui-imports.mjs";
 
 export default tseslint.config(
@@ -38,7 +38,7 @@ export default tseslint.config(
   {
     files: ["src/**/*.{ts,tsx}"],
     rules: {
-      "no-restricted-imports": ["error", { paths: [...TECH_PASSPORT_PARALLEL_UI_KIT_PATHS] }],
+      "no-restricted-imports": ["error", { paths: [...RESTRICTED_PARALLEL_UI_KIT_PATHS] }],
     },
   },
   {
@@ -46,7 +46,7 @@ export default tseslint.config(
     rules: {
       "no-restricted-imports": [
         "error",
-        { paths: [...TECH_PASSPORT_PARALLEL_UI_KIT_PATHS, TECH_PASSPORT_ADMIN_MANTINE_DRAWER_PATH] },
+        { paths: [...RESTRICTED_PARALLEL_UI_KIT_PATHS, RESTRICTED_ADMIN_MANTINE_DRAWER_PATH] },
       ],
     },
   }

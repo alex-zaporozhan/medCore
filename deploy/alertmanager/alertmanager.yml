@@ -1,0 +1,21 @@
+# Alertmanager: dedup, severity routing, webhook delivery (Phase 1d, SaaS MP §11 M6).
+# Default receiver hits the echo sidecar so staging can prove Prometheus → AM → HTTP without secrets.
+# Telegram: add telegram_configs to a receiver (bot token via secret file / env in your overlay) — see deploy/grafana/README.md.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: team-notifications
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: team-notifications
+    webhook_configs:
+      - url: http://alertmanager-webhook-echo:8080/
+        send_resolved: true
+
+inhibit_rules: []

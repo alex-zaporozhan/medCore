@@ -2,6 +2,16 @@ import pytest
 from httpx import AsyncClient
 
 
+def _http_error_code(payload: dict) -> str | None:
+    d = payload.get("detail")
+    if isinstance(d, dict):
+        c = d.get("code")
+        if c is not None:
+            return str(c).lower()
+    c = payload.get("code")
+    return str(c).lower() if c is not None else None
+
+
 @pytest.mark.asyncio
 async def test_doctor_forbidden_waitlist_list(
   client: AsyncClient,
@@ -14,8 +24,7 @@ async def test_doctor_forbidden_waitlist_list(
     headers=headers,
   )
   assert resp.status_code == 403, resp.text
-  body = resp.json()
-  assert body.get("code") == "forbidden"
+  assert _http_error_code(resp.json()) == "forbidden"
 
 
 @pytest.mark.asyncio
@@ -30,8 +39,7 @@ async def test_doctor_forbidden_retention_segments(
     headers=headers,
   )
   assert resp.status_code == 403, resp.text
-  body = resp.json()
-  assert body.get("code") == "forbidden"
+  assert _http_error_code(resp.json()) == "forbidden"
 
 
 @pytest.mark.asyncio
@@ -48,8 +56,7 @@ async def test_box_edition_blocks_retention_even_owner(
     headers=headers,
   )
   assert resp.status_code == 403, resp.text
-  body = resp.json()
-  assert body.get("code") == "box_forbidden"
+  assert _http_error_code(resp.json()) == "box_forbidden"
 
 
 @pytest.mark.asyncio
@@ -62,6 +69,5 @@ async def test_box_edition_blocks_crm_pipelines_even_with_view_crm(
   headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
   resp = await client.get("/api/v1/admin/crm/pipelines", headers=headers)
   assert resp.status_code == 403, resp.text
-  body = resp.json()
-  assert body.get("code") == "box_forbidden"
+  assert _http_error_code(resp.json()) == "box_forbidden"
 

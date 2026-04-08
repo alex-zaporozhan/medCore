@@ -6,7 +6,7 @@ Usage:
   python scripts/audit_rbac_endpoints.py --check      # exit 1 if inventory file out of sync
   python scripts/audit_rbac_endpoints.py --write      # rewrite inventory from codebase
 
-Inventory: docs/artifacts/sec_rbac_router_permissions.txt (one code per line, sorted).
+Inventory: docs/product_state/baselines/rbac_router_permissions.txt (one code per line, sorted).
 """
 
 from __future__ import annotations
@@ -18,8 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ROUTERS = ROOT / "src" / "api" / "v1" / "routers"
-INVENTORY = ROOT / "docs" / "artifacts" / "sec_rbac_router_permissions.txt"
-MAP_FILE = ROOT / "docs" / "artifacts" / "SEC_RBAC_ENDPOINTS_MAP.md"
+INVENTORY = ROOT / "docs" / "product_state" / "baselines" / "rbac_router_permissions.txt"
 
 # Inner arguments of require_permissions("a", "b", ...)
 _PERM_CALL = re.compile(r"require_permissions\s*\(\s*([^)]*)\s*\)")
@@ -100,7 +99,6 @@ def main() -> int:
         print(c)
     print(f"\nTotal unique codes: {len(found)}")
     print(f"Inventory file: {INVENTORY.relative_to(ROOT)}")
-    print(f"Human map: {MAP_FILE.relative_to(ROOT)}")
     print("CI: pytest tests/application/test_sec_rbac_router_permissions_inventory.py")
     return 0
 

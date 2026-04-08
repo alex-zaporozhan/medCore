@@ -39,7 +39,7 @@ class BookingStatus(str, Enum):
     COMPLETED = "completed"
     NO_SHOW = "no_show"
 
-    # Extended lifecycle statuses from ARCH_DEV_BKG_STATE_002
+    # Extended lifecycle statuses (aligned with BookingStatusService / API)
     DRAFT = "draft"
     SCHEDULED = "scheduled"
     RESCHEDULED = "rescheduled"
@@ -66,7 +66,7 @@ class Booking(Base):
     __tablename__ = "bookings"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    # clinic_id is immutable after insert (multi-tenant boundary; see ARCH_DECISIONS / BKG_MULTI).
+    # clinic_id is immutable after insert (multi-tenant boundary; see src/application/multitenancy.py).
     clinic_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("clinics.id"), nullable=False, index=True
     )

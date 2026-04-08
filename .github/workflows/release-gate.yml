@@ -1,0 +1,83 @@
+# U-008 / PRC-E4 — зелёный pipeline перед тегом релиза (STREAM_PHASE2_RELIABILITY_EPICS 2-E3).
+# Триггер: ручной dispatch или push тега v*.*.*.
+name: Release gate (U-008)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  PYTHON_VERSION: "3.11"
+  DATABASE_URL_TEST: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
+  DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
+  REDIS_URL: redis://localhost:6379/0
+  TESTING: "1"
+  SECRET_KEY: ci-secret-key-32-chars-minimum-xx
+  JWT_SECRET_KEY: ci-jwt-secret-key-32-chars-minimum
+  PLATFORM_BILLING_WEBHOOK_SECRET: test-platform-billing-webhook-secret
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dental_booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        run: pip install "poetry<3"
+
+      - name: Backend dependencies
+        run: poetry install --no-interaction --no-ansi
+
+      - name: Entitlement router wiring (1c)
+        run: python scripts/check_admin_entitlement_routers.py
+
+      - name: Tenant ORM isolation audit
+        run: poetry run python scripts/audit_tenant_columns.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend install and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Phase 0 governance preflight (envelope + doc paths + crash-review bundle)
+        run: python scripts/phase0_governance_preflight.py all
+
+      - name: Full backend pytest
+        run: poetry run pytest tests/ -q --tb=short
+        timeout-minutes: 45

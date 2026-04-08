@@ -25,7 +25,7 @@ import { useServiceConsumables } from "@/hooks/useErpInventory";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useAdminLoyaltySummaryByContact } from "@/hooks/useLoyalty";
 import { useDoctors } from "@/hooks/useDoctors";
-import { usePatchBookingAdmin } from "@/hooks";
+import { usePatchBookingAdmin, useSetBookingStatusAdmin } from "@/hooks";
 import {
   AdminDataTableSurface,
   ADMIN_TABLE_PROPS,
@@ -81,7 +81,7 @@ export interface BookingEntityDrawerProps {
   onEditDoctorIdChange?: (v: string) => void;
   /** P2: полная ссылка на слот в расписании (для копирования) */
   scheduleShareUrl?: string | null;
-  /** После PATCH (комментарий или статус) — синхронизировать запись в родителе */
+  /** После PATCH комментария или PUT статуса — синхронизировать запись в родителе */
   onBookingUpdated?: (booking: Booking) => void;
 }
 
@@ -112,6 +112,7 @@ export function BookingEntityDrawer({
 }: BookingEntityDrawerProps) {
   const { currentClinicId } = useAdminClinic();
   const patchBooking = usePatchBookingAdmin();
+  const setBookingStatus = useSetBookingStatusAdmin();
   const clipboard = useClipboard({ timeout: 2500 });
   const [notesDraft, setNotesDraft] = useState("");
   const timeStr = booking ? String(booking.appointment_time).slice(0, 5) : "";
@@ -319,11 +320,12 @@ export function BookingEntityDrawer({
                     disabled={
                       Boolean(editing) ||
                       patchBooking.isPending ||
+                      setBookingStatus.isPending ||
                       bookingStatusSelectOptions(booking.status).length <= 1
                     }
                     onChange={(v) => {
                       if (!v || v === booking.status) return;
-                      patchBooking.mutate(
+                      setBookingStatus.mutate(
                         { id: booking.id, status: v },
                         {
                           onSuccess: (updated) => {

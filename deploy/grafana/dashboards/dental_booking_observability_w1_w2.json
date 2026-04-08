@@ -22,7 +22,7 @@
       "id": 90,
       "options": {
         "mode": "markdown",
-        "content": "**Контекст:** низкокардинальные ряды (`clinic_bucket` / `account_bucket`). Детализация по клинике — в структурных логах. Пороги и runbook: `docs/artifacts/NONFUNCTIONAL_AUDIT_NEXT.md` §6, алерты: `deploy/prometheus/dental_booking_alerts.yml`."
+        "content": "**Контекст:** низкокардинальные ряды (`clinic_bucket` / `account_bucket`). Детализация по клинике — в структурных логах. Пороги и алерты: `deploy/prometheus/dental_booking_alerts.yml` (в т.ч. **EmbedPublic** / **EmbedWebhookPayloadTooLarge**), введение: `docs/METRICS_PROTOCOL.md`, `deploy/grafana/README.md`."
       },
       "title": "Notes",
       "transparent": true,
@@ -139,6 +139,102 @@
       ],
       "title": "Omni+AI chain errors (by error_type, account_bucket)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "id": 102,
+      "panels": [],
+      "title": "Platform SaaS — contour B (billing / 1b)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 36 },
+      "id": 200,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "platform_signup_intent_stuck",
+          "legendFormat": "stuck",
+          "refId": "A"
+        }
+      ],
+      "title": "platform_signup_intent_stuck (GET /metrics gauge)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 36 },
+      "id": 201,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "platform_signup_intent_dead_letter",
+          "legendFormat": "dead_letter",
+          "refId": "A"
+        }
+      ],
+      "title": "platform_signup_intent_dead_letter (GET /metrics gauge)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 43 },
+      "id": 202,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum(rate(platform_signup_intent_ttl_expired_total[5m]))",
+          "legendFormat": "ttl_expired",
+          "refId": "A"
+        }
+      ],
+      "title": "platform_signup_intent_ttl_expired_total rate (expire_stale_signup_intents)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 },
+      "id": 103,
+      "panels": [],
+      "title": "Public embed (§24) — Phase 1e",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 50 },
+      "id": 210,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum by (endpoint, result) (rate(embed_public_request_total[5m]))",
+          "legendFormat": "{{endpoint}} / {{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "embed_public_request_total rate by endpoint, result",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 50 },
+      "id": 211,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(embed_public_request_total{result!=\"ok\"}[5m]))",
+          "legendFormat": "{{endpoint}} non-ok",
+          "refId": "A"
+        }
+      ],
+      "title": "embed public non-ok rate (by endpoint)",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -151,6 +247,6 @@
   "timezone": "browser",
   "title": "Dental Booking — Observability (W1/W2)",
   "uid": "db_obs_w1w2",
-  "version": 1,
+  "version": 3,
   "weekStart": ""
 }

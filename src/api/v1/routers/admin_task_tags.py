@@ -5,6 +5,8 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
+from src.api.v1.entitlement_dependencies import require_entitlement
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +17,11 @@ from src.core.metrics import task_context_admin_events_total
 from src.core.prometheus_labels import clinic_bucket_label
 from src.domain.entities.task_tag_definition import TaskTagDefinition
 
-router = APIRouter(prefix="/admin/task-tags", tags=["admin-task-tags"])
+router = APIRouter(
+    prefix="/admin/task-tags",
+    tags=["admin-task-tags"],
+    dependencies=[Depends(require_entitlement("tasks.kanban"))],
+)
 
 
 def err_payload(detail: str, code: str, field: str | None = None) -> dict:

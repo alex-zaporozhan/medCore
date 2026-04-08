@@ -24,10 +24,12 @@ cryptography = "^46.0.0"
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 python-multipart = "^0.0.22"
 httpx = "^0.26.0"
+prometheus-client = "^0.21.0"
 python-telegram-bot = "^20.7"
 pyjwt = "^2.12.0"
 pyasn1 = "^0.6.3"
 boto3 = "^1.42.79"
+pyotp = "^2.9.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2"
@@ -61,6 +63,7 @@ markers = [
     "regression_pd: regression tests for personal data isolation and access",
     "regression_chats: regression tests for chats and omnichannel",
     "security: security-focused tests (kassa, PD, chats, tenant isolation)",
+    "redis_integration: tests requiring real Redis; enable with RUN_REDIS_INTEGRATION_TESTS=1 (10-Q8)",
 ]
 
 [tool.mypy]

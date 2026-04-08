@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import time as time_module
 from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
@@ -11,6 +12,10 @@ from uuid import UUID
 from sqlalchemy import select
 
 from src.core.config import settings
+from src.core.metrics import (
+    backup_logical_export_completed_total,
+    backup_logical_export_last_success_timestamp_seconds,
+)
 from src.domain.entities.booking import Booking
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.patient import Patient
@@ -66,6 +71,7 @@ async def _run_full_backup_async(task_id: str, clinic_id: str) -> None:
             clinic = clinic_result.scalar_one_or_none()
             if not clinic:
                 _set_backup_status(task_id, "failed", error="Clinic not found")
+                backup_logical_export_completed_total.labels(result="failed").inc()
                 return
 
             clinics_data = [{"id": str(clinic.id), "name": clinic.name}]
@@ -118,9 +124,12 @@ async def _run_full_backup_async(task_id: str, clinic_id: str) -> None:
 
         download_url = f"/api/v1/admin/backup/download/{task_id}"
         _set_backup_status(task_id, "completed", download_url=download_url)
+        backup_logical_export_last_success_timestamp_seconds.set(time_module.time())
+        backup_logical_export_completed_total.labels(result="ok").inc()
         logger.info("backup completed", extra={"task_id": task_id})
     except Exception as e:
         logger.exception("backup failed", extra={"task_id": task_id})
+        backup_logical_export_completed_total.labels(result="failed").inc()
         _set_backup_status(task_id, "failed", error=str(e))
         if os.path.exists(filepath):
             try:

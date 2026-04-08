@@ -13,9 +13,9 @@ from src.api.v1.dependencies import (
     AdminContext,
     get_request_context,
     get_session,
-    require_crm_enterprise_edition,
     require_permissions,
 )
+from src.api.v1.entitlement_dependencies import require_entitlement
 from src.application.ai.tools_base import ToolContext, ToolError
 from src.application.ai.tools_crm import (
     CreateTaskForLeadTool,
@@ -87,7 +87,7 @@ router = APIRouter(
     tags=["admin-crm"],
     dependencies=[
         Depends(require_permissions("view_crm")),
-        Depends(require_crm_enterprise_edition),
+        Depends(require_entitlement("crm.pipeline")),
     ],
 )
 

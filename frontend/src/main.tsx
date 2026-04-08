@@ -22,7 +22,7 @@ import App from "./App";
 import { appTheme } from "./theme";
 import { registerPwa } from "./pwa/registerPwa";
 
-/** Вход: стили Mantine → `MantineProvider` → `QueryClientProvider` → `App`. §7: смена UI-kit — только по эпику (`ROLE_FRONTEND`). Базовые дефолты Query: `docs/artifacts/ARCH_FRONTEND_ENTERPRISE_BASELINE.md`. */
+/** App shell: MantineProvider → QueryClientProvider → App. Query defaults aligned with admin data fetching. */
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

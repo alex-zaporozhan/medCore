@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { AuthTokenResponse } from "@/api/types";
+import { usePatientEntry } from "@/contexts/PatientEntryContext";
 
 export interface AgreementSettings {
   clinic_id: string;
@@ -9,20 +10,29 @@ export interface AgreementSettings {
 }
 
 export function useAgreement() {
+  const { clinicSlug } = usePatientEntry();
   return useQuery({
-    queryKey: ["auth", "agreement"],
-    queryFn: () => api.get<AgreementSettings>("/v1/auth/agreement"),
+    queryKey: ["auth", "agreement", clinicSlug],
+    queryFn: () => {
+      const q = clinicSlug ? `?clinic_slug=${encodeURIComponent(clinicSlug)}` : "";
+      return api.get<AgreementSettings>(`/v1/auth/agreement${q}`);
+    },
   });
 }
 
 export function useSendCode() {
+  const { clinicSlug } = usePatientEntry();
   return useMutation({
     mutationFn: (phone: string) =>
-      api.post<undefined>("/v1/auth/send-code", { phone }),
+      api.post<undefined>("/v1/auth/send-code", {
+        phone,
+        clinic_slug: clinicSlug ?? undefined,
+      }),
   });
 }
 
 export function useVerifyCode() {
+  const { clinicSlug } = usePatientEntry();
   return useMutation({
     mutationFn: (body: {
       phone: string;
@@ -39,6 +49,10 @@ export function useVerifyCode() {
       utm_term?: string | null;
       landing_page?: string | null;
       anchor?: string | null;
-    }) => api.post<AuthTokenResponse>("/v1/auth/verify-code", body),
+    }) =>
+      api.post<AuthTokenResponse>("/v1/auth/verify-code", {
+        ...body,
+        clinic_slug: clinicSlug ?? undefined,
+      }),
   });
 }

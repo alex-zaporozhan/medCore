@@ -1,0 +1,23 @@
+# Prometheus scrape config for local / staging stacks (Phase 1d).
+# Use with: docker compose --profile observability up -d (repo root).
+# Tune targets if the API service name or port differs.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+rule_files:
+  - /etc/prometheus/rules/dental_booking_alerts.yml
+
+scrape_configs:
+  - job_name: dental_booking_api
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - backend:8000

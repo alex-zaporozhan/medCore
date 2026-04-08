@@ -1,5 +1,5 @@
 /**
- * Баррель доменного слоя данных (техпаспорт §4.1). Новый `hooks/use*.ts` — добавить `from "./use…"` сюда;
+ * Баррель доменного слоя данных. Новый `hooks/use*.ts` — добавить `from "./use…"` сюда;
  * регресс ловит `hooks/__tests__/hooksBarrelParity.test.ts`.
  */
 export { useDoctors, useDoctor } from "./useDoctors";
@@ -36,6 +36,7 @@ export {
   useRescheduleBookingAdmin,
   useCreateAdminBooking,
   usePatchBookingAdmin,
+  useSetBookingStatusAdmin,
   useCancelBookingAdmin,
   useCompleteBookingAdmin,
 } from "./useAdminBookings";
@@ -92,6 +93,7 @@ export type { StaffDirectoryAdminRow, StaffProfessionCategoryRow } from "./useSt
 export type { AdminUserRow } from "./useAdminAdmins";
 export { useAdminSession } from "./useAdminSession";
 export type { AdminSessionPayload } from "./useAdminSession";
+export { useProductFeatures } from "./useProductFeatures";
 export { useMyStaffProfile, usePatchMyStaffProfile, useUploadMyStaffAvatar } from "./useMyStaffCabinet";
 export type { MyStaffProfileDto } from "./useMyStaffCabinet";
 export {

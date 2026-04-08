@@ -83,8 +83,7 @@ async def test_admin_tasks_wip_limit_is_enforced_on_status_move(client, admin_au
         json={"status": "in_progress"},
     )
     assert move_overflow.status_code == 409, move_overflow.text
-    payload = move_overflow.json().get("detail", {})
-    assert payload.get("code") == "WIP_LIMIT_EXCEEDED"
+    assert move_overflow.json().get("code") == "wip_limit_exceeded"
 
 
 @pytest.mark.asyncio

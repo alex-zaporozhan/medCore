@@ -31,5 +31,4 @@ async def test_task_comment_rate_limit_returns_structured_429(client, admin_auth
     )
     assert overflow_resp.status_code == 429, overflow_resp.text
     body = overflow_resp.json()
-    payload = body.get("detail") if isinstance(body.get("detail"), dict) else body
-    assert payload.get("code") == "RATE_LIMIT_EXCEEDED"
+    assert body.get("code") == "rate_limit_exceeded"

@@ -110,7 +110,7 @@ export default function AdminStylingPage() {
         </Stack>
       </Card>
       <Card withBorder p="md" radius="md">
-        <Text size="sm" fw={600} mb="xs">Палитра сайта (по техпаспорту)</Text>
+        <Text size="sm" fw={600} mb="xs">Палитра сайта (базовая тема)</Text>
         <Stack gap={4}>
           {paletteRef.map(({ name, var: v, hex }) => (
             <Text key={v} size="xs" c="dimmed" component="span" style={{ display: "flex", gap: 8 }}>

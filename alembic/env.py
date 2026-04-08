@@ -24,7 +24,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all domain entities so Base.metadata contains every table (for autogenerate / squash)
-# See docs/ARCH_ALEMBIC_MIGRATIONS.md and DEV_PROMPTS_ALEMBIC_SQUASH.md
+# Импорт всех entity-модулей нужен, чтобы metadata отражала полную схему (autogenerate).
 import pkgutil
 import src.domain.entities as _entities_pkg
 for _importer, _modname, _ispkg in pkgutil.iter_modules(_entities_pkg.__path__):

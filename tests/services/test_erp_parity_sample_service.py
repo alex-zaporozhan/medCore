@@ -1,4 +1,4 @@
-"""ERP L2: sample parity helper (NONFUNCTIONAL_AUDIT_NEXT §5.2)."""
+"""ERP L2: sample parity helper (raw vs vitrine sample)."""
 
 from __future__ import annotations
 

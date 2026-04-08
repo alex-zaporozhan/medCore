@@ -1,7 +1,7 @@
 /** Shared API response types aligned with backend DTOs */
 
 /**
- * Тело ошибки FastAPI/HTTPException в JSON — техпаспорт §3 (`client.ts` разбор).
+ * Тело ошибки FastAPI/HTTPException в JSON (разбор в `client.ts`, канон ошибок — бэкенд + PRODUCT_KNOWLEDGE_BASE §6).
  * `detail` — строка, объект бизнес-ошибки, **массив** (часто 422 validation), или реже `string[]`.
  */
 export interface ApiErrorDetailObject {
@@ -22,7 +22,12 @@ export interface ApiErrorResponseBody {
   detail?: string | ApiErrorDetailObject | ApiValidationErrorItem[] | string[];
   /** Редко сверх `detail`; учитывается, если из `detail` не извлечено сообщение */
   message?: string;
+  /** Машинный код: lowercase snake_case (бэкенд `main.py` / 1c-Q2). */
   code?: string;
+  /** Корреляция запроса (envelope `main.py` рядом с `code` / `details`). */
+  trace_id?: string;
+  /** Доп. поля с бэкенда (например `site_key`, `field`) при HTTPException. */
+  details?: Record<string, unknown>;
 }
 
 export const SPECIALIST_ROLE_OPTIONS = [

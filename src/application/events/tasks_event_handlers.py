@@ -195,7 +195,7 @@ def register_tasks_event_handlers(event_bus: EventBus) -> None:
     Register task-related event handlers.
 
     NOTE: EventBus handlers here are thin; they are expected to be wrapped with
-    database session management at the publishing site (see ARCH_RBAC_AND_TASKS).
+    database session management at the publishing site (see event publisher / session scope).
     """
 
     async def _on_cancelled(event: DomainEvent) -> None:

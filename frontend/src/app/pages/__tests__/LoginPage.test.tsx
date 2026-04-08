@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "@/test-utils";
-import LoginPage from "../LoginPage";
+import PatientSignInPage from "@/auth/PatientSignInPage";
 
 const mockVerify = vi.fn();
 
@@ -9,10 +9,14 @@ vi.mock("@/contexts/PatientAuthContext", () => ({
   usePatientAuth: () => ({ login: vi.fn() }),
 }));
 
+vi.mock("@/contexts/PatientEntryContext", () => ({
+  usePatientEntry: () => ({ clinicSlug: "demo-clinic" }),
+}));
+
 vi.mock("@/hooks/useAuth", () => ({
   useAgreement: () => ({ data: { allow_registration_without_mailing_consent: true } }),
   useSendCode: () => ({
-    mutate: (_phone: string, opts: any) => opts?.onSuccess?.(),
+    mutate: (_phone: string, opts: { onSuccess?: () => void }) => opts?.onSuccess?.(),
     isPending: false,
     error: null,
   }),
@@ -36,13 +40,16 @@ vi.mock("@/shared/utmTracking", () => ({
   }),
 }));
 
-describe("LoginPage UTM integration", () => {
+describe("Patient sign-in UTM integration", () => {
   beforeEach(() => {
     mockVerify.mockReset();
   });
 
   it("passes UTM context from getCurrentUtm to verifyCode.mutate payload", () => {
-    renderWithProviders(<LoginPage />, { withRouter: true });
+    renderWithProviders(<PatientSignInPage />, {
+      withRouter: true,
+      routerInitialEntries: ["/c/demo-clinic/sign-in"],
+    });
 
     const phoneInput = screen.getByLabelText("Телефон");
     fireEvent.change(phoneInput, { target: { value: "9001234567" } });
@@ -68,4 +75,3 @@ describe("LoginPage UTM integration", () => {
     expect(payload.anchor).toBe("#hero");
   });
 });
-

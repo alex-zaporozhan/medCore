@@ -12,7 +12,7 @@ export function useClinics(includeDeleted = false) {
   });
 }
 
-/** PATCH/PUT части полей клиники — инвалидация списка клиник (техпаспорт §5.2). */
+/** PATCH/PUT части полей клиники — инвалидация списка клиник. */
 export function useUpdateClinicMutation() {
   const qc = useQueryClient();
   return useMutation({

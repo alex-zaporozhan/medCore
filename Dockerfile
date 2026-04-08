@@ -15,6 +15,9 @@ COPY pyproject.toml poetry.lock* ./
 # Install dependencies
 RUN poetry install --no-interaction --no-ansi --no-root
 
+# Build-time dependency sanity check (prevents runtime surprise in tests/metrics).
+RUN python -c "import prometheus_client"
+
 # Production stage
 FROM python:3.11-slim
 
@@ -23,6 +26,9 @@ WORKDIR /app
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Runtime image sanity check: prometheus client must be importable.
+RUN python -c "import prometheus_client"
 
 # Copy application code
 COPY . .

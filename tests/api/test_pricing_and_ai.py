@@ -1,6 +1,6 @@
 """API smoke tests for pricing/discounts and AI module.
 
-These tests cover key scenarios from DEV_PROMPTS_QA_PRICING_AND_AI.md:
+These tests cover pricing/discounts, payments, and AI module smoke scenarios:
 - public/admin services pricing fields and discounts;
 - payments original/discount/final amounts;
 - AI assistant fallbacks when external AI is not configured;

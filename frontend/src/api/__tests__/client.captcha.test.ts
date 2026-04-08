@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { api, ApiErrorWithCode } from "@/api/client";
 
-describe("api client CAPTCHA_REQUIRED parsing", () => {
+describe("api client captcha_required parsing", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -10,7 +10,9 @@ describe("api client CAPTCHA_REQUIRED parsing", () => {
     const fetchMock = vi.fn(async () => {
       return new Response(
         JSON.stringify({
-          detail: { code: "CAPTCHA_REQUIRED", site_key: "site-key" },
+          detail: "Требуется подтверждение Turnstile.",
+          code: "captcha_required",
+          details: { site_key: "site-key" },
         }),
         { status: 403, statusText: "Forbidden", headers: { "Content-Type": "application/json" } }
       );
@@ -25,7 +27,7 @@ describe("api client CAPTCHA_REQUIRED parsing", () => {
     }
     expect(err).toBeInstanceOf(ApiErrorWithCode);
     const ae = err as ApiErrorWithCode;
-    expect(ae.code).toBe("CAPTCHA_REQUIRED");
+    expect(ae.code).toBe("captcha_required");
     expect(ae.details?.site_key).toBe("site-key");
   });
 });

@@ -1,33 +1,35 @@
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_SHELL_ROUTE_SEGMENTS,
-  ALL_TECH_PASSPORT_PATHS,
+  ALL_PUBLIC_APP_PATHS,
   PATIENT_APP_ROUTE_SEGMENTS,
   ROUTE_PATHS,
-  buildDerivedAllTechPassportPaths,
+  buildDerivedPublicAppPaths,
 } from "@/routePaths";
 import {
   isAdminLoginPath,
+  isClinicScopedPatientSignInPath,
   isPatientLoginPath,
   matchesPatternPath,
   normalizePathname,
 } from "@/routePathUtils";
 
-describe("routePaths (tech passport §2)", () => {
+describe("routePaths (public URL canon)", () => {
   it("lists unique public paths", () => {
-    const set = new Set(ALL_TECH_PASSPORT_PATHS);
-    expect(set.size).toBe(ALL_TECH_PASSPORT_PATHS.length);
+    const set = new Set(ALL_PUBLIC_APP_PATHS);
+    expect(set.size).toBe(ALL_PUBLIC_APP_PATHS.length);
   });
 
   it("derived list matches ROUTE_PATHS / сегменты (паритет канона)", () => {
     const fromObjects = new Set([
-      ROUTE_PATHS.marketing.landing,
+      ...Object.values(ROUTE_PATHS.marketing),
+      ...Object.values(ROUTE_PATHS.platform),
       ...Object.values(ROUTE_PATHS.admin),
       ...Object.values(ROUTE_PATHS.patient),
       ...Object.values(ROUTE_PATHS.other),
     ]);
-    expect(fromObjects).toEqual(new Set(ALL_TECH_PASSPORT_PATHS));
-    expect(new Set(buildDerivedAllTechPassportPaths())).toEqual(new Set(ALL_TECH_PASSPORT_PATHS));
+    expect(fromObjects).toEqual(new Set(ALL_PUBLIC_APP_PATHS));
+    expect(new Set(buildDerivedPublicAppPaths())).toEqual(new Set(ALL_PUBLIC_APP_PATHS));
   });
 
   it("ADMIN_SHELL_ROUTE_SEGMENTS покрывают /admin/* в ROUTE_PATHS (кроме login и dashboard)", () => {
@@ -64,6 +66,10 @@ describe("routePathUtils", () => {
   it("isPatientLoginPath / isAdminLoginPath — единая семантика зон входа", () => {
     expect(isPatientLoginPath("/login")).toBe(true);
     expect(isPatientLoginPath("/login/")).toBe(true);
+    expect(isPatientLoginPath("/sign-in")).toBe(false);
+    expect(isPatientLoginPath("/sign-in/")).toBe(false);
+    expect(isClinicScopedPatientSignInPath("/c/my-clinic/sign-in")).toBe(true);
+    expect(isPatientLoginPath("/c/my-clinic/sign-in")).toBe(true);
     expect(isPatientLoginPath("/app")).toBe(false);
     expect(isAdminLoginPath("/admin/login")).toBe(true);
     expect(isAdminLoginPath("/admin/login/")).toBe(true);

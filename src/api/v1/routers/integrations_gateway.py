@@ -123,7 +123,8 @@ async def webchat_inbound_message(
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail={
-                        "code": "CAPTCHA_REQUIRED",
+                        "code": "captcha_required",
+                        "message": "Требуется подтверждение Turnstile.",
                         "site_key": settings.turnstile_site_key,
                     },
                 ) from None

@@ -1,10 +1,11 @@
 import { usePatientAuth } from "@/contexts/PatientAuthContext";
 import { useClinics, usePatientConversation } from "@/hooks";
 import { Anchor, AppShell, Badge, Box, Button, Group, Text, Alert, MantineProvider } from "@mantine/core";
-import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, Link, useNavigate, useLocation, createSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { ROUTE_PATHS } from "@/routePaths";
 import { isPatientLoginPath } from "@/routePathUtils";
+import { usePatientEntry } from "@/contexts/PatientEntryContext";
 import { appTheme } from "@/theme";
 import { applyPwaUpdate, PWA_NEED_REFRESH, PWA_OFFLINE_READY } from "@/pwa/registerPwa";
 
@@ -35,6 +36,7 @@ const patientChromeBottom = {
 
 export default function AppLayout() {
   const { accessToken, logout, patientId } = usePatientAuth();
+  const { clinicSlug } = usePatientEntry();
   const navigate = useNavigate();
   const location = useLocation();
   const { data: clinics } = useClinics();
@@ -68,9 +70,18 @@ export default function AppLayout() {
   useEffect(() => {
     const onLoginPage = isPatientLoginPath(location.pathname);
     if (!accessToken && !onLoginPage) {
-      navigate(ROUTE_PATHS.other.login, { replace: true });
+      if (clinicSlug) {
+        const returnTo = `${location.pathname}${location.search}`;
+        const search = `?${createSearchParams({ returnTo }).toString()}`;
+        navigate({ pathname: `/c/${clinicSlug}/sign-in`, search }, { replace: true });
+      } else {
+        navigate(
+          { pathname: ROUTE_PATHS.marketing.landing, search: "?patientEntry=need-clinic" },
+          { replace: true },
+        );
+      }
     }
-  }, [accessToken, navigate, location.pathname]);
+  }, [accessToken, navigate, location.pathname, location.search, clinicSlug]);
 
   useEffect(() => {
     function handleOnline() {

@@ -87,6 +87,49 @@ domain_event_handler_failures_total = Counter(  # type: ignore[call-arg]
     ["event_name", "handler"],
 )
 
+domain_outbox_dispatch_total = Counter(  # type: ignore[call-arg]
+    "domain_outbox_dispatch_total",
+    "Outbox dispatcher: publish attempts after transactional enqueue (ADR-009).",
+    ["result", "event_type"],
+)
+
+domain_outbox_post_commit_dispatch_failures_total = Counter(  # type: ignore[call-arg]
+    "domain_outbox_post_commit_dispatch_failures_total",
+    "Post-commit drain of domain_outbox failed in HTTP dependency (data committed; Celery should retry).",
+    ["dependency"],
+)
+
+domain_outbox_pending_gauge = Gauge(  # type: ignore[call-arg]
+    "domain_outbox_pending_rows",
+    "Unpublished domain_outbox rows (low-cardinality; no per-tenant labels).",
+)
+
+domain_outbox_oldest_pending_age_seconds = Gauge(  # type: ignore[call-arg]
+    "domain_outbox_oldest_pending_age_seconds",
+    "Age in seconds of oldest unpublished domain_outbox row (0 if queue empty).",
+)
+
+domain_outbox_gauge_refresh_failures_total = Counter(  # type: ignore[call-arg]
+    "domain_outbox_gauge_refresh_failures_total",
+    "DB errors while refreshing outbox Prometheus gauges (GET /metrics path).",
+)
+
+domain_outbox_blocked_by_attempt_cap_rows = Gauge(  # type: ignore[call-arg]
+    "domain_outbox_blocked_by_attempt_cap_rows",
+    "Unpublished rows with attempts >= DOMAIN_OUTBOX_MAX_DISPATCH_ATTEMPTS (0 if cap disabled or none).",
+)
+
+backup_logical_export_completed_total = Counter(  # type: ignore[call-arg]
+    "backup_logical_export_completed_total",
+    "Admin-triggered JSON logical export (Celery backup_tasks); not a substitute for cluster backup (ADR-008).",
+    ["result"],
+)
+
+backup_logical_export_last_success_timestamp_seconds = Gauge(  # type: ignore[call-arg]
+    "backup_logical_export_last_success_timestamp_seconds",
+    "Unix time of last successful logical export; stays 0 until first success (alerts should ignore 0).",
+)
+
 
 # ------------------------------------------------------------------------------
 # Core omnichannel metrics
@@ -358,10 +401,38 @@ auth_captcha_verified_total = Counter(  # type: ignore[call-arg]
     ["status"],
 )
 
+patient_auth_clinic_context_total = Counter(  # type: ignore[call-arg]
+    "patient_auth_clinic_context_total",
+    "Patient SMS/OAuth: clinic resolution by slug vs default clinic.",
+    ["source", "result"],
+)
+
 chat_upload_rejected_total = Counter(  # type: ignore[call-arg]
     "chat_upload_rejected_total",
     "Chat upload rejections by kind and reason.",
     ["kind", "reason"],
+)
+
+# ------------------------------------------------------------------------------
+# §27–§28 cross-cutting security / anti-spam (arch_plan/10, SAAS master plan)
+# ------------------------------------------------------------------------------
+
+spam_blocked_total = Counter(  # type: ignore[call-arg]
+    "spam_blocked_total",
+    "HTTP 429 rate-limit / anti-abuse blocks by coarse channel (low-cardinality).",
+    ["channel"],
+)
+
+security_auth_failure_total = Counter(  # type: ignore[call-arg]
+    "security_auth_failure_total",
+    "HTTP 401/403 responses classified for SOC-style dashboards (no org_id labels).",
+    ["reason"],
+)
+
+security_suspicious_request_total = Counter(  # type: ignore[call-arg]
+    "security_suspicious_request_total",
+    "Cheap probe heuristics before handler; path_class + reason only.",
+    ["path_class", "reason"],
 )
 
 # Booking / payment structured errors (BKG_ERRORS_005, QA_ARCH W7 BE4).
@@ -386,8 +457,113 @@ booking_error_attention_tasks_created_total = Counter(  # type: ignore[call-arg]
 
 payment_webhook_failures_total = Counter(  # type: ignore[call-arg]
     "payment_webhook_failures_total",
-    "YooKassa webhook failures by reason (invalid_json, processing_error).",
+    "Contour A YooKassa webhook failures by reason: invalid_json, invalid_secret, processing_error, rate_limited.",
     ["reason"],
+)
+
+platform_billing_webhook_total = Counter(  # type: ignore[call-arg]
+    "platform_billing_webhook_total",
+    "Platform SaaS billing webhook (contour B) outcomes (low-cardinality result label).",
+    ["result"],
+)
+
+platform_billing_payment_lifecycle_total = Counter(  # type: ignore[call-arg]
+    "platform_billing_payment_lifecycle_total",
+    "Platform subscription payment rows: provider status transitions (contour B, low-cardinality).",
+    ["event"],
+)
+
+platform_billing_billing_revocation_total = Counter(  # type: ignore[call-arg]
+    "platform_billing_billing_revocation_total",
+    "ADR-012: idempotent billing revocation after refund (contour B).",
+    ["result"],
+)
+
+platform_provision_attempt_total = Counter(  # type: ignore[call-arg]
+    "platform_provision_attempt_total",
+    "Platform org provisioning attempts after paid webhook (success / failed / dlq).",
+    ["result"],
+)
+
+platform_provision_retry_scheduled_total = Counter(  # type: ignore[call-arg]
+    "platform_provision_retry_scheduled_total",
+    "Provisioner scheduled a retry after failure (excludes DLQ).",
+)
+
+platform_provision_manual_close_total = Counter(  # type: ignore[call-arg]
+    "platform_provision_manual_close_total",
+    "Founder manual-close reconcile (applied vs idempotent noop).",
+    ["result"],
+)
+
+platform_billing_gauge_refresh_failures_total = Counter(  # type: ignore[call-arg]
+    "platform_billing_gauge_refresh_failures_total",
+    "DB errors while refreshing platform billing provision gauges (GET /metrics path).",
+)
+
+platform_signup_intent_stuck = Gauge(  # type: ignore[call-arg]
+    "platform_signup_intent_stuck",
+    "Signup intents awaiting provisioning (paid/provision_failed or tariff_gate on pending_payment), excluding DLQ.",
+)
+
+platform_signup_intent_dead_letter = Gauge(  # type: ignore[call-arg]
+    "platform_signup_intent_dead_letter",
+    "Platform signup intents in dead_letter / provision_dead_letter; excludes reconcile_closed_manual.",
+)
+
+platform_signup_intent_ttl_expired_total = Counter(  # type: ignore[call-arg]
+    "platform_signup_intent_ttl_expired_total",
+    "Intents marked status=expired by TTL job (Celery expire_stale_signup_intents); no labels.",
+)
+
+platform_founder_auth_total = Counter(  # type: ignore[call-arg]
+    "platform_founder_auth_total",
+    "Platform founder JWT auth attempts on /platform/internal/* (low-cardinality result).",
+    ["result"],
+)
+
+platform_founder_jwt_reject_total = Counter(  # type: ignore[call-arg]
+    "platform_founder_jwt_reject_total",
+    "1a-E6: founder JWT rejected after signature decode (issuer/audience/claims).",
+    ["reason"],
+)
+
+tenant_jwt_claim_reject_total = Counter(  # type: ignore[call-arg]
+    "tenant_jwt_claim_reject_total",
+    "1a-E6: tenant (admin/patient) JWT rejected on iss/aud validation — symmetry with platform_founder_jwt_reject_total.",
+    ["reason"],
+)
+
+
+def record_tenant_jwt_claim_reject(*, code: str) -> None:
+    """Map JwtClaimValidationError.code to low-cardinality Prometheus label."""
+    if code == "invalid_token_issuer":
+        reason = "issuer"
+    elif code == "invalid_token_audience":
+        reason = "audience"
+    else:
+        reason = "claims"
+    tenant_jwt_claim_reject_total.labels(reason=reason).inc()
+
+
+# Phase 1e §24 — публичный embed (низкая кардинальность: endpoint + result).
+embed_public_request_total = Counter(  # type: ignore[call-arg]
+    "embed_public_request_total",
+    "Public embed API outcomes (§24): health, session, webhook_inbox.",
+    ["endpoint", "result"],
+)
+
+embed_rag_search_duration_seconds = Histogram(  # type: ignore[call-arg]
+    "embed_rag_search_duration_seconds",
+    "DB retrieval duration inside POST /public/embed/v1/rag/search (§24.3).",
+    ["search_mode"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+
+embed_rag_search_outcomes_total = Counter(  # type: ignore[call-arg]
+    "embed_rag_search_outcomes_total",
+    "RAG KB search outcomes after retrieval (empty vs hits vs db_error).",
+    ["outcome", "search_mode"],
 )
 
 
@@ -514,6 +690,12 @@ crm_leads_list_requests_total = Counter(  # type: ignore[call-arg]
     "crm_leads_list_requests_total",
     "CRM GET /leads requests by projection (full vs kanban).",
     ["projection"],
+)
+
+crm_import_operations_total = Counter(  # type: ignore[call-arg]
+    "crm_import_operations_total",
+    "CRM import Phase 3+ API (dry-run / list jobs); low-cardinality outcome labels.",
+    ["endpoint", "outcome"],
 )
 
 # HTTP layer (PERF observability): route template when available; status_class for latency SLO slices.

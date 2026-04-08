@@ -50,9 +50,7 @@ async def test_get_doctor_schedule_admin_unknown_doctor_returns_403(
         headers=headers,
     )
     assert response.status_code == 403
-    detail = response.json().get("detail")
-    if isinstance(detail, dict):
-        assert detail.get("code") == "clinic_forbidden"
+    assert response.json().get("code") == "clinic_forbidden"
 
 
 @pytest.mark.asyncio
@@ -71,6 +69,4 @@ async def test_get_admin_clinic_schedule_foreign_clinic_in_path_returns_403(
         headers=headers,
     )
     assert response.status_code == 403
-    detail = response.json().get("detail")
-    if isinstance(detail, dict):
-        assert detail.get("code") == "clinic_forbidden"
+    assert response.json().get("code") == "clinic_forbidden"

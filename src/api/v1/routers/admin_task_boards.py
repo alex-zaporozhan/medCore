@@ -5,6 +5,8 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
+from src.api.v1.entitlement_dependencies import require_entitlement
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -16,7 +18,11 @@ from src.application.dto.task_dto import TASK_STATUSES
 from src.domain.entities.task_board import TaskBoard
 from src.domain.entities.task_board_column import TaskBoardColumn
 
-router = APIRouter(prefix="/admin/task-boards", tags=["admin-task-boards"])
+router = APIRouter(
+    prefix="/admin/task-boards",
+    tags=["admin-task-boards"],
+    dependencies=[Depends(require_entitlement("tasks.kanban"))],
+)
 
 _STATUS_SET = frozenset(TASK_STATUSES)
 

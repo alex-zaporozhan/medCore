@@ -33,12 +33,15 @@ ENV/
 *.swo
 *~
 
-# Docs
-# Docs are part of the repo (runbooks, passports, artifacts).
-# Do not ignore the whole directory; ignore only bulky/derived outputs if needed.
+# Закрытая документация команды (роли, RAG, внутренние паспорта) — не в git
+/docs/
+
+# Локальные настройки Cursor (опционально)
 .cursorrules
 .cursorignore
-/docs_archives
+/docs_archives/
+/docs_archive/
+/docs_archive
 
 
 # Environment

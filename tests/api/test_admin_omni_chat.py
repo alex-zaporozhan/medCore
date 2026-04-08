@@ -460,7 +460,7 @@ async def test_admin_reply_channel_foreign_clinic_400(init_db, seed_data, client
 @pytest.mark.regression_chats
 @pytest.mark.asyncio
 async def test_admin_reply_channel_unresolved_409(init_db, seed_data, client: AsyncClient, admin_auth: dict):
-    """No inbound channel and no usable primary channel — 409 OMNI_REPLY_CHANNEL_UNRESOLVED."""
+    """No inbound channel and no usable primary channel — 409 omni_reply_channel_unresolved."""
     business_account_id = seed_data["clinic_id"]
     async with db_base.AsyncSessionLocal() as session:
         service = OmnichannelChatService(session)
@@ -484,11 +484,7 @@ async def test_admin_reply_channel_unresolved_409(init_db, seed_data, client: As
         headers=headers,
     )
     assert r.status_code == 409, r.text
-    detail = r.json().get("detail")
-    if isinstance(detail, dict):
-        assert detail.get("code") == "OMNI_REPLY_CHANNEL_UNRESOLVED"
-    else:
-        assert "OMNI_REPLY_CHANNEL_UNRESOLVED" in r.text
+    assert r.json().get("code") == "omni_reply_channel_unresolved"
 
 
 @pytest.mark.regression_chats
@@ -546,11 +542,7 @@ async def test_admin_omni_send_rate_limit_429(
         headers=headers,
     )
     assert r3.status_code == 429, r3.text
-    detail = r3.json().get("detail")
-    if isinstance(detail, dict):
-        assert detail.get("code") == "OMNI_SEND_RATE_LIMITED"
-    else:
-        assert "OMNI_SEND_RATE_LIMITED" in r3.text
+    assert r3.json().get("code") == "omni_send_rate_limited"
 
 
 @pytest.mark.regression_chats

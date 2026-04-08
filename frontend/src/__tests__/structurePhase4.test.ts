@@ -22,7 +22,7 @@ import {
 } from "@/shared";
 
 /**
- * Smoke: фаза 4 техплана — единые баррели `hooks/`, `contexts/`, `shared/` (§4).
+ * Smoke: единые баррели `hooks/`, `contexts/`, `shared/`.
  * Не проверяет рантайм-хуки вне провайдеров — только наличие публичного API.
  */
 describe("frontend structure (phase 4 barrels)", () => {

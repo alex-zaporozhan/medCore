@@ -97,8 +97,7 @@ async def test_patient_chat_rate_limit_429(client: AsyncClient, patient_auth: di
         headers=h,
     )
     assert r2.status_code == 429, r2.text
-    detail = r2.json()["detail"]
-    assert detail["code"] == "CHAT_RATE_LIMITED"
+    assert r2.json().get("code") == "chat_rate_limited"
 
 
 @pytest.mark.asyncio

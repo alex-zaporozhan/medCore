@@ -262,3 +262,32 @@ async def replace_user_roles_for_users_in_clinic(
             session.add(UserRole(id=uuid.uuid4(), clinic_id=clinic_id, user_id=uid, role_id=owner_role_id))
 
     return len(uniq_user_ids)
+
+
+async def attach_global_role_if_missing(
+    session: AsyncSession,
+    *,
+    user_id: UUID,
+    clinic_id: UUID,
+    role_code: str,
+) -> None:
+    """Idempotent UserRole row for a global (clinic_id NULL) or clinic-local role."""
+    role = await get_role_by_code(session, clinic_id, role_code)
+    if role is None:
+        return
+    res = await session.execute(
+        select(UserRole.id).where(
+            UserRole.user_id == user_id,
+            UserRole.role_id == role.id,
+            UserRole.clinic_id == clinic_id,
+        ).limit(1)
+    )
+    if res.scalar_one_or_none() is None:
+        session.add(
+            UserRole(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                role_id=role.id,
+                clinic_id=clinic_id,
+            )
+        )

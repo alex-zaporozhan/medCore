@@ -1,8 +1,8 @@
 import type { AdminShellSegment } from "@/routePaths";
 
 /**
- * Редакция сборки (коробка vs Enterprise) — см. `MASTER_PRODUCT_ROADMAP_2026`, `VITE_EDITION` в `.env.example`.
- * В коробке скрывается вкладка «Лояльность» на `/admin/loyalty`.
+ * Редакция сборки (коробка vs Enterprise): `VITE_EDITION` в `.env.example`.
+ * В коробке скрыты сегменты `sales` и `retention` (см. `BOX_DISALLOWED_ADMIN_SEGMENTS`; серверный гейт — env `EDITION` на бэкенде).
  */
 export function isBoxEdition(): boolean {
   const e = import.meta.env.VITE_EDITION?.toLowerCase()?.trim();
@@ -10,11 +10,15 @@ export function isBoxEdition(): boolean {
 }
 
 /**
- * Сегменты под `/admin/:seg`, недоступные в редакции Box (Smart Retention, CRM-лиды) — `ARCH_PHASE_06_OWNER_RBAC_2026` §7.
+ * Сегменты под `/admin/:seg`, недоступные в редакции Box (Smart Retention, CRM-лиды).
+ * См. `VITE_EDITION` в `.env.example` и `src/core/edition.py` на бэкенде.
  */
 export const BOX_DISALLOWED_ADMIN_SEGMENTS: readonly AdminShellSegment[] = [
   "retention",
   "sales",
+  "embed",
+  "rag-kb",
+  "commerce",
 ] as const;
 
 export function isAdminSegmentBlockedInBox(segment: AdminShellSegment): boolean {

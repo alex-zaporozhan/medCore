@@ -19,7 +19,7 @@
       "id": 1,
       "options": {
         "mode": "markdown",
-        "content": "**booking_errors_total** — разрез `code`, `clinic_bucket`, `source` (api | ai_tool). Пороги алертов: `deploy/prometheus/dental_booking_alerts.yml`, NFR: `docs/artifacts/NONFUNCTIONAL_AUDIT_NEXT.md`."
+        "content": "**booking_errors_total** — разрез `code`, `clinic_bucket`, `source` (api | ai_tool). Пороги алертов: `deploy/prometheus/dental_booking_alerts.yml`. Контекст: `docs/METRICS_PROTOCOL.md`."
       },
       "title": "Notes",
       "transparent": true,

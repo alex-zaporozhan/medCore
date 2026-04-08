@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
  * Локально: `npm run build`, затем `npm run test:e2e` (поднимет preview).
  * CI: см. `.github/workflows/e2e.yml` — build перед тестом.
- * Полный контур с API/логином — см. `docs/adr/ADR-006-playwright-browser-e2e.md`.
+ * Полный контур с API/логином — см. workflow e2e в .github/workflows и docker-compose.
  */
 export default defineConfig({
   testDir: path.join(__dirname, "e2e"),

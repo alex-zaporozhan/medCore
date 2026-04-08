@@ -14,6 +14,8 @@ from src.core.patient_messages import (
     BOOKING_SLOT_ALREADY_BOOKED,
     BOOKING_DOCTOR_DOES_NOT_PROVIDE_SERVICE,
     BOOKING_INVALID_STATUS,
+    BOOKING_STATUS_PATCH_NOT_ALLOWED,
+    BOOKING_STATUS_REQUIRES_NARROW_ENDPOINT,
     BOOKING_CANNOT_CANCEL_STATUS,
     BOOKING_CANNOT_CANCEL_PAST,
     BOOKING_CANNOT_RESCHEDULE_CANCELLED,
@@ -41,6 +43,12 @@ def booking_error_from_value_error(
     elif message == BOOKING_DOCTOR_DOES_NOT_PROVIDE_SERVICE:
         code = BookingErrorCode.VALIDATION_ERROR
         details = {"reason": "doctor_not_provides_service"}
+    elif message == BOOKING_STATUS_PATCH_NOT_ALLOWED:
+        code = BookingErrorCode.VALIDATION_ERROR
+        details = {"reason": "booking_status_patch_deprecated", "use": "PUT /api/v1/admin/bookings/{id}/status"}
+    elif message == BOOKING_STATUS_REQUIRES_NARROW_ENDPOINT:
+        code = BookingErrorCode.VALIDATION_ERROR
+        details = {"reason": "booking_status_narrow_endpoint_required"}
     elif message in {BOOKING_INVALID_STATUS, BOOKING_CANNOT_CANCEL_STATUS}:
         code = BookingErrorCode.BOOKING_STATUS_INVALID
     elif message in {BOOKING_CANNOT_CANCEL_PAST, BOOKING_CANNOT_RESCHEDULE_CANCELLED}:

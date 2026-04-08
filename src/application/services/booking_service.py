@@ -31,7 +31,7 @@ from src.domain.entities.waitlist_entry import WaitlistEntry
 from src.domain.interfaces.repositories.booking_repository import BookingRepository
 from src.infrastructure.database.booking_repo_impl import BookingRepositoryImpl
 from src.infrastructure.database.lead_repo_impl import LeadRepositoryImpl
-from src.application.events.event_bus import get_event_bus
+from src.application.services.domain_outbox_service import emit_booking_domain_event
 from src.application.events.standard_events import (
     make_booking_cancelled_event,
     make_booking_completed_event,
@@ -51,6 +51,7 @@ from src.core.patient_messages import (
     BOOKING_DOCTOR_DOES_NOT_PROVIDE_SERVICE,
     BOOKING_ENTITY_CLINIC_MISMATCH,
     BOOKING_INVALID_STATUS,
+    BOOKING_STATUS_REQUIRES_NARROW_ENDPOINT,
     BOOKING_NOT_FOUND,
     BOOKING_ONLY_PENDING_CONFIRMED_COMPLETED,
     BOOKING_ONLY_PENDING_CONFIRMED_NO_SHOW,
@@ -188,15 +189,15 @@ class BookingService:
         except Exception as e:
             logger.warning("Failed to enqueue send_booking_created task", extra={"error": str(e)})
 
-        event_bus = get_event_bus()
         try:
             omni = await self._omnichannel_contact_hint_for_patient(data.clinic_id, patient_id)
-            await event_bus.publish(
+            await emit_booking_domain_event(
+                self.session,
                 make_booking_created_event(
                     booking,
                     trace_id=getattr(context, "trace_id", None),
                     omnichannel_contact_id=omni,
-                )
+                ),
             )
         except Exception as e:
             logger.warning(
@@ -321,15 +322,15 @@ class BookingService:
         except Exception as e:
             logger.warning("Failed to enqueue send_booking_created task", extra={"error": str(e)})
 
-        event_bus = get_event_bus()
         try:
             omni = await self._omnichannel_contact_hint_for_patient(clinic_id, patient_id)
-            await event_bus.publish(
+            await emit_booking_domain_event(
+                self.session,
                 make_booking_created_event(
                     booking,
                     trace_id=getattr(context, "trace_id", None),
                     omnichannel_contact_id=omni,
-                )
+                ),
             )
         except Exception as e:
             logger.warning(
@@ -438,9 +439,11 @@ class BookingService:
         await self.status_service.transition(booking, BookingStatus.CANCELLED, context={})
         booking = await self.repository.update(booking)
 
-        event_bus = get_event_bus()
         try:
-            await event_bus.publish(make_booking_cancelled_event(booking, trace_id=getattr(context, "trace_id", None)))
+            await emit_booking_domain_event(
+                self.session,
+                make_booking_cancelled_event(booking, trace_id=getattr(context, "trace_id", None)),
+            )
         except Exception as e:
             logger.warning(
                 "Failed to publish BookingCancelled event",
@@ -568,9 +571,11 @@ class BookingService:
         await self.status_service.transition(booking, BookingStatus.COMPLETED, context={})
         booking = await self.repository.update(booking)
 
-        event_bus = get_event_bus()
         try:
-            await event_bus.publish(make_booking_completed_event(booking, trace_id=getattr(context, "trace_id", None)))
+            await emit_booking_domain_event(
+                self.session,
+                make_booking_completed_event(booking, trace_id=getattr(context, "trace_id", None)),
+            )
         except Exception as e:
             logger.warning(
                 "Failed to publish BookingCompleted event",
@@ -608,9 +613,11 @@ class BookingService:
         await self.status_service.transition(booking, BookingStatus.NO_SHOW, context={})
         booking = await self.repository.update(booking)
 
-        event_bus = get_event_bus()
         try:
-            await event_bus.publish(make_booking_no_show_event(booking, trace_id=getattr(context, "trace_id", None)))
+            await emit_booking_domain_event(
+                self.session,
+                make_booking_no_show_event(booking, trace_id=getattr(context, "trace_id", None)),
+            )
         except Exception as e:
             logger.warning(
                 "Failed to publish BookingNoShow event",
@@ -629,7 +636,7 @@ class BookingService:
         booking_id: UUID,
         data: BookingPatchAdmin,
     ) -> BookingRead:
-        """Update booking fields allowed for admin (notes, status via state machine)."""
+        """Update admin-editable fields (notes only). Status: ``transition_booking_status_admin_light`` or narrow HTTP routes."""
         booking = await self.repository.get_by_id(booking_id)
         if not booking:
             raise LookupError(BOOKING_NOT_FOUND)
@@ -640,16 +647,41 @@ class BookingService:
         patch = data.model_dump(exclude_unset=True)
         if "notes" in patch:
             booking.notes = patch["notes"]
-        if "status" in patch:
-            try:
-                new_status = BookingStatus(patch["status"])
-            except ValueError as exc:
-                raise ValueError(BOOKING_INVALID_STATUS) from exc
-            await self.status_service.transition(booking, new_status, context={})
         booking = await self.repository.update(booking)
         logger.info(
             "Booking patched by admin",
             extra={"booking_id": str(booking_id), "clinic_id": str(clinic_id)},
+        )
+        return BookingRead.model_validate(booking)
+
+    async def transition_booking_status_admin_light(
+        self,
+        clinic_id: UUID,
+        booking_id: UUID,
+        target: BookingStatus,
+        *,
+        context: RequestContext | None = None,
+    ) -> BookingRead:
+        """
+        Reception-style transitions only (confirmed, registered, pending, in_progress, …).
+        Cancel / complete / no_show must use dedicated service methods + HTTP routes (side effects).
+        """
+        if target in (BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW):
+            raise ValueError(BOOKING_STATUS_REQUIRES_NARROW_ENDPOINT)
+        booking = await self.repository.get_by_id(booking_id)
+        if not booking:
+            raise LookupError(BOOKING_NOT_FOUND)
+        assert_entity_belongs_to_clinic(booking, clinic_id, entity_label="booking")
+        booking.status = coerce_booking_status(booking.status)
+        await self.status_service.transition(booking, target, context={})
+        booking = await self.repository.update(booking)
+        logger.info(
+            "Booking status transitioned (admin light path)",
+            extra={
+                "booking_id": str(booking_id),
+                "clinic_id": str(clinic_id),
+                "to_status": target.value,
+            },
         )
         return BookingRead.model_validate(booking)
 

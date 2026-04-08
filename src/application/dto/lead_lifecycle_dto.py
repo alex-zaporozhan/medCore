@@ -1,4 +1,4 @@
-"""Typed CRM lifecycle event payloads (ARCH_DEV_CRM_EVENTS_007 §3.1).
+"""Typed CRM lifecycle event payloads.
 
 Stage resolution for transitions lives in:
 - ``LeadStageSemanticsService`` (semantic → stage_id and stage → semantic),

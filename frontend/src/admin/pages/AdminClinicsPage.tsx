@@ -1,5 +1,5 @@
 import { useClinics, useCreateClinicMutation, useUpdateClinicMutation } from "@/hooks";
-import { AdminDrawer, DataSkeleton, QueryErrorAlert } from "@/shared/ui";
+import { DataSkeleton, GlassModal, QueryErrorAlert } from "@/shared/ui";
 import {
   Button,
   Group,
@@ -177,12 +177,11 @@ export default function AdminClinicsPage() {
         </Table>
       )}
 
-      <AdminDrawer
-        position="right"
-        size="lg"
+      <GlassModal
         opened={opened}
         onClose={close}
         title={form.id ? "Редактирование клиники" : "Новая клиника"}
+        size="lg"
       >
         <Stack>
           <TextInput
@@ -273,7 +272,7 @@ export default function AdminClinicsPage() {
             </Button>
           </Group>
         </Stack>
-      </AdminDrawer>
+      </GlassModal>
     </Stack>
   );
 }

@@ -1,6 +1,5 @@
 /*
- * Глобальные токены + админ-навигация (Swiss Slate / Ink): см. docs/ARCH_FRONTEND_UI_LOGIC.md,
- * docs/artifacts/85 plus/DESIGN_ENTERPRISE_85_PLUS_CONCEPT.md §3.6.
+ * Глобальные токены + админ-навигация (Swiss Slate / Ink) — см. frontend/src/theme.ts.
  * Mantine: primaryColor brand (ink) в `theme.ts`; `indigo` в теме = алиас той же шкалы.
  * Семантика success/warn/danger — hex как в `DESIGN_PALETTE_SPECTRUM_SWATCHES.html` §1 Swiss.
  */
@@ -110,7 +109,7 @@
   --layout-max-width: 1200px;
 
   /*
-   * Календарь админки — Swiss semantic (свотч + DESIGN_CALENDAR_SEMANTIC_MAPPING.md)
+   * Календарь админки — Swiss semantic (свотч; семантика в коде компонентов календаря)
    * Полоска 3px. Записи: ожидает — мёд/золото; подтверждено — denim; на приёме — изумруд; коралл — отдельно (события персонала).
    */
   --calendar-bar-width: 3px;

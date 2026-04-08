@@ -3,21 +3,37 @@
 import logging
 import time
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from sqlalchemy import text
 
 from src.api.v1.router import api_router
 from src.core.config import settings
+from src.core.payment_webhook_governance import (
+    assert_distinct_payment_webhook_secrets,
+    assert_enforced_patient_payment_webhook_secret_in_production,
+    assert_required_security_secrets_in_production,
+    log_payment_webhook_governance_on_startup,
+)
 from src.core.logging import setup_logging
+from src.application.services.domain_outbox_service import refresh_domain_outbox_gauges
+from src.application.services.platform_billing_service import refresh_platform_billing_provision_gauges
 from src.core.metrics import (
     db_replica_lag_observed_seconds,
     http_request_duration_seconds,
     metrics_path_for_request,
     render_prometheus_metrics,
+    security_auth_failure_total,
+    security_suspicious_request_total,
+    spam_blocked_total,
+)
+from src.core.security_observability import (
+    security_auth_failure_reason,
+    spam_blocked_channel,
+    suspicious_request_signal,
 )
 from src.application.events.event_bus import get_event_bus
 from src.application.events.lead_event_handlers import register_lead_event_handlers
@@ -26,6 +42,11 @@ from src.application.events.loyalty_event_handlers import register_loyalty_event
 from src.application.events.tasks_event_handlers import register_tasks_event_handlers
 from src.application.events.marketing_attribution_event_handlers import (
     register_marketing_event_handlers,
+)
+from src.core.http_exception_handler import unified_http_exception_handler
+from src.core.openapi_error_schemas import (
+    STANDARD_OPENAPI_ERROR_RESPONSES,
+    merge_public_error_schemas_into_openapi,
 )
 
 # Setup logging
@@ -40,6 +61,12 @@ async def lifespan(app: FastAPI):
         "[dental-booking] Application started",
         extra={"component": "main", "env": settings.app_env},
     )
+    assert_distinct_payment_webhook_secrets()
+    assert_enforced_patient_payment_webhook_secret_in_production()
+    assert_required_security_secrets_in_production()
+    log_payment_webhook_governance_on_startup()
+    # Production: PLATFORM_FOUNDER_JWT_SECRET is required by assert_required_security_secrets_in_production;
+    # founder routes 503 only if policy changes — do not duplicate warnings here.
 
     # Register event handlers for cross-cutting modules (CRM, ERP, Loyalty, Tasks, Marketing Attribution)
     event_bus = get_event_bus()
@@ -70,6 +97,17 @@ app = FastAPI(
     docs_url=docs_url,
     redoc_url=redoc_url,
     lifespan=lifespan,
+    openapi_tags=[
+        {
+            "name": "00_error_contract",
+            "description": (
+                "Unified JSON error bodies (§28 / 1c-Q4 partial): open /openapi.json → "
+                "components.schemas → ApiHttpErrorBody, ApiValidationErrorBody, ApiInternalErrorBody. "
+                "Registry: docs/architecture/API_PUBLIC_ERROR_CODES.md. "
+                "Per-route response links are backlog 10-Q7 / 1c-Q4."
+            ),
+        },
+    ],
 )
 
 # CORS middleware
@@ -133,6 +171,27 @@ async def prometheus_http_duration_middleware(request: Request, call_next):
         ).observe(elapsed)
 
 
+@app.middleware("http")
+async def security_soc_metrics_middleware(request: Request, call_next):
+    """§27–§28: low-cardinality counters for 429, 401/403, and trivial probes."""
+    path = request.url.path
+    q = request.url.query or ""
+    sig = suspicious_request_signal(path, q)
+    if sig is not None:
+        pc, reason = sig
+        security_suspicious_request_total.labels(path_class=pc, reason=reason).inc()
+
+    response: Response = await call_next(request)
+    code = getattr(response, "status_code", None)
+    if code == 429:
+        spam_blocked_total.labels(channel=spam_blocked_channel(path)).inc()
+    elif code is not None:
+        rsn = security_auth_failure_reason(path, int(code))
+        if rsn:
+            security_auth_failure_total.labels(reason=rsn).inc()
+    return response
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Логируем необработанные исключения и возвращаем 500 без раскрытия деталей."""
@@ -144,6 +203,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     trace_id = getattr(request.state, "trace_id", None)
     body: dict = {
         "detail": "Внутренняя ошибка сервера. Проверьте логи бэкенда и применение миграций БД (alembic upgrade head).",
+        "code": "internal_server_error",
     }
     if trace_id:
         body["trace_id"] = trace_id
@@ -152,58 +212,8 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """Unify HTTPException into {detail, code, trace_id?} envelope."""
-    trace_id = getattr(request.state, "trace_id", None)
-
-    def _snake_code(s: str) -> str:
-        raw = (s or "").strip()
-        if not raw:
-            return ""
-        # Normalize to SNAKE_CASE
-        import re
-
-        raw = raw.replace("-", "_").replace(" ", "_")
-        raw = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", raw)
-        raw = re.sub(r"__+", "_", raw)
-        return raw.upper()
-
-    # Prefer machine code from dict detail.
-    code_from_detail: str | None = None
-    msg_from_detail: str | None = None
-    if isinstance(exc.detail, dict):
-        raw_code = exc.detail.get("code")
-        if isinstance(raw_code, str) and raw_code.strip():
-            code_from_detail = _snake_code(raw_code)
-        raw_msg = exc.detail.get("message") or exc.detail.get("detail")
-        if isinstance(raw_msg, str) and raw_msg.strip():
-            msg_from_detail = raw_msg.strip()
-
-    status_code_to_code: dict[int, str] = {
-        400: "BAD_REQUEST",
-        401: "UNAUTHORIZED",
-        403: "FORBIDDEN",
-        404: "NOT_FOUND",
-        409: "CONFLICT",
-        422: "VALIDATION_ERROR",
-        429: "RATE_LIMITED",
-    }
-    code = code_from_detail or status_code_to_code.get(exc.status_code) or "HTTP_ERROR"
-    code = _snake_code(code) or "HTTP_ERROR"
-
-    # Always return detail as string for client consistency.
-    detail_str: str
-    if msg_from_detail:
-        detail_str = msg_from_detail
-    elif isinstance(exc.detail, str):
-        detail_str = exc.detail
-    else:
-        # Avoid leaking structured payloads; those should go to logs, not to client.
-        detail_str = "Ошибка"
-
-    body: dict = {"detail": detail_str, "code": code}
-    if trace_id:
-        body["trace_id"] = trace_id
-    return JSONResponse(status_code=exc.status_code, content=body)
+    """Delegates to ``unified_http_exception_handler`` (defined outside ``main`` for lightweight tests)."""
+    return await unified_http_exception_handler(request, exc)
 
 
 @app.exception_handler(RequestValidationError)
@@ -224,18 +234,26 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
     body: dict = {
         "detail": "Некорректные данные запроса",
-        "code": "VALIDATION_ERROR",
+        "code": "validation_error",
         "errors": safe_errors,
     }
     if trace_id:
         body["trace_id"] = trace_id
     return JSONResponse(status_code=422, content=body)
 
-# Include API router
-app.include_router(api_router, prefix=settings.api_v1_prefix)
+# Include API router (10-Q7 / 1c-Q4: standard error bodies on all v1 operations)
+app.include_router(
+    api_router,
+    prefix=settings.api_v1_prefix,
+    responses=STANDARD_OPENAPI_ERROR_RESPONSES,
+)
 if settings.api_v1_prefix != "/api/v1":
     # Compatibility alias: many clients/tests assume /api/v1 regardless of env config.
-    app.include_router(api_router, prefix="/api/v1")
+    app.include_router(
+        api_router,
+        prefix="/api/v1",
+        responses=STANDARD_OPENAPI_ERROR_RESPONSES,
+    )
 
 
 @app.get("/health")
@@ -326,5 +344,24 @@ async def health_replica():
 @app.get("/metrics")
 async def metrics() -> Response:
     """Prometheus metrics endpoint for observability and alerting."""
+    await refresh_domain_outbox_gauges()
+    await refresh_platform_billing_provision_gauges()
     payload, content_type = render_prometheus_metrics()
     return Response(content=payload, media_type=content_type)
+
+
+def custom_openapi() -> dict:
+    """Attach shared error body schemas for OpenAPI/Redoc (1c-Q4 partial)."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
+    )
+    merge_public_error_schemas_into_openapi(openapi_schema)
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi

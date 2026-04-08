@@ -1,6 +1,7 @@
 """Payment DTOs."""
 
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -22,6 +23,14 @@ class CreatePaymentResponse(BaseModel):
     original_amount: str | None = None
     discount_amount: str | None = None
     final_amount: str | None = None
+
+
+class PaymentWebhookOkResponse(BaseModel):
+    """Contour A: YooKassa booking payment webhook acknowledged."""
+
+    status: Literal["ok"] = "ok"
+
+    model_config = ConfigDict(json_schema_extra={"examples": [{"status": "ok"}]})
 
 
 class PaymentRead(BaseModel):

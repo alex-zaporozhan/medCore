@@ -1,7 +1,7 @@
 import type { DrawerProps, MantineTheme, ModalProps } from "@mantine/core";
 import type { CSSProperties } from "react";
 
-/** Shared overlay for glass modal and admin detail drawers (TECH_PASSPORT / ARCH_FRONTEND_ADMIN_SHELL). */
+/** Shared overlay for glass modal and admin detail drawers (`AdminDrawer`). */
 export const SHELL_OVERLAY_PROPS: NonNullable<ModalProps["overlayProps"]> = {
   backgroundOpacity: 0.08,
   blur: 10,
@@ -26,12 +26,23 @@ const shellDrawerBase = {
     borderBottomLeftRadius: "var(--mantine-radius-md)",
     border: "1px solid var(--mantine-color-gray-2)",
     overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    maxHeight: "100dvh",
   },
   header: {
     paddingBottom: "var(--mantine-spacing-sm)",
     marginBottom: 0,
+    flexShrink: 0,
     // Без light-dark() — шире поддержка движков; Mantine подставляет палитру через переменные темы
     borderBottom: "1px solid var(--mantine-color-gray-3)",
+  },
+  /** Как у `shellModalBase.body`: длинные формы не обрезают кнопки внизу. */
+  body: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: "auto",
+    overscrollBehavior: "contain",
   },
 };
 

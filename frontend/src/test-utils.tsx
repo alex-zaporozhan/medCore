@@ -17,18 +17,21 @@ function createTestQueryClient() {
 type RenderWithProvidersOptions = Omit<RenderOptions, "wrapper"> & {
   /** Wraps children in MemoryRouter (order: Mantine → Query → Router → page). */
   withRouter?: boolean;
+  /** История для MemoryRouter (по умолчанию `["/"]`). */
+  routerInitialEntries?: string[];
 };
 
 /**
  * Matches production entry order from `main.tsx`: Mantine → Query → (Router) → UI.
  */
 export function renderWithProviders(ui: ReactElement, options?: RenderWithProvidersOptions) {
-  const { withRouter, ...renderOptions } = options ?? {};
+  const { withRouter, routerInitialEntries, ...renderOptions } = options ?? {};
   const queryClient = createTestQueryClient();
+  const entries = routerInitialEntries ?? ["/"];
 
   const Wrapper = ({ children }: { children: ReactNode }) => {
     const routed = withRouter ? (
-      <MemoryRouter initialEntries={["/"]}>{children}</MemoryRouter>
+      <MemoryRouter initialEntries={entries}>{children}</MemoryRouter>
     ) : (
       children
     );

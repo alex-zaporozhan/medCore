@@ -7,8 +7,7 @@ For the first (or only) clinic creates or supplements:
 - 10 demo services.
 
 For buyer-facing presentation (3 clinics, realistic names): prefer
-`poetry run python -m src.scripts.seed_presentation_showcase`
-(see `docs/artifacts/QA_ARCH_PRESENTATION_SEED_PLAN.md`).
+`poetry run python -m src.scripts.seed_presentation_showcase`.
 
 Run: poetry run python -m src.scripts.seed_demo_data
 Or:  docker compose run --rm api python -m src.scripts.seed_demo_data

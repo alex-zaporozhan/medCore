@@ -5,6 +5,8 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
+from src.api.v1.entitlement_dependencies import require_entitlement
 from pydantic import BaseModel
 
 from src.api.v1.dependencies import AdminContext, get_session, require_permissions
@@ -15,9 +17,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.services.recall_service import get_segment_patient_count
-from src.core.edition import is_box_edition
-
-router = APIRouter(prefix="/admin/clinics", tags=["admin-retention"])
+router = APIRouter(
+    prefix="/admin/clinics",
+    tags=["admin-retention"],
+    dependencies=[Depends(require_entitlement("retention.bundle"))],
+)
 
 
 class RetentionSegmentItem(BaseModel):
@@ -64,11 +68,6 @@ async def list_retention_segments(
     _perm_ctx: AdminContext = Depends(require_permissions("erp.owner_reports.read")),
 ) -> RetentionSegmentsResponse:
     """Retention segments with patient count (reuses recall segments; predefined labels can be added)."""
-    if is_box_edition():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "box_forbidden", "message": "Retention is available only in Enterprise edition."},
-        )
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
     result = await session.execute(
@@ -97,11 +96,6 @@ async def get_campaign_roi(
     _perm_ctx: AdminContext = Depends(require_permissions("erp.owner_reports.read")),
 ) -> CampaignRoiResponse:
     """Campaign ROI: funnel stages (sent → read → clicked → booked → paid) and paid_count from real data."""
-    if is_box_edition():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "box_forbidden", "message": "Retention is available only in Enterprise edition."},
-        )
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
     from src.domain.entities.recall_campaign import RecallCampaign
@@ -205,11 +199,6 @@ async def list_media(
     _perm_ctx: AdminContext = Depends(require_permissions("erp.owner_reports.read")),
 ) -> MediaListResponse:
     """Media with polymorphic link to patient_id, booking_id, message_id. Stub: empty list until storage wired."""
-    if is_box_edition():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "box_forbidden", "message": "Retention is available only in Enterprise edition."},
-        )
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clinic not found")
     return MediaListResponse(items=[])

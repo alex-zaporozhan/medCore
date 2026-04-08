@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.clinic_scope import assert_clinic_in_scope
 from src.api.v1.dependencies import AdminContext, get_request_context, get_session, require_permissions
+from src.api.v1.industry_gate_dependencies import require_dental_medical_clinic
 from src.api.v1.routers.admin_auth import get_current_admin
 from src.application.dto.patient_medical_dto import (
     PatientDiagnosisCreate,
@@ -156,7 +157,10 @@ async def _assert_visit_in_patient(
 @router.get(
     "/{clinic_id}/patients/{patient_id}/medical/visits",
     response_model=list[PatientMedicalVisitRead],
-    dependencies=[Depends(require_permissions("patients.medical.read"))],
+    dependencies=[
+        Depends(require_permissions("patients.medical.read")),
+        Depends(require_dental_medical_clinic),
+    ],
 )
 async def list_medical_visits(
     clinic_id: UUID,
@@ -183,7 +187,10 @@ async def list_medical_visits(
     "/{clinic_id}/patients/{patient_id}/medical/visits",
     response_model=PatientMedicalVisitRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permissions("patients.medical.write"))],
+    dependencies=[
+        Depends(require_permissions("patients.medical.write")),
+        Depends(require_dental_medical_clinic),
+    ],
 )
 async def create_medical_visit(
     clinic_id: UUID,
@@ -217,7 +224,10 @@ async def create_medical_visit(
 @router.get(
     "/{clinic_id}/patients/{patient_id}/medical/diagnoses",
     response_model=list[PatientDiagnosisRead],
-    dependencies=[Depends(require_permissions("patients.medical.read"))],
+    dependencies=[
+        Depends(require_permissions("patients.medical.read")),
+        Depends(require_dental_medical_clinic),
+    ],
 )
 async def list_diagnoses(
     clinic_id: UUID,
@@ -244,7 +254,10 @@ async def list_diagnoses(
     "/{clinic_id}/patients/{patient_id}/medical/diagnoses",
     response_model=PatientDiagnosisRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permissions("patients.medical.write"))],
+    dependencies=[
+        Depends(require_permissions("patients.medical.write")),
+        Depends(require_dental_medical_clinic),
+    ],
 )
 async def create_diagnosis(
     clinic_id: UUID,
@@ -277,7 +290,10 @@ async def create_diagnosis(
 @router.get(
     "/{clinic_id}/patients/{patient_id}/medical/files",
     response_model=list[PatientMedicalFileRead],
-    dependencies=[Depends(require_permissions("patients.medical.read"))],
+    dependencies=[
+        Depends(require_permissions("patients.medical.read")),
+        Depends(require_dental_medical_clinic),
+    ],
 )
 async def list_medical_files(
     clinic_id: UUID,
@@ -304,7 +320,10 @@ async def list_medical_files(
     "/{clinic_id}/patients/{patient_id}/medical/files:upload",
     response_model=PatientMedicalFileRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permissions("patients.medical.write"))],
+    dependencies=[
+        Depends(require_permissions("patients.medical.write")),
+        Depends(require_dental_medical_clinic),
+    ],
 )
 async def upload_medical_file(
     clinic_id: UUID,
@@ -435,7 +454,10 @@ async def upload_medical_file(
 
 @router.get(
     "/{clinic_id}/patients/{patient_id}/medical/files/{file_id}:download",
-    dependencies=[Depends(require_permissions("patients.medical.read"))],
+    dependencies=[
+        Depends(require_permissions("patients.medical.read")),
+        Depends(require_dental_medical_clinic),
+    ],
 )
 async def download_medical_file(
     clinic_id: UUID,
@@ -451,7 +473,10 @@ async def download_medical_file(
 
 @router.post(
     "/{clinic_id}/patients/{patient_id}/medical/files/{file_id}:download-token",
-    dependencies=[Depends(require_permissions("patients.medical.read"))],
+    dependencies=[
+        Depends(require_permissions("patients.medical.read")),
+        Depends(require_dental_medical_clinic),
+    ],
 )
 async def issue_medical_file_download_token(
     clinic_id: UUID,
@@ -550,7 +575,10 @@ async def issue_medical_file_download_token(
 
 @router.get(
     "/{clinic_id}/patients/{patient_id}/medical/files/{file_id}:stream",
-    dependencies=[Depends(require_permissions("patients.medical.read"))],
+    dependencies=[
+        Depends(require_permissions("patients.medical.read")),
+        Depends(require_dental_medical_clinic),
+    ],
 )
 async def stream_medical_file(
     clinic_id: UUID,

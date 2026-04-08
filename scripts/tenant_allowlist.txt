@@ -1,5 +1,5 @@
 # Таблицы без literal clinic_id/business_account_id — изоляция через FK или корень tenant.
-# См. docs/operations/TENANT_TABLE_INVENTORY.md
+# Согласуйте состав с миграциями и audit_tenant_columns.py
 permissions
 clinics
 client_reference
@@ -23,3 +23,21 @@ organizations
 task_board_columns
 task_task_tags
 omni_chat_closure_tag_links
+
+# Org-scoped (organization_id FK) / platform — без literal clinic_id в ORM (см. миграции)
+crm_import_job_audit
+domain_outbox
+organization_data_export_requests
+organization_embed_api_keys
+organization_embed_audit_log
+organization_embed_inbound_receipts
+organization_embed_settings
+organization_entitlements
+organization_industry_profile_audit
+organization_rag_kb_audit_log
+organization_rag_kb_documents
+platform_catalog_options
+platform_catalog_plans
+platform_founder_users
+platform_signup_intents
+platform_subscription_payments

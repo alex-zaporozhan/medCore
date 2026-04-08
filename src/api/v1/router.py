@@ -10,6 +10,13 @@ from src.api.v1.routers import (
     doctors,
     patients,
     payments,
+    platform_billing,
+    platform_founder_auth,
+    platform_internal,
+    public_embed,
+    public_platform_catalog,
+    public_platform_owner_invite,
+    public_platform_signup,
     schedule,
     services,
     stickers,
@@ -32,7 +39,11 @@ from src.api.v1.routers import (
     admin_client_reference,
     admin_clinics_summary,
     admin_discounts,
+    admin_embed,
+    admin_rag_kb,
+    admin_organization_data_export,
     admin_integrations,
+    admin_organization_profile,
     admin_owner_settings,
     admin_notification_policy,
     admin_attention_feed,
@@ -57,7 +68,10 @@ from src.api.v1.routers import (
     admin_finance,
     admin_payroll,
     admin_inventory,
+    admin_commerce,
+    admin_commerce_network,
     admin_crm,
+    admin_crm_import,
     admin_tasks,
     admin_task_boards,
     admin_task_streams,
@@ -113,6 +127,10 @@ api_router.include_router(admin_auth.router)
 api_router.include_router(admin_client_reference.router)
 api_router.include_router(admin_clinics_summary.router)
 api_router.include_router(admin_discounts.router)
+api_router.include_router(admin_embed.router)
+api_router.include_router(admin_rag_kb.router)
+api_router.include_router(admin_organization_data_export.router)
+api_router.include_router(admin_organization_profile.router)
 api_router.include_router(admin_integrations.router)
 api_router.include_router(admin_owner_settings.router)
 api_router.include_router(admin_notification_policy.router)
@@ -127,7 +145,10 @@ api_router.include_router(admin_payment_gateway.router)
 api_router.include_router(admin_finance.router)
 api_router.include_router(admin_payroll.router)
 api_router.include_router(admin_inventory.router)
+api_router.include_router(admin_commerce.router)
+api_router.include_router(admin_commerce_network.router)
 api_router.include_router(admin_crm.router)
+api_router.include_router(admin_crm_import.router)
 api_router.include_router(admin_tasks.router)
 api_router.include_router(admin_task_boards.router)
 api_router.include_router(admin_task_streams.router)
@@ -143,6 +164,13 @@ api_router.include_router(patients.router)
 api_router.include_router(schedule.router)
 api_router.include_router(bookings.router)
 api_router.include_router(payments.router)
+api_router.include_router(platform_founder_auth.router)
+api_router.include_router(platform_billing.router)
+api_router.include_router(platform_internal.router)
+api_router.include_router(public_embed.router)
+api_router.include_router(public_platform_catalog.router)
+api_router.include_router(public_platform_signup.router)
+api_router.include_router(public_platform_owner_invite.router)
 api_router.include_router(csv_sync.router)
 api_router.include_router(reports.router)
 api_router.include_router(admin_omni_chat.router)

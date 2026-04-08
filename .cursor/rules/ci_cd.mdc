@@ -1,0 +1,12 @@
+---
+description: CI/CD source of truth — Jenkins + GHCR (not Docker Hub)
+alwaysApply: true
+---
+
+# CI/CD (dental_booking)
+
+- **Production images and deploy:** **Jenkins** (`Jenkinsfile`). Do not assume GitHub Actions builds or pushes release images.
+- **Registry:** **GitHub Container Registry (`ghcr.io`)**. Do not require or document Docker Hub paid plans for deploy.
+- **GitHub Actions:** optional PR checks under `.github/workflows/`; supplementary to Jenkins.
+
+Canonical docs: `CI_CD.md`, `AGENTS.md`, `README.md` § CI.

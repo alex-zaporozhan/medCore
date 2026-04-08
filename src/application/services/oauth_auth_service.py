@@ -1,6 +1,7 @@
 """OAuth-based authentication service for patients."""
 
 import logging
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from src.core.datetime_utils import utc_now_naive
 from src.core.security import create_access_token
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.patient import Patient
+from src.application.services.patient_entry_clinic import resolve_clinic_for_patient_entry
 from src.infrastructure.database.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
@@ -24,25 +26,18 @@ class OAuthAuthService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def _get_default_clinic(self) -> Clinic:
-        result = await self.session.execute(select(Clinic).limit(1))
-        clinic = result.scalar_one_or_none()
-        if clinic is None:
-            raise RuntimeError("No clinic configured for auth")
-        return clinic
-
     async def _get_redis(self) -> Redis:
         return await get_redis()
 
     async def _authenticate_patient_with_oauth_id(
         self,
         *,
+        clinic: Clinic,
         provider: str,
         oauth_id: str,
         email: str | None = None,
         login: str | None = None,
     ) -> tuple[str, UUID]:
-        clinic = await self._get_default_clinic()
         now_utc = utc_now_naive()
 
         query = select(Patient).where(
@@ -89,7 +84,7 @@ class OAuthAuthService:
 
         token = create_access_token(
             data={"sub": str(patient.id), "role": "patient"},
-            expires_delta=settings.jwt_access_token_expire_minutes_patient,
+            expires_delta=timedelta(minutes=settings.jwt_access_token_expire_minutes_patient),
         )
 
         logger.info(
@@ -103,24 +98,32 @@ class OAuthAuthService:
 
         return token, patient.id
 
-    async def authenticate_vk(self, profile: dict[str, Any]) -> tuple[str, UUID]:
+    async def authenticate_vk(
+        self, profile: dict[str, Any], clinic_slug: str | None = None
+    ) -> tuple[str, UUID]:
         user_id = str(profile.get("user_id") or "")
         if not user_id:
             raise ValueError("VK profile missing user_id")
         email = profile.get("email")
+        clinic = await resolve_clinic_for_patient_entry(self.session, clinic_slug)
         return await self._authenticate_patient_with_oauth_id(
+            clinic=clinic,
             provider="vk",
             oauth_id=user_id,
             email=email,
         )
 
-    async def authenticate_yandex(self, profile: dict[str, Any]) -> tuple[str, UUID]:
+    async def authenticate_yandex(
+        self, profile: dict[str, Any], clinic_slug: str | None = None
+    ) -> tuple[str, UUID]:
         user_id = str(profile.get("id") or "")
         if not user_id:
             raise ValueError("Yandex profile missing id")
         email = profile.get("email")
         login = profile.get("login")
+        clinic = await resolve_clinic_for_patient_entry(self.session, clinic_slug)
         return await self._authenticate_patient_with_oauth_id(
+            clinic=clinic,
             provider="yandex",
             oauth_id=user_id,
             email=email,

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 const hooksDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Каждый файл `hooks/use*.ts` должен быть подключён в `hooks/index.ts` (техпаспорт §4.1).
+ * Каждый файл `hooks/use*.ts` должен быть подключён в `hooks/index.ts`.
  * Иначе `@/hooks` не отражает полный доменный слой — риск дрейфа при новых фичах.
  */
 function listUseHookModules(): string[] {

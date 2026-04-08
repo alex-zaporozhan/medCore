@@ -88,3 +88,16 @@ def resolve_client_ip(
             return first
     return peer_ip
 
+
+def client_ip_for_public_rate_limit(request: Request, *, trusted_proxy_cidrs: str) -> str:
+    """
+    Client IP for Redis rate limits on public SaaS paths and webhook B.
+
+    When ``trusted_proxy_cidrs`` is empty, only the immediate TCP peer is used.
+    """
+    raw = (trusted_proxy_cidrs or "").strip()
+    if not raw:
+        return getattr(getattr(request, "client", None), "host", None) or "unknown"
+    resolved = resolve_client_ip(request, trusted_proxy_cidrs=raw, allow_forwarded=True)
+    return (resolved or "").strip() or "unknown"
+

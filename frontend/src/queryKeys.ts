@@ -1,5 +1,5 @@
 /**
- * Единая фабрика ключей TanStack Query (техпаспорт §5.1 — клиника, фильтры, домен).
+ * Единая фабрика ключей TanStack Query (клиника, фильтры, домен).
  * Хуки импортируют отсюда, чтобы инвалидация и optimistic-обновления ссылались на те же кортежи.
  */
 
@@ -56,6 +56,10 @@ export const queryKeys = {
   },
   /** GET /v1/admin/auth/session — права для скрытия кнопок (лента, collab). */
   adminSession: () => ["admin", "session"] as const,
+  adminEmbed: {
+    settings: () => ["admin", "embed", "settings"] as const,
+    apiKeys: () => ["admin", "embed", "api-keys"] as const,
+  },
   attentionFeed: (clinicId: string | null) =>
     ["admin", "clinics", clinicId, "attention-feed"] as const,
   adminDiscounts: (clinicId: string | null) => ["admin-discounts", clinicId] as const,
@@ -118,5 +122,12 @@ export const queryKeys = {
     leadAiSummary: (leadId: string | null) => ["crm-lead-ai-summary", leadId] as const,
     leadAiSuggest: (leadId: string | null) =>
       ["crm-lead-ai-suggest-stage", leadId] as const,
+  },
+  adminDataExport: {
+    summary: () => ["admin", "data-export", "summary"] as const,
+  },
+  adminRagKb: {
+    documents: () => ["admin", "rag-kb", "documents"] as const,
+    document: (id: string) => ["admin", "rag-kb", "document", id] as const,
   },
 } as const;

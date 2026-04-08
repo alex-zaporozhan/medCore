@@ -1,8 +1,7 @@
 /**
  * Swiss Slate / Ink (светлая админка): brand = сине-графит, холодные нейтрали,
  * многослойные тени с подтоном ink, карточки с микрограницей.
- * Канон: `docs/artifacts/85 plus/DESIGN_ENTERPRISE_85_PLUS_CONCEPT.md` §3.6 · `docs/ARCH_FRONTEND_UI_LOGIC.md`
- * Пиксельная сверка шкал brand/gray/семантики — `docs/design/DESIGN_PALETTE_SPECTRUM_SWATCHES.html` §1 Swiss Slate / Ink.
+ * Канон темы: этот файл, `index.css` и Mantine theme override.
  */
 
 import {
@@ -15,7 +14,7 @@ import {
   type MantineColorsTuple,
 } from "@mantine/core";
 
-/** Тени Crisp × Ink — `DESIGN_ENTERPRISE_85_PLUS_CONCEPT.md` §3.6.4 */
+/** Тени Crisp × Ink — шкала в этом файле. */
 const crispShadows = {
   xs: "0 1px 2px rgba(15, 20, 25, 0.05)",
   sm: "0 1px 2px rgba(15,20,25,0.05), 0 4px 12px rgba(15,20,25,0.06)",
@@ -24,7 +23,7 @@ const crispShadows = {
   xl: "0 20px 25px -5px rgba(15,20,25,0.08), 0 10px 10px -5px rgba(15,20,25,0.04)",
 };
 
-/** Swiss Slate / Ink — brand (как в DESIGN_PALETTE_SPECTRUM_SWATCHES.html §1: ink-50…900) */
+/** Swiss Slate / Ink — brand (шкала ink-50…900). */
 const swissInk: MantineColorsTuple = [
   "#e8eef3", // ink-50
   "#dce4eb", // между 50 и 100
@@ -38,7 +37,7 @@ const swissInk: MantineColorsTuple = [
   "#0a1018", // ink-900
 ];
 
-/** Нейтраль Swiss (свотчи §1: поверхности + лестница n-50…text main) */
+/** Нейтраль Swiss (поверхности + лестница n-50…text main). */
 const slateCool: MantineColorsTuple = [
   "#f4f6f8", // bg app
   "#eef1f4", // bg hover

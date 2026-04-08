@@ -1,6 +1,7 @@
 # Prometheus / Alertmanager rules (Wave 1 QA_ARCH UNIFIED BACKLOG: A7, A19, A22, B5, H3).
+# Phase 4 (DEV execution plan): every rule has labels.owner (on-call / domain) + annotations.runbook_url.
 # Apply with: prometheus --config.file=prometheus.yml (add rule_files or use operator).
-# Thresholds are starting points — tune per environment (see docs/artifacts/NONFUNCTIONAL_AUDIT_NEXT.md §6).
+# Thresholds are starting points — tune per environment (see docs/METRICS_PROTOCOL.md and deploy/grafana/README.md).
 
 groups:
   - name: dental_booking_observability
@@ -11,9 +12,11 @@ groups:
         for: 10m
         labels:
           severity: warning
+          owner: erp
         annotations:
           summary: "ERP report reads falling back due to stale_range"
           description: "Vitrine max(updated_at) for requested range is older than ERP_AGGREGATE_STALE_MAX_SECONDS."
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
 
       - alert: ERP_VitrineEmptyFallback
         expr: |
@@ -21,9 +24,11 @@ groups:
         for: 10m
         labels:
           severity: warning
+          owner: erp
         annotations:
           summary: "ERP report reads falling back due to empty vitrine"
           description: "No aggregate rows for range; raw fallback used. See A5/A10 backlog for coverage semantics."
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
 
       - alert: ERP_NightlyPartialRefresh
         expr: |
@@ -31,9 +36,11 @@ groups:
         for: 15m
         labels:
           severity: warning
+          owner: erp
         annotations:
           summary: "Nightly ERP vitrine refresh failed for at least one clinic/kind"
           description: "Check Celery erp_tasks.refresh_erp_aggregates_nightly logs; metric label aggregate_kind only (clinic_id in structured logs on failure)."
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
 
       - alert: HTTPHigh5xxRate
         expr: |
@@ -44,9 +51,11 @@ groups:
         for: 5m
         labels:
           severity: critical
+          owner: api-platform
         annotations:
           summary: "HTTP 5xx share above 1% (status_class label)"
           description: "Slice latency histogram by status_class (A22)."
+          runbook_url: "docs/operations/SLO_CRITICAL_PATHS.md"
 
       - alert: BookingToErpChainFailureBurst
         expr: |
@@ -54,9 +63,11 @@ groups:
         for: 10m
         labels:
           severity: warning
+          owner: booking
         annotations:
           summary: "Elevated Booking→ERP/CRM/Loyalty chain errors"
           description: "business_chain_booking_erp_errors_total — check logs by error_type."
+          runbook_url: "docs/architecture/arch_plan/07_PHASE_2_RELIABILITY.md"
 
       - alert: OmniAiChainFailureBurst
         expr: |
@@ -64,9 +75,11 @@ groups:
         for: 10m
         labels:
           severity: warning
+          owner: omnichannel
         annotations:
           summary: "Elevated Omnichannel+AI chain errors"
           description: "business_chain_omni_ai_errors_total — low-cardinality account_bucket in metrics; tenant detail in logs."
+          runbook_url: "docs/architecture/arch_plan/07_PHASE_2_RELIABILITY.md"
 
       - alert: CrmLeadActualValueErpMissingFact
         expr: |
@@ -74,9 +87,11 @@ groups:
         for: 30m
         labels:
           severity: info
+          owner: crm
         annotations:
           summary: "CRM lead actual_value refresh saw zero ERP income with completed booking (H3)"
           description: "Investigate CRM vs ERP reconciliation; may be timing or data gap."
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
 
       - alert: ERPVisitRevenueParitySampleMismatch
         expr: |
@@ -84,9 +99,11 @@ groups:
         for: 10m
         labels:
           severity: warning
+          owner: erp
         annotations:
           summary: "Daily visit_revenue parity sample: raw total != vitrine total"
-          description: "See structured log erp_parity_sample_visit_revenue_mismatch; run POST refresh or investigate raw bypass. NONFUNCTIONAL_AUDIT_NEXT §5.2."
+          description: "See structured log erp_parity_sample_visit_revenue_mismatch; run POST refresh or investigate raw bypass. Tune thresholds per environment."
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
 
       - alert: BookingServiceUnavailableBurst
         expr: |
@@ -94,9 +111,11 @@ groups:
         for: 10m
         labels:
           severity: warning
+          owner: booking
         annotations:
           summary: "Elevated booking/payment service_unavailable errors (W7 BE4)"
           description: "Slice by source=api|ai_tool and clinic_bucket; correlate logs with trace_id. Dashboard: deploy/grafana/dashboards/dental_booking_booking_errors_w7.json"
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
 
       - alert: BookingPaymentFailedBurst
         expr: |
@@ -104,9 +123,11 @@ groups:
         for: 15m
         labels:
           severity: warning
+          owner: booking
         annotations:
           summary: "Elevated payment_failed from structured booking errors"
           description: "Check YooKassa / gateway; clinic detail in logs, not in metric labels."
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
 
       - alert: PaymentWebhookFailures
         expr: |
@@ -114,6 +135,252 @@ groups:
         for: 15m
         labels:
           severity: warning
+          owner: patient-payments
         annotations:
-          summary: "YooKassa webhook JSON or processing failures"
-          description: "Slice by reason=invalid_json|processing_error; correlate logs with trace_id in response body."
+          summary: "YooKassa contour A webhook failures"
+          description: "Slice by reason=invalid_json|invalid_secret|processing_error|rate_limited; correlate logs with trace_id."
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
+
+      - alert: PatientPaymentWebhookInvalidSecretBurst
+        expr: |
+          sum(rate(payment_webhook_failures_total{reason="invalid_secret"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          owner: patient-payments
+        annotations:
+          summary: "Burst of invalid/missing secret on contour A payment webhook"
+          description: "Possible bruteforce or misaligned PATIENT_PAYMENT_WEBHOOK_SECRET vs edge/YooKassa. Check rate limit and SEC."
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
+
+      # --- Platform subscription contour B (ADR-012, Phase 1d) — labels are low-cardinality (result only).
+      - alert: PlatformBillingWebhookRefundPathElevated
+        expr: |
+          sum(rate(platform_billing_webhook_total{result=~"refund_reconciled|skipped_billing_revoked"}[10m])) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+          owner: platform-billing
+        annotations:
+          summary: "Elevated platform billing webhook refund/reconcile outcomes (contour B)"
+          description: "Spike on refund_reconciled or skipped_billing_revoked — check YooKassa delivery, idempotency, and founder reconcile queue."
+          runbook_url: "docs/architecture/modules/platform_subscription_billing.md §12"
+
+      - alert: PlatformBillingRevocationAppliedBurst
+        expr: |
+          sum(rate(platform_billing_billing_revocation_total{result="applied"}[15m])) > 0.005
+        for: 10m
+        labels:
+          severity: warning
+          owner: platform-billing
+        annotations:
+          summary: "Sustained ADR-012 billing revocations (entitlements withdrawn after refund)"
+          description: "platform_billing_billing_revocation_total result=applied — correlate with refunds and org suspension policy."
+          runbook_url: "docs/architecture/modules/platform_subscription_billing.md §12"
+
+      - alert: PlatformBillingWebhookProcessingErrorBurst
+        expr: |
+          sum(rate(platform_billing_webhook_total{result="processing_error"}[5m])) > 0.02
+        for: 10m
+        labels:
+          severity: warning
+          owner: platform-billing
+        annotations:
+          summary: "Platform billing webhook B processing errors"
+          description: "Contour B handler exceptions — inspect API logs and platform_signup_intents / platform_subscription_payments."
+          runbook_url: "docs/architecture/modules/platform_subscription_billing.md §10"
+
+      - alert: PlatformBillingWebhookRateLimitedBurst
+        expr: |
+          sum(rate(platform_billing_webhook_total{result="rate_limited"}[5m])) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+          owner: platform-billing
+        annotations:
+          summary: "Sustained 429 on platform billing webhook B (per-IP app limit or attack)"
+          description: 'Correlate with spam_blocked_total{channel="platform_billing_webhook"}; tighten edge/WAF per deploy/nginx/README_PLATFORM_BILLING_WEBHOOK.md (PRC-B7).'
+          runbook_url: "docs/architecture/arch_plan/10_CROSS_CUTTING_SECURITY_ANTISPAM_BRAND_SCALE.md"
+
+      - alert: PlatformSignupIntentProvisionBacklog
+        expr: |
+          platform_signup_intent_stuck > 0
+        for: 45m
+        labels:
+          severity: warning
+          owner: platform-billing
+        annotations:
+          summary: "Paid or failing SaaS signup intents still in provisioning backlog (contour B)"
+          description: "Check Celery platform_billing.retry_due_provisions, founder reconcile UI /platform/provision-queue, and provision_last_error. Gauges refreshed on GET /metrics."
+          runbook_url: "docs/operations/PLATFORM_BILLING_PROVISION_RECONCILE.md"
+
+      - alert: PlatformSignupIntentDeadLetter
+        expr: |
+          platform_signup_intent_dead_letter > 0
+        for: 15m
+        labels:
+          severity: warning
+          owner: platform-billing
+        annotations:
+          summary: "Platform signup intent(s) in dead letter (contour B)"
+          description: "DLQ after max provision retries — manual reconcile only; Retry + manual-close in founder UI; see runbook."
+          runbook_url: "docs/operations/PLATFORM_BILLING_PROVISION_RECONCILE.md"
+
+      # --- Phase 2 reliability (ADR-009 outbox gauges refreshed on GET /metrics; low cardinality).
+      - alert: DomainOutboxOldestPendingStale
+        expr: domain_outbox_oldest_pending_age_seconds > 600
+        for: 15m
+        labels:
+          severity: warning
+          owner: reliability
+        annotations:
+          summary: "Oldest unpublished domain_outbox row exceeds 10 minutes"
+          description: "Check Celery domain_outbox.dispatch_pending, payment/booking post-commit dispatch, domain_outbox_dispatch_total, domain_outbox_post_commit_dispatch_failures_total."
+          runbook_url: "docs/architecture/arch_plan/07_PHASE_2_RELIABILITY.md"
+
+      - alert: DomainOutboxPendingBacklog
+        expr: domain_outbox_pending_rows > 50
+        for: 15m
+        labels:
+          severity: warning
+          owner: reliability
+        annotations:
+          summary: "Large domain_outbox unpublished backlog"
+          description: "Dispatch throughput vs enqueue rate; inspect failing rows (last_error) and handler logs."
+          runbook_url: "docs/architecture/arch_plan/07_PHASE_2_RELIABILITY.md"
+
+      - alert: DomainOutboxBlockedByAttemptCap
+        expr: domain_outbox_blocked_by_attempt_cap_rows > 0
+        for: 10m
+        labels:
+          severity: warning
+          owner: reliability
+        annotations:
+          summary: "Unpublished outbox rows hit DOMAIN_OUTBOX_MAX_DISPATCH_ATTEMPTS"
+          description: "Rows are excluded from dispatch until attempts reset or row removed; see last_error and QA_ARCH Phase 2 review."
+          runbook_url: "docs/operations/DR_RUNBOOK.md"
+
+      - alert: DomainOutboxPostCommitDispatchFailures
+        expr: increase(domain_outbox_post_commit_dispatch_failures_total[10m]) >= 1
+        for: 5m
+        labels:
+          severity: warning
+          owner: reliability
+        annotations:
+          summary: "Post-commit domain_outbox drain failed in HTTP dependency"
+          description: "HTTP handler committed domain data but dispatch_domain_outbox_batch raised; check API logs and Celery domain_outbox.dispatch_pending; label dependency=booking_routes|payment_webhook."
+          runbook_url: "docs/architecture/arch_plan/07_PHASE_2_RELIABILITY.md"
+
+      # --- Cross-cutting §27–§28 (arch_plan/10): low-cardinality; tune thresholds per env.
+      - alert: SpamBlockedTotalElevated
+        expr: sum(rate(spam_blocked_total[5m])) > 2
+        for: 10m
+        labels:
+          severity: warning
+          owner: security
+        annotations:
+          summary: "Elevated HTTP 429 (rate limit) across API channels"
+          description: "Slice by channel label; correlate with Redis limiter and WAF. See docs/architecture/arch_plan/10_CROSS_CUTTING_SECURITY_ANTISPAM_BRAND_SCALE.md §27."
+          runbook_url: "docs/architecture/arch_plan/10_CROSS_CUTTING_SECURITY_ANTISPAM_BRAND_SCALE.md"
+
+      - alert: SecuritySuspiciousRequestBurst
+        expr: sum(rate(security_suspicious_request_total[5m])) > 0.2
+        for: 15m
+        labels:
+          severity: info
+          owner: security
+        annotations:
+          summary: "Sustained suspicious request probes (heuristic)"
+          description: "path_class + reason only; may include scanners — tune or silence in Alertmanager if noisy."
+          runbook_url: "docs/architecture/arch_plan/10_CROSS_CUTTING_SECURITY_ANTISPAM_BRAND_SCALE.md"
+
+      - alert: SecurityAuthFailureBurst
+        expr: sum(rate(security_auth_failure_total[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+          owner: security
+        annotations:
+          summary: "High rate of 401/403 (aggregated reason label)"
+          description: "Investigate credential stuffing vs misconfigured clients; no per-tenant labels in metric."
+          runbook_url: "docs/architecture/arch_plan/10_CROSS_CUTTING_SECURITY_ANTISPAM_BRAND_SCALE.md"
+
+      # Admin JSON export (Celery) — NOT managed-DB cluster backup; silence if unused (ADR-008).
+      # --- Public embed contour (Phase 1e-F6): embed_public_request_total{endpoint,result}
+      - alert: EmbedPublicErrorShareElevated
+        expr: |
+          (
+            sum(rate(embed_public_request_total{result!="ok"}[10m]))
+            /
+            clamp_min(sum(rate(embed_public_request_total[10m])), 0.01)
+          ) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+          owner: embed
+        annotations:
+          summary: "Elevated error share on public embed routes"
+          description: "Slice by endpoint and result (rate_limited, unauthorized, payload_too_large, …). Correlate with reverse-proxy body limits and Redis limiter."
+          runbook_url: "docs/architecture/EMBED_WIDGET_INTEGRATION.md"
+
+      - alert: EmbedWebhookPayloadTooLargeBurst
+        expr: sum(rate(embed_public_request_total{endpoint="webhook_inbox",result="payload_too_large"}[5m])) > 0.3
+        for: 10m
+        labels:
+          severity: info
+          owner: embed
+        annotations:
+          summary: "Repeated 413 on embed webhook inbox (oversized bodies)"
+          description: "Tune embed_webhook_max_body_bytes or edge client_max_body_size; possible abuse or misconfigured channel."
+          runbook_url: "docs/architecture/EMBED_WIDGET_INTEGRATION.md"
+
+      # RAG KB embed search (§24.3): embed_rag_search_outcomes_total{outcome,search_mode}
+      - alert: EmbedRagSearchDbErrorBurst
+        expr: sum(rate(embed_rag_search_outcomes_total{outcome="db_error"}[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          owner: embed
+        annotations:
+          summary: "RAG embed search: elevated DB-side failures"
+          description: "Check Postgres health, applied migration 20260425_rag_kb_audit_fts (search_tsv), and RAG_KB_SEARCH_MODE. Slice by search_mode."
+          runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
+
+      # Patient auth: clinic_slug context (LEAD / patient_auth_clinic_context_total)
+      - alert: PatientAuthUnknownClinicSlugBurst
+        expr: |
+          sum(rate(patient_auth_clinic_context_total{source="slug",result="unknown"}[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          owner: patient-auth
+        annotations:
+          summary: "Elevated unknown clinic_slug resolution (patient SMS/OAuth/agreement)"
+          description: "Enumeration, typos, or stale links. Correlate with IP logs; optional RATE_AUTH_UNKNOWN_CLINIC_SLUG_IP_LIMIT."
+          runbook_url: "docs/architecture/arch_plan/10_CROSS_CUTTING_SECURITY_ANTISPAM_BRAND_SCALE.md"
+
+      - alert: PatientAuthSlugRequiredPolicyTraffic
+        expr: |
+          sum(rate(patient_auth_clinic_context_total{source="default",result="slug_required"}[5m])) > 0.05
+        for: 15m
+        labels:
+          severity: info
+          owner: patient-auth
+        annotations:
+          summary: "Patient auth: traffic blocked without clinic_slug (PATIENT_AUTH_REQUIRE_CLINIC_SLUG)"
+          description: "Expected after enabling prod flag if legacy clients still call API without slug; migrate to /c/{slug}/… or pass clinic_slug."
+          runbook_url: "docs/architecture/arch_plan/10_CROSS_CUTTING_SECURITY_ANTISPAM_BRAND_SCALE.md"
+
+      - alert: BackupLogicalExportSuccessStale
+        expr: |
+          (backup_logical_export_last_success_timestamp_seconds > 1000000000)
+          and
+          ((time() - backup_logical_export_last_success_timestamp_seconds) > 604800)
+        for: 2h
+        labels:
+          severity: info
+          owner: ops
+        annotations:
+          summary: "Admin logical export: no success for 7+ days (optional signal)"
+          description: "Cluster BCP = managed Postgres / pg_dump per DR_RUNBOOK. Silence in Alertmanager if clinic export is not scheduled."
+          runbook_url: "docs/operations/DR_RUNBOOK.md"

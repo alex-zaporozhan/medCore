@@ -2,14 +2,28 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+
+_CLINIC_SLUG_MAX = 120
 
 
 class SendCodeRequest(BaseModel):
     """Request DTO for sending SMS code."""
 
     phone: str
+    #: Публичный slug клиники (витрина `/c/{slug}/…`); если не задан — legacy «первая клиника в БД».
+    clinic_slug: str | None = Field(None, max_length=_CLINIC_SLUG_MAX)
     turnstile_token: str | None = None
+
+    @field_validator("clinic_slug", mode="before")
+    @classmethod
+    def _normalize_clinic_slug(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return None
+        s = v.strip()
+        return s if s else None
 
 
 class VerifyCodeRequest(BaseModel):
@@ -32,6 +46,17 @@ class VerifyCodeRequest(BaseModel):
     utm_term: str | None = None
     landing_page: str | None = None
     anchor: str | None = None
+    clinic_slug: str | None = Field(None, max_length=_CLINIC_SLUG_MAX)
+
+    @field_validator("clinic_slug", mode="before")
+    @classmethod
+    def _normalize_clinic_slug_verify(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return None
+        s = v.strip()
+        return s if s else None
 
 
 class AuthTokenResponse(BaseModel):

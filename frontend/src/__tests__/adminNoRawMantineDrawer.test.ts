@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Importing Drawer from @mantine/core in admin UI bypasses AdminDrawer shell (TECH_PASSPORT §6). */
+/** Importing Drawer from @mantine/core in admin UI bypasses AdminDrawer shell (ESLint restricted import). */
 const RAW_DRAWER_IMPORT = /import\s*\{[^}]*\bDrawer\b[^}]*\}\s*from\s*["']@mantine\/core["']/;
 
 function walkTsFiles(dir: string, out: string[] = []): string[] {
