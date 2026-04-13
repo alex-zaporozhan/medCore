@@ -66,3 +66,14 @@ class SalaryTransactionRepository(ABC):
     ) -> Sequence[SalaryTransaction]:
         ...
 
+    @abstractmethod
+    async def list_for_clinic(
+        self,
+        clinic_id: UUID,
+        doctor_id: UUID | None = None,
+        period_start: date | None = None,
+        period_end: date | None = None,
+    ) -> Sequence[SalaryTransaction]:
+        """All salary rows for clinic; optional doctor and period bounds."""
+        ...
+

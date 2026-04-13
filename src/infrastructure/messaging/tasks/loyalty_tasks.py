@@ -113,7 +113,7 @@ async def _check_expiring_packages_async() -> None:
                 await session.flush()
 
                 try:
-                    success, error_msg = await send_with_fallback(
+                    success, error_msg, delivery = await send_with_fallback(
                         chat_id=chat_id,
                         phone=phone,
                         email=email,
@@ -123,21 +123,31 @@ async def _check_expiring_packages_async() -> None:
                         preferred_channel=channel,
                     )
                     sent_at = utc_now()
-                    if success:
+                    if success and delivery == "channel":
                         notification.status = "sent"
+                        notification.sent_at = sent_at
+                    elif success and delivery == "log_only":
+                        notification.status = "skipped_no_channel"
+                        notification.error = None
                         notification.sent_at = sent_at
                     else:
                         notification.status = "failed"
                         notification.error = error_msg
                         notification.sent_at = sent_at
                     await session.flush()
+                    log_evt = "check_expiring_packages: send failed"
+                    if success and delivery == "channel":
+                        log_evt = "check_expiring_packages: sent"
+                    elif success and delivery == "log_only":
+                        log_evt = "check_expiring_packages: skipped_no_channel"
                     logger.info(
-                        "check_expiring_packages: sent" if success else "check_expiring_packages: send failed",
+                        log_evt,
                         extra={
                             "clinic_id": str(sub.clinic_id),
                             "patient_id": str(sub.patient_id),
                             "subscription_id": str(sub.id),
                             "sent": success,
+                            "delivery": delivery,
                             "error": error_msg,
                         },
                     )

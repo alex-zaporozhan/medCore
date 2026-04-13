@@ -12,6 +12,18 @@ from src.infrastructure.database import base as db_base
 
 @pytest.mark.asyncio
 async def test_organization_entitlements_rls_filters_when_enforced(init_db):
+    async with db_base.AsyncSessionLocal() as session:
+        bypass = (
+            await session.execute(
+                text("SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user")
+            )
+        ).scalar_one()
+        if bypass is True:
+            pytest.skip(
+                "DB role bypasses RLS (superuser or BYPASSRLS); use a non-superuser for "
+                "DATABASE_URL_TEST to exercise organization_entitlements policies."
+            )
+
     org_a = uuid.uuid4()
     org_b = uuid.uuid4()
     async with db_base.AsyncSessionLocal() as session:

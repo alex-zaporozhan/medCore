@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,10 +19,18 @@ from src.domain.entities.visit_attribution import VisitAttribution
 
 router = APIRouter(prefix="/public/clinics", tags=["public"])
 
+# PWA feed: bounded response (QA_ARCH / масштаб публичного контура).
+_DEFAULT_PUBLIC_FEED_LIMIT = 100
+_MAX_PUBLIC_FEED_LIMIT = 500
+_DEFAULT_PUBLIC_STORIES_LIMIT = 50
+_MAX_PUBLIC_STORIES_LIMIT = 200
+
 
 @router.get("/{clinic_id}/feed")
 async def get_public_feed(
     clinic_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_PUBLIC_FEED_LIMIT, ge=1, le=_MAX_PUBLIC_FEED_LIMIT),
     session: AsyncSession = Depends(get_session),
 ):
     """Published promo posts for clinic feed (PWA)."""
@@ -35,6 +43,8 @@ async def get_public_feed(
             (PromoPost.published_at.is_(None)) | (PromoPost.published_at <= now),
         )
         .order_by(PromoPost.published_at.desc().nulls_last(), PromoPost.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     posts = result.scalars().all()
     return [
@@ -55,6 +65,8 @@ async def get_public_feed(
 @router.get("/{clinic_id}/stories")
 async def get_public_stories(
     clinic_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_PUBLIC_STORIES_LIMIT, ge=1, le=_MAX_PUBLIC_STORIES_LIMIT),
     session: AsyncSession = Depends(get_session),
 ):
     """Active stories for clinic (not expired). PWA stories strip."""
@@ -66,6 +78,8 @@ async def get_public_stories(
             (Story.expires_at.is_(None)) | (Story.expires_at > now),
         )
         .order_by(Story.order_index, Story.created_at)
+        .offset(skip)
+        .limit(limit)
     )
     stories = result.scalars().all()
     return [

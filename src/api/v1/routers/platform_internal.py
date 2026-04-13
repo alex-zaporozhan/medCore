@@ -29,6 +29,9 @@ from src.application.services.platform_billing_service import (
     list_platform_provision_queue,
     rotate_platform_owner_invite_token,
 )
+from src.application.services.platform_dashboard_summary import (
+    compute_platform_founder_dashboard_summary,
+)
 from src.core.metrics import platform_provision_manual_close_total
 from src.core.platform_audit import log_platform_audit
 from src.domain.entities.platform_signup_intent import PlatformSignupIntent
@@ -43,6 +46,18 @@ class PlatformInternalHealthResponse(BaseModel):
 
     scope: Literal["platform"] = Field(description="Fixed scope discriminator for clients")
     status: Literal["ok"] = Field(description="JWT validated for platform_founder principal")
+
+
+class PlatformDashboardSummaryResponse(BaseModel):
+    """KPI snapshot for founder overview (orgs + MRR from active SaaS intents)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    active_organizations: int = Field(ge=0)
+    mrr_rub_monthly: str = Field(description="Monthly recurring revenue, RUB (decimal string)")
+    mrr_partial: bool = Field(
+        description="True if at least one active org lacked a computable catalog MRR (legacy snapshot)",
+    )
 
 
 class PlatformOwnerInviteMintResponse(BaseModel):
@@ -105,6 +120,24 @@ async def platform_internal_health(
 ) -> PlatformInternalHealthResponse:
     """Validates Bearer signed with platform founder key — not a substitute for unauthenticated k8s liveness."""
     return PlatformInternalHealthResponse(scope="platform", status="ok")
+
+
+@router.get(
+    "/dashboard-summary",
+    response_model=PlatformDashboardSummaryResponse,
+    summary="Dashboard KPIs (Основатель)",
+    description="Active SaaS organizations and MRR derived from signup tariff snapshots vs catalog.",
+)
+async def platform_dashboard_summary(
+    _principal: PlatformFounderPrincipal = Depends(get_current_platform_founder),
+    session: AsyncSession = Depends(get_session),
+) -> PlatformDashboardSummaryResponse:
+    summary = await compute_platform_founder_dashboard_summary(session)
+    return PlatformDashboardSummaryResponse(
+        active_organizations=summary.active_organizations,
+        mrr_rub_monthly=format(summary.mrr_rub_monthly, "f"),
+        mrr_partial=summary.mrr_partial,
+    )
 
 
 @router.get(

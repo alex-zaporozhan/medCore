@@ -104,6 +104,10 @@ export interface Clinic {
   theme_primary_color?: string | null;
   theme_logo_url?: string | null;
   theme_font_family?: string | null;
+  /** Витрина Commerce в PWA пациента (раздел «Магазин»). */
+  patient_store_visible?: boolean;
+  patient_store_title?: string | null;
+  patient_store_subtitle?: string | null;
   business_type?: string;
   business_type_custom_name?: string | null;
   person_label_singular?: string | null;

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from redis.asyncio import Redis
 
+from src.core.metrics import rate_limiter_redis_fail_open_total
 from src.infrastructure.database.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
@@ -54,8 +55,12 @@ class RateLimiter:
         except RateLimitExceeded:
             raise
         except Exception as exc:  # noqa: BLE001
-            # Fail-open: don't block requests if Redis is unavailable
+            # Fail-open: don't block requests if Redis is unavailable (contract: observe, don't hide).
             logger.warning("RateLimiter error, allowing request", extra={"key": key, "error": str(exc)})
+            try:
+                rate_limiter_redis_fail_open_total.inc()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 async def get_rate_limiter() -> RateLimiter:

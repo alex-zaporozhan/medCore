@@ -32,10 +32,10 @@ async def test_platform_founder_lists_catalog_plans(client: AsyncClient, seed_da
     data = r.json()
     assert isinstance(data, list)
     slugs = {row["slug"] for row in data}
-    assert "starter_rf" in slugs
-    starter = next(x for x in data if x["slug"] == "starter_rf")
-    assert starter.get("price_monthly_rub") == "4990.00"
-    assert starter.get("price_annual_rub") == "49900.00"
+    assert "start" in slugs
+    starter = next(x for x in data if x["slug"] == "start")
+    assert starter.get("price_monthly_rub") == "2900.00"
+    assert starter.get("price_annual_rub") == "29000.00"
     assert "core.base" in (starter.get("option_keys") or [])
 
 

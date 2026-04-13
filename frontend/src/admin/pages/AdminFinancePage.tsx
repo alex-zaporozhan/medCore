@@ -1,6 +1,7 @@
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import {
   useCashboxes,
+  useDoctors,
   useFinanceTransactions,
   useFinanceLiability,
   useCreateFinanceTransaction,
@@ -72,6 +73,10 @@ export default function AdminFinancePage() {
     date_to: txDateTo,
   });
 
+  const { data: doctors, isLoading: doctorsLoading } = useDoctors({
+    clinic_id: clinicId ?? undefined,
+    is_active: true,
+  });
   const { data: payrollPolicies, isLoading: payrollLoading } = usePayrollPolicies(clinicId);
   const { data: salaryTxs, isLoading: salaryLoading } = useSalaryTransactions(
     clinicId,
@@ -98,6 +103,7 @@ export default function AdminFinancePage() {
   const loading =
     cashboxesLoading ||
     txsLoading ||
+    doctorsLoading ||
     payrollLoading ||
     salaryLoading ||
     productsLoading ||
@@ -111,17 +117,22 @@ export default function AdminFinancePage() {
       label: `${c.name} (${c.type})${c.is_default ? " · по умолчанию" : ""}`,
     })) ?? [];
 
-  const doctorOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const result: { value: string; label: string }[] = [];
-    salaryTxs?.forEach((tx) => {
-      if (!seen.has(tx.doctor_id)) {
-        seen.add(tx.doctor_id);
-        result.push({ value: tx.doctor_id, label: tx.doctor_id });
-      }
+  const doctorNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    doctors?.forEach((d) => {
+      m.set(d.id, d.full_name?.trim() || d.specialization?.trim() || d.id);
     });
-    return result;
-  }, [salaryTxs]);
+    return m;
+  }, [doctors]);
+
+  const doctorOptions = useMemo(
+    () =>
+      doctors?.map((d) => ({
+        value: d.id,
+        label: d.full_name?.trim() || d.specialization?.trim() || d.id.slice(0, 8) + "…",
+      })) ?? [],
+    [doctors]
+  );
 
   const salarySummary = useMemo(() => {
     if (!salaryTxs || salaryTxs.length === 0) {
@@ -427,7 +438,7 @@ export default function AdminFinancePage() {
                     <Table withRowBorders highlightOnHover verticalSpacing="sm">
                       <Table.Thead>
                         <Table.Tr>
-                          <Table.Th>Врач (ID)</Table.Th>
+                          <Table.Th>Врач</Table.Th>
                           <Table.Th>Начислено</Table.Th>
                           <Table.Th>Операций</Table.Th>
                         </Table.Tr>
@@ -435,7 +446,9 @@ export default function AdminFinancePage() {
                       <Table.Tbody>
                         {payrollByDoctor.map((row) => (
                           <Table.Tr key={row.doctorId}>
-                            <Table.Td>{row.doctorId.slice(0, 8)}…</Table.Td>
+                            <Table.Td>
+                              {doctorNameById.get(row.doctorId) ?? `${row.doctorId.slice(0, 8)}…`}
+                            </Table.Td>
                             <Table.Td>{row.total.toFixed(2)} ₽</Table.Td>
                             <Table.Td>{row.count}</Table.Td>
                           </Table.Tr>
@@ -486,17 +499,24 @@ export default function AdminFinancePage() {
                   Начисления по врачам
                 </Text>
                 <Select
-                  placeholder="Выберите доктора"
+                  placeholder="Все врачи"
                   data={doctorOptions}
                   value={selectedDoctorId}
                   onChange={setSelectedDoctorId}
                   clearable
                   searchable
+                  nothingFoundMessage={
+                    doctors && doctors.length === 0
+                      ? "Нет активных врачей в клинике"
+                      : "Не найдено"
+                  }
                 />
               </Group>
               {salaryTxs && salaryTxs.length === 0 && (
                 <Text size="sm" c="dimmed">
-                  Нет начислений по выбранному врачу.
+                  {selectedDoctorId
+                    ? "По этому врачу начислений пока нет."
+                    : "Начислений по зарплате пока нет."}
                 </Text>
               )}
               {salaryTxs && salaryTxs.length > 0 && (

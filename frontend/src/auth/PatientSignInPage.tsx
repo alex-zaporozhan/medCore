@@ -11,7 +11,7 @@ export default function PatientSignInPage() {
   const { clinicSlug } = usePatientEntry();
 
   return (
-    <SignInShell>
+    <SignInShell variant="patient">
       <Stack gap="lg">
         <div>
           <Title order={2}>Вход пациента</Title>

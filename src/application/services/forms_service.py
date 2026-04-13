@@ -17,6 +17,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.services.form_status_service import FormStatusService
+from src.core.prometheus_labels import clinic_bucket_label
 from src.core.metrics import (
     paperless_form_issue_to_sign_seconds,
     paperless_form_operations_total,
@@ -81,7 +82,7 @@ class FormsService:
 
     def _record_transition_metric(self, clinic_id: UUID, from_s: FormStatus, to_s: FormStatus) -> None:
         paperless_form_status_transitions_total.labels(
-            clinic_id=str(clinic_id),
+            clinic_bucket=clinic_bucket_label(clinic_id),
             from_status=from_s.value,
             to_status=to_s.value,
         ).inc()
@@ -100,7 +101,7 @@ class FormsService:
             return
         delta = (signed_at - created).total_seconds()
         if delta >= 0:
-            paperless_form_issue_to_sign_seconds.labels(clinic_id=str(clinic_id)).observe(delta)
+            paperless_form_issue_to_sign_seconds.labels(clinic_bucket=clinic_bucket_label(clinic_id)).observe(delta)
 
     async def get_pending_templates(
         self,
@@ -329,7 +330,7 @@ class FormsService:
             self._record_transition_metric(clinic_id, prev, FormStatus.EXPIRED)
             await self._audit(sub.id, "expired", "system", {"from": prev.value})
             paperless_form_operations_total.labels(
-                clinic_id=str(clinic_id), action="expire"
+                clinic_bucket=clinic_bucket_label(clinic_id), action="expire"
             ).inc()
         if n:
             await self.session.flush()
@@ -477,7 +478,9 @@ class FormsService:
                 "clinic_id": str(data.clinic_id),
             },
         )
-        paperless_form_operations_total.labels(clinic_id=str(data.clinic_id), action="sign").inc()
+        paperless_form_operations_total.labels(
+            clinic_bucket=clinic_bucket_label(data.clinic_id), action="sign"
+        ).inc()
         return submission
 
     async def _find_reusable_issued_submission(
@@ -537,7 +540,9 @@ class FormsService:
             submission.updated_by = "system"
             await self.session.flush()
             await self._audit(submission.id, "reissued", "system", None)
-            paperless_form_operations_total.labels(clinic_id=str(clinic_id), action="reissue").inc()
+            paperless_form_operations_total.labels(
+                clinic_bucket=clinic_bucket_label(clinic_id), action="reissue"
+            ).inc()
         else:
             submission = DigitalFormSubmission(
                 clinic_id=clinic_id,
@@ -557,7 +562,9 @@ class FormsService:
 
             await self._audit(submission.id, "issued", "system", None)
             self._record_transition_metric(clinic_id, FormStatus.DRAFT, FormStatus.ISSUED)
-            paperless_form_operations_total.labels(clinic_id=str(clinic_id), action="issue").inc()
+            paperless_form_operations_total.labels(
+                clinic_bucket=clinic_bucket_label(clinic_id), action="issue"
+            ).inc()
 
         link = FormLinkToken(
             token=token_str,
@@ -607,7 +614,9 @@ class FormsService:
                 "clinic_id": str(clinic_id),
             },
         )
-        paperless_form_operations_total.labels(clinic_id=str(clinic_id), action="revoke").inc()
+        paperless_form_operations_total.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id), action="revoke"
+        ).inc()
         return submission
 
     async def cancel_submission(
@@ -627,5 +636,7 @@ class FormsService:
         self._record_transition_metric(clinic_id, prev, FormStatus.CANCELLED)
         await self._audit(submission.id, "cancelled", actor, None)
         await self.session.flush()
-        paperless_form_operations_total.labels(clinic_id=str(clinic_id), action="cancel").inc()
+        paperless_form_operations_total.labels(
+            clinic_bucket=clinic_bucket_label(clinic_id), action="cancel"
+        ).inc()
         return submission

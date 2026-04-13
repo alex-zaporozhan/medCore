@@ -36,15 +36,12 @@ ALL_PATHS = [LANDING_PATH] + ADMIN_PATHS + APP_PATHS
 
 @pytest.fixture(scope="module")
 def base_url():
-    """Skip entire module if FRONTEND_E2E_URL not set."""
-    if not FRONTEND_E2E_URL:
-        pytest.skip(
-            "Set FRONTEND_E2E_URL (e.g. http://localhost:5175) and run frontend to test pages"
-        )
+    """Live frontend base URL (CI: vite preview + FRONTEND_E2E_URL)."""
+    assert FRONTEND_E2E_URL, "FRONTEND_E2E_URL must be set for browser E2E"
     return FRONTEND_E2E_URL
 
 
-@pytest.mark.skipif(not FRONTEND_E2E_URL, reason="FRONTEND_E2E_URL not set")
+@pytest.mark.skipif(not FRONTEND_E2E_URL, reason="Set FRONTEND_E2E_URL and serve frontend (e.g. npm run preview)")
 class TestFrontendPages:
     """Visit each frontend route and assert page loads (no white screen / fatal error)."""
 

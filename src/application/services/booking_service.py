@@ -3,10 +3,20 @@
 import logging
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.application.booking_slot_advisory_lock import (
+    acquire_doctor_slot_xact_advisory_lock,
+)
+from src.domain.booking_slot_policy import (
+    is_booking_doctor_slot_unique_violation,
+    status_releases_doctor_slot,
+)
 
 from src.application.dto.booking_dto import (
     BookingCreateAdmin,
@@ -42,6 +52,7 @@ from src.application.services.loyalty_service import LoyaltyService
 from src.application.services.loyalty_service import UseSubscriptionForBookingInput
 from src.core.context import RequestContext
 from src.core.metrics import waitlist_booking_conversion_total
+from src.core.prometheus_labels import clinic_bucket_label
 from src.core.tracing import with_trace_id
 from src.core.patient_messages import (
     BOOKING_CANNOT_CANCEL_PAST,
@@ -87,6 +98,35 @@ class BookingService:
         )
         return lead.omnichannel_contact_id if lead else None
 
+    async def _acquire_reschedule_slot_advisory_locks(
+        self,
+        old: tuple[UUID, date, Any],
+        new: tuple[UUID, date, Any],
+    ) -> None:
+        """Lock old and new slot keys in deterministic order (avoid AB/BA deadlock)."""
+        if old == new:
+            await acquire_doctor_slot_xact_advisory_lock(
+                self.session,
+                doctor_id=old[0],
+                appointment_date=old[1],
+                appointment_time=old[2],
+            )
+            return
+        for doctor_id, d, t in sorted(
+            (old, new),
+            key=lambda s: (
+                str(s[0]),
+                s[1].isoformat(),
+                s[2].replace(microsecond=0).isoformat(timespec="seconds"),
+            ),
+        ):
+            await acquire_doctor_slot_xact_advisory_lock(
+                self.session,
+                doctor_id=doctor_id,
+                appointment_date=d,
+                appointment_time=t,
+            )
+
     async def _ensure_slot_available(
         self,
         doctor_id: UUID,
@@ -99,7 +139,7 @@ class BookingService:
         for b in existing:
             if (
                 b.appointment_time == appointment_time
-                and b.status != "cancelled"
+                and not status_releases_doctor_slot(b.status)
                 and (ignore_booking_id is None or b.id != ignore_booking_id)
             ):
                 logger.info(
@@ -112,6 +152,38 @@ class BookingService:
                     },
                 )
                 raise ValueError(BOOKING_SLOT_ALREADY_BOOKED)
+
+    async def _create_booking_or_slot_taken(self, booking: Booking) -> Booking:
+        """Persist new booking; map partial unique violation to slot-already-booked."""
+        try:
+            return await self.repository.create(booking)
+        except IntegrityError as exc:
+            await self.session.rollback()
+            if is_booking_doctor_slot_unique_violation(exc):
+                logger.info(
+                    "booking_doctor_slot_unique_violation",
+                    extra={
+                        "doctor_id": str(booking.doctor_id),
+                        "appointment_date": booking.appointment_date.isoformat(),
+                        "appointment_time": booking.appointment_time.isoformat(),
+                    },
+                )
+                raise ValueError(BOOKING_SLOT_ALREADY_BOOKED) from exc
+            raise
+
+    async def _update_booking_or_slot_taken(self, booking: Booking) -> Booking:
+        """Flush booking update; map partial unique violation to slot-already-booked."""
+        try:
+            return await self.repository.update(booking)
+        except IntegrityError as exc:
+            await self.session.rollback()
+            if is_booking_doctor_slot_unique_violation(exc):
+                logger.info(
+                    "booking_reschedule_unique_violation",
+                    extra={"booking_id": str(booking.id)},
+                )
+                raise ValueError(BOOKING_SLOT_ALREADY_BOOKED) from exc
+            raise
 
     async def _ensure_booking_entities_in_clinic(
         self, clinic_id: UUID, service_id: UUID, doctor_id: UUID
@@ -151,6 +223,12 @@ class BookingService:
             data.clinic_id, data.service_id, data.doctor_id
         )
         await self._ensure_service_doctor(data.service_id, data.doctor_id)
+        await acquire_doctor_slot_xact_advisory_lock(
+            self.session,
+            doctor_id=data.doctor_id,
+            appointment_date=data.appointment_date,
+            appointment_time=data.appointment_time,
+        )
         await self._ensure_slot_available(
             doctor_id=data.doctor_id,
             appointment_date=data.appointment_date,
@@ -168,7 +246,7 @@ class BookingService:
             prepayment_amount=Decimal("0.00"),
             notes=data.notes,
         )
-        booking = await self.repository.create(booking)
+        booking = await self._create_booking_or_slot_taken(booking)
 
         # Invalidate schedule cache for that day/doctor
         await self.schedule_service.invalidate_daily_schedule_cache(
@@ -250,6 +328,12 @@ class BookingService:
             clinic_id, data.service_id, doctor_id
         )
         await self._ensure_service_doctor(data.service_id, doctor_id)
+        await acquire_doctor_slot_xact_advisory_lock(
+            self.session,
+            doctor_id=doctor_id,
+            appointment_date=appointment_date,
+            appointment_time=appointment_time,
+        )
         await self._ensure_slot_available(
             doctor_id=doctor_id,
             appointment_date=appointment_date,
@@ -269,7 +353,7 @@ class BookingService:
             prepayment_amount=prepayment,
             notes=data.notes,
         )
-        booking = await self.repository.create(booking)
+        booking = await self._create_booking_or_slot_taken(booking)
 
         if waitlist_entry is not None:
             try:
@@ -281,7 +365,7 @@ class BookingService:
                 )
             except (WaitlistServiceError, LookupError) as e:
                 waitlist_booking_conversion_total.labels(
-                    clinic_id=str(clinic_id), outcome="error"
+                    clinic_bucket=clinic_bucket_label(clinic_id), outcome="error"
                 ).inc()
                 logger.error(
                     "waitlist_mark_booked_failed",
@@ -710,6 +794,18 @@ class BookingService:
         if target_doctor_id != booking.doctor_id:
             await self._ensure_service_doctor(booking.service_id, target_doctor_id)
 
+        slot_old = (
+            booking.doctor_id,
+            booking.appointment_date,
+            booking.appointment_time.replace(microsecond=0),
+        )
+        slot_new = (
+            target_doctor_id,
+            data.appointment_date,
+            data.appointment_time.replace(microsecond=0),
+        )
+        await self._acquire_reschedule_slot_advisory_locks(slot_old, slot_new)
+
         await self._ensure_slot_available(
             doctor_id=target_doctor_id,
             appointment_date=data.appointment_date,
@@ -722,7 +818,7 @@ class BookingService:
         booking.doctor_id = target_doctor_id
         booking.appointment_date = data.appointment_date
         booking.appointment_time = data.appointment_time
-        booking = await self.repository.update(booking)
+        booking = await self._update_booking_or_slot_taken(booking)
 
         await self.schedule_service.invalidate_daily_schedule_cache(
             doctor_id=old_doctor_id,

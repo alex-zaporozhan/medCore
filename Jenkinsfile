@@ -1,5 +1,6 @@
-// CI/CD canonical pipeline for this repo: Jenkins (not GitHub Actions for image publish/deploy).
-// Container registry: ghcr.io (GHCR). Docker Hub is not required; no paid Docker Hub assumption.
+// CI/CD: this Jenkinsfile targets GHCR publish + deploy for teams using Jenkins.
+// Solo VPS / demo: prefer Docker Hub via local scripts/docker_hub_release.ps1 or .sh (see CI_CD.md).
+// GHCR: no paid Docker Hub assumption for the Jenkins path.
 pipeline {
   agent any
 
@@ -56,14 +57,25 @@ pipeline {
       }
     }
 
-    stage('Backend tests') {
-      when { expression { return params.RUN_TESTS && env.BACKEND_CHANGED == 'true' } }
+    // Parity with .github/workflows/backend-ci.yml: frontend build → vite preview → full pytest (includes tests/e2e Playwright).
+    // Requires Jenkins job env: DATABASE_URL or DATABASE_URL_TEST (test DB), REDIS_URL, SECRET_KEY, JWT_SECRET_KEY,
+    // PLATFORM_BILLING_WEBHOOK_SECRET (see backend-ci.yml). Optional: FRONTEND_E2E_URL override (default 127.0.0.1:4173).
+    stage('Tests (backend + frontend + browser e2e)') {
+      when { expression { return params.RUN_TESTS && (env.BACKEND_CHANGED == 'true' || env.FRONTEND_CHANGED == 'true') } }
       steps {
         sh '''
           set -euo pipefail
+          if [ -z "${DATABASE_URL_TEST:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "Jenkins: set DATABASE_URL and/or DATABASE_URL_TEST for pytest (same as GitHub Actions backend job)."
+            exit 1
+          fi
+          if [ -z "${REDIS_URL:-}" ]; then
+            echo "Jenkins: set REDIS_URL for full pytest (Redis-backed rate limits and integration tests)."
+            exit 1
+          fi
           python --version || true
           pip --version || true
-          poetry --version || (pip install poetry && poetry --version)
+          poetry --version || (pip install "poetry<3" && poetry --version)
           poetry config virtualenvs.create false
           poetry install --no-interaction --no-ansi --with dev --no-root
           poetry run ruff check src tests
@@ -71,16 +83,6 @@ pipeline {
           poetry run mypy src/core/security.py --ignore-missing-imports --follow-imports=skip
           poetry run pip install pip-audit
           poetry run pip-audit
-          poetry run pytest -v tests/ --ignore=tests/e2e --maxfail=1
-        '''
-      }
-    }
-
-    stage('Frontend tests') {
-      when { expression { return params.RUN_TESTS && env.FRONTEND_CHANGED == 'true' } }
-      steps {
-        sh '''
-          set -euo pipefail
           node --version
           npm --version
           cd frontend
@@ -88,6 +90,25 @@ pipeline {
           npm run lint
           npm run test -- --run
           npm run build
+          cd ..
+          poetry run playwright install chromium
+          export TESTING="${TESTING:-1}"
+          export RUN_REDIS_INTEGRATION_TESTS="${RUN_REDIS_INTEGRATION_TESTS:-1}"
+          export FRONTEND_E2E_URL="${FRONTEND_E2E_URL:-http://127.0.0.1:4173}"
+          cd frontend
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/vite-preview-jenkins.log 2>&1 &
+          echo $! > /tmp/vite-preview-jenkins.pid
+          cd ..
+          sleep 6
+          _vite_pid="$(cat /tmp/vite-preview-jenkins.pid)"
+          cleanup() {
+            if [ -n "${_vite_pid:-}" ] && kill -0 "${_vite_pid}" 2>/dev/null; then
+              kill "${_vite_pid}" 2>/dev/null || true
+              wait "${_vite_pid}" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+          poetry run pytest tests/ -q --tb=short --maxfail=1
         '''
       }
     }

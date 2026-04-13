@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.datetime_utils import utc_now_naive
+from src.core.prometheus_labels import clinic_bucket_label
 from src.core.metrics import (
     waitlist_booking_conversion_total,
     waitlist_entries_total,
@@ -157,7 +158,7 @@ class WaitlistService:
         self.session.add(entry)
         await self.session.flush()
         await self.session.refresh(entry)
-        waitlist_entries_total.labels(clinic_id=str(clinic_id), op="create").inc()
+        waitlist_entries_total.labels(clinic_bucket=clinic_bucket_label(clinic_id), op="create").inc()
         logger.info(
             "waitlist_entry_created",
             extra={
@@ -207,7 +208,7 @@ class WaitlistService:
             if not can_transition_waitlist(old_s, new_s):
                 raise WaitlistInvalidTransition(f"{old_s} -> {new_s}")
             waitlist_status_transitions_total.labels(
-                clinic_id=str(clinic_id),
+                clinic_bucket=clinic_bucket_label(clinic_id),
                 from_status=old_s,
                 to_status=new_s,
             ).inc()
@@ -216,7 +217,7 @@ class WaitlistService:
         entry.updated_by_id = actor_admin_id
         await self.session.flush()
         await self.session.refresh(entry)
-        waitlist_entries_total.labels(clinic_id=str(clinic_id), op="update").inc()
+        waitlist_entries_total.labels(clinic_bucket=clinic_bucket_label(clinic_id), op="update").inc()
         logger.info(
             "waitlist_entry_updated",
             extra={
@@ -248,11 +249,11 @@ class WaitlistService:
         await self.session.flush()
         await self.session.refresh(entry)
         waitlist_status_transitions_total.labels(
-            clinic_id=str(clinic_id),
+            clinic_bucket=clinic_bucket_label(clinic_id),
             from_status=old_s,
             to_status=WaitlistStatus.CANCELLED.value,
         ).inc()
-        waitlist_entries_total.labels(clinic_id=str(clinic_id), op="cancel").inc()
+        waitlist_entries_total.labels(clinic_bucket=clinic_bucket_label(clinic_id), op="cancel").inc()
         logger.info(
             "waitlist_entry_cancelled",
             extra={"clinic_id": str(clinic_id), "entry_id": str(entry_id)},
@@ -290,11 +291,11 @@ class WaitlistService:
         entry.updated_by_id = actor_admin_id
         await self.session.flush()
         waitlist_status_transitions_total.labels(
-            clinic_id=str(clinic_id),
+            clinic_bucket=clinic_bucket_label(clinic_id),
             from_status=old_s,
             to_status=WaitlistStatus.BOOKED.value,
         ).inc()
-        waitlist_booking_conversion_total.labels(clinic_id=str(clinic_id), outcome="success").inc()
+        waitlist_booking_conversion_total.labels(clinic_bucket=clinic_bucket_label(clinic_id), outcome="success").inc()
         logger.info(
             "waitlist_entry_booked",
             extra={
@@ -344,7 +345,7 @@ class WaitlistService:
         entries_result = await self.session.execute(stmt)
         entries = list(entries_result.scalars().all())
         if not entries:
-            waitlist_slot_notify_total.labels(clinic_id=str(clinic_id), outcome="no_match").inc()
+            waitlist_slot_notify_total.labels(clinic_bucket=clinic_bucket_label(clinic_id), outcome="no_match").inc()
             return
 
         expires_at: datetime | None = None
@@ -378,16 +379,16 @@ class WaitlistService:
             entry.status = WaitlistStatus.NOTIFIED.value
             notified_count += 1
             waitlist_status_transitions_total.labels(
-                clinic_id=str(clinic_id),
+                clinic_bucket=clinic_bucket_label(clinic_id),
                 from_status=old_s,
                 to_status=WaitlistStatus.NOTIFIED.value,
             ).inc()
 
         await self.session.flush()
         if notified_count == 0:
-            waitlist_slot_notify_total.labels(clinic_id=str(clinic_id), outcome="no_match").inc()
+            waitlist_slot_notify_total.labels(clinic_bucket=clinic_bucket_label(clinic_id), outcome="no_match").inc()
             return
-        waitlist_slot_notify_total.labels(clinic_id=str(clinic_id), outcome="notified").inc()
+        waitlist_slot_notify_total.labels(clinic_bucket=clinic_bucket_label(clinic_id), outcome="notified").inc()
         logger.info(
             "waitlist_slot_freed_handled",
             extra={

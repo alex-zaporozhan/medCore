@@ -11,7 +11,6 @@ from sqlalchemy import func, select, text
 from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.domain_outbox import DomainOutbox
 from src.infrastructure.database import base as db_base
-from src.main import app
 
 WEBHOOK_PATH = "/api/v1/platform/billing/webhooks/yookassa"
 SECRET_HEADER = "X-Platform-Billing-Webhook-Secret"
@@ -69,6 +68,8 @@ async def test_platform_webhook_outbox_row_published_and_provisioned(seed_data: 
             )
         )
         await session.commit()
+
+    from src.main import app
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

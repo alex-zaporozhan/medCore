@@ -1,13 +1,15 @@
 """Notification delivery orchestrator: fallback chain Telegram → SMS → log."""
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from src.infrastructure.external_apis.email_sender import EmailSender, EmailSenderError
 from src.infrastructure.external_apis.sms_sender import SMSSender, SMSSenderError
 from src.infrastructure.external_apis.telegram_sender import TelegramSender, TelegramSenderError
 
 logger = logging.getLogger(__name__)
+
+NotificationDeliveryKind = Literal["channel", "log_only", "failed"]
 
 
 def _get_delivery_service():
@@ -24,11 +26,16 @@ async def send_with_fallback(
     template: str,
     meta: dict[str, Any] | None = None,
     preferred_channel: str = "sms",
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, NotificationDeliveryKind]:
     """
     Try to deliver via preferred_channel, then fallback (telegram → sms → log).
-    Returns (success, error_message). On success error_message is None.
-    If no sender is configured or all fail, logs and returns (True, None) so we do not crash.
+
+    Returns ``(success, error_message, delivery)``:
+
+    - ``delivery == "channel"`` — at least one real outbound send succeeded.
+    - ``delivery == "log_only"`` — no channel was configured / no attempt; only logged (P1-5:
+      callers must **not** persist ``sent`` for patient-facing comms).
+    - ``delivery == "failed"`` — channels were tried and all failed; ``success`` is False.
     """
     meta = meta or {}
     telegram_sender, sms_sender, email_sender = _get_delivery_service()
@@ -59,7 +66,7 @@ async def send_with_fallback(
                     template=template,
                     meta=meta,
                 )
-                return True, None
+                return True, None, "channel"
             except TelegramSenderError as e:
                 last_error = str(e)
                 logger.warning(
@@ -84,7 +91,7 @@ async def send_with_fallback(
                     template=template,
                     meta=meta,
                 )
-                return True, None
+                return True, None, "channel"
             except SMSSenderError as e:
                 last_error = str(e)
                 logger.warning(
@@ -109,7 +116,7 @@ async def send_with_fallback(
                     template=template,
                     meta=meta,
                 )
-                return True, None
+                return True, None, "channel"
             except EmailSenderError as e:
                 last_error = str(e)
                 logger.warning(
@@ -123,7 +130,7 @@ async def send_with_fallback(
             "[notification] all channels failed",
             extra={"template": template, "error": last_error},
         )
-        return False, last_error or "All channels failed"
+        return False, last_error or "All channels failed", "failed"
 
     logger.info(
         "[notification] delivered via log only (no sender configured)",
@@ -133,4 +140,4 @@ async def send_with_fallback(
             "message_preview": message[:80],
         },
     )
-    return True, None
+    return True, None, "log_only"

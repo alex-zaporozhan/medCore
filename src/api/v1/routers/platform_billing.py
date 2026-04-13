@@ -16,6 +16,7 @@ from src.application.services.platform_billing_service import (
     handle_platform_billing_webhook_two_phase,
     verify_platform_billing_webhook_secret,
 )
+from src.application.webhook_provider_verify import PlatformBillingWebhookProviderVerifyError
 from src.core.config import settings
 from src.core.metrics import platform_billing_webhook_total
 from src.core.request_ip import client_ip_for_public_rate_limit
@@ -47,6 +48,13 @@ PLATFORM_BILLING_WEBHOOK_OPENAPI = {
         "model": PlatformBillingWebhookErrorDetail,
         "description": "Processing error after secret verification",
     },
+    502: {
+        "model": PlatformBillingWebhookErrorDetail,
+        "description": (
+            "YooKassa ``get_payment`` failed for a **known** platform subscription payment — "
+            "no commit of derived state; PSP should retry (`code`: `provider_verify_failed`)"
+        ),
+    },
     503: {
         "model": PlatformBillingWebhookErrorDetail,
         "description": "PLATFORM_BILLING_WEBHOOK_SECRET not configured",
@@ -69,9 +77,12 @@ PLATFORM_BILLING_WEBHOOK_OPENAPI = {
         "- `payment.waiting_for_capture` / `payment.canceled` → payment row status only.\n"
         "- `refund.succeeded` (legacy examples may show `payment.refunded`) → if API `status=refunded`, "
         "ADR-012 billing revocation.\n"
-        "- Unknown `object.id` → 200 + metric `unknown_payment` (provider retry safe).\n\n"
+        "- Unknown `object.id` → 200 + metric `unknown_payment` (provider retry safe).\n"
+        "- Known `object.id` but YooKassa API error on re-fetch → **502** + `provider_verify_failed` "
+        "(no silent 2xx; P0-3).\n\n"
         "**Prometheus `platform_billing_webhook_total{result}`** (low cardinality): "
         "success, invalid_secret, rate_limited, processing_error, unknown_payment, "
+        "provider_unavailable (YooKassa re-fetch failed for known payment), "
         "refund_reconciled, skipped_billing_revoked, idempotent_ok, … — see handler."
     ),
 )
@@ -198,6 +209,17 @@ async def platform_billing_webhook(
 
     try:
         await handle_platform_billing_webhook_two_phase(session, payload)
+    except PlatformBillingWebhookProviderVerifyError:
+        await session.rollback()
+        platform_billing_webhook_total.labels(result="provider_unavailable").inc()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "provider_verify_failed",
+                "message": "Payment provider could not be reached to verify this notification; retry later",
+                "trace_id": trace_id,
+            },
+        ) from None
     except Exception:
         await session.rollback()
         platform_billing_webhook_total.labels(result="processing_error").inc()

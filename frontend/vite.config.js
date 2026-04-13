@@ -24,9 +24,9 @@ export default defineConfig({
             ],
             manifest: {
                 id: "/",
-                name: "Dental Booking — приложение пациента",
-                short_name: "DentalBooking",
-                description: "Запись к врачу, чат с клиникой, профиль и уведомления — PWA для пациентов стоматологии.",
+                name: "Единая система управления — приложение клиента",
+                short_name: "ЕСУ",
+                description: "Запись, чат с организацией, профиль и уведомления — PWA для клиентов сервисных компаний.",
                 lang: "ru",
                 start_url: "/app",
                 scope: "/",
@@ -34,7 +34,7 @@ export default defineConfig({
                 display_override: ["standalone", "minimal-ui"],
                 orientation: "portrait-primary",
                 background_color: "#F4F6F8",
-                theme_color: "#1C2E45",
+                theme_color: "#1e40af",
                 categories: ["health", "medical", "lifestyle"],
                 icons: [
                     {
@@ -94,9 +94,25 @@ export default defineConfig({
                 ],
             },
             workbox: {
+                /** Главный чанк держим < 2 MiB (lazy `/platform/*` с графиками в отдельном чанке). */
+                maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
                 navigateFallback: "/index.html",
                 navigateFallbackDenylist: [/\/api\//, /\/health(?:\/|$)/],
                 runtimeCaching: [
+                    // Hashed JS chunks must not be served stale after a deploy: an old index-*.js can
+                    // reference EmojiMartApplePickerPane-<oldhash>.js that no longer exists → dynamic import fails.
+                    {
+                        urlPattern: ({ url }) => url.pathname.startsWith("/assets/") && url.pathname.endsWith(".js"),
+                        handler: "NetworkFirst",
+                        options: {
+                            cacheName: "assets-js-network-first",
+                            networkTimeoutSeconds: 5,
+                            expiration: {
+                                maxEntries: 80,
+                                maxAgeSeconds: 24 * 60 * 60,
+                            },
+                        },
+                    },
                     {
                         urlPattern: /^https?:\/\/.*\/(assets|icons)\//,
                         handler: "StaleWhileRevalidate",

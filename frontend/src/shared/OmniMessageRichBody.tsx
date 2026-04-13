@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useRef } from "react";
 import { Anchor } from "@mantine/core";
 import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
 import { ClinicChatAttachments } from "@/shared/ClinicChatAttachments";
@@ -68,16 +68,23 @@ export function OmniMessageRichBody({
     shouldOmitChatBodyForAudioAttachment(content, briefTypes) ||
     shouldOmitOmniMediaPlaceholder(content, briefTypes);
 
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const getClinicChatBlobRef = useRef(getClinicChatBlob);
+  getClinicChatBlobRef.current = getClinicChatBlob;
+  const getOmniBlobRef = useRef(getOmniBlob);
+  getOmniBlobRef.current = getOmniBlob;
+
   const getBlob = useMemo(() => {
     return async (attachmentId: string) => {
-      const att = attachments.find((a) => a.id === attachmentId);
+      const att = attachmentsRef.current.find((a) => a.id === attachmentId);
       if (!att) throw new Error("attachment not found");
       if (att.source === "clinic_chat" && att.conversation_id) {
-        return getClinicChatBlob(att.conversation_id, attachmentId);
+        return getClinicChatBlobRef.current(att.conversation_id, attachmentId);
       }
-      return getOmniBlob(attachmentId);
+      return getOmniBlobRef.current(attachmentId);
     };
-  }, [attachments, getClinicChatBlob, getOmniBlob]);
+  }, []);
 
   const briefs = attachments.map((a) => ({
     id: a.id,

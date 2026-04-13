@@ -10,7 +10,7 @@ import os
 import tempfile
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +51,10 @@ from src.core.metrics import (
 )
 from src.core.prometheus_labels import admin_bucket_label, clinic_bucket_label
 from src.core.request_ip import resolve_client_ip
+
+# Large defaults: long medical history must stay bounded for API memory (QA_ARCH / scale).
+_DEFAULT_MEDICAL_LIST_LIMIT = 2000
+_MAX_MEDICAL_LIST_LIMIT = 5000
 
 router = APIRouter(prefix="/admin/clinics", tags=["admin-patient-medical"])
 
@@ -165,6 +169,8 @@ async def _assert_visit_in_patient(
 async def list_medical_visits(
     clinic_id: UUID,
     patient_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_MEDICAL_LIST_LIMIT, ge=1, le=_MAX_MEDICAL_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     ctx: AdminContext = Depends(get_request_context),
     current_admin: AdminUser = Depends(get_current_admin),
@@ -179,6 +185,8 @@ async def list_medical_visits(
             PatientMedicalVisit.deleted_at.is_(None),
         )
         .order_by(PatientMedicalVisit.visit_date.desc(), PatientMedicalVisit.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return [PatientMedicalVisitRead.model_validate(x) for x in res.scalars().all()]
 
@@ -232,6 +240,8 @@ async def create_medical_visit(
 async def list_diagnoses(
     clinic_id: UUID,
     patient_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_MEDICAL_LIST_LIMIT, ge=1, le=_MAX_MEDICAL_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     ctx: AdminContext = Depends(get_request_context),
     current_admin: AdminUser = Depends(get_current_admin),
@@ -246,6 +256,8 @@ async def list_diagnoses(
             PatientDiagnosis.deleted_at.is_(None),
         )
         .order_by(PatientDiagnosis.diagnosis_date.desc(), PatientDiagnosis.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return [PatientDiagnosisRead.model_validate(x) for x in res.scalars().all()]
 
@@ -298,6 +310,8 @@ async def create_diagnosis(
 async def list_medical_files(
     clinic_id: UUID,
     patient_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_MEDICAL_LIST_LIMIT, ge=1, le=_MAX_MEDICAL_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     ctx: AdminContext = Depends(get_request_context),
     current_admin: AdminUser = Depends(get_current_admin),
@@ -312,6 +326,8 @@ async def list_medical_files(
             PatientMedicalFile.deleted_at.is_(None),
         )
         .order_by(PatientMedicalFile.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return [PatientMedicalFileRead.model_validate(x) for x in res.scalars().all()]
 

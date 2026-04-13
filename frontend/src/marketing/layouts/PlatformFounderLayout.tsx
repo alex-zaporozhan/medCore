@@ -76,7 +76,8 @@ export default function PlatformFounderLayout() {
                 Основатель платформы
               </Text>
               {navBtn(ROUTE_PATHS.platform.dashboard, "Обзор")}
-              {navBtn(ROUTE_PATHS.platform.provisionQueue, "Очередь провижининга")}
+              {navBtn(ROUTE_PATHS.platform.provisionQueue, "Очередь внедрения")}
+              {navBtn(ROUTE_PATHS.platform.leads, "Заявки")}
             </Group>
             <Button variant="default" size="xs" onClick={logout}>
               Выйти

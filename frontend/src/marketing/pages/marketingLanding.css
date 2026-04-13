@@ -1,0 +1,175 @@
+/**
+ * Маркетинговый лендинг: Plus Jakarta для h1–h2, премиум-hero, bento (TEMPLATE_DESIGN_UX §3).
+ * Латиница Plus Jakarta; кириллица — fallback на Inter из темы.
+ */
+.marketing-landing.page-gradient {
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  background: linear-gradient(165deg, #fafcfe 0%, #eef2f7 38%, #f8fafc 72%, #f4f6f9 100%);
+}
+
+.marketing-landing.page-gradient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse 120% 80% at 15% -10%, rgba(28, 46, 69, 0.07), transparent 55%),
+    radial-gradient(ellipse 90% 70% at 92% 8%, rgba(13, 148, 136, 0.08), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 50% 100%, rgba(42, 56, 67, 0.05), transparent 60%);
+}
+
+.marketing-landing.page-gradient > * {
+  position: relative;
+  z-index: 1;
+}
+
+.marketing-landing h1.mantine-Title-root,
+.marketing-landing h2.mantine-Title-root {
+  font-family:
+    "Plus Jakarta Sans",
+    var(--mantine-font-family),
+    system-ui,
+    sans-serif;
+}
+
+/* Пьедестал hero: свечение + крупная тень (premium mockup) */
+.marketing-landing .marketing-hero-pedestal {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  perspective: 1000px;
+}
+
+.marketing-landing .marketing-hero-pedestal::before {
+  content: "";
+  position: absolute;
+  inset: -10% -14% -16% -10%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 75% 65% at 50% 55%, rgba(13, 148, 136, 0.22), transparent 68%),
+    radial-gradient(ellipse 55% 45% at 75% 25%, rgba(28, 46, 69, 0.14), transparent 62%);
+  filter: blur(2px);
+}
+
+.marketing-landing .marketing-hero-3d {
+  position: relative;
+  z-index: 1;
+  transform-style: preserve-3d;
+  transform: rotateX(4deg) rotateY(-5deg);
+}
+
+/* Усиленная тень мокапа (ориентир shadow-xl / премиум-hero) */
+.marketing-landing .marketing-hero-shadow-xl .marketing-hero-shot {
+  box-shadow:
+    0 56px 110px -28px rgba(15, 23, 42, 0.58),
+    0 28px 56px -18px rgba(28, 46, 69, 0.38),
+    0 0 0 1px rgba(148, 163, 184, 0.38),
+    0 0 72px -12px rgba(13, 148, 136, 0.18);
+}
+
+.marketing-landing .marketing-hero-shot {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 18px;
+  box-shadow:
+    0 50px 100px -24px rgba(15, 23, 42, 0.55),
+    0 24px 48px -16px rgba(28, 46, 69, 0.35),
+    0 0 0 1px rgba(148, 163, 184, 0.35),
+    0 0 60px -10px rgba(13, 148, 136, 0.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-landing .marketing-hero-3d {
+    transform: none;
+  }
+
+  .marketing-landing .marketing-bento-card {
+    transition: none;
+  }
+
+  .marketing-landing .marketing-bento-card:hover {
+    transform: none;
+  }
+}
+
+/* Bento: лёгкое «стекло», обводка */
+.marketing-landing .marketing-bento-card {
+  border-radius: var(--radius-lg, 16px);
+  border: 1px solid var(--divider, #e2e6ea);
+  background: color-mix(in srgb, var(--bg-card, #ffffff) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-soft-sm, 0 1px 2px rgba(15, 20, 25, 0.05), 0 4px 12px rgba(15, 20, 25, 0.06));
+  transition:
+    box-shadow 0.28s ease,
+    border-color 0.28s ease,
+    transform 0.28s ease;
+}
+
+.marketing-landing .marketing-bento-card:hover {
+  border-color: color-mix(in srgb, var(--primary, #1c2e45) 12%, var(--divider, #e2e6ea));
+  box-shadow:
+    0 8px 24px -8px rgba(15, 23, 42, 0.12),
+    0 20px 48px -20px rgba(28, 46, 69, 0.14),
+    0 0 0 1px rgba(148, 163, 184, 0.2);
+}
+
+/* Секция «Возможности»: спокойное поле gray.0 (Stripe/Vercel-подобная сетка) */
+.marketing-landing .marketing-bento-section {
+  border-radius: var(--radius-xl, 20px);
+  background: var(--mantine-color-gray-0, #f8f9fa);
+  border: 1px solid var(--mantine-color-gray-2, #e9ecef);
+}
+
+.marketing-landing .marketing-pricing-card {
+  border: 1px solid var(--mantine-color-gray-2, #e9ecef);
+  box-shadow: var(--shadow-soft-sm, 0 1px 2px rgba(15, 20, 25, 0.05), 0 4px 12px rgba(15, 20, 25, 0.06));
+  min-height: 440px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  transition:
+    box-shadow 0.28s ease,
+    border-color 0.28s ease,
+    transform 0.28s ease;
+}
+
+.marketing-landing .marketing-pricing-card:hover {
+  border-color: color-mix(in srgb, var(--primary, #1c2e45) 10%, var(--mantine-color-gray-2, #e9ecef));
+  box-shadow:
+    0 10px 28px -10px rgba(15, 23, 42, 0.12),
+    0 20px 44px -18px rgba(28, 46, 69, 0.12);
+}
+
+.marketing-landing .marketing-pricing-card--featured {
+  border: 2px solid var(--mantine-color-slate-7, #2a3843);
+  background: linear-gradient(180deg, #ffffff 0%, color-mix(in srgb, var(--mantine-color-slate-0, #f1f5f9) 55%, #ffffff) 100%);
+  box-shadow:
+    0 12px 36px -12px rgba(15, 23, 42, 0.16),
+    0 24px 48px -20px rgba(30, 41, 59, 0.1);
+}
+
+.marketing-landing .marketing-pricing-card--featured:hover {
+  border-color: var(--mantine-color-slate-8, #1e293b);
+}
+
+/* Карточки «Возможности»: единая высота в сетке */
+.marketing-landing .marketing-capability-card {
+  min-height: 220px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.marketing-landing .marketing-capability-card .mantine-Stack-root {
+  flex: 1;
+}

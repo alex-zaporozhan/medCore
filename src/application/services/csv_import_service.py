@@ -14,6 +14,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.application.booking_slot_advisory_lock import (
+    acquire_doctor_slot_xact_advisory_lock,
+)
 from src.application.services.schedule_service import ScheduleService
 from src.domain.entities.booking import Booking
 from src.domain.entities.clinic import Clinic
@@ -23,6 +26,8 @@ from src.domain.entities.patient import Patient
 from src.domain.entities.service import Service
 
 logger = logging.getLogger(__name__)
+
+_MAX_SCHEDULE_CSV_ERROR_LINES = 40
 
 
 class CsvImportService:
@@ -135,6 +140,24 @@ class CsvImportService:
             # Do not touch existing real bookings; CSV import only fills free slots.
             return False
 
+        await acquire_doctor_slot_xact_advisory_lock(
+            self.session,
+            doctor_id=doctor_id,
+            appointment_date=day,
+            appointment_time=slot_time,
+        )
+        result2 = await self.session.execute(
+            select(Booking).where(
+                Booking.clinic_id == clinic_id,
+                Booking.doctor_id == doctor_id,
+                Booking.appointment_date == day,
+                Booking.appointment_time == slot_time,
+                Booking.deleted_at.is_(None),
+            )
+        )
+        if result2.scalar_one_or_none() is not None:
+            return False
+
         booking = Booking(
             clinic_id=clinic_id,
             patient_id=patient_id,
@@ -190,6 +213,11 @@ class CsvImportService:
         content: str,
     ) -> CsvImportJob:
         """Import schedule from CSV and create technical bookings for free slots.
+
+        Contract: **row-level** processing (aligned with commerce CSV): invalid rows are
+        skipped with errors recorded; valid rows commit in one transaction at the end.
+        Status ``completed_with_errors`` when at least one row failed but others succeeded;
+        ``failed`` only when nothing could be imported or the file/header is invalid.
 
         CSV format:
         - Columns: doctor_id,date,time_slots
@@ -267,7 +295,8 @@ class CsvImportService:
                         touched_keys.add((doctor_id, day))
             except Exception as exc:  # noqa: BLE001
                 message = f"Row {row_index}: {exc}"
-                errors.append(message)
+                if len(errors) < _MAX_SCHEDULE_CSV_ERROR_LINES:
+                    errors.append(message)
                 logger.warning(
                     "CSV import row failed",
                     extra={
@@ -277,13 +306,12 @@ class CsvImportService:
                         "error": str(exc),
                     },
                 )
-                # For MVP: stop on first error and fail the whole import.
-                break
+                continue
 
         job.total_rows = total_rows
         job.processed_rows = created_slots
 
-        if errors:
+        if errors and created_slots == 0:
             job.status = "failed"
             job.error = "; ".join(errors)
             await self.session.flush()
@@ -298,8 +326,12 @@ class CsvImportService:
             )
             raise ValueError(errors[0])
 
-        job.status = "completed"
-        job.error = None
+        if errors:
+            job.status = "completed_with_errors"
+            job.error = "; ".join(errors)
+        else:
+            job.status = "completed"
+            job.error = None
         await self.session.flush()
 
         # Invalidate schedule cache for affected doctor/day pairs.

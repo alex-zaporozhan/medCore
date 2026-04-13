@@ -52,6 +52,9 @@ from src.domain.entities.user_permission_grant import UserPermissionGrant
 from src.domain.entities.user_role import UserRole
 from src.infrastructure.database.rbac_repo_impl import RbacRepositoryImpl
 
+_DEFAULT_RBAC_USERS_LIMIT = 500
+_MAX_RBAC_USERS_LIMIT = 2000
+
 router = APIRouter(
     prefix="/admin/rbac",
     tags=["admin-rbac-management"],
@@ -341,13 +344,19 @@ async def get_rbac_users(
         None,
         description="Клиника для управления RBAC (владелец сети — другая клиника той же организации)",
     ),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_RBAC_USERS_LIMIT, ge=1, le=_MAX_RBAC_USERS_LIMIT),
 ) -> RbacUsersResponse:
     clinic_id, _ = await _effective_clinic_pair(session, context, current_admin, effective_clinic_id)
     admins_res = await session.execute(
-        select(AdminUser).where(
+        select(AdminUser)
+        .where(
             AdminUser.clinic_id == clinic_id,
             AdminUser.deleted_at.is_(None),
         )
+        .order_by(func.coalesce(AdminUser.full_name, ""), AdminUser.email)
+        .offset(skip)
+        .limit(limit)
     )
     admins = list(admins_res.scalars().all())
     admin_ids = [a.id for a in admins]
@@ -396,7 +405,6 @@ async def get_rbac_users(
                 effective_permission_codes=sorted(effective),
             )
         )
-    items.sort(key=lambda x: (x.full_name or "", x.email))
     return RbacUsersResponse(items=items)
 
 

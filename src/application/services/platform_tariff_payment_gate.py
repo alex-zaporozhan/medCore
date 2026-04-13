@@ -42,6 +42,7 @@ async def resolve_platform_checkout_totals(
     plan_slug: str,
     billing_period: str,
     extra_entitlement_keys: list[str],
+    require_active_plan: bool = True,
 ) -> tuple[Decimal, list[str]]:
     """
     Catalog-backed total for public signup checkout (base plan + optional add-ons).
@@ -56,12 +57,10 @@ async def resolve_platform_checkout_totals(
     if bp not in _VALID_PERIODS:
         raise ValueError("invalid_billing_period")
 
-    res = await session.execute(
-        select(PlatformCatalogPlan).where(
-            PlatformCatalogPlan.slug == slug,
-            PlatformCatalogPlan.is_active.is_(True),
-        ).limit(1)
-    )
+    plan_filter = [PlatformCatalogPlan.slug == slug]
+    if require_active_plan:
+        plan_filter.append(PlatformCatalogPlan.is_active.is_(True))
+    res = await session.execute(select(PlatformCatalogPlan).where(*plan_filter).limit(1))
     plan = res.scalar_one_or_none()
     if plan is None:
         raise ValueError("unknown_plan_slug")
@@ -109,6 +108,52 @@ async def resolve_platform_checkout_totals(
         total = base + addon_monthly * Decimal(12)
 
     return total, ordered
+
+
+async def monthly_recurring_rub_from_tariff_snapshot(
+    session: AsyncSession,
+    tariff_snapshot: dict[str, Any],
+    *,
+    require_active_plan: bool = False,
+) -> Decimal | None:
+    """
+    Catalog-backed monthly recurring revenue for one SaaS signup snapshot.
+
+    ``require_active_plan=False`` allows inactive catalog rows (historical orgs after plan sunset).
+    Returns None when the snapshot is legacy (no billing_period), invalid, or catalog lookup fails.
+    """
+    try:
+        period = parse_billing_period_from_snapshot(tariff_snapshot)
+    except ValueError:
+        return None
+    if period is None:
+        return None
+
+    slug_raw = tariff_snapshot.get("plan_slug")
+    slug = str(slug_raw).strip().lower() if slug_raw else ""
+    if not slug:
+        return None
+
+    raw_ex = tariff_snapshot.get("extra_entitlement_keys")
+    extras: list[str] = []
+    if isinstance(raw_ex, list):
+        extras = [str(x).strip() for x in raw_ex if x is not None and str(x).strip()]
+
+    try:
+        total, _ = await resolve_platform_checkout_totals(
+            session,
+            plan_slug=slug,
+            billing_period=period,
+            extra_entitlement_keys=extras,
+            require_active_plan=require_active_plan,
+        )
+    except ValueError:
+        return None
+
+    q = Decimal("0.01")
+    if period == BILLING_PERIOD_ANNUAL:
+        return (total / Decimal(12)).quantize(q)
+    return total.quantize(q)
 
 
 async def evaluate_platform_payment_against_catalog(

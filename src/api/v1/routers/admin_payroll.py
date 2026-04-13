@@ -129,7 +129,10 @@ async def delete_payroll_policy(
 )
 async def list_salary_transactions(
     clinic_id: UUID,
-    doctor_id: UUID,
+    doctor_id: UUID | None = Query(
+        None,
+        description="Filter by doctor; omit to return all salary transactions for the clinic.",
+    ),
     period_start: date | None = Query(None),
     period_end: date | None = Query(None),
     session: AsyncSession = Depends(get_session),

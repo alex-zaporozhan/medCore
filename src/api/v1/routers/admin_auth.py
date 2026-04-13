@@ -22,6 +22,7 @@ from src.core.industry_profile import INDUSTRY_PROFILE_DENTAL
 from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.organization import Organization
+from src.infrastructure.database import base as db_base
 from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -243,7 +244,6 @@ def get_current_admin_sse_dependency():
     async def _get_current_admin_sse(
         access_token: str | None = Query(None, description="JWT for SSE clients"),
         authorization: str | None = Header(None),
-        session: AsyncSession = Depends(get_session),
     ) -> AdminUser:
         token = (access_token or "").strip() or None
         if not token and authorization and authorization.startswith("Bearer "):
@@ -271,24 +271,26 @@ def get_current_admin_sse_dependency():
         admin_id = payload.get("sub")
         if not admin_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-        result = await session.execute(
-            select(AdminUser).where(
-                AdminUser.id == UUID(admin_id),
-                AdminUser.deleted_at.is_(None),
-                AdminUser.employment_status == EMPLOYMENT_ACTIVE,
-            ).limit(1)
-        )
-        admin = result.scalar_one_or_none()
-        if not admin:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
-        if admin.organization_id is not None and await organization_has_platform_billing_revoked(
-            session, admin.organization_id
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=ADMIN_ORG_PLATFORM_BILLING_REVOKED,
+        # Short-lived session: SSE streams must not hold Depends(get_session) open for the whole response.
+        async with db_base.AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(AdminUser).where(
+                    AdminUser.id == UUID(admin_id),
+                    AdminUser.deleted_at.is_(None),
+                    AdminUser.employment_status == EMPLOYMENT_ACTIVE,
+                ).limit(1)
             )
-        return admin
+            admin = result.scalar_one_or_none()
+            if not admin:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
+            if admin.organization_id is not None and await organization_has_platform_billing_revoked(
+                session, admin.organization_id
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=ADMIN_ORG_PLATFORM_BILLING_REVOKED,
+                )
+            return admin
 
     return _get_current_admin_sse
 

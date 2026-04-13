@@ -10,10 +10,8 @@ Run from project root: poetry run pytest tests/
   Ошибка "password authentication failed for user postgres" значит: к Postgres подключаются с тем паролем,
   который указан в DATABASE_URL (или DATABASE_URL_TEST). Если пароль в .env другой — задайте точный URL для тестов.
 
-  Вариант 1 (рекомендуется): в .env добавьте строку с тем же паролем, что и в DATABASE_URL:
-    DATABASE_URL_TEST=postgresql+asyncpg://postgres:ВАШ_ПАРОЛЬ@localhost:5432/dental_booking_test
-  Вариант 2: не задавать DATABASE_URL_TEST — тогда подставится DATABASE_URL из .env с заменой БД на dental_booking_test
-    (пароль берётся из DATABASE_URL; .env должен быть в корне проекта и загружается при запуске pytest).
+  Вариант 1: задать ``DATABASE_URL_TEST`` (тот же пароль/хост, что у Docker Postgres, БД ``dental_booking_test``).
+  Вариант 2: задать только ``DATABASE_URL`` — pytest подставит то же подключение с путём ``/dental_booking_test`` (удобно для CI, где задают одну строку).
 
   Создайте тестовую БД один раз (имя контейнера из docker-compose: dental_booking_postgres;
   в PowerShell не используйте плейсхолдер в угловых скобках — только реальное имя контейнера):
@@ -24,8 +22,12 @@ Run from project root: poetry run pytest tests/
   Если таблицы уже есть, но alembic_version пуста или рассинхронизирована — согласуйте stamp/upgrade с командой (опасные шаги не документируются здесь).
 
 - If connection to the test DB fails, tests are SKIPPED with a hint.
+- При ``TESTING=1`` движок БД не создаётся при импорте: ``init_engine_for_testing()`` вызывается из session-фикстуры ``init_db`` (или из тестов с ``client`` / ``seed_data``, которые от неё зависят). Любой тест, который вызывает ``AsyncSessionLocal()`` напрямую без ``client``, должен явно запросить ``init_db`` (или другую фикстуру, тянущую ``init_db``), иначе в изолированном прогоне будет ``TypeError: 'NoneType' object is not callable``.
 - TRUNCATE runs only when the DB name contains "test". Never point at production.
+- Before TRUNCATE, other ``client backend`` sessions on the same database are terminated so
+  ``TRUNCATE`` is not blocked by stray uvicorn/psql/pytest (set ``PYTEST_DISABLE_TEST_DB_SESSION_KILL=1`` to skip).
 """
+import logging
 import os
 import asyncio
 import subprocess
@@ -34,10 +36,12 @@ import uuid
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+logger = logging.getLogger(__name__)
 
 # Minimal built-in async support for environments where pytest-asyncio plugin
 # is not installed (e.g. system Python runs).
@@ -57,6 +61,8 @@ os.environ.setdefault(
 )
 os.environ.setdefault("PATIENT_PAYMENT_WEBHOOK_SECRET", "")
 os.environ["TESTING"] = "1"
+# Redis-backed tests (rate limits, patient auth codes): same default as CI — run against real Redis or fail clearly.
+os.environ.setdefault("RUN_REDIS_INTEGRATION_TESTS", "1")
 
 # Load .env from project root so DATABASE_URL_TEST/REDIS_URL_TEST exist when not set in shell
 _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
@@ -71,13 +77,25 @@ if os.path.isfile(_env_path):
                 if k and os.environ.get(k) is None:
                     os.environ[k] = v
 
-_db_test_url = os.environ.get("DATABASE_URL_TEST")
-if not _db_test_url:
-    pytest.fail(
-        "DATABASE_URL_TEST is required for tests to run reliably. "
-        "Set it in your shell or in .env, e.g. "
-        "DATABASE_URL_TEST=postgresql+asyncpg://postgres:pass@localhost:5432/dental_booking_test"
-    )
+def _resolve_database_url_test() -> str:
+    """Prefer DATABASE_URL_TEST; else same host/credentials as DATABASE_URL with DB name dental_booking_test (CI)."""
+    explicit = (os.environ.get("DATABASE_URL_TEST") or "").strip()
+    if explicit:
+        return explicit
+    dsn = (os.environ.get("DATABASE_URL") or "").strip()
+    if not dsn:
+        pytest.fail(
+            "Set DATABASE_URL_TEST or DATABASE_URL for pytest. "
+            "Example: DATABASE_URL_TEST=postgresql+asyncpg://postgres:postgres@localhost:5442/dental_booking_test "
+            "or DATABASE_URL to the same host with any DB name (it will be rewritten to dental_booking_test)."
+        )
+    u = urlparse(dsn)
+    new_path = "/dental_booking_test"
+    return urlunparse((u.scheme, u.netloc, new_path, u.params, u.query, u.fragment))
+
+
+_db_test_url = _resolve_database_url_test()
+os.environ["DATABASE_URL_TEST"] = _db_test_url
 os.environ["DATABASE_URL"] = _db_test_url
 if os.environ.get("REDIS_URL_TEST"):
     os.environ["REDIS_URL"] = os.environ["REDIS_URL_TEST"]
@@ -208,11 +226,40 @@ else:
         tables = ",".join(f'"{t}"' for t in Base.metadata.tables)
         async with db_base.engine.begin() as conn:
             # TRUNCATE ... CASCADE takes ACCESS EXCLUSIVE locks on many tables.
-            # If any other session holds locks (e.g., local dev server, psql, another pytest run),
-            # Postgres can wait "forever" which makes the pre-push gate look hung.
-            # Fail fast with a helpful message instead of hanging.
-            await conn.execute(text("SET lock_timeout = '5s'"))
-            await conn.execute(text("SET statement_timeout = '120s'"))
+            # Stray connections (local API, psql, hung pytest) cause lock_timeout and cascade ERRORs
+            # for every test that depends on seed_data. Terminate other client backends on this DB only.
+            disable_kill = os.environ.get("PYTEST_DISABLE_TEST_DB_SESSION_KILL", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+            if not disable_kill:
+                r = await conn.execute(
+                    text(
+                        """
+                        SELECT pg_terminate_backend(pid)
+                        FROM pg_stat_activity
+                        WHERE datname = current_database()
+                          AND pid <> pg_backend_pid()
+                          AND backend_type = 'client backend'
+                        """
+                    )
+                )
+                terminated = sum(1 for row in r.fetchall() if row[0] is True)
+                if terminated:
+                    logger.warning(
+                        "pytest: terminated %s other session(s) on %s before TRUNCATE",
+                        terminated,
+                        urlparse(
+                            os.environ.get("DATABASE_URL_TEST", "")
+                            or os.environ.get("DATABASE_URL", "")
+                        ).path
+                        or "(db)",
+                    )
+                await asyncio.sleep(0.15)
+
+            await conn.execute(text("SET statement_timeout = '180s'"))
+            await conn.execute(text("SET lock_timeout = '30s'"))
             try:
                 await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
             except Exception as e:
@@ -413,24 +460,73 @@ else:
             from src.domain.entities.platform_catalog_option import PlatformCatalogOption
             from src.domain.entities.platform_catalog_plan import PlatformCatalogPlan
 
-            if (
-                await session.execute(
-                    select(PlatformCatalogPlan).where(PlatformCatalogPlan.slug == "starter_rf").limit(1)
-                )
-            ).scalar_one_or_none() is None:
-                session.add(
-                    PlatformCatalogPlan(
-                        id=uuid.UUID("b0000001-0000-4000-8000-000000000001"),
-                        slug="starter_rf",
-                        display_name="Старт (РФ)",
-                        description="База + задачи — пресет для лендинга",
-                        option_keys=["core.base", "tasks.kanban"],
-                        price_monthly_rub=Decimal("4990.00"),
-                        price_annual_rub=Decimal("49900.00"),
-                        is_active=True,
-                        sort_order=0,
+            catalog_plan_seeds = [
+                (
+                    uuid.UUID("b0000001-0000-4000-8000-000000000010"),
+                    "start",
+                    "Start",
+                    "База для моно-бизнеса: 1 филиал, до 5 сотрудников.",
+                    ["core.base", "crm.pipeline", "tasks.kanban"],
+                    Decimal("2900.00"),
+                    Decimal("29000.00"),
+                    0,
+                ),
+                (
+                    uuid.UUID("b0000001-0000-4000-8000-000000000011"),
+                    "growth",
+                    "Growth",
+                    "До 3 филиалов, до 20 сотрудников. AI в чатах, финансы, лояльность.",
+                    [
+                        "core.base",
+                        "crm.pipeline",
+                        "tasks.kanban",
+                        "ai.assistant.chat",
+                        "marketing.attribution",
+                        "retention.bundle",
+                    ],
+                    Decimal("5900.00"),
+                    Decimal("59000.00"),
+                    1,
+                ),
+                (
+                    uuid.UUID("b0000001-0000-4000-8000-000000000012"),
+                    "business_os",
+                    "Business OS",
+                    "Сеть до 10 филиалов: RAG, задачи, склад, ROI, зарплаты.",
+                    [
+                        "core.base",
+                        "crm.pipeline",
+                        "tasks.kanban",
+                        "ai.assistant.chat",
+                        "marketing.attribution",
+                        "retention.bundle",
+                        "omni.embed.bundle",
+                        "ai.rag.org_kb",
+                    ],
+                    Decimal("14900.00"),
+                    Decimal("149000.00"),
+                    2,
+                ),
+            ]
+            for pid, slug, dname, desc, keys, pm, pa, sort_o in catalog_plan_seeds:
+                if (
+                    await session.execute(
+                        select(PlatformCatalogPlan).where(PlatformCatalogPlan.slug == slug).limit(1)
                     )
-                )
+                ).scalar_one_or_none() is None:
+                    session.add(
+                        PlatformCatalogPlan(
+                            id=pid,
+                            slug=slug,
+                            display_name=dname,
+                            description=desc,
+                            option_keys=keys,
+                            price_monthly_rub=pm,
+                            price_annual_rub=pa,
+                            is_active=True,
+                            sort_order=sort_o,
+                        )
+                    )
             catalog_opts = [
                 (
                     uuid.UUID("a0000001-0000-4000-8000-000000000001"),

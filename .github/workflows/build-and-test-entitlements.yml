@@ -18,8 +18,8 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  DATABASE_URL_TEST: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
+  DATABASE_URL_TEST: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
   REDIS_URL: redis://localhost:6379/0
   RUN_REDIS_INTEGRATION_TESTS: "1"
   TESTING: "1"
@@ -98,6 +98,7 @@ jobs:
             tests/api/test_phase3_vertical_import.py \
             tests/api/test_phase4_commerce.py \
             tests/api/test_platform_internal.py \
+            tests/api/test_platform_enterprise_leads.py \
             tests/api/test_payments.py \
             tests/api/test_security_soc_metrics.py \
             tests/application/test_domain_outbox_payment.py \
@@ -111,6 +112,8 @@ jobs:
             tests/api/test_public_platform_redis_rate_limit.py \
             tests/api/test_public_platform_checkout.py \
             tests/api/test_public_platform_catalog_rate_limit.py \
+            tests/api/test_public_commerce_vitrine.py \
+            tests/core/test_clinic_read_public_scrub.py \
             -q --tb=short
 
   full-backend-tests:

@@ -129,6 +129,16 @@ class Settings(BaseSettings):
     #: GET /public/platform/catalog/* — per IP (лендинг / скрейп). 0 = выкл.
     rate_public_platform_catalog_ip_limit: int = 240
     rate_public_platform_catalog_ip_window_seconds: int = 60
+    #: POST /api/v1/platform-leads/ — заявки с лендинга (антиспам по IP).
+    rate_public_enterprise_lead_ip_limit: int = 30
+    rate_public_enterprise_lead_ip_window_seconds: int = 600
+    #: Тот же маршрут — по нормализованному контакту (SHA-256 в ключе Redis, без PII в ключе).
+    rate_public_enterprise_lead_contact_limit: int = 8
+    rate_public_enterprise_lead_contact_window_seconds: int = 3600
+    #: Webhook при новой заявке POST /api/v1/platform-leads/ (CRM, Slack Incoming Webhook и т.п.). Пусто = не вызывать.
+    enterprise_lead_notify_webhook_url: str = ""
+    #: Опционально: заголовок X-Enterprise-Lead-Notify-Secret для приёма стороной webhook.
+    enterprise_lead_notify_webhook_secret: str = ""
     #: CIDR allowlist: если непусто и peer в списке — client IP из Forwarded/XFF (checkout, catalog, webhook B).
     public_rate_limit_trusted_proxy_cidrs: str = ""
     #: TTL для `platform_signup_intents.expires_at` при создании checkout (pending_payment); очистка — Celery.
@@ -144,6 +154,9 @@ class Settings(BaseSettings):
     rate_platform_founder_mfa_ip_limit: int = 40
     rate_platform_founder_mfa_ip_window_seconds: int = 300
     rate_public_clinics_list_ip_window_seconds: int = 60
+    #: GET /public/clinics/{id}/commerce/vitrine — per client IP (read-only; 0 = выкл). Same proxy trust as catalog.
+    rate_public_commerce_vitrine_ip_limit: int = 240
+    rate_public_commerce_vitrine_ip_window_seconds: int = 60
 
     #: Patient SMS/OAuth: если true — без ``clinic_slug`` нельзя резолвить «первую клинику в БД» (LEAD: только контекст клиники в prod).
     patient_auth_require_clinic_slug: bool = False
@@ -169,6 +182,17 @@ class Settings(BaseSettings):
     yookassa_return_url: str = "https://localhost:5173/app/booking/success"
     #: Return URL for YooKassa redirect after SaaS platform checkout (1b-F5). Falls back to `yookassa_return_url` if empty.
     platform_saas_checkout_return_url: str = ""
+    #: P1-4 ops: Celery reconciles patient/platform rows stuck on ``local-pending:*`` after YooKassa create (no 2PC).
+    payment_local_pending_reconcile_enabled: bool = True
+    #: Minimum age of a pending ``local-pending`` row before reconcile touches it (seconds).
+    payment_local_pending_reconcile_min_age_seconds: int = 600
+    payment_local_pending_reconcile_batch_limit: int = 40
+
+    #: Webchat long-poll: publish wake to Redis so any API replica can unblock waiters (Phase 6 backlog).
+    webchat_redis_fanout_enabled: bool = False
+
+    #: Optional KMS CMK ARN or id for application-level envelope encryption (P1-3 foundation; Fernet path unchanged).
+    aws_kms_key_id: str = ""
 
     #: Contour A — POST /api/v1/payments/webhook. Empty = no header check (MVP); when set, require X-Patient-Payment-Webhook-Secret (U-006).
     patient_payment_webhook_secret: str = ""
@@ -246,6 +270,16 @@ class Settings(BaseSettings):
     # Celery
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
+    # Global task wall clock (seconds). Override in prod for long exports / backups.
+    celery_task_time_limit_seconds: int = 3600
+    celery_task_soft_time_limit_seconds: int = 3300
+    # Reliability: ack after return (crash mid-task → redelivery). Requires idempotent tasks.
+    celery_task_acks_late: bool = False
+    # When acks_late and worker dies, requeue unacknowledged messages (pair with prefetch=1 in prod).
+    celery_task_reject_on_worker_lost: bool = False
+    celery_worker_prefetch_multiplier: int = 4
+    # Redis broker: cancel tasks that cannot be acknowledged after broker disconnect (Celery 5).
+    celery_worker_cancel_long_running_tasks_on_connection_loss: bool = True
 
     # Staff chat attachments (local disk; clinic-scoped paths)
     staff_chat_upload_root: str = "data/staff_chat_uploads"
@@ -377,6 +411,8 @@ class Settings(BaseSettings):
     def _disable_admin_login_rate_limit_in_tests(self) -> "Settings":
         """In tests (TESTING=1), disable admin login rate limit to avoid 429 in full suite."""
         if os.environ.get("TESTING") == "1":
+            # Quieter logs and less overhead than SQLAlchemy echo=True (base.AsyncEngine).
+            object.__setattr__(self, "debug", False)
             object.__setattr__(self, "rate_admin_login_ip_limit", 0)
             object.__setattr__(self, "rate_admin_login_email_limit", 0)
             object.__setattr__(self, "rate_platform_founder_login_ip_limit", 0)
@@ -390,10 +426,15 @@ class Settings(BaseSettings):
             object.__setattr__(self, "rate_public_platform_checkout_email_limit", 0)
             object.__setattr__(self, "rate_public_platform_checkout_captcha_soft_ip_limit", 0)
             object.__setattr__(self, "rate_public_platform_catalog_ip_limit", 0)
+            object.__setattr__(self, "rate_public_commerce_vitrine_ip_limit", 0)
+            object.__setattr__(self, "rate_public_enterprise_lead_ip_limit", 0)
+            object.__setattr__(self, "rate_public_enterprise_lead_contact_limit", 0)
             object.__setattr__(self, "domain_outbox_metrics_db_refresh_min_interval_seconds", 0.0)
             object.__setattr__(self, "platform_billing_metrics_db_refresh_min_interval_seconds", 0.0)
             # Avoid suite-wide 403 on /platform/internal/* when .env sets prod TOTP policy; opt-in per test via monkeypatch.
             object.__setattr__(self, "platform_founder_totp_required", False)
+            object.__setattr__(self, "payment_local_pending_reconcile_enabled", False)
+            object.__setattr__(self, "webchat_redis_fanout_enabled", False)
         return self
 
     @model_validator(mode="after")
@@ -417,11 +458,39 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _apply_production_outbox_dispatch_cap(self) -> "Settings":
+        """
+        QA_ARCH / ADR-009: in ``APP_ENV=production``, bound outbox dispatch retries unless
+        ``DOMAIN_OUTBOX_MAX_DISPATCH_ATTEMPTS`` is set explicitly (0 in env = unlimited).
+
+        Skipped when ``TESTING=1``. Development keeps default 0 (unlimited) for easier local replay.
+        """
+        if os.environ.get("TESTING") == "1":
+            return self
+        if (self.app_env or "").strip().lower() != "production":
+            return self
+        if "DOMAIN_OUTBOX_MAX_DISPATCH_ATTEMPTS" not in os.environ:
+            object.__setattr__(self, "domain_outbox_max_dispatch_attempts", 50)
+        return self
+
+    @model_validator(mode="after")
     def _enforce_s3_ssl_in_prod(self) -> "Settings":
         """For PHI storage, require SSL in non-development environments."""
         if str(self.app_env).lower() not in ("development", "dev", "local"):
             if self.s3_endpoint and not bool(self.s3_use_ssl):
                 raise ValueError("S3_USE_SSL must be enabled outside development")
+        return self
+
+    @model_validator(mode="after")
+    def _celery_time_limits_consistent(self) -> "Settings":
+        """Soft time limit must stay strictly below hard limit when both are positive."""
+        soft = self.celery_task_soft_time_limit_seconds
+        hard = self.celery_task_time_limit_seconds
+        if soft > 0 and hard > 0 and soft >= hard:
+            raise ValueError(
+                "CELERY_TASK_SOFT_TIME_LIMIT_SECONDS must be less than "
+                "CELERY_TASK_TIME_LIMIT_SECONDS when both are positive"
+            )
         return self
 
     @model_validator(mode="after")

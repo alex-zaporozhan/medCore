@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.api.v1.entitlement_dependencies import require_entitlement
 from sqlalchemy import select
@@ -26,6 +26,9 @@ from src.domain.entities.story import Story
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_MARKETING_LIST_LIMIT = 2000
+_MAX_MARKETING_LIST_LIMIT = 5000
+
 router = APIRouter(
     prefix="/admin/clinics",
     tags=["admin-marketing"],
@@ -36,6 +39,8 @@ router = APIRouter(
 @router.get("/{clinic_id}/marketing/posts", response_model=list[PromoPostRead])
 async def list_promo_posts(
     clinic_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_MARKETING_LIST_LIMIT, ge=1, le=_MAX_MARKETING_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
     _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
@@ -43,7 +48,11 @@ async def list_promo_posts(
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
-        select(PromoPost).where(PromoPost.clinic_id == clinic_id).order_by(PromoPost.created_at.desc())
+        select(PromoPost)
+        .where(PromoPost.clinic_id == clinic_id)
+        .order_by(PromoPost.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return [PromoPostRead.model_validate(r) for r in result.scalars().all()]
 
@@ -182,6 +191,8 @@ async def delete_promo_post(
 @router.get("/{clinic_id}/marketing/stories", response_model=list[StoryRead])
 async def list_stories(
     clinic_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_MARKETING_LIST_LIMIT, ge=1, le=_MAX_MARKETING_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
     _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
@@ -189,7 +200,11 @@ async def list_stories(
     if clinic_id != current_admin.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
-        select(Story).where(Story.clinic_id == clinic_id).order_by(Story.order_index, Story.created_at)
+        select(Story)
+        .where(Story.clinic_id == clinic_id)
+        .order_by(Story.order_index, Story.created_at)
+        .offset(skip)
+        .limit(limit)
     )
     return [StoryRead.model_validate(r) for r in result.scalars().all()]
 

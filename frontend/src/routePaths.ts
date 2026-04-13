@@ -6,6 +6,8 @@
 export const ROUTE_PATHS = {
   marketing: {
     landing: "/",
+    /** Публичная демо-заглушка до запуска песочницы. */
+    sandbox: "/sandbox",
     /** Публичная витрина тарифов (каталог + checkout). */
     pricing: "/pricing",
     /** Регистрация клиники: согласия PII + checkout (FE-E1). */
@@ -20,6 +22,8 @@ export const ROUTE_PATHS = {
     loginMfa: "/platform/login/mfa",
     dashboard: "/platform/dashboard",
     provisionQueue: "/platform/provision-queue",
+    /** Заявки на индивидуальное внедрение с публичного сайта. */
+    leads: "/platform/leads",
   },
   admin: {
     login: "/admin/login",
@@ -87,6 +91,7 @@ export const ROUTE_PATHS = {
     forms: "/app/forms",
     chat: "/app/chat",
     profile: "/app/profile",
+    store: "/app/store",
   },
   other: {
     /** Legacy: редирект на `/admin/login`, `/platform/login` или главную (пациент). */
@@ -161,6 +166,7 @@ export const PATIENT_APP_ROUTE_SEGMENTS = [
   "forms",
   "chat",
   "profile",
+  "store",
 ] as const;
 
 export type PatientAppSegment = (typeof PATIENT_APP_ROUTE_SEGMENTS)[number];
@@ -173,6 +179,7 @@ export type PatientAppSegment = (typeof PATIENT_APP_ROUTE_SEGMENTS)[number];
 export function buildDerivedPublicAppPaths(): readonly string[] {
   return [
     ROUTE_PATHS.marketing.landing,
+    ROUTE_PATHS.marketing.sandbox,
     ROUTE_PATHS.marketing.pricing,
     ROUTE_PATHS.marketing.signup,
     ROUTE_PATHS.marketing.legalPrivacy,
@@ -181,6 +188,7 @@ export function buildDerivedPublicAppPaths(): readonly string[] {
     ROUTE_PATHS.platform.loginMfa,
     ROUTE_PATHS.platform.dashboard,
     ROUTE_PATHS.platform.provisionQueue,
+    ROUTE_PATHS.platform.leads,
     ROUTE_PATHS.other.signIn,
     ROUTE_PATHS.admin.login,
     ROUTE_PATHS.admin.dashboard,
@@ -195,3 +203,8 @@ export function buildDerivedPublicAppPaths(): readonly string[] {
 
 /** Все публичные path для проверок (уникальность, паритет с `ROUTE_PATHS`). */
 export const ALL_PUBLIC_APP_PATHS: readonly string[] = buildDerivedPublicAppPaths();
+
+/** Публичная страница `/login`: подсказки для пациента через query `patientEntry`. */
+export function patientPublicLoginSearch(patientEntry: string): string {
+  return `?${new URLSearchParams({ patientEntry }).toString()}`;
+}

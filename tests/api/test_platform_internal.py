@@ -10,11 +10,13 @@ from httpx import AsyncClient
 from src.core.config import settings
 from src.core.datetime_utils import utc_now
 from src.core.security import create_platform_founder_access_token
+from src.domain.entities.organization import Organization
 from src.domain.entities.platform_signup_intent import PlatformSignupIntent
 from src.infrastructure.database import base as db_base
 
 HEALTH_PATH = "/api/v1/platform/internal/health"
 PROVISION_QUEUE_PATH = "/api/v1/platform/internal/provision-queue"
+DASHBOARD_SUMMARY_PATH = "/api/v1/platform/internal/dashboard-summary"
 SESSION_PATH = "/api/v1/admin/auth/session"
 LOGIN_PATH = "/api/v1/platform/auth/login"
 
@@ -115,6 +117,36 @@ async def test_admin_session_rejects_platform_founder_jwt(
 async def test_platform_internal_provision_queue_requires_founder_jwt(client: AsyncClient):
     r = await client.get(PROVISION_QUEUE_PATH)
     assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_platform_internal_dashboard_summary_counts_active_org_and_mrr(client: AsyncClient, seed_data: dict):
+    org_id = uuid4()
+    intent_id = uuid4()
+    async with db_base.AsyncSessionLocal() as session:
+        session.add(Organization(id=org_id, name="Dash Summary Org"))
+        session.add(
+            PlatformSignupIntent(
+                id=intent_id,
+                status="active",
+                email="dash-summary@example.com",
+                organization_id=org_id,
+                tariff_snapshot={
+                    "plan_slug": "start",
+                    "billing_period": "monthly",
+                    "extra_entitlement_keys": [],
+                },
+            )
+        )
+        await session.commit()
+
+    token = create_platform_founder_access_token(subject=seed_data["platform_founder_id"])
+    r = await client.get(DASHBOARD_SUMMARY_PATH, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("active_organizations") == 1
+    assert body.get("mrr_partial") is False
+    assert float(body.get("mrr_rub_monthly", "0")) == pytest.approx(2900.0)
 
 
 @pytest.mark.asyncio

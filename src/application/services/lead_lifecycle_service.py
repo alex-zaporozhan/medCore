@@ -21,6 +21,7 @@ from src.application.dto.lead_lifecycle_dto import (
 from src.application.services.lead_service import LeadService
 from src.application.services.lead_stage_semantics_service import LeadStageSemanticsService
 from src.core.context import RequestContext
+from src.core.prometheus_labels import clinic_bucket_label
 from src.core.metrics import (
     crm_lead_booking_onboarded_total,
     crm_lead_lifecycle_transitions_total,
@@ -99,7 +100,7 @@ class LeadLifecycleService:
                 )
                 created_fresh = True
                 crm_lead_booking_onboarded_total.labels(
-                    clinic_id=str(event.clinic_id),
+                    clinic_bucket=clinic_bucket_label(event.clinic_id),
                     outcome="created_lead",
                 ).inc()
             except Exception as exc:  # noqa: BLE001
@@ -115,7 +116,7 @@ class LeadLifecycleService:
                 return
         else:
             crm_lead_booking_onboarded_total.labels(
-                clinic_id=str(event.clinic_id),
+                clinic_bucket=clinic_bucket_label(event.clinic_id),
                 outcome="existing_lead",
             ).inc()
 
@@ -180,7 +181,7 @@ class LeadLifecycleService:
                 },
             )
             crm_lead_visit_completion_outcomes_total.labels(
-                clinic_id=str(event.clinic_id),
+                clinic_bucket=clinic_bucket_label(event.clinic_id),
                 outcome="skipped_no_won_stage",
             ).inc()
             return
@@ -207,7 +208,7 @@ class LeadLifecycleService:
                 },
             )
             crm_lead_visit_completion_outcomes_total.labels(
-                clinic_id=str(event.clinic_id),
+                clinic_bucket=clinic_bucket_label(event.clinic_id),
                 outcome="skipped_transition_failed",
             ).inc()
             return
@@ -226,7 +227,7 @@ class LeadLifecycleService:
             extra_booking_ids=[event.booking_id],
         )
         crm_lead_visit_completion_outcomes_total.labels(
-            clinic_id=str(event.clinic_id),
+            clinic_bucket=clinic_bucket_label(event.clinic_id),
             outcome="closed",
         ).inc()
 
@@ -332,7 +333,7 @@ class LeadLifecycleService:
         lead = await self.leads.repository.get_lead_by_id(event.clinic_id, event.lead_id)
         if not lead or lead.status != "open":
             crm_lead_stale_handled_total.labels(
-                clinic_id=str(event.clinic_id),
+                clinic_bucket=clinic_bucket_label(event.clinic_id),
                 outcome="skipped_not_open",
             ).inc()
             return
@@ -356,12 +357,12 @@ class LeadLifecycleService:
                 ctx=self._ctx(event.clinic_id, event.trace_id, user_type="system"),
             )
             crm_lead_stale_handled_total.labels(
-                clinic_id=str(event.clinic_id),
+                clinic_bucket=clinic_bucket_label(event.clinic_id),
                 outcome="stage_applied" if ok else "transition_failed",
             ).inc()
         else:
             crm_lead_stale_handled_total.labels(
-                clinic_id=str(event.clinic_id),
+                clinic_bucket=clinic_bucket_label(event.clinic_id),
                 outcome="noop",
             ).inc()
 
@@ -432,7 +433,7 @@ class LeadLifecycleService:
                 extra=log_base,
             )
             crm_lead_lifecycle_transitions_total.labels(
-                clinic_id=str(clinic_id),
+                clinic_bucket=clinic_bucket_label(clinic_id),
                 event_type=event_type,
                 outcome="success",
             ).inc()
@@ -443,7 +444,7 @@ class LeadLifecycleService:
                 extra={**log_base, "error": str(exc)},
             )
             crm_lead_lifecycle_transitions_total.labels(
-                clinic_id=str(clinic_id),
+                clinic_bucket=clinic_bucket_label(clinic_id),
                 event_type=event_type,
                 outcome="failed",
             ).inc()

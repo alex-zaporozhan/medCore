@@ -5,7 +5,6 @@ from httpx import AsyncClient
 
 from src.core.config import settings
 from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
-from src.main import app
 
 CHECKOUT = "/api/v1/public/platform/signup/checkout"
 
@@ -18,7 +17,7 @@ async def test_public_platform_checkout_happy_path_stub_yookassa(
     monkeypatch.setattr(settings, "yookassa_secret_key", "test-secret")
     from src.infrastructure.external_apis import yookassa_client as yk_mod
 
-    def fake_create_platform_subscription_payment(self, **kwargs):
+    def fake_create_platform_subscription_payment(self, *args, **kwargs):
         return "prov-pay-test-1", "https://pay.example/yk"
 
     monkeypatch.setattr(
@@ -31,7 +30,7 @@ async def test_public_platform_checkout_happy_path_stub_yookassa(
         CHECKOUT,
         json={
             "email": "buyer@example.com",
-            "plan_slug": "starter_rf",
+            "plan_slug": "start",
             "billing_period": "monthly",
         },
     )
@@ -65,7 +64,7 @@ async def test_public_platform_checkout_yookassa_not_configured(client: AsyncCli
         CHECKOUT,
         json={
             "email": "buyer@example.com",
-            "plan_slug": "starter_rf",
+            "plan_slug": "start",
             "billing_period": "monthly",
         },
     )
@@ -76,6 +75,8 @@ async def test_public_platform_checkout_yookassa_not_configured(client: AsyncCli
 
 @pytest.mark.asyncio
 async def test_public_platform_checkout_rate_limit_by_ip(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+    from src.main import app
+
     monkeypatch.setattr(settings, "yookassa_shop_id", "test-shop")
     monkeypatch.setattr(settings, "yookassa_secret_key", "test-secret")
     monkeypatch.setattr(settings, "rate_public_platform_checkout_ip_limit", 2)
@@ -84,7 +85,7 @@ async def test_public_platform_checkout_rate_limit_by_ip(client: AsyncClient, mo
 
     _seq = 0
 
-    def fake_create_platform_subscription_payment(self, **kwargs):
+    def fake_create_platform_subscription_payment(self, *args, **kwargs):
         nonlocal _seq
         _seq += 1
         return f"prov-pay-ip-{_seq}", "https://pay.example/yk"
@@ -114,7 +115,7 @@ async def test_public_platform_checkout_rate_limit_by_ip(client: AsyncClient, mo
     try:
         body = {
             "email": "rl_ip@example.com",
-            "plan_slug": "starter_rf",
+            "plan_slug": "start",
             "billing_period": "monthly",
         }
         assert (await client.post(CHECKOUT, json=body)).status_code == 200
@@ -129,6 +130,8 @@ async def test_public_platform_checkout_rate_limit_by_ip(client: AsyncClient, mo
 
 @pytest.mark.asyncio
 async def test_public_platform_checkout_rate_limit_by_email(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+    from src.main import app
+
     monkeypatch.setattr(settings, "yookassa_shop_id", "test-shop")
     monkeypatch.setattr(settings, "yookassa_secret_key", "test-secret")
     monkeypatch.setattr(settings, "rate_public_platform_checkout_ip_limit", 0)
@@ -138,7 +141,7 @@ async def test_public_platform_checkout_rate_limit_by_email(client: AsyncClient,
 
     _seq = 0
 
-    def fake_create_platform_subscription_payment(self, **kwargs):
+    def fake_create_platform_subscription_payment(self, *args, **kwargs):
         nonlocal _seq
         _seq += 1
         return f"prov-pay-em-{_seq}", "https://pay.example/yk"
@@ -169,7 +172,7 @@ async def test_public_platform_checkout_rate_limit_by_email(client: AsyncClient,
     try:
         body = {
             "email": "same@example.com",
-            "plan_slug": "starter_rf",
+            "plan_slug": "start",
             "billing_period": "monthly",
         }
         assert (await client.post(CHECKOUT, json=body)).status_code == 200
@@ -194,7 +197,7 @@ async def test_public_platform_checkout_requires_turnstile_when_enabled(
 
     _cap_pay_seq = 0
 
-    def fake_create_platform_subscription_payment(self, **kwargs):
+    def fake_create_platform_subscription_payment(self, *args, **kwargs):
         nonlocal _cap_pay_seq
         _cap_pay_seq += 1
         return f"prov-pay-cap-{_cap_pay_seq}", "https://pay.example/yk"
@@ -216,7 +219,7 @@ async def test_public_platform_checkout_requires_turnstile_when_enabled(
 
     body = {
         "email": "cap@example.com",
-        "plan_slug": "starter_rf",
+        "plan_slug": "start",
         "billing_period": "monthly",
     }
     r1 = await client.post(CHECKOUT, json=body)
@@ -229,7 +232,7 @@ async def test_public_platform_checkout_requires_turnstile_when_enabled(
         CHECKOUT,
         json={**body, "turnstile_token": "dummy-turnstile"},
     )
-    assert r2.status_code == 200
+    assert r2.status_code == 200, r2.text
     assert r2.json().get("payment_url")
 
 
@@ -237,15 +240,18 @@ async def test_public_platform_checkout_requires_turnstile_when_enabled(
 async def test_public_platform_checkout_extra_modules_monthly_total(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ):
-    """Add-on list_price_rub is monthly; starter_rf + crm.pipeline → 4990 + 2800 (conftest seed)."""
+    """Add-on list_price_rub is monthly; start + omni.embed.bundle → 2900 + 4900 (conftest seed)."""
     monkeypatch.setattr(settings, "yookassa_shop_id", "test-shop")
     monkeypatch.setattr(settings, "yookassa_secret_key", "test-secret")
     from src.infrastructure.external_apis import yookassa_client as yk_mod
 
     captured: dict[str, object] = {}
 
-    def fake_create_platform_subscription_payment(self, **kwargs):
-        captured["amount"] = kwargs.get("amount")
+    def fake_create_platform_subscription_payment(self, *args, **kwargs):
+        if args:
+            captured["amount"] = args[0]
+        else:
+            captured["amount"] = kwargs.get("amount")
         return "prov-pay-extra", "https://pay.example/yk"
 
     monkeypatch.setattr(
@@ -258,26 +264,26 @@ async def test_public_platform_checkout_extra_modules_monthly_total(
         CHECKOUT,
         json={
             "email": "buyer-extra@example.com",
-            "plan_slug": "starter_rf",
+            "plan_slug": "start",
             "billing_period": "monthly",
-            "extra_entitlement_keys": ["crm.pipeline"],
+            "extra_entitlement_keys": ["omni.embed.bundle"],
         },
     )
     assert r.status_code == 200
     data = r.json()
     assert data.get("payment_url") == "https://pay.example/yk"
-    assert abs(float(str(data.get("amount_rub", 0))) - 7790.0) < 0.01
+    assert abs(float(str(data.get("amount_rub", 0))) - 7800.0) < 0.01
     assert captured.get("amount") is not None
 
 
 @pytest.mark.asyncio
 async def test_public_platform_checkout_extra_overlaps_plan_rejected(client: AsyncClient):
-    """tasks.kanban is already in starter_rf — must not be passed as extra."""
+    """tasks.kanban is already in start — must not be passed as extra."""
     r = await client.post(
         CHECKOUT,
         json={
             "email": "overlap@example.com",
-            "plan_slug": "starter_rf",
+            "plan_slug": "start",
             "billing_period": "monthly",
             "extra_entitlement_keys": ["tasks.kanban"],
         },

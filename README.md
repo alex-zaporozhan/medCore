@@ -1,4 +1,4 @@
-# Dental Booking
+# Dental Booking.
 
 Backend (FastAPI) + frontend (Vite/React) для записи в стоматологию и смежных модулей клиники (расписание, чаты, CRM, ERP, лояльность — см. код и слой документации по коду ниже).
 
@@ -10,10 +10,10 @@ Backend (FastAPI) + frontend (Vite/React) для записи в стомато�
 - **Политика (в т.ч. запрет ссылок на `.md` из прикладного кода):** [`DOCUMENTATION_POLICY.md`](DOCUMENTATION_POLICY.md).  
 - **Запуск, миграции, типовые сбои:** [`docs/RUN_SERVICES.md`](docs/RUN_SERVICES.md), [`docs/MIGRATION_UPGRADE.md`](docs/MIGRATION_UPGRADE.md).  
 - **Вклад в репозиторий:** [`CONTRIBUTING.md`](CONTRIBUTING.md).  
-- **CI/CD (Jenkins, GHCR, не Docker Hub):** [`CI_CD.md`](CI_CD.md), [`AGENTS.md`](AGENTS.md).  
+- **CI/CD:** VPS/демо по умолчанию — локальная сборка и push в **Docker Hub** ([`scripts/docker_hub_release.ps1`](scripts/docker_hub_release.ps1), [`documentation/VPS_IMAGE_AND_DATA.md`](documentation/VPS_IMAGE_AND_DATA.md)); корпоративный контур — **Jenkins + GHCR** ([`CI_CD.md`](CI_CD.md), [`AGENTS.md`](AGENTS.md)).  
 - **Наблюдаемость (алерты, дашборды):** `deploy/prometheus/`, `deploy/grafana/README.md`.
 
-Каталог **`documentation/`** в git не используется; не ориентироваться на старые ссылки из issue/чатов без проверки дерева.
+Каталог **`documentation/`** — публичные материалы для клиентов и интеграторов (обзоры, USER_DOCS). Инженерный канон, архитектура, review и `docs/design/` — в **`docs/`** (см. [`DOCUMENTATION_POLICY.md`](DOCUMENTATION_POLICY.md)).
 
 ## Быстрый старт (разработка)
 
@@ -37,13 +37,16 @@ Backend (FastAPI) + frontend (Vite/React) для записи в стомато�
 
 ## CI / CD
 
-**Источник правды по релизу:** **Jenkins** и корневой **`Jenkinsfile`** — тесты (по параметру), сборка образов, push в реестр, деплой на VM. Образы публикуются в **GitHub Container Registry (`ghcr.io`)**; **Docker Hub не используется** и **платный тариф Docker Hub не требуется**. Подробности и отличие от GitHub Actions: **[`CI_CD.md`](CI_CD.md)**.
+**Для одного VPS / демо:** соберите образы локально и отправьте в **Docker Hub** (пароль — только в интерактивном `docker login`): **[`scripts/docker_hub_release.ps1`](scripts/docker_hub_release.ps1)** или **[`scripts/docker_hub_release.sh`](scripts/docker_hub_release.sh)**; миграции и сиды — **[`documentation/VPS_IMAGE_AND_DATA.md`](documentation/VPS_IMAGE_AND_DATA.md)**.
 
-**GitHub Actions** (`.github/workflows/`) — дополнительные проверки на PR/push (линки в markdown, ruff/pytest, Trivy и т.д.); они **не заменяют** Jenkins для публикации образов и прод-деплоя. Часть workflow может быть в `workflows_disabled/`.
+**Корпоративный релиз:** **Jenkins** и **`Jenkinsfile`** — тесты (по параметру), сборка, push в **GHCR (`ghcr.io`)**, деплой на VM. Подробности: **[`CI_CD.md`](CI_CD.md)**.
+
+**GitHub Actions** (`.github/workflows/`) — проверки PR, dry-run сборки образов без секретов, опциональный push на Hub при **`DOCKERHUB_USERNAME`** / **`DOCKERHUB_TOKEN`**. Не заменяют Jenkins, если у вас задействован корпоративный пайплайн.
 
 ### Образы Docker
 
-Jenkins пушит минимум immutable-теги `:<git_sha>` (и при желании `:main`) в **GHCR**. Для деплоя предпочтительно использовать **digest**. Скан слоёв образа в реестре — по политике безопасности организации.
+- **Hub (VPS):** в `.env` — `docker.io/<user>/dental-booking-backend:<tag>` и аналогично frontend.
+- **GHCR (Jenkins):** теги `:<git_sha>` / `:main`, для продакшена предпочтительно **digest**. Скан реестра — по политике организации.
 
 ### Локальный pre-push gate (блокирует push при любой ошибке)
 

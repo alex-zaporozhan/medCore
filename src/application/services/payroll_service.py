@@ -116,12 +116,12 @@ class PayrollService:
     async def list_salary_for_doctor(
         self,
         clinic_id: UUID,
-        doctor_id: UUID,
+        doctor_id: UUID | None,
         period_start: date | None = None,
         period_end: date | None = None,
     ) -> list[SalaryTransaction]:
         return list(
-            await self.salary_repository.list_for_doctor(
+            await self.salary_repository.list_for_clinic(
                 clinic_id=clinic_id,
                 doctor_id=doctor_id,
                 period_start=period_start,

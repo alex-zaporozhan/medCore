@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import time, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -34,16 +34,21 @@ def clinic_read_scrub_public_pii(read: "ClinicRead") -> "ClinicRead":
     """
     Strip tenant PII / payment identifiers for unauthenticated clinic list (U-011).
     Full ClinicRead is returned only when a valid admin Bearer token is presented.
+
+    Storefront copy (`patient_store_title` / `patient_store_subtitle`) is omitted when
+    the vitrine is off so draft headings are not leaked on the public perimeter (QA_ARCH).
     """
 
-    return read.model_copy(
-        update={
-            "phone": None,
-            "email": None,
-            "address": None,
-            "yookassa_shop_id": None,
-        }
-    )
+    extra: dict[str, Any] = {
+        "phone": None,
+        "email": None,
+        "address": None,
+        "yookassa_shop_id": None,
+    }
+    if not read.patient_store_visible:
+        extra["patient_store_title"] = None
+        extra["patient_store_subtitle"] = None
+    return read.model_copy(update=extra)
 
 
 class ClinicRead(BaseModel):
@@ -67,6 +72,9 @@ class ClinicRead(BaseModel):
     theme_primary_color: str | None = None
     theme_logo_url: str | None = None
     theme_font_family: str | None = None
+    patient_store_visible: bool = False
+    patient_store_title: str | None = None
+    patient_store_subtitle: str | None = None
     business_type: str = "stomatology"
     business_type_custom_name: str | None = None
     person_label_singular: str | None = None
@@ -123,4 +131,7 @@ class ClinicUpdate(BaseModel):
     person_label_singular: str | None = Field(None, max_length=50)
     person_label_plural: str | None = Field(None, max_length=50)
     staff_label_plural: str | None = Field(None, max_length=50)
+    patient_store_visible: bool | None = None
+    patient_store_title: str | None = Field(None, max_length=120)
+    patient_store_subtitle: str | None = Field(None, max_length=500)
 

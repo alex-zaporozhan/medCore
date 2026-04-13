@@ -21,7 +21,11 @@ class YooKassaClientError(Exception):
 
 
 class YooKassaClient:
-    """Sync client for YooKassa API v3 (used from async code via run_in_executor or from Celery)."""
+    """Sync client for YooKassa API v3 (httpx sync).
+
+    Call from FastAPI/async handlers via ``asyncio.to_thread(client.get_payment, ...)`` so the
+    event loop is not blocked (P0-2). Celery workers may call sync methods directly.
+    """
 
     def __init__(
         self,

@@ -1,5 +1,5 @@
 /**
- * Дерево маршрутов: маркетинг `/`, вход клиники `/admin/login`, основатель `/platform/login`,
+ * Дерево маршрутов: маркетинг `/`, публичный вход `/login`, клиника `/admin/login`, основатель `/platform/login`,
  * пациент только `/c/:clinicSlug/sign-in`, legacy `/sign-in` → редиректы.
  */
 import { ErrorBoundary } from "@/shared/ErrorBoundary";
@@ -63,6 +63,7 @@ import ChatPage from "@/app/pages/ChatPage";
 import FeedPage from "@/app/pages/FeedPage";
 import HomePage from "@/app/pages/HomePage";
 import ProfilePage from "@/app/pages/ProfilePage";
+import StorePage from "@/app/pages/StorePage";
 import ClinicSignInPage from "@/auth/ClinicSignInPage";
 import LegacySignInRedirect from "@/auth/LegacySignInRedirect";
 import PatientSignInPage from "@/auth/PatientSignInPage";
@@ -72,11 +73,12 @@ import PublicDoctorProfilePage from "@/marketing/pages/PublicDoctorProfilePage";
 import LegalPrivacyPage from "@/marketing/pages/LegalPrivacyPage";
 import LegalTermsPage from "@/marketing/pages/LegalTermsPage";
 import PlatformFounderLayout from "@/marketing/layouts/PlatformFounderLayout";
-import PlatformFounderDashboardPage from "@/marketing/pages/PlatformFounderDashboardPage";
-import PlatformFounderProvisionQueuePage from "@/marketing/pages/PlatformFounderProvisionQueuePage";
 import PlatformFounderLoginPage from "@/marketing/pages/PlatformFounderLoginPage";
 import PlatformFounderMfaPage from "@/marketing/pages/PlatformFounderMfaPage";
+import MarketingLandingPage from "@/marketing/pages/MarketingLandingPage";
+import MarketingSandboxPage from "@/marketing/pages/MarketingSandboxPage";
 import PricingPage from "@/marketing/pages/PricingPage";
+import PublicLoginPage from "@/marketing/pages/PublicLoginPage";
 import SignupPage from "@/marketing/pages/SignupPage";
 import { PatientEntryBoundary } from "@/contexts/PatientEntryContext";
 import {
@@ -92,34 +94,27 @@ import {
   isAdminSegmentBlockedByEntitlements,
 } from "@/shared/adminEntitlementNav";
 import { useAdminSession } from "@/hooks/useAdminSession";
-import {
-  Alert,
-  Anchor,
-  Box,
-  Button,
-  Center,
-  Container,
-  Grid,
-  Group,
-  Loader,
-  Paper,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-} from "@mantine/core";
-import { createElement, type ComponentType, useMemo, useState } from "react";
+import { Center, Loader } from "@mantine/core";
+import { createElement, lazy, Suspense, type ComponentType } from "react";
 import {
   createBrowserRouter,
   createRoutesFromElements,
-  createSearchParams,
-  Link,
   Navigate,
   Route,
   RouterProvider,
-  useNavigate,
-  useSearchParams,
 } from "react-router-dom";
+
+const PlatformFounderDashboardPage = lazy(() => import("@/marketing/pages/PlatformFounderDashboardPage"));
+const PlatformFounderProvisionQueuePage = lazy(() => import("@/marketing/pages/PlatformFounderProvisionQueuePage"));
+const PlatformFounderEnterpriseLeadsPage = lazy(() => import("@/marketing/pages/PlatformFounderEnterpriseLeadsPage"));
+
+function PlatformFounderLazyFallback() {
+  return (
+    <Center mih={240}>
+      <Loader size="md" />
+    </Center>
+  );
+}
 
 const ADMIN_SHELL_PAGE_BY_SEGMENT: Record<AdminShellSegment, ComponentType> = {
   "staff-chat": AdminStaffChatPage,
@@ -177,6 +172,7 @@ const PATIENT_APP_PAGE_BY_SEGMENT: Record<PatientAppSegment, ComponentType> = {
   forms: FormsPage,
   chat: ChatPage,
   profile: ProfilePage,
+  store: StorePage,
 };
 
 function AdminShellSegmentPage({ seg }: { seg: AdminShellSegment }) {
@@ -209,237 +205,11 @@ function AdminShellSegmentPage({ seg }: { seg: AdminShellSegment }) {
   return <Page />;
 }
 
-function LandingPage() {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [patientSlug, setPatientSlug] = useState("");
-
-  const patientEntryHint = useMemo(() => {
-    const v = searchParams.get("patientEntry");
-    if (v === "need-clinic") {
-      return "Войдите по ссылке вашей клиники или укажите адрес клиники ниже (как в ссылке …/c/адрес-клиники/…).";
-    }
-    if (v === "patient-url-needs-clinic-slug") {
-      return "В ссылке для входа пациента должен быть адрес клиники: /c/ваш-slug/sign-in (три части пути после домена), а не /c/sign-in.";
-    }
-    if (v === "session-expired") {
-      return "Сессия истекла. Войдите снова по ссылке клиники.";
-    }
-    if (v === "oauth-cancelled" || v === "oauth-error") {
-      return "Вход через соцсеть прерван или не удался. Используйте ссылку клиники и вход по телефону.";
-    }
-    return null;
-  }, [searchParams]);
-
-  const goPatientBySlug = () => {
-    const raw = patientSlug.trim().replace(/^\/+|\/+$/g, "");
-    if (!raw) return;
-    const slug = raw.replace(/^c\//i, "").split("/")[0]?.trim();
-    if (!slug) return;
-    navigate(`/c/${encodeURIComponent(slug)}/sign-in`);
-  };
-
-  return (
-    <Box
-      style={{
-        minHeight: "100vh",
-        background: "var(--bg-main)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "40px 16px",
-      }}
-    >
-      <Container size="lg">
-        <Stack gap="xl">
-          {patientEntryHint ? (
-            <Alert color="teal" variant="light" title="Вход для пациентов">
-              {patientEntryHint}
-            </Alert>
-          ) : null}
-          <Paper
-            p="xl"
-            radius="md"
-            shadow="none"
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--divider)",
-            }}
-          >
-            <Grid gutter="xl" align="center">
-              <Grid.Col span={{ base: 12, md: 6 }}>
-                <Stack gap="md">
-                  <Text size="xs" fw={600} c="var(--text-muted)" tt="uppercase">
-                    Business OS для клиник
-                  </Text>
-                  <Title order={1} style={{ color: "var(--text-main)" }}>
-                    Dental Booking Business OS
-                  </Title>
-                  <Text size="md" style={{ color: "var(--text-muted)" }}>
-                    Одна операционная система для записи, чатов, CRM, AI‑агента, финансов и
-                    лояльности. Пациенту — онлайн‑сервисы, клинике — управляемый рост.
-                  </Text>
-                  <Stack gap="sm">
-                    <Button
-                      component={Link}
-                      to={{
-                        pathname: ROUTE_PATHS.admin.login,
-                        search: `?${createSearchParams({
-                          returnTo: ROUTE_PATHS.admin.dashboard,
-                        }).toString()}`,
-                      }}
-                      size="lg"
-                      variant="filled"
-                      color="dark"
-                    >
-                      Войти в Business OS (клиника)
-                    </Button>
-                    <Text size="sm" fw={600} c="dimmed">
-                      Пациентам
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      У каждой клиники свой адрес в ссылке. Вставьте адрес из приглашения (поддомен / путь после{" "}
-                      <Text span ff="monospace">
-                        /c/
-                      </Text>
-                      ).
-                    </Text>
-                    <Group gap="xs" align="flex-end" wrap="nowrap">
-                      <TextInput
-                        flex={1}
-                        label="Адрес клиники"
-                        placeholder="например demo-clinic"
-                        value={patientSlug}
-                        onChange={(e) => setPatientSlug(e.currentTarget.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") goPatientBySlug();
-                        }}
-                      />
-                      <Button variant="filled" color="teal" onClick={goPatientBySlug}>
-                        Войти
-                      </Button>
-                    </Group>
-                    <Button component={Link} to={ROUTE_PATHS.marketing.signup} size="md" variant="light">
-                      Подключить клинику (тариф и оплата)
-                    </Button>
-                    <Button component={Link} to={ROUTE_PATHS.marketing.pricing} size="md" variant="light">
-                      Смотреть тарифы
-                    </Button>
-                  </Stack>
-                </Stack>
-              </Grid.Col>
-              <Grid.Col span={{ base: 12, md: 6 }}>
-                <Box
-                  className="app-shell-card"
-                  style={{
-                    padding: 16,
-                  }}
-                >
-                  <Stack gap="sm">
-                    <Text size="sm" fw={600} c="var(--text-muted)">
-                      Как выглядит работа
-                    </Text>
-                    <Text size="sm" c="dimmed">
-                      Пример рабочего дня: оператор видит записи, чаты и задачи в едином
-                      трёхколоночном окне — слева пациенты, по центру диалоги, справа контекст
-                      CRM и AI‑агента.
-                    </Text>
-                  </Stack>
-                </Box>
-              </Grid.Col>
-            </Grid>
-          </Paper>
-
-          <Paper
-            p="xl"
-            radius="md"
-            shadow="none"
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--divider)",
-            }}
-          >
-            <Stack gap="md">
-              <Title order={3} style={{ color: "var(--text-main)" }}>
-                Модули Business OS
-              </Title>
-              <Grid gutter="md">
-                <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-                  <Stack gap={4}>
-                    <Text fw={600}>AI Agent</Text>
-                    <Text size="sm" c="dimmed">
-                      Отвечает на входящие обращения, помогает операторам и создаёт задачи.
-                    </Text>
-                  </Stack>
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-                  <Stack gap={4}>
-                    <Text fw={600}>CRM & Sales</Text>
-                    <Text size="sm" c="dimmed">
-                      Воронка продаж с лидами из чатов, маркетинга и сайта.
-                    </Text>
-                  </Stack>
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-                  <Stack gap={4}>
-                    <Text fw={600}>Finance & ERP</Text>
-                    <Text size="sm" c="dimmed">
-                      Кассы, выручка, склад и зарплаты в одной панели.
-                    </Text>
-                  </Stack>
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-                  <Stack gap={4}>
-                    <Text fw={600}>Tasks</Text>
-                    <Text size="sm" c="dimmed">
-                      Единый список задач по пациентам, каналам и финансам.
-                    </Text>
-                  </Stack>
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-                  <Stack gap={4}>
-                    <Text fw={600}>Loyalty</Text>
-                    <Text size="sm" c="dimmed">
-                      Баллы, абонементы и удержание пациентов.
-                    </Text>
-                  </Stack>
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-                  <Stack gap={4}>
-                    <Text fw={600}>Paperless & Attribution</Text>
-                    <Text size="sm" c="dimmed">
-                      Цифровые формы, согласия и сквозная аналитика маркетинга.
-                    </Text>
-                  </Stack>
-                </Grid.Col>
-              </Grid>
-            </Stack>
-          </Paper>
-
-          <Group gap="lg" justify="center" wrap="wrap" py="md">
-            <Anchor component={Link} size="sm" c="dimmed" to={ROUTE_PATHS.marketing.pricing}>
-              Тарифы
-            </Anchor>
-            <Anchor component={Link} size="sm" c="dimmed" to={ROUTE_PATHS.marketing.legalPrivacy}>
-              Конфиденциальность
-            </Anchor>
-            <Anchor component={Link} size="sm" c="dimmed" to={ROUTE_PATHS.marketing.legalTerms}>
-              Условия использования
-            </Anchor>
-            <Anchor component={Link} size="sm" c="dimmed" to={ROUTE_PATHS.platform.provisionQueue}>
-              Очередь провижининга
-            </Anchor>
-          </Group>
-        </Stack>
-      </Container>
-    </Box>
-  );
-}
-
 const router = createBrowserRouter(
   createRoutesFromElements(
     <>
-      <Route path={ROUTE_PATHS.marketing.landing} element={<LandingPage />} />
+      <Route path={ROUTE_PATHS.marketing.landing} element={<MarketingLandingPage />} />
+      <Route path={ROUTE_PATHS.marketing.sandbox} element={<MarketingSandboxPage />} />
       <Route path={ROUTE_PATHS.marketing.pricing} element={<PricingPage />} />
       <Route path={ROUTE_PATHS.marketing.signup} element={<SignupPage />} />
       <Route path={ROUTE_PATHS.marketing.legalPrivacy} element={<LegalPrivacyPage />} />
@@ -448,8 +218,30 @@ const router = createBrowserRouter(
       <Route path={ROUTE_PATHS.platform.login} element={<PlatformFounderLoginPage />} />
       <Route path="/platform" element={<PlatformFounderLayout />}>
         <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard" element={<PlatformFounderDashboardPage />} />
-        <Route path="provision-queue" element={<PlatformFounderProvisionQueuePage />} />
+        <Route
+          path="dashboard"
+          element={
+            <Suspense fallback={<PlatformFounderLazyFallback />}>
+              <PlatformFounderDashboardPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="provision-queue"
+          element={
+            <Suspense fallback={<PlatformFounderLazyFallback />}>
+              <PlatformFounderProvisionQueuePage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="leads"
+          element={
+            <Suspense fallback={<PlatformFounderLazyFallback />}>
+              <PlatformFounderEnterpriseLeadsPage />
+            </Suspense>
+          }
+        />
       </Route>
       <Route path="/:clinicSlug/doctors/:doctorSlug" element={<PublicDoctorProfilePage />} />
       <Route path={ROUTE_PATHS.admin.dashboard} element={<AdminAuthGuard />}>
@@ -476,10 +268,7 @@ const router = createBrowserRouter(
         </Route>
       </Route>
       <Route path={ROUTE_PATHS.other.signIn} element={<LegacySignInRedirect />} />
-      <Route
-        path={ROUTE_PATHS.other.login}
-        element={<Navigate to={`${ROUTE_PATHS.marketing.landing}?patientEntry=need-clinic`} replace />}
-      />
+      <Route path={ROUTE_PATHS.other.login} element={<PublicLoginPage />} />
       <Route
         path={ROUTE_PATHS.other.oauthResult}
         element={
@@ -513,7 +302,7 @@ const router = createBrowserRouter(
         path="/c/sign-in"
         element={
           <Navigate
-            to={`${ROUTE_PATHS.marketing.landing}?patientEntry=patient-url-needs-clinic-slug`}
+            to={`${ROUTE_PATHS.other.login}?patientEntry=patient-url-needs-clinic-slug`}
             replace
           />
         }

@@ -141,6 +141,20 @@ omni_messages_total = Counter(  # type: ignore[call-arg]
     ["direction", "actor_type", "channel_id", "account_bucket"],
 )
 
+# Outbound adapter could not deliver to the provider (low-cardinality `reason`; see omnichannel_outbound_dispatcher).
+omni_outbound_dispatch_failed_total = Counter(  # type: ignore[call-arg]
+    "omni_outbound_dispatch_failed_total",
+    "Outbound omni dispatch ended without provider success (explicit FAILED metadata on message).",
+    ["reason"],
+)
+
+# Admin SSE pub/sub: Redis publish failed after HTTP mutation (fail-open path).
+omni_realtime_publish_failed_total = Counter(  # type: ignore[call-arg]
+    "omni_realtime_publish_failed_total",
+    "Redis publish for admin omni realtime failed (mutations still commit).",
+    ["event"],
+)
+
 omni_ai_auto_replies_total = Counter(  # type: ignore[call-arg]
     "omni_ai_auto_replies_total",
     "Total AI auto replies sent to clients.",
@@ -423,6 +437,11 @@ spam_blocked_total = Counter(  # type: ignore[call-arg]
     ["channel"],
 )
 
+rate_limiter_redis_fail_open_total = Counter(  # type: ignore[call-arg]
+    "rate_limiter_redis_fail_open_total",
+    "Redis-backed fixed-window rate limiter allowed a request after an unexpected Redis error (fail-open).",
+)
+
 security_auth_failure_total = Counter(  # type: ignore[call-arg]
     "security_auth_failure_total",
     "HTTP 401/403 responses classified for SOC-style dashboards (no org_id labels).",
@@ -457,7 +476,8 @@ booking_error_attention_tasks_created_total = Counter(  # type: ignore[call-arg]
 
 payment_webhook_failures_total = Counter(  # type: ignore[call-arg]
     "payment_webhook_failures_total",
-    "Contour A YooKassa webhook failures by reason: invalid_json, invalid_secret, processing_error, rate_limited.",
+    "Contour A YooKassa webhook failures by reason: invalid_json, invalid_secret, processing_error, "
+    "rate_limited, provider_unavailable (P0-3: known payment row, get_payment failed).",
     ["reason"],
 )
 
@@ -532,6 +552,25 @@ tenant_jwt_claim_reject_total = Counter(  # type: ignore[call-arg]
     "tenant_jwt_claim_reject_total",
     "1a-E6: tenant (admin/patient) JWT rejected on iss/aud validation — symmetry with platform_founder_jwt_reject_total.",
     ["reason"],
+)
+
+# Публичные заявки /platform-leads/ (корпоратив + демо).
+enterprise_lead_submitted_total = Counter(  # type: ignore[call-arg]
+    "enterprise_lead_submitted_total",
+    "POST /api/v1/platform-leads/ успешно сохранено в БД.",
+    ["lead_source"],
+)
+
+enterprise_lead_rate_limited_total = Counter(  # type: ignore[call-arg]
+    "enterprise_lead_rate_limited_total",
+    "POST /api/v1/platform-leads/ отклонён лимитом Redis.",
+    ["reason"],
+)
+
+enterprise_lead_notify_webhook_total = Counter(  # type: ignore[call-arg]
+    "enterprise_lead_notify_webhook_total",
+    "Опциональный webhook после создания заявки (CRM).",
+    ["result"],
 )
 
 
@@ -758,56 +797,56 @@ task_context_admin_events_total = Counter(  # type: ignore[call-arg]
 
 crm_leads_created_total = Counter(  # type: ignore[call-arg]
     "crm_leads_created_total",
-    "Total CRM leads created by clinic and source/campaign.",
-    ["clinic_id", "source", "utm_campaign"],
+    "Total CRM leads created by clinic bucket and source/campaign (low-cardinality tenant axis).",
+    ["clinic_bucket", "source", "utm_campaign"],
 )
 
 crm_lead_stage_transitions_total = Counter(  # type: ignore[call-arg]
     "crm_lead_stage_transitions_total",
-    "Total CRM lead stage transitions by clinic and semantics (low-cardinality).",
-    ["clinic_id", "from_semantic", "to_semantic", "initiator"],
+    "Total CRM lead stage transitions by clinic bucket and semantics (low-cardinality).",
+    ["clinic_bucket", "from_semantic", "to_semantic", "initiator"],
 )
 
 crm_lead_time_to_close_seconds = Histogram(  # type: ignore[call-arg]
     "crm_lead_time_to_close_seconds",
     "Time from lead creation to terminal status (success/lost).",
-    ["clinic_id", "outcome"],
+    ["clinic_bucket", "outcome"],
 )
 
 crm_lead_lifecycle_transitions_total = Counter(  # type: ignore[call-arg]
     "crm_lead_lifecycle_transitions_total",
-    "Event-driven CRM stage transitions from LeadLifecycleService by clinic, event and outcome.",
-    ["clinic_id", "event_type", "outcome"],
+    "Event-driven CRM stage transitions from LeadLifecycleService by clinic bucket, event and outcome.",
+    ["clinic_bucket", "event_type", "outcome"],
 )
 
 crm_lead_stale_handled_total = Counter(  # type: ignore[call-arg]
     "crm_lead_stale_handled_total",
     "Stale-lead lifecycle handling: stage move applied vs skipped.",
-    ["clinic_id", "outcome"],
+    ["clinic_bucket", "outcome"],
 )
 
 crm_lead_visit_completion_outcomes_total = Counter(  # type: ignore[call-arg]
     "crm_lead_visit_completion_outcomes_total",
     "Visit-completed CRM lifecycle: close vs skip (no won stage / transition failed).",
-    ["clinic_id", "outcome"],
+    ["clinic_bucket", "outcome"],
 )
 
 crm_lead_booking_onboarded_total = Counter(  # type: ignore[call-arg]
     "crm_lead_booking_onboarded_total",
     "BookingCreated CRM: attached to existing open lead vs new lead created.",
-    ["clinic_id", "outcome"],
+    ["clinic_bucket", "outcome"],
 )
 
 crm_lead_actual_value_erp_updates_total = Counter(  # type: ignore[call-arg]
     "crm_lead_actual_value_erp_updates_total",
-    "CRM lead actual_value refresh from ERP financial_transactions by clinic, trigger and whether value changed.",
-    ["clinic_id", "source", "changed"],
+    "CRM lead actual_value refresh from ERP financial_transactions by clinic bucket, trigger and whether value changed.",
+    ["clinic_bucket", "source", "changed"],
 )
 
 crm_lead_actual_value_erp_missing_fact_total = Counter(  # type: ignore[call-arg]
     "crm_lead_actual_value_erp_missing_fact_total",
     "CRM lead refresh from ERP yielded zero income while a completed booking was in scope (consistency signal).",
-    ["clinic_id", "source"],
+    ["clinic_bucket", "source"],
 )
 
 # ------------------------------------------------------------------------------
@@ -816,32 +855,32 @@ crm_lead_actual_value_erp_missing_fact_total = Counter(  # type: ignore[call-arg
 
 ai_task_manager_proposed_total = Counter(  # type: ignore[call-arg]
     "ai_task_manager_proposed_total",
-    "Total proposed tasks by AI Task Manager per clinic and task class.",
-    ["clinic_id", "task_class"],
+    "Total proposed tasks by AI Task Manager per clinic bucket and task class.",
+    ["clinic_bucket", "task_class"],
 )
 
 ai_task_manager_created_total = Counter(  # type: ignore[call-arg]
     "ai_task_manager_created_total",
-    "Total tasks created by AI Task Manager per clinic, source and task class.",
-    ["clinic_id", "source", "task_class"],
+    "Total tasks created by AI Task Manager per clinic bucket, source and task class.",
+    ["clinic_bucket", "source", "task_class"],
 )
 
 ai_task_manager_skipped_total = Counter(  # type: ignore[call-arg]
     "ai_task_manager_skipped_total",
-    "Total skipped proposed tasks by AI Task Manager per clinic and reason.",
-    ["clinic_id", "reason"],
+    "Total skipped proposed tasks by AI Task Manager per clinic bucket and reason.",
+    ["clinic_bucket", "reason"],
 )
 
 ai_task_manager_errors_total = Counter(  # type: ignore[call-arg]
     "ai_task_manager_errors_total",
-    "Errors in AI Task Manager per clinic and error type.",
-    ["clinic_id", "error_type"],
+    "Errors in AI Task Manager per clinic bucket and error type.",
+    ["clinic_bucket", "error_type"],
 )
 
 ai_task_manager_duration_seconds = Histogram(  # type: ignore[call-arg]
     "ai_task_manager_duration_seconds",
-    "Duration of AI Task Manager run per clinic.",
-    ["clinic_id"],
+    "Duration of AI Task Manager run per clinic bucket.",
+    ["clinic_bucket"],
 )
 
 # ------------------------------------------------------------------------------
@@ -850,26 +889,26 @@ ai_task_manager_duration_seconds = Histogram(  # type: ignore[call-arg]
 
 waitlist_entries_total = Counter(  # type: ignore[call-arg]
     "waitlist_entries_total",
-    "WaitlistService mutations by clinic and operation.",
-    ["clinic_id", "op"],
+    "WaitlistService mutations by clinic bucket and operation.",
+    ["clinic_bucket", "op"],
 )
 
 waitlist_status_transitions_total = Counter(  # type: ignore[call-arg]
     "waitlist_status_transitions_total",
-    "Waitlist status transitions by clinic and from/to status.",
-    ["clinic_id", "from_status", "to_status"],
+    "Waitlist status transitions by clinic bucket and from/to status.",
+    ["clinic_bucket", "from_status", "to_status"],
 )
 
 waitlist_slot_notify_total = Counter(  # type: ignore[call-arg]
     "waitlist_slot_notify_total",
     "Slot-freed waitlist handling: notified candidates vs no match.",
-    ["clinic_id", "outcome"],
+    ["clinic_bucket", "outcome"],
 )
 
 waitlist_booking_conversion_total = Counter(  # type: ignore[call-arg]
     "waitlist_booking_conversion_total",
-    "Waitlist to booking conversion attempts by clinic and outcome.",
-    ["clinic_id", "outcome"],
+    "Waitlist to booking conversion attempts by clinic bucket and outcome.",
+    ["clinic_bucket", "outcome"],
 )
 
 
@@ -879,20 +918,20 @@ waitlist_booking_conversion_total = Counter(  # type: ignore[call-arg]
 
 paperless_form_operations_total = Counter(  # type: ignore[call-arg]
     "paperless_form_operations_total",
-    "Paperless operations (issue, sign, revoke, cancel, expire) by clinic and action.",
-    ["clinic_id", "action"],
+    "Paperless operations (issue, sign, revoke, cancel, expire) by clinic bucket and action.",
+    ["clinic_bucket", "action"],
 )
 
 paperless_form_status_transitions_total = Counter(  # type: ignore[call-arg]
     "paperless_form_status_transitions_total",
-    "Form instance status transitions by clinic and from/to status.",
-    ["clinic_id", "from_status", "to_status"],
+    "Form instance status transitions by clinic bucket and from/to status.",
+    ["clinic_bucket", "from_status", "to_status"],
 )
 
 paperless_form_issue_to_sign_seconds = Histogram(  # type: ignore[call-arg]
     "paperless_form_issue_to_sign_seconds",
     "Time from instance created_at to signed_at when completing an issued/in_progress form.",
-    ["clinic_id"],
+    ["clinic_bucket"],
 )
 
 
@@ -942,6 +981,24 @@ erp_aggregate_parity_sample_total = Counter(  # type: ignore[call-arg]
     "erp_aggregate_parity_sample_total",
     "Daily sample: visit_revenue sum(raw) vs sum(vitrine) for one clinic (see erp_parity_sample_service).",
     ["result"],
+)
+
+erp_aggregate_nightly_run_total = Counter(  # type: ignore[call-arg]
+    "erp_aggregate_nightly_run_total",
+    "Celery refresh_all_clinics_erp_aggregates_nightly finished once per schedule tick.",
+    ["result"],
+)
+
+payment_local_pending_reconcile_total = Counter(  # type: ignore[call-arg]
+    "payment_local_pending_reconcile_total",
+    "Reconcile job for YooKassa rows still on local-pending placeholder id (contour A/B).",
+    ["contour", "result"],
+)
+
+webchat_redis_fanout_total = Counter(  # type: ignore[call-arg]
+    "webchat_redis_fanout_total",
+    "Redis pub/sub wake path for webchat long-poll (multi-replica).",
+    ["op", "result"],
 )
 
 # ------------------------------------------------------------------------------

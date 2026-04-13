@@ -30,6 +30,7 @@ from src.application.services.ai_task_settings_service import AiTaskSettingsServ
 from src.application.dto.lead_lifecycle_dto import LeadEventStale
 from src.application.services.lead_lifecycle_service import LeadLifecycleService
 from src.application.services.task_service import TaskService
+from src.core.prometheus_labels import clinic_bucket_label
 from src.core.metrics import (
     ai_task_manager_created_total,
     ai_task_manager_duration_seconds,
@@ -394,14 +395,14 @@ class AiTaskGenerator:
         for p in proposed_tasks:
             if not settings.ai_tasks_enabled:
                 ai_task_manager_skipped_total.labels(
-                    clinic_id=str(settings.clinic_id),
+                    clinic_bucket=clinic_bucket_label(settings.clinic_id),
                     reason="disabled",
                 ).inc()
                 continue
 
             if created_today_total >= max(0, int(settings.daily_clinic_limit or 0)):
                 ai_task_manager_skipped_total.labels(
-                    clinic_id=str(settings.clinic_id),
+                    clinic_bucket=clinic_bucket_label(settings.clinic_id),
                     reason="clinic_limit",
                 ).inc()
                 continue
@@ -413,7 +414,7 @@ class AiTaskGenerator:
             event_id = uuid.uuid5(AI_TASK_MANAGER_NAMESPACE, natural_key)
             if event_id in existing_event_ids:
                 ai_task_manager_skipped_total.labels(
-                    clinic_id=str(settings.clinic_id),
+                    clinic_bucket=clinic_bucket_label(settings.clinic_id),
                     reason="duplicate",
                 ).inc()
                 continue
@@ -422,7 +423,7 @@ class AiTaskGenerator:
                 current = created_today_by_patient.get(p.patient_id, 0)
                 if current >= max(0, int(settings.daily_patient_limit or 0)):
                     ai_task_manager_skipped_total.labels(
-                        clinic_id=str(settings.clinic_id),
+                        clinic_bucket=clinic_bucket_label(settings.clinic_id),
                         reason="patient_limit",
                     ).inc()
                     continue
@@ -433,7 +434,7 @@ class AiTaskGenerator:
                     current_doc = created_today_by_doctor.get(booking.doctor_id, 0)
                     if current_doc >= max(0, int(settings.daily_doctor_limit or 0)):
                         ai_task_manager_skipped_total.labels(
-                            clinic_id=str(settings.clinic_id),
+                            clinic_bucket=clinic_bucket_label(settings.clinic_id),
                             reason="doctor_limit",
                         ).inc()
                         continue
@@ -472,7 +473,7 @@ class AiTaskGenerator:
                     created_today_by_doctor[booking.doctor_id] = created_today_by_doctor.get(booking.doctor_id, 0) + 1
 
             ai_task_manager_created_total.labels(
-                clinic_id=str(created.clinic_id),
+                clinic_bucket=clinic_bucket_label(created.clinic_id),
                 source=created.source,
                 task_class=p.task_class,
             ).inc()
@@ -544,7 +545,7 @@ class AiTaskManagerRunner:
             )
             for p in proposed:
                 ai_task_manager_proposed_total.labels(
-                    clinic_id=str(clinic_id),
+                    clinic_bucket=clinic_bucket_label(clinic_id),
                     task_class=p.task_class,
                 ).inc()
 
@@ -564,7 +565,7 @@ class AiTaskManagerRunner:
         except Exception as exc:
             await self._session.rollback()
             ai_task_manager_errors_total.labels(
-                clinic_id=str(clinic_id),
+                clinic_bucket=clinic_bucket_label(clinic_id),
                 error_type=exc.__class__.__name__,
             ).inc()
             logger.exception(
@@ -574,5 +575,5 @@ class AiTaskManagerRunner:
             raise
         finally:
             elapsed = (datetime.now(timezone.utc) - started).total_seconds()
-            ai_task_manager_duration_seconds.labels(clinic_id=str(clinic_id)).observe(elapsed)
+            ai_task_manager_duration_seconds.labels(clinic_bucket=clinic_bucket_label(clinic_id)).observe(elapsed)
 

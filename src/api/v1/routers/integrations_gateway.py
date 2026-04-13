@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.services.integration_gateway_service import IntegrationGatewayService
 from src.application.services.omnichannel_chat_service import OmnichannelChatService
-from src.application.services.webchat_push_manager import get_webchat_push_manager
+from src.application.services.webchat_push_manager import wait_for_webchat_poll_items
 from src.application.services.turnstile_service import verify_turnstile
 from src.core.config import settings
 from src.core.datetime_utils import to_iso8601_utc
@@ -173,8 +173,11 @@ async def webchat_poll(
     if not chat:
         return WebchatPollResponse(items=[])
 
-    manager = get_webchat_push_manager()
-    push_items = await manager.wait_for_new(chat_id=chat.id, timeout_seconds=timeout)
+    push_items = await wait_for_webchat_poll_items(
+        session=db,
+        chat_id=chat.id,
+        timeout_seconds=timeout,
+    )
     items = [
         WebchatPollItem(
             message_id=p.message_id,

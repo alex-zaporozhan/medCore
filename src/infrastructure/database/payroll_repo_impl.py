@@ -118,6 +118,25 @@ class SalaryTransactionRepositoryImpl(SalaryTransactionRepository):
         )
         return result.scalar_one_or_none()
 
+    async def list_for_clinic(
+        self,
+        clinic_id: UUID,
+        doctor_id: UUID | None = None,
+        period_start: date | None = None,
+        period_end: date | None = None,
+    ):
+        query: Select[tuple[SalaryTransaction]] = select(SalaryTransaction).where(
+            SalaryTransaction.clinic_id == clinic_id,
+        )
+        if doctor_id is not None:
+            query = query.where(SalaryTransaction.doctor_id == doctor_id)
+        if period_start is not None:
+            query = query.where(SalaryTransaction.period_start >= period_start)
+        if period_end is not None:
+            query = query.where(SalaryTransaction.period_end <= period_end)
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
     async def list_for_doctor(
         self,
         clinic_id: UUID,
@@ -125,14 +144,7 @@ class SalaryTransactionRepositoryImpl(SalaryTransactionRepository):
         period_start: date | None = None,
         period_end: date | None = None,
     ):
-        query: Select[tuple[SalaryTransaction]] = select(SalaryTransaction).where(
-            SalaryTransaction.clinic_id == clinic_id,
-            SalaryTransaction.doctor_id == doctor_id,
+        return await self.list_for_clinic(
+            clinic_id, doctor_id, period_start, period_end
         )
-        if period_start is not None:
-            query = query.where(SalaryTransaction.period_start >= period_start)
-        if period_end is not None:
-            query = query.where(SalaryTransaction.period_end <= period_end)
-        result = await self.session.execute(query)
-        return list(result.scalars().all())
 

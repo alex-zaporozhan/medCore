@@ -9,6 +9,7 @@
 
 | Дата | Что зафиксировано |
 |------|-------------------|
+| 2026-04-08 | **@QA_ARCH:** инженерный канон фронта перенесён в `docs/` (`architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md`, `COPY_STYLE_POLICY_RU.md`, `review/FRONTEND_ROUTE_AUDIT_MATRIX.md`, `frontend/UI_THEME.md`); в `documentation/` — указатели. Вердикт: `docs/review/06_QA_ARCH_LEAD_FRONTEND_DOC_AND_FINANCE_FIX.md`. Исправление зарплат (опциональный `doctor_id`, селект из `useDoctors`) — в коде. **`DOCUMENTATION_POLICY.md`** и **`.gitignore`**: `docs/` в git. |
 | 2026-04-02 | Проход **@QA_ARCH:** уточнён канон `ALL_PUBLIC_APP_PATHS` vs динамические маршруты (KB §5.4); исправлено описание PWA «Профиль»; питч привязан к KB §5; добавлены `PATIENT_OAUTH_RESULT`, `PUBLIC_DOCTOR_PROFILE`; в INDEX — явный объём v1. |
 | 2026-04-02 | Проход **@LEAD:** `API_V1_ROUTER_MANIFEST.md` (78 модулей из `router.py`); `LEAD_DOC_AUDIT.md` (границы «100% из кода»); `ADMIN_DASHBOARD.md` переписан по фактическому `AdminDashboardPage.tsx`. |
 | 2026-04-02 | Проход **@LEAD (роутеры):** `scripts/generate_router_surface_docs.py` + `router_surface/INDEX.md`; feature-доки Kanban/чаты/календарь/оплаты; `TESTING_SURFACE.md`; `SCRIBE_ROUTER_CHECKLIST.md` и обновление `SCRIBE.md`. |
@@ -25,7 +26,10 @@
 | [USER_DOCS/INDEX.md](./USER_DOCS/INDEX.md) | Оглавление пользовательских гайдов |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Запуск, порты, тестовая БД, миграции |
 | [OBSERVABILITY.md](./OBSERVABILITY.md) | Алерты, Grafana, где смотреть пороги в репозитории |
-| [UI_THEME.md](./UI_THEME.md) | Тема админки (Swiss Slate / Ink), ориентиры для фронта |
+| [UI_THEME.md](./UI_THEME.md) | Указатель → полный канон: [`docs/frontend/UI_THEME.md`](../docs/frontend/UI_THEME.md) |
+| [FRONTEND_ENTERPRISE_RUBRIC.md](./FRONTEND_ENTERPRISE_RUBRIC.md) | Указатель → [`docs/architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md`](../docs/architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md) |
+| [COPY_STYLE_POLICY_RU.md](./COPY_STYLE_POLICY_RU.md) | Указатель → [`docs/COPY_STYLE_POLICY_RU.md`](../docs/COPY_STYLE_POLICY_RU.md) |
+| [FRONTEND_ROUTE_AUDIT_MATRIX.md](./FRONTEND_ROUTE_AUDIT_MATRIX.md) | Указатель → [`docs/review/FRONTEND_ROUTE_AUDIT_MATRIX.md`](../docs/review/FRONTEND_ROUTE_AUDIT_MATRIX.md) |
 | [E2E_TESTING.md](./E2E_TESTING.md) | Playwright / smoke-маршруты |
 | [API_V1_ROUTER_MANIFEST.md](./API_V1_ROUTER_MANIFEST.md) | Порядок и префиксы всех роутеров v1 (из кода) |
 | [router_surface/INDEX.md](./router_surface/INDEX.md) | Автосводка по каждому роутеру: HTTP-пути, метрики, pytest |
@@ -41,9 +45,11 @@
 
 ---
 
-## Внутренняя документация и RAG
+## Инженерия (`docs/`)
 
-Рабочие материалы команды (роли, эпики, закрытые паспорта, корпус для корпоративного RAG) **не входят** в этот репозиторий и **не описыются** в файлах под `documentation/`. Они ведутся отдельно по регламенту организации.
+Архитектура, роли, review QA, рубрики фронта, `docs/design/` — дерево **[`docs/`](../docs/)** (вход: [`docs/RAG_CANON.md`](../docs/RAG_CANON.md), [`docs/DOC_TOPOLOGY.md`](../docs/DOC_TOPOLOGY.md)).
+
+Закрытые материалы команды **вне** публичного git — по регламенту организации.
 
 ---
 

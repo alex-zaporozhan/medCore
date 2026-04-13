@@ -33,6 +33,7 @@ import {
   IconPhoto,
   IconSearch,
   IconSend,
+  IconX,
 } from "@tabler/icons-react";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
@@ -50,6 +51,7 @@ import {
   useUpdateOmniChatAiMode,
   useResolveAdminOmniChat,
   useAdminOmniChatPresence,
+  useClaimAdminOmniChat,
 } from "@/hooks/useAdminOmniChat";
 import { AppleEmojiOverlayTextarea } from "@/shared/ui";
 import { EmojiMartPopoverPicker } from "@/shared/ui/EmojiMartPopoverPicker";
@@ -286,6 +288,7 @@ export default function AdminOmniChatPage() {
   const sendMessage = useSendAdminOmniMessage();
   const sendWithFile = useSendAdminOmniMessageWithFile();
   const resolveChat = useResolveAdminOmniChat();
+  const claimChat = useClaimAdminOmniChat();
   const presenceMut = useAdminOmniChatPresence();
   const updateAiMode = useUpdateOmniChatAiMode();
   const { data: quickRepliesData } = useOmniQuickReplies(true);
@@ -330,6 +333,7 @@ export default function AdminOmniChatPage() {
     messageId: string | null;
     messageText: string;
   }>({ opened: false, x: 0, y: 0, messageId: null, messageText: "" });
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   // Deep-link support: /admin/omni-chat?chat_id=...&message_id=...
   useEffect(() => {
@@ -364,24 +368,41 @@ export default function AdminOmniChatPage() {
     draftRef.current = Boolean(messageText.trim() || pendingFile);
   }, [messageText, pendingFile]);
 
+  const mkPresenceEventId = useCallback(() => {
+    try {
+      return (crypto as any)?.randomUUID?.() ?? `${Date.now()}_${Math.random()}`;
+    } catch {
+      return `${Date.now()}_${Math.random()}`;
+    }
+  }, []);
+
+  // При открытии диалога без исполнителя — сразу закрепляем за текущим администратором (бэкенд claim).
+  useEffect(() => {
+    if (!selectedChatId || !chatDetail) return;
+    const closed = String(chatDetail.status || "").toUpperCase() === "CLOSED";
+    if (closed || chatDetail.assignee_admin_id) return;
+    void claimChat.mutate(
+      { chatId: selectedChatId },
+      {
+        onError: () => {
+          /* уже занят другим — оставляем как есть */
+        },
+      },
+    );
+    // claimChat (react-query) intentionally omitted from dependency list
+  }, [selectedChatId, chatDetail?.chat_id, chatDetail?.assignee_admin_id, chatDetail?.status]);
+
   // Presence lease: OPEN on select + HEARTBEAT while active + CLOSE on unselect/unmount.
   useEffect(() => {
     if (!selectedChatId) return;
-    const mkId = () => {
-      try {
-        return (crypto as any)?.randomUUID?.() ?? `${Date.now()}_${Math.random()}`;
-      } catch {
-        return `${Date.now()}_${Math.random()}`;
-      }
-    };
     presenceMut.mutate({
       chatId: selectedChatId,
-      body: { client_event_id: String(mkId()), tab_id: tabId, event: "OPEN" },
+      body: { client_event_id: mkPresenceEventId(), tab_id: tabId, event: "OPEN" },
     });
     const t = window.setInterval(() => {
       presenceMut.mutate({
         chatId: selectedChatId,
-        body: { client_event_id: String(mkId()), tab_id: tabId, event: "HEARTBEAT" },
+        body: { client_event_id: mkPresenceEventId(), tab_id: tabId, event: "HEARTBEAT" },
       });
     }, 30000);
     return () => {
@@ -391,11 +412,12 @@ export default function AdminOmniChatPage() {
       if (!draftRef.current) {
         presenceMut.mutate({
           chatId: selectedChatId,
-          body: { client_event_id: String(mkId()), tab_id: tabId, event: "CLOSE" },
+          body: { client_event_id: mkPresenceEventId(), tab_id: tabId, event: "CLOSE" },
         });
       }
     };
-  }, [selectedChatId, tabId]);
+    // presenceMut (react-query) intentionally omitted; effect tracks dialog/tab only
+  }, [selectedChatId, tabId, mkPresenceEventId]);
 
   // Best-effort scroll to deep-linked message when it becomes available in DOM.
   useEffect(() => {
@@ -613,7 +635,40 @@ export default function AdminOmniChatPage() {
 
   useHotkeys([["mod+enter", () => handleSend()]]);
 
-  void resolveChat;
+  const finishOmniTicket = useCallback(async () => {
+    if (!selectedChatId) return;
+    setResolveError(null);
+    try {
+      await presenceMut.mutateAsync({
+        chatId: selectedChatId,
+        body: { client_event_id: mkPresenceEventId(), tab_id: tabId, event: "CLOSE" },
+      });
+    } catch {
+      setResolveError("Не удалось закрыть сессию присутствия. Уберите черновик в поле ввода и повторите.");
+      return;
+    }
+    try {
+      await resolveChat.mutateAsync({ chatId: selectedChatId });
+    } catch (e) {
+      if (isOwner) {
+        try {
+          await resolveChat.mutateAsync({ chatId: selectedChatId, force: true });
+        } catch {
+          setResolveError(e instanceof Error ? e.message : "Не удалось сохранить снимок в журнал лидов.");
+          return;
+        }
+      } else {
+        setResolveError(e instanceof Error ? e.message : "Не удалось завершить заявку.");
+        return;
+      }
+    }
+    setSelectedChatId(null);
+  }, [selectedChatId, isOwner, presenceMut, resolveChat, mkPresenceEventId, tabId]);
+
+  const closeOmniDialogOnly = useCallback(() => {
+    setResolveError(null);
+    setSelectedChatId(null);
+  }, []);
 
   return (
     <Stack gap={0} style={{ height: "100%", minHeight: 0 }}>
@@ -835,14 +890,14 @@ export default function AdminOmniChatPage() {
                     </Group>
                   </Stack>
                   <Group gap={8} wrap="nowrap" align="center">
-                    <Tooltip label="ИИ" withArrow>
+                    <Tooltip label="Режим ассистента" withArrow>
                       <Box>
                         <Select
                           size="xs"
                           w={160}
-                          aria-label="ИИ"
-                          label="ИИ"
-                          placeholder="ИИ"
+                          aria-label="Режим ассистента"
+                          label="Ассистент"
+                          placeholder="Режим"
                           value={(chatDetail?.ai_mode || "DISABLED").toUpperCase()}
                       data={[
                         { value: "DISABLED", label: "Выкл" },
@@ -858,12 +913,32 @@ export default function AdminOmniChatPage() {
                         />
                       </Box>
                     </Tooltip>
-                    {/* No-buttons automation: claim happens on first outbound send; resolve is server-side policy (later). */}
+                    {canResolveSelected ? (
+                      <Button
+                        size="xs"
+                        variant="filled"
+                        color="slate"
+                        loading={resolveChat.isPending}
+                        onClick={() => void finishOmniTicket()}
+                      >
+                        Завершить заявку
+                      </Button>
+                    ) : null}
                     {!canClaim && !canResolveSelected && chatDetail?.assignee_name ? (
                       <Button size="xs" variant="light" color="gray" disabled>
                         В работе у {chatDetail.assignee_name}
                       </Button>
                     ) : null}
+                    <Tooltip label="Закрыть диалог (не завершать заявку)" withArrow>
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        aria-label="Закрыть диалог"
+                        onClick={closeOmniDialogOnly}
+                      >
+                        <IconX size={18} />
+                      </ActionIcon>
+                    </Tooltip>
                   </Group>
                 </Group>
               </Box>
@@ -1144,11 +1219,16 @@ export default function AdminOmniChatPage() {
                       {attachError}
                     </Text>
                   ) : null}
+                  {resolveError ? (
+                    <Text size="xs" c="red">
+                      {resolveError}
+                    </Text>
+                  ) : null}
                   {selectedChatId && String(chatDetail?.status || "").toUpperCase() !== "CLOSED" ? (
                     <Text size="xs" c="dimmed">
-                      Автозакрытие: когда вы выходите из диалога, сервер может закрыть его автоматически после ~10 минут
-                      тишины и отсутствия активного присутствия (lease). При наличии черновика мы не отправляем CLOSE
-                      сразу.
+                      «Завершить заявку» — снимок переписки и статус попадают в раздел лидов. Крестик только убирает
+                      диалог с экрана. Автозакрытие по тишине возможно после снятия присутствия (lease); при черновике в
+                      поле ввода CLOSE не отправляется сразу.
                     </Text>
                   ) : null}
                   <Group align="flex-end" wrap="nowrap" gap="sm">

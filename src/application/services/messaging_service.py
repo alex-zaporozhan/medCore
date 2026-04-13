@@ -24,17 +24,19 @@ async def send_recall_message(
     message: str,
     subject: str | None = None,
     template: str = "recall",
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, str]:
     """
     Send one recall message to patient. Respects PatientCommunicationPreferences.
-    Returns (success, error_message).
+
+    Returns ``(success, error_message, delivery)`` — third value matches
+    :func:`send_with_fallback` (``channel`` | ``log_only`` | ``failed``).
     """
     result = await session.execute(
         select(Patient).where(Patient.id == patient_id)
     )
     patient = result.scalar_one_or_none()
     if not patient:
-        return False, "patient_not_found"
+        return False, "patient_not_found", "failed"
 
     pref_result = await session.execute(
         select(PatientCommunicationPreferences).where(
@@ -44,10 +46,10 @@ async def send_recall_message(
     )
     pref = pref_result.scalar_one_or_none()
     if pref is not None and not pref.enabled:
-        return False, "opt_out"
+        return False, "opt_out", "failed"
 
     preferred = getattr(patient, "preferred_channel", None) or "sms"
-    success, err = await send_with_fallback(
+    success, err, delivery = await send_with_fallback(
         chat_id=patient.telegram_chat_id,
         phone=patient.phone,
         email=patient.email,
@@ -56,4 +58,4 @@ async def send_recall_message(
         meta={"clinic_id": str(clinic_id), "subject": subject or ""},
         preferred_channel=channel if channel in ("telegram", "sms", "email") else preferred,
     )
-    return success, err
+    return success, err, delivery

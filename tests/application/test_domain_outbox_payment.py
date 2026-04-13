@@ -5,6 +5,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from httpx import AsyncClient
 from sqlalchemy import select, text
 
 from src.application.services.domain_outbox_service import (
@@ -29,17 +30,15 @@ async def _empty_domain_outbox_for_isolation(init_db):
 
 
 @pytest.mark.asyncio
-async def test_payment_webhook_leaves_no_pending_outbox_after_dispatch(seed_data: dict):
+async def test_payment_webhook_leaves_no_pending_outbox_after_dispatch(
+    client: AsyncClient, seed_data: dict
+):
     """After succeeded webhook, outbox row is published (post-commit dispatch)."""
     booking_id = uuid4()
     payment_row_id = uuid4()
     provider_pid = f"yookassa-outbox-{uuid4().hex[:12]}"
     clinic_id = seed_data["clinic_id"]
     appt_time = time(10, 0, 0)
-
-    from httpx import ASGITransport, AsyncClient
-
-    from src.main import app
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(
@@ -77,20 +76,18 @@ async def test_payment_webhook_leaves_no_pending_outbox_after_dispatch(seed_data
         def get_payment(self, pid: str) -> dict:
             return {"status": "succeeded", "id": pid}
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        with patch(
-            "src.application.services.payment_service.YooKassaClient",
-            return_value=_FakeYooKassa(),
-        ):
-            r = await client.post(
-                "/api/v1/payments/webhook",
-                json={
-                    "type": "notification",
-                    "event": "payment.succeeded",
-                    "object": {"id": provider_pid},
-                },
-            )
+    with patch(
+        "src.application.services.payment_service.YooKassaClient",
+        return_value=_FakeYooKassa(),
+    ):
+        r = await client.post(
+            "/api/v1/payments/webhook",
+            json={
+                "type": "notification",
+                "event": "payment.succeeded",
+                "object": {"id": provider_pid},
+            },
+        )
     assert r.status_code == 200
 
     async with db_base.AsyncSessionLocal() as session:

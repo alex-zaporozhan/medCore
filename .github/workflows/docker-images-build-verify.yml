@@ -1,0 +1,52 @@
+# Smoke-build backend + frontend images (no registry login, no push).
+# Use on forks / repos without Docker Hub secrets; complements docker-hub-publish.yml.
+name: Docker images build verify (dry-run)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "frontend/Dockerfile"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/docker-images-build-verify.yml"
+  push:
+    branches: [main, master]
+    paths:
+      - "Dockerfile"
+      - "frontend/Dockerfile"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/docker-images-build-verify.yml"
+
+jobs:
+  dry-run-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: dental-booking-backend:ci-dry-run
+          provenance: false
+
+      - name: Build frontend image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          file: Dockerfile
+          push: false
+          tags: dental-booking-frontend:ci-dry-run
+          provenance: false

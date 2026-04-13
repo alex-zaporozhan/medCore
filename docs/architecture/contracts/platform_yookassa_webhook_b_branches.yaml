@@ -1,0 +1,45 @@
+# Контур B: уведомления YooKassa → POST /api/v1/platform/billing/webhooks/yookassa
+# Источник истины после приёма: GET Payment по object.id (см. platform_subscription_billing.md §12.1).
+# Версия: 2026-04-07 (срез 1b-E3b)
+
+provider: yookassa
+webhook_path: /api/v1/platform/billing/webhooks/yookassa
+auth: "Header X-Platform-Billing-Webhook-Secret = PLATFORM_BILLING_WEBHOOK_SECRET"
+
+# Тело уведомления: как минимум object.id = provider_payment_id; фактический статус — из API GET Payment.
+
+branches:
+  - payment_api_status: succeeded
+    notification_events: ["payment.succeeded", "payment.succeeded.*"]
+    action: "Update payment row; if gate passes → intent paid → provision (two-phase HTTP + Celery retry on failure)."
+    http_response: "200 { status: ok }"
+    metrics: ["platform_billing_webhook_total", "platform_billing_payment_lifecycle_total{event=succeeded}"]
+
+  - payment_api_status: waiting_for_capture
+    notification_events: ["payment.waiting_for_capture"]
+    action: "Update platform_subscription_payments.status=waiting_for_capture; no intent lifecycle change."
+    http_response: "200 { status: ok }"
+    metrics: ["platform_billing_payment_lifecycle_total{event=waiting_for_capture}", "platform_billing_webhook_total{result=ignored_status}"]
+
+  - payment_api_status: pending
+    notification_events: ["payment.pending"]
+    action: "Update payment status pending only."
+    http_response: "200 { status: ok }"
+
+  - payment_api_status: canceled
+    notification_events: ["payment.canceled", "payment.cancelled"]
+    action: "Update payment canceled; intent stays pre-paid."
+    http_response: "200 { status: ok }"
+
+  - payment_api_status: refunded
+    notification_events: ["payment.refunded", "refund.succeeded"]
+    action: "ADR-012 billing revocation; intent suspended; entitlements revoked idempotently."
+    http_response: "200 { status: ok }"
+
+  - payment_api_status: other
+    notification_events: ["*"]
+    action: "Persist truncated status on payment row; no intent transition."
+    http_response: "200 { status: ok }"
+
+pytest_modules:
+  - tests/api/test_platform_billing.py

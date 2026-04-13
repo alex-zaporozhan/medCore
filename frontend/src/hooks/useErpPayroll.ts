@@ -29,7 +29,7 @@ export function useSalaryTransactions(
       api.get<SalaryTransaction[]>(
         `/v1/admin/clinics/${clinicId}/payroll/transactions${qs ? `?${qs}` : ""}`
       ),
-    enabled: !!clinicId && !!doctorId,
+    enabled: !!clinicId,
   });
 }
 

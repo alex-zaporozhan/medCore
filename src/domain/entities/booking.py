@@ -14,13 +14,14 @@ from sqlalchemy import (
     Numeric,
     ForeignKey,
     Index,
-    UniqueConstraint,
     TIMESTAMP,
     func,
     Boolean,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from src.domain.booking_slot_policy import partial_unique_index_status_predicate_sql
 from src.infrastructure.database.base import Base
 
 
@@ -114,11 +115,13 @@ class Booking(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "ux_bookings_doctor_slot_active",
             "doctor_id",
             "appointment_date",
             "appointment_time",
-            name="ux_bookings_doctor_slot",
+            unique=True,
+            postgresql_where=text(partial_unique_index_status_predicate_sql()),
         ),
         Index("idx_bookings_patient_date", "patient_id", "appointment_date"),
         Index("idx_bookings_doctor_date", "doctor_id", "appointment_date"),

@@ -1,7 +1,7 @@
 """Smoke test: POST /api/v1/patient/bookings."""
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -90,3 +90,47 @@ async def test_patient_booking_rejects_jwt_wrong_audience_when_strict(
     )
     assert response.status_code == 401
     assert response.json().get("code") == "invalid_token_audience"
+
+
+@pytest.mark.asyncio
+async def test_patient_can_rebook_same_slot_after_cancel(
+    client: AsyncClient, seed_data: dict, patient_auth: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P0-1: cancelled row must not block partial unique slot; book → cancel → book same slot → 201."""
+    slot_day = seed_data["date"]
+    slot_time = "11:00:00"
+
+    class _Morning(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.combine(slot_day, time(8, 0))
+
+    import src.application.services.booking_service as booking_service_mod
+
+    monkeypatch.setattr(booking_service_mod, "datetime", _Morning)
+
+    clinic_id = seed_data["clinic_id"]
+    doctor_id = seed_data["doctor_id"]
+    service_id = seed_data["service_id"]
+    headers = {"Authorization": f"Bearer {patient_auth['access_token']}"}
+    body = {
+        "clinic_id": str(clinic_id),
+        "doctor_id": str(doctor_id),
+        "service_id": str(service_id),
+        "appointment_date": slot_day.isoformat(),
+        "appointment_time": slot_time,
+    }
+    r1 = await client.post("/api/v1/patient/bookings", json=body, headers=headers)
+    assert r1.status_code == 201, r1.text
+    booking_id = r1.json()["id"]
+
+    r_del = await client.delete(
+        f"/api/v1/patient/bookings/{booking_id}",
+        headers=headers,
+    )
+    assert r_del.status_code == 200, r_del.text
+
+    r2 = await client.post("/api/v1/patient/bookings", json=body, headers=headers)
+    assert r2.status_code == 201, r2.text
+    assert r2.json()["id"] != booking_id
+    assert r2.json().get("status") == "pending"
