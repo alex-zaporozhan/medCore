@@ -1,5 +1,6 @@
 import { API_BASE } from "@/api/client";
 import { usePlatformFounderSession } from "@/marketing/contexts/PlatformFounderSessionContext";
+import { formatPlatformFounderApiError } from "@/marketing/platformFounderApi";
 import {
   ActionIcon,
   Accordion,
@@ -45,31 +46,6 @@ function ShortUuidCell({ id, label }: { id: string | null; label: string }) {
   );
 }
 
-async function formatApiError(r: Response, fallback: string): Promise<string> {
-  try {
-    const body: unknown = await r.json();
-    if (body && typeof body === "object") {
-      const o = body as { detail?: unknown; code?: unknown };
-      const topCode = typeof o.code === "string" ? o.code : "";
-      const d = o.detail;
-      if (typeof d === "string") {
-        return topCode ? `${topCode}: ${d}` : d;
-      }
-      if (d && typeof d === "object" && "message" in d && typeof (d as { message: string }).message === "string") {
-        const nested =
-          "code" in d && typeof (d as { code?: string }).code === "string"
-            ? `${(d as { code: string }).code}: `
-            : "";
-        const msg = `${nested}${(d as { message: string }).message}`;
-        return topCode ? `${topCode}: ${msg}` : msg;
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return fallback;
-}
-
 type QueueItem = {
   intent_id: string;
   status: string;
@@ -103,14 +79,14 @@ export default function PlatformFounderProvisionQueuePage() {
       }
       if (r.status === 503) {
         throw new Error(
-          await formatApiError(
+          await formatPlatformFounderApiError(
             r,
             "Сервис основателя отключён (нет PLATFORM_FOUNDER_JWT_SECRET в production).",
           ),
         );
       }
       if (!r.ok) {
-        throw new Error(await formatApiError(r, `Ошибка ${r.status}`));
+        throw new Error(await formatPlatformFounderApiError(r, `Ошибка ${r.status}`));
       }
       const data = (await r.json()) as QueueItem[];
       return Array.isArray(data) ? data : [];
@@ -129,7 +105,7 @@ export default function PlatformFounderProvisionQueuePage() {
       );
       if (!r.ok) {
         throw new Error(
-          await formatApiError(
+          await formatPlatformFounderApiError(
             r,
             r.status === 409
               ? "Retry невозможен (статус intent или платёж не succeeded)."
@@ -162,7 +138,7 @@ export default function PlatformFounderProvisionQueuePage() {
       );
       if (!r.ok) {
         throw new Error(
-          await formatApiError(
+          await formatPlatformFounderApiError(
             r,
             r.status === 409
               ? "Закрытие невозможно для этого статуса intent."

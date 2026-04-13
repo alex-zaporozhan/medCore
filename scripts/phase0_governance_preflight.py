@@ -13,6 +13,7 @@ Usage:
   python scripts/phase0_governance_preflight.py envelope
   python scripts/phase0_governance_preflight.py crash-review
   python scripts/phase0_governance_preflight.py doc-paths
+  python scripts/phase0_governance_preflight.py frontend-page-passports
   python scripts/phase0_governance_preflight.py all
 """
 
@@ -90,11 +91,23 @@ def cmd_doc_paths() -> int:
     return 0
 
 
+def cmd_frontend_page_passports() -> int:
+    """LEAD/QA_ARCH: каждый ожидаемый SPA-slug имеет docs/frontend/pages/<slug>.md."""
+    script = REPO_ROOT / "scripts" / "gen_frontend_page_passport_stubs.py"
+    r = subprocess.run(
+        [sys.executable, str(script), "verify"],
+        cwd=str(REPO_ROOT),
+    )
+    if r.returncode == 0:
+        print("frontend-page-passports: OK (gen_frontend_page_passport_stubs verify)")
+    return int(r.returncode)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Phase 0 governance preflight")
     parser.add_argument(
         "command",
-        choices=("envelope", "crash-review", "doc-paths", "all"),
+        choices=("envelope", "crash-review", "doc-paths", "frontend-page-passports", "all"),
         nargs="?",
         default="all",
     )
@@ -105,11 +118,16 @@ def main() -> int:
         return cmd_crash_review()
     if args.command == "doc-paths":
         return cmd_doc_paths()
+    if args.command == "frontend-page-passports":
+        return cmd_frontend_page_passports()
     # all
     rc = cmd_envelope()
     if rc != 0:
         return rc
     rc = cmd_doc_paths()
+    if rc != 0:
+        return rc
+    rc = cmd_frontend_page_passports()
     if rc != 0:
         return rc
     return cmd_crash_review()

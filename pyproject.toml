@@ -38,6 +38,7 @@ pytest-playwright = "^0.4.3"
 black = "^26.3.0"
 ruff = "^0.9.0"
 mypy = "^1.8.0"
+pytest-timeout = ">=2.3.1"
 
 [tool.pip-audit]
 require-hashes = false
@@ -58,6 +59,11 @@ target-version = "py311"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 testpaths = ["tests"]
+# QA_ARCH: fail fast on hung tests (infinite SSE, deadlocks, blocked I/O) instead of waiting indefinitely.
+# Fixtures are excluded so session init_db/seed_data/truncate are not cut mid-run.
+# Per-test cap (pytest-timeout). Windows + asyncio uses thread timeout; slow DB/IO may need headroom.
+timeout = 240
+timeout_func_only = true
 markers = [
     "regression_payments: regression tests for payments and payment gateway",
     "regression_pd: regression tests for personal data isolation and access",

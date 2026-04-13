@@ -11,6 +11,7 @@ from src.api.v1.routers import (
     patients,
     payments,
     platform_billing,
+    platform_enterprise_leads,
     platform_founder_auth,
     platform_internal,
     public_embed,
@@ -53,6 +54,7 @@ from src.api.v1.routers import (
     admin_ai_status,
     admin_ai_tasks_settings,
     admin_public_doctor_profiles,
+    public_commerce,
     public_services,
     patient_notification_settings,
     public_marketing,
@@ -157,6 +159,7 @@ api_router.include_router(admin_staff_collab.router)
 api_router.include_router(admin_staff_announcement_policy.router)
 api_router.include_router(patient_chat.router)
 api_router.include_router(patient_notification_settings.router)
+api_router.include_router(public_commerce.router)
 api_router.include_router(public_services.router)
 api_router.include_router(public_marketing.router)
 api_router.include_router(public_doctor_profiles.router)
@@ -166,6 +169,8 @@ api_router.include_router(bookings.router)
 api_router.include_router(payments.router)
 api_router.include_router(platform_founder_auth.router)
 api_router.include_router(platform_billing.router)
+api_router.include_router(platform_enterprise_leads.public_router)
+api_router.include_router(platform_enterprise_leads.internal_router)
 api_router.include_router(platform_internal.router)
 api_router.include_router(public_embed.router)
 api_router.include_router(public_platform_catalog.router)

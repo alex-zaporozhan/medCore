@@ -6,6 +6,7 @@ import json
 import logging
 from uuid import UUID
 
+from src.core.metrics import omni_realtime_publish_failed_total
 from src.infrastructure.database.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ async def publish_omni_message_created(
         redis = await get_redis()
         await redis.publish(channel, payload)
     except Exception as exc:  # noqa: BLE001
+        omni_realtime_publish_failed_total.labels(event="message_created").inc()
         logger.warning(
             "omni realtime publish failed",
             extra={"channel": channel, "error": str(exc)},
@@ -61,6 +63,7 @@ async def publish_omni_chat_updated(
         redis = await get_redis()
         await redis.publish(channel, payload)
     except Exception as exc:  # noqa: BLE001
+        omni_realtime_publish_failed_total.labels(event="chat_updated").inc()
         logger.warning(
             "omni realtime publish failed",
             extra={"channel": channel, "error": str(exc)},

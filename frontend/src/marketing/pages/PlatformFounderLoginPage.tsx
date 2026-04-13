@@ -13,7 +13,7 @@ export default function PlatformFounderLoginPage() {
         <div>
           <Title order={2}>Основатель платформы</Title>
           <Text size="sm" c="dimmed" mt={6}>
-            Отдельный контур и JWT. Не путайте с входом в админку клиники.
+            Отдельный контур и JWT. Не путайте с входом в админку организации.
           </Text>
         </div>
         <PlatformFounderSignInPanel />

@@ -2,14 +2,14 @@
 
 Политика публичной документации и границы git: **`DOCUMENTATION_POLICY.md`**.
 
-**CI/CD:** релизные образы и деплой — **Jenkins** (`Jenkinsfile`), реестр — **GHCR** (`ghcr.io`), не Docker Hub (платный тариф Docker Hub не предполагается). GitHub Actions — вспомогательные проверки PR. См. **`CI_CD.md`**.
+**CI/CD:** для VPS/демо по умолчанию — локальная сборка и **Docker Hub** (`scripts/docker_hub_release.ps1` / `.sh`, см. **`CI_CD.md`**). Корпоративный контур — **Jenkins** + **GHCR**. GitHub Actions — вспомогательные проверки PR и опциональный push на Hub при secrets.
 
 ## Pull requests
 
 When closing backlog items, link the task/issue in the PR description. If your team keeps an internal engineering log, reference it there (paths are not fixed in this public file).
 
 1. **Traceability** — In the PR description, link the **ID** (issue, task key) and the section or acceptance criteria you implemented.
-2. **Tests** — Run and note `pytest` / `vitest` for **modules you touched** (full suite if feasible). Test DB: see **`documentation/DEVELOPMENT.md`** and `tests/conftest.py` (`DATABASE_URL_TEST`, `dental_booking_test`).
+2. **Tests** — Run and note `pytest` / `vitest` for **modules you touched** (full suite if feasible). Test DB: **`documentation/DEVELOPMENT.md`**, запуск сервисов — **`docs/RUN_SERVICES.md`**; `tests/conftest.py` (`DATABASE_URL_TEST`, `dental_booking_test`).
 3. **Config** — New env vars: `.env.example` and operator-facing notes per team process.
 4. **NFR** — If metrics, alerts, or dashboards change, update what your team tracks (see **`documentation/OBSERVABILITY.md`** for repo paths) and internal records as required.
 

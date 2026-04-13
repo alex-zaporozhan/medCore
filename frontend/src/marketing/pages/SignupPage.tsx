@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 /**
- * Регистрация клиники на платформе (FE-E1 / 1b-F3): согласия PII + тот же checkout, что на /pricing.
+ * Регистрация организации на платформе: согласия PII + тот же checkout, что на /pricing.
  */
 export default function SignupPage() {
   const [consentPd, setConsentPd] = useState(false);
@@ -13,16 +13,16 @@ export default function SignupPage() {
   const canProceed = consentPd && consentTerms;
 
   return (
-    <Box style={{ minHeight: "100vh", background: "var(--bg-main)", padding: "40px 16px" }}>
+    <Box className="marketing-gradient-bg" style={{ minHeight: "100vh", padding: "40px 16px" }}>
       <Container size="lg">
         <Stack gap="xl">
           <div>
             <Title order={1} style={{ color: "var(--text-main)" }}>
-              Регистрация клиники
+              Регистрация организации
             </Title>
             <Text size="sm" c="dimmed" mt={8}>
-              Подбор тарифа из каталога и оплата. После успешной оплаты платформа создаёт организацию и
-              отправляет владельцу приглашение в админку.
+              Подбор тарифа из каталога и оплата. После успешной оплаты платформа создаёт организацию и отправляет
+              владельцу приглашение в админку.
             </Text>
           </div>
 
@@ -32,8 +32,8 @@ export default function SignupPage() {
               onChange={(e) => setConsentPd(e.currentTarget.checked)}
               label={
                 <Text size="sm">
-                  Согласен(на) на обработку персональных данных владельца (email) в рамках оформления
-                  подписки. Политика:{" "}
+                  Согласен(на) на обработку персональных данных владельца (email) в рамках оформления подписки.
+                  Политика:{" "}
                   <Anchor component={Link} to={ROUTE_PATHS.marketing.legalPrivacy} target="_blank">
                     Конфиденциальность
                   </Anchor>
@@ -56,13 +56,13 @@ export default function SignupPage() {
             />
           </Stack>
 
-          {canProceed ? (
-            <PlatformPricingSection title="Выбор плана и оплата" />
-          ) : (
+          {!canProceed ? (
             <Text size="sm" c="dimmed">
-              Отметьте оба согласия, чтобы перейти к выбору тарифа и оплате.
+              Отметьте оба согласия, чтобы активировать кнопку оплаты. Тарифы ниже можно просматривать сразу.
             </Text>
-          )}
+          ) : null}
+
+          <PlatformPricingSection title="Выбор плана и оплата" checkoutEnabled={canProceed} />
 
           <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="sm">
             ← На главную

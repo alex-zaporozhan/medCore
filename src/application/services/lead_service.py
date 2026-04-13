@@ -213,7 +213,7 @@ class LeadService:
             },
         )
         crm_leads_created_total.labels(
-            clinic_id=str(clinic_id),
+            clinic_bucket=clinic_bucket_label(clinic_id),
             source=str(source or "unknown"),
             utm_campaign=str(getattr(lead, "utm_campaign", None) or "none"),
         ).inc()
@@ -266,7 +266,7 @@ class LeadService:
             },
         )
         crm_leads_created_total.labels(
-            clinic_id=str(clinic_id),
+            clinic_bucket=clinic_bucket_label(clinic_id),
             source=str(source or "unknown"),
             utm_campaign=str(getattr(lead, "utm_campaign", None) or "none"),
         ).inc()
@@ -507,7 +507,7 @@ class LeadService:
         lead = await self.repository.update_lead(lead)
 
         crm_lead_actual_value_erp_updates_total.labels(
-            clinic_id=str(clinic_id),
+            clinic_bucket=clinic_bucket_label(clinic_id),
             source=str(source or "unknown"),
             changed="true" if changed else "false",
         ).inc()
@@ -522,7 +522,7 @@ class LeadService:
             statuses = [r[0] for r in st_row.all()]
             if any(s == BookingStatus.COMPLETED for s in statuses):
                 crm_lead_actual_value_erp_missing_fact_total.labels(
-                    clinic_id=str(clinic_id),
+                    clinic_bucket=clinic_bucket_label(clinic_id),
                     source=str(source or "unknown"),
                 ).inc()
                 logger.warning(
@@ -578,7 +578,7 @@ class LeadService:
             delta = (lead.closed_at - lead.created_at).total_seconds() if lead.closed_at else None
             if delta is not None and delta >= 0:
                 crm_lead_time_to_close_seconds.labels(
-                    clinic_id=str(clinic_id),
+                    clinic_bucket=clinic_bucket_label(clinic_id),
                     outcome="success",
                 ).observe(delta)
         except Exception:  # noqa: BLE001
@@ -620,7 +620,7 @@ class LeadService:
             delta = (lead.closed_at - lead.created_at).total_seconds() if lead.closed_at else None
             if delta is not None and delta >= 0:
                 crm_lead_time_to_close_seconds.labels(
-                    clinic_id=str(clinic_id),
+                    clinic_bucket=clinic_bucket_label(clinic_id),
                     outcome="lost",
                 ).observe(delta)
         except Exception:  # noqa: BLE001
@@ -848,7 +848,7 @@ class LeadService:
                     stage=to_stage,
                 )
             crm_lead_stage_transitions_total.labels(
-                clinic_id=str(clinic_id),
+                clinic_bucket=clinic_bucket_label(clinic_id),
                 from_semantic=str(from_sem or "unknown"),
                 to_semantic=str(to_sem or "unknown"),
                 initiator=("ai" if initiated_by_ai else (request_context.user_type if request_context else "unknown")),

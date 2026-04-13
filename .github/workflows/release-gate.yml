@@ -13,6 +13,7 @@ env:
   DATABASE_URL_TEST: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
   REDIS_URL: redis://localhost:6379/0
+  RUN_REDIS_INTEGRATION_TESTS: "1"
   TESTING: "1"
   SECRET_KEY: ci-secret-key-32-chars-minimum-xx
   JWT_SECRET_KEY: ci-jwt-secret-key-32-chars-minimum
@@ -78,6 +79,17 @@ jobs:
       - name: Phase 0 governance preflight (envelope + doc paths + crash-review bundle)
         run: python scripts/phase0_governance_preflight.py all
 
-      - name: Full backend pytest
-        run: poetry run pytest tests/ -q --tb=short
+      - name: Playwright (chromium)
+        run: poetry run playwright install chromium
+
+      - name: Full backend pytest (with vite preview for browser E2E)
+        env:
+          FRONTEND_E2E_URL: http://127.0.0.1:4173
+        run: |
+          cd frontend
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/vite-preview.log 2>&1 &
+          echo $! > /tmp/vite-preview.pid
+          cd ..
+          sleep 6
+          poetry run pytest tests/ -q --tb=short
         timeout-minutes: 45

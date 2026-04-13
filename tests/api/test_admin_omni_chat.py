@@ -1,6 +1,7 @@
 """Tests for admin omnichannel chat API (Phase 3)."""
 
 import asyncio
+import contextlib
 import uuid
 
 import pytest
@@ -14,6 +15,72 @@ from src.domain.entities.omnichannel_chat import Chat as OmniChat
 from src.domain.entities.omnichannel_chat_closure import OmniChatClosure
 from src.domain.entities.omnichannel_message import Message as OmniMessage
 from src.infrastructure.database import base as db_base
+
+
+async def _first_asgi_sse_body_chunk(
+    app,
+    *,
+    path: str = "/api/v1/admin/omni-chats/events",
+    authorization: str,
+    timeout: float = 8.0,
+) -> tuple[int, list[tuple[bytes, bytes]], bytes]:
+    """
+    Drive the ASGI app directly until the first response body chunk.
+
+    httpx.ASGITransport buffers until ``more_body=False``, so ``AsyncClient.stream`` never
+    yields for infinite SSE — same event loop would deadlock. This helper cancels the app
+    task after the first chunk (Starlette runs generator cleanup on cancel).
+    """
+    headers = [
+        (b"host", b"test"),
+        (b"authorization", authorization.encode("ascii")),
+    ]
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "headers": headers,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode("ascii"),
+        "query_string": b"",
+        "server": ("test", 80),
+        "client": ("127.0.0.1", 50000),
+        "root_path": "",
+    }
+    status_holder: list[int] = []
+    resp_headers: list[tuple[bytes, bytes]] = []
+    body_chunks: list[bytes] = []
+    got_chunk = asyncio.Event()
+
+    async def receive() -> dict:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict) -> None:
+        if message["type"] == "http.response.start":
+            status_holder.append(int(message["status"]))
+            rh = message.get("headers")
+            if isinstance(rh, list):
+                resp_headers[:] = list(rh)
+        elif message["type"] == "http.response.body":
+            body = message.get("body") or b""
+            if body:
+                body_chunks.append(body)
+                got_chunk.set()
+
+    async def run() -> None:
+        await app(scope, receive, send)
+
+    task = asyncio.create_task(run())
+    try:
+        await asyncio.wait_for(got_chunk.wait(), timeout=timeout)
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    status = status_holder[0] if status_holder else 0
+    return status, list(resp_headers), b"".join(body_chunks)
 
 
 async def _add_outbound_capable_channel(session, clinic_id: uuid.UUID) -> uuid.UUID:
@@ -145,6 +212,7 @@ async def test_admin_send_and_hide_omni_message(init_db, seed_data, client: Asyn
     assert sent.get("actor_type") == "HUMAN_ADMIN"
     assert sent.get("channel_id") == str(channel_id)
     assert sent.get("sender_admin_id") == admin_auth["admin_id"]
+    assert sent.get("delivery_status") == "NOTIFIED_WAITER"
 
     # Hide inbound message
     r2 = await client.post(
@@ -717,12 +785,18 @@ async def test_admin_omni_sse_connected_event_with_auth(
     init_db, seed_data, client: AsyncClient, admin_auth: dict
 ):
     """SSE endpoint streams initial connected comment for valid admin token."""
-    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
-    async with client.stream("GET", "/api/v1/admin/omni-chats/events", headers=headers) as resp:
-        assert resp.status_code == 200, await resp.aread()
-        assert resp.headers.get("content-type", "").startswith("text/event-stream")
-        first_line = await asyncio.wait_for(resp.aiter_lines().__anext__(), timeout=3.0)
-        assert first_line.startswith(": connected")
+    from tests.conftest import app as app_ref
+
+    auth = f"Bearer {admin_auth['access_token']}"
+    status, raw_headers, body = await _first_asgi_sse_body_chunk(app_ref, authorization=auth)
+    assert status == 200, body[:200]
+    cth = ""
+    for k, v in raw_headers:
+        if k.lower() == b"content-type":
+            cth = v.decode("latin-1")
+            break
+    assert cth.startswith("text/event-stream"), cth
+    assert body.decode("utf-8").lstrip().startswith(": connected"), body[:200]
 
 
 @pytest.mark.regression_chats

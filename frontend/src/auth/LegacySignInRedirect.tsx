@@ -1,4 +1,4 @@
-import { ROUTE_PATHS } from "@/routePaths";
+import { ROUTE_PATHS, patientPublicLoginSearch } from "@/routePaths";
 import { Center, Loader } from "@mantine/core";
 import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -28,8 +28,8 @@ export default function LegacySignInRedirect() {
     }
     navigate(
       {
-        pathname: ROUTE_PATHS.marketing.landing,
-        search: "?patientEntry=need-clinic",
+        pathname: ROUTE_PATHS.other.login,
+        search: patientPublicLoginSearch("need-clinic"),
       },
       { replace: true },
     );

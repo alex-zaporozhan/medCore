@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import secrets
@@ -16,6 +17,7 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.services.rbac_user_roles_write import attach_global_role_if_missing
+from src.application.webhook_provider_verify import PlatformBillingWebhookProviderVerifyError
 from src.core.config import settings
 from src.core.metrics import (
     platform_billing_billing_revocation_total,
@@ -425,14 +427,13 @@ async def apply_platform_yookassa_notification(session: AsyncSession, payload: d
 
     yookassa = YooKassaClient()
     try:
-        data = yookassa.get_payment(str(payment_id))
+        data = await asyncio.to_thread(yookassa.get_payment, str(payment_id))
     except YooKassaClientError:
         logger.exception(
             "Platform billing webhook: YooKassa get_payment failed",
             extra={"payment_id": payment_id},
         )
-        platform_billing_webhook_total.labels(result="provider_fetch_failed").inc()
-        return None
+        raise PlatformBillingWebhookProviderVerifyError(str(payment_id)) from None
 
     status = (data.get("status") or "").lower()
     amount_val = data.get("amount")
@@ -733,26 +734,33 @@ async def create_public_platform_signup_checkout(
         raise ValueError("yookassa_not_configured")
 
     desc = f"SaaS {slug} ({bp})"[:255]
+    pay_row_id = uuid4()
+    pay_row = PlatformSubscriptionPayment(
+        id=pay_row_id,
+        signup_intent_id=intent.id,
+        provider=PROVIDER_YOOKASSA,
+        provider_payment_id=f"local-pending:{pay_row_id}",
+        amount=amount,
+        status="pending",
+    )
+    session.add(pay_row)
+    await session.flush()
+
     try:
-        pid, pay_url = yk.create_platform_subscription_payment(
-            amount=amount,
-            return_url=return_url,
-            description=desc,
-            signup_intent_id=intent.id,
-            idempotence_key=str(uuid4()),
+        pid, pay_url = await asyncio.to_thread(
+            yk.create_platform_subscription_payment,
+            amount,
+            return_url,
+            desc,
+            intent.id,
+            str(pay_row_id),
         )
     except YooKassaClientError as exc:
+        await session.delete(pay_row)
+        await session.flush()
         raise ValueError("yookassa_create_failed") from exc
 
-    session.add(
-        PlatformSubscriptionPayment(
-            signup_intent_id=intent.id,
-            provider=PROVIDER_YOOKASSA,
-            provider_payment_id=str(pid),
-            amount=amount,
-            status="pending",
-        )
-    )
+    pay_row.provider_payment_id = str(pid)
     await session.flush()
     return intent.id, pay_url, amount
 

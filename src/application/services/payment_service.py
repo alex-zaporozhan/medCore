@@ -1,10 +1,11 @@
 """Payment service for YooKassa and booking status sync."""
 
+import asyncio
 import logging
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.dto.payment_dto import CreatePaymentResponse
@@ -16,6 +17,7 @@ from src.core.patient_messages import (
 )
 from src.application.services.pricing_service import PricingService
 from src.core.encryption import decrypt_ciphertext
+from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.payment import Payment
 from src.domain.entities.prepayment_policy import PrepaymentPolicy
@@ -30,12 +32,18 @@ from src.infrastructure.external_apis.yookassa_client import (
 from src.application.events.event_bus import get_event_bus
 from src.application.events.standard_events import make_payment_success_event
 from src.application.services.domain_outbox_service import enqueue_payment_success_event
-from src.domain.entities.booking import BookingStatus
+from src.application.webhook_provider_verify import PaymentWebhookProviderVerifyError
 from src.application.services.booking_status_service import BookingStatusService
 
 logger = logging.getLogger(__name__)
 
 PROVIDER_NAME = "yookassa"
+_LOCAL_PENDING_PROVIDER_PAYMENT_PREFIX = "local-pending:"
+
+
+def _yookassa_confirmation_url_from_get_payment(payload: dict) -> str:
+    conf = payload.get("confirmation") or {}
+    return str(conf.get("confirmation_url") or "")
 
 
 def _yookassa_client_for_clinic(clinic: Clinic | None) -> YooKassaClient:
@@ -169,12 +177,106 @@ class PaymentService:
         clinic = clinic_result.scalar_one_or_none()
         yookassa = _yookassa_client_for_clinic(clinic)
 
-        try:
-            provider_id, confirmation_url = yookassa.create_payment(
-                amount=amount,
-                return_url=url,
-                description=description,
+        # P1-4: serialize concurrent create_payment; durable local row before provider call.
+        locked = (
+            await self.session.execute(
+                select(Booking).where(Booking.id == booking_id).with_for_update()
+            )
+        ).scalar_one_or_none()
+        if not locked:
+            raise LookupError(PAYMENT_BOOKING_NOT_FOUND)
+        if locked.status == BookingStatus.CANCELLED:
+            raise ValueError(PAYMENT_CANCELLED_BOOKING)
+        if locked.status == BookingStatus.CONFIRMED:
+            raise ValueError(PAYMENT_ALREADY_CONFIRMED)
+        booking = locked
+
+        pending_order = case(
+            (
+                Payment.provider_payment_id.startswith(_LOCAL_PENDING_PROVIDER_PAYMENT_PREFIX),
+                0,
+            ),
+            else_=1,
+        )
+        pending_stmt = (
+            select(Payment)
+            .where(
+                Payment.booking_id == booking_id,
+                Payment.provider == PROVIDER_NAME,
+                Payment.status == "pending",
+            )
+            .order_by(pending_order, Payment.created_at.desc())
+            .limit(1)
+        )
+        existing = (await self.session.execute(pending_stmt)).scalar_one_or_none()
+
+        if existing is not None and not existing.provider_payment_id.startswith(
+            _LOCAL_PENDING_PROVIDER_PAYMENT_PREFIX
+        ):
+            try:
+                yk_payload = await asyncio.to_thread(
+                    yookassa.get_payment, existing.provider_payment_id
+                )
+            except YooKassaClientError as exc:
+                logger.exception(
+                    "YooKassa get_payment failed (idempotent create_payment)",
+                    extra={"booking_id": str(booking_id)},
+                )
+                raise ValueError(str(exc)) from exc
+            confirmation_url = _yookassa_confirmation_url_from_get_payment(yk_payload)
+            if not confirmation_url:
+                logger.warning(
+                    "YooKassa payment missing confirmation_url on idempotent replay",
+                    extra={
+                        "booking_id": str(booking_id),
+                        "provider_payment_id": existing.provider_payment_id,
+                    },
+                )
+                raise ValueError("YooKassa response missing confirmation_url")
+            if booking.payment_id is None:
+                booking.payment_id = existing.id
+            elif booking.payment_id != existing.id:
+                logger.warning(
+                    "Booking payment_id differs from latest pending payment row",
+                    extra={
+                        "booking_id": str(booking_id),
+                        "booking_payment_id": str(booking.payment_id),
+                        "pending_payment_id": str(existing.id),
+                    },
+                )
+            await self.booking_repository.update(booking)
+            return CreatePaymentResponse(
+                payment_url=confirmation_url,
+                provider_payment_id=existing.provider_payment_id,
+                original_amount=str(original_amount) if discount_amount > 0 else None,
+                discount_amount=str(discount_amount) if discount_amount > 0 else None,
+                final_amount=str(amount) if discount_amount > 0 else None,
+            )
+
+        if existing is not None:
+            payment = existing
+        else:
+            payment_row_id = uuid4()
+            payment = Payment(
+                id=payment_row_id,
+                clinic_id=booking.clinic_id,
                 booking_id=booking_id,
+                provider=PROVIDER_NAME,
+                provider_payment_id=f"{_LOCAL_PENDING_PROVIDER_PAYMENT_PREFIX}{payment_row_id}",
+                amount=amount,
+                currency="RUB",
+                status="pending",
+                provider_metadata=None,
+            )
+            payment = await self.payment_repository.create(payment)
+
+        try:
+            provider_id, confirmation_url = await asyncio.to_thread(
+                yookassa.create_payment,
+                amount,
+                url,
+                description,
+                booking_id,
             )
         except YooKassaClientError as exc:
             logger.exception(
@@ -182,17 +284,9 @@ class PaymentService:
             )
             raise ValueError(str(exc)) from exc
 
-        payment = Payment(
-            clinic_id=booking.clinic_id,
-            booking_id=booking_id,
-            provider=PROVIDER_NAME,
-            provider_payment_id=provider_id,
-            amount=amount,
-            currency="RUB",
-            status="pending",
-            provider_metadata=None,
-        )
-        payment = await self.payment_repository.create(payment)
+        payment.provider_payment_id = provider_id
+        payment.amount = amount
+        await self.payment_repository.update(payment)
 
         # Optionally link booking to payment (for awaiting_payment flow)
         booking.payment_id = payment.id
@@ -244,13 +338,13 @@ class PaymentService:
         clinic = clinic_result.scalar_one_or_none()
         yookassa = _yookassa_client_for_clinic(clinic)
         try:
-            data = yookassa.get_payment(payment_id)
+            data = await asyncio.to_thread(yookassa.get_payment, payment_id)
         except YooKassaClientError:
             logger.exception(
                 "Webhook: failed to fetch payment from YooKassa",
                 extra={"payment_id": payment_id},
             )
-            return
+            raise PaymentWebhookProviderVerifyError(payment_id) from None
 
         status = (data.get("status") or "").lower()
         if status not in (

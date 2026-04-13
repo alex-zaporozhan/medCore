@@ -19,15 +19,24 @@ import type {
 } from "@/hooks/useStaffCollab";
 import { api, ApiErrorWithCode, getAdminId } from "@/api/client";
 import { ChatInlineAudioPlayer } from "@/shared/ChatInlineAudioPlayer";
-import { useQueryClient } from "@tanstack/react-query";
-import { queryKeys } from "@/queryKeys";
-import { useRevenueHunterSaved, isRevenueHunterEnabled, useAdminSession } from "@/hooks";
-import { PageSkeleton, EmptyState, ContextBar, QueryErrorAlert, GlassModal, PersonNameLink } from "@/shared/ui";
+import {
+  useRevenueHunterSaved,
+  isRevenueHunterEnabled,
+  useAdminSession,
+  useMyStaffProfile,
+} from "@/hooks";
+import {
+  PageSkeleton,
+  EmptyState,
+  ContextBar,
+  QueryErrorAlert,
+  GlassModal,
+  PersonNameLink,
+} from "@/shared/ui";
 import { EmojiMartPopoverPicker, AppleEmojiOverlayTextarea } from "@/shared/ui";
 import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
 import { STAFF_FEED_CHROME } from "@/shared/staffFeedChrome";
 import {
-  Card,
   Grid,
   Group,
   MultiSelect,
@@ -40,16 +49,18 @@ import {
   Progress,
   Anchor,
   ActionIcon,
-  Divider,
   Paper,
   Menu,
   Box,
   Skeleton,
+  Avatar,
+  UnstyledButton,
+  Alert,
 } from "@mantine/core";
 import { Link } from "react-router-dom";
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { useMediaQuery } from "@mantine/hooks";
 import { ROUTE_PATHS } from "@/routePaths";
-import { SEMANTIC } from "@/shared/semanticUi";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import {
@@ -57,7 +68,7 @@ import {
   IconX,
   IconRobot,
   IconMail,
-  IconSun,
+  IconStack2,
   IconCalendarStats,
   IconClock,
   IconAlertTriangle,
@@ -65,7 +76,6 @@ import {
   IconPhoto,
   IconMicrophone,
   IconHeart,
-  IconHeartFilled,
   IconMessageCircle,
   IconDots,
 } from "@tabler/icons-react";
@@ -73,19 +83,15 @@ import {
 const BACKEND_HINT =
   "Если данные не загружаются, проверьте, что бэкенд запущен на порту 8000 (см. корневой README репозитория).";
 
-const metricCardShell = {
-  bg: "white" as const,
-  h: 95,
-  styles: {
-    root: {
-      borderColor: "var(--mantine-color-gray-2)",
-      height: 95,
-      display: "flex" as const,
-      flexDirection: "column" as const,
-      justifyContent: "space-between" as const,
-    },
-  },
-};
+function staffInitials(fullName: string | null | undefined): string {
+  const t = (fullName ?? "").trim();
+  if (!t) return "—";
+  const parts = t.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]!.slice(0, 1)}${parts[1]!.slice(0, 1)}`.toUpperCase();
+  }
+  return t.slice(0, 2).toUpperCase();
+}
 
 function parseHours(v: string | number | undefined): number {
   if (v === undefined || v === null) return 0;
@@ -200,12 +206,19 @@ const FEED_COMMENT_MAX_FILE_BYTES = 5 * 1024 * 1024;
 const FEED_COMMENT_DOC_ACCEPT =
   ".pdf,.doc,.docx,.txt,.xlsx,.xls,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain";
 
+function staffFeedComposerDraftKey(clinicId: string | null): string {
+  return `staffFeedComposerDraft:v1:${clinicId ?? "none"}`;
+}
+
 function StaffFeedPostComments({
   postId,
   isOpen,
+  regionId,
 }: {
   postId: string;
   isOpen: boolean;
+  /** Связка с `aria-controls` у кнопки «комментарии». */
+  regionId?: string;
 }) {
   const [body, setBody] = useState("");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -250,29 +263,39 @@ function StaffFeedPostComments({
   if (!isOpen) return null;
 
   return (
-    <Stack gap="xs" mt="sm">
-      <Text size="xs" fw={700} c="gray.9">
-        Комментарии
-      </Text>
-      {isLoading ? (
-        <Text size="xs" c="dimmed">
-          Загрузка...
-        </Text>
-      ) : comments && comments.length ? (
-        <Stack gap="xs">
-          {comments.map((c) => (
-            <Card
-              key={c.id}
-              id={`staff-feed-comment-${c.id}`}
-              padding="sm"
-              radius="md"
-              withBorder
-              bg="white"
-            >
-              <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+    <Box
+      id={regionId}
+      role="region"
+      aria-label="Комментарии к записи в ленте"
+      bg="gray.0"
+      p="md"
+      style={{ borderRadius: "var(--mantine-radius-md)" }}
+    >
+      <Stack gap="md" mt={0}>
+        {isLoading ? (
+          <Text size="xs" c="dimmed">
+            Загрузка...
+          </Text>
+        ) : comments && comments.length ? (
+          <Stack gap="md">
+            {comments.map((c) => (
+              <Box key={c.id} id={`staff-feed-comment-${c.id}`}>
+                <Group
+                  justify="space-between"
+                  align="flex-start"
+                  wrap="nowrap"
+                  gap="sm"
+                >
+                <Avatar size="sm" radius="xl" color="gray.5" variant="light">
+                  {staffInitials(replyLabel(c))}
+                </Avatar>
                 <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
                   <Text size="xs" c="dimmed">
-                    {replyLabel(c)} · {new Date(c.created_at).toLocaleString()}
+                    <Text span fw={500} c="gray.8">
+                      {replyLabel(c)}
+                    </Text>
+                    {" · "}
+                    {new Date(c.created_at).toLocaleString()}
                   </Text>
                   {c.in_reply_to ? (
                     <Text size="xs" c="dimmed" style={{ fontStyle: "italic" }}>
@@ -353,9 +376,10 @@ function StaffFeedPostComments({
                     </Stack>
                   ) : null}
                 </Stack>
-                <Group gap="xs" align="center">
+                <Group gap={4} align="flex-start" wrap="nowrap">
                   <Button
-                    {...STAFF_FEED_CHROME.subtleButton}
+                    variant="subtle"
+                    color="gray"
                     size="compact-xs"
                     disabled={Boolean(c.deleted_at)}
                     onClick={() => {
@@ -368,7 +392,7 @@ function StaffFeedPostComments({
                   {(!c.deleted_at && (c.author.id === myAdminId || canModerateComments)) ? (
                     <Menu position="bottom-end" withinPortal>
                       <Menu.Target>
-                        <ActionIcon {...STAFF_FEED_CHROME.actionIcon} size="sm" aria-label="Действия">
+                        <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Действия">
                           <IconDots size={16} stroke={1.5} />
                         </ActionIcon>
                       </Menu.Target>
@@ -409,14 +433,14 @@ function StaffFeedPostComments({
                   ) : null}
                 </Group>
               </Group>
-            </Card>
-          ))}
-        </Stack>
-      ) : (
-        <Text size="xs" c="dimmed">
-          Пока комментариев нет
-        </Text>
-      )}
+              </Box>
+            ))}
+          </Stack>
+        ) : (
+          <Text size="xs" c="dimmed">
+            Пока комментариев нет
+          </Text>
+        )}
 
       {replyTo ? (
         <Group gap="xs" align="center">
@@ -427,12 +451,13 @@ function StaffFeedPostComments({
             </Text>
           </Text>
           <ActionIcon
-            {...STAFF_FEED_CHROME.actionIcon}
+            variant="subtle"
+            color="gray"
             size="sm"
             aria-label="Отменить ответ"
             onClick={() => setReplyTo(null)}
           >
-            <IconX size={16} />
+            <IconX size={16} stroke={1.5} />
           </ActionIcon>
         </Group>
       ) : null}
@@ -502,7 +527,8 @@ function StaffFeedPostComments({
           </ActionIcon>
         </Group>
         <Button
-          {...STAFF_FEED_CHROME.primaryButton}
+          color="slate"
+          variant="filled"
           size="xs"
           onClick={async () => {
             if (!body.trim() && pendingFiles.length === 0) return;
@@ -544,18 +570,23 @@ function StaffFeedPostComments({
           Отправить
         </Button>
       </Group>
-    </Stack>
+      </Stack>
+    </Box>
   );
 }
 
 export default function AdminDashboardPage() {
-  const queryClient = useQueryClient();
   const { clinics, currentClinicId } = useAdminClinic();
+  const composerDraftStorageKey = useMemo(() => staffFeedComposerDraftKey(currentClinicId), [currentClinicId]);
+  const composerDraftPersistReady = useRef(false);
   const [selectedClinicIds, setSelectedClinicIds] = useState<string[]>([]);
   const [feedTitle, setFeedTitle] = useState("");
   const [feedBody, setFeedBody] = useState("");
   const [feedFiles, setFeedFiles] = useState<File[]>([]);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [feedPublishError, setFeedPublishError] = useState<string | null>(null);
+  /** Пост создан, но часть вложений не загрузилась — показываем предупреждение на странице. */
+  const [staffFeedAttachmentWarning, setStaffFeedAttachmentWarning] = useState<string | null>(null);
   const feedFileRef = useRef<HTMLInputElement>(null);
   const toggleLike = useToggleStaffFeedPostLike();
   const updatePost = useUpdateStaffFeedPost();
@@ -606,9 +637,11 @@ export default function AdminDashboardPage() {
     );
 
   const { data: staffPosts, isLoading: staffPostsLoading } = useStaffFeedPosts(20);
+  const { data: myStaffProfile } = useMyStaffProfile();
   const createPost = useCreateStaffFeedPost();
   const { data: revenueHunter } = useRevenueHunterSaved(currentClinicId ?? null);
   const { data: adminSession, isLoading: sessionLoading } = useAdminSession();
+  const isWideLayout = useMediaQuery("(min-width: 48em)");
   const canPostToStaffFeed = adminSession?.permissions?.includes("manage_staff_collab") ?? false;
   /** Выручка на ленте: владелец или связка маркетинг+финансы (не линейный admin без finance). */
   const canViewRevenueDashboard =
@@ -629,17 +662,109 @@ export default function AdminDashboardPage() {
   const isError = reportError;
   const error = reportErr;
 
+  const myAdminIdForComposer = getAdminId();
+  const composerDisplayName = useMemo(() => {
+    const fromProfile = myStaffProfile?.full_name?.trim();
+    if (fromProfile) return fromProfile;
+    if (!myAdminIdForComposer || !staffPosts?.length) return "Сотрудник";
+    const post = staffPosts.find((x) => x.author.id === myAdminIdForComposer);
+    return post?.author.full_name?.trim() || "Сотрудник";
+  }, [myStaffProfile?.full_name, staffPosts, myAdminIdForComposer]);
+
+  const feedWallPosts = useMemo(() => {
+    const list = staffPosts ?? [];
+    return list
+      .filter((p) => !p.is_announcement)
+      .slice()
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [staffPosts]);
+
+  useLayoutEffect(() => {
+    composerDraftPersistReady.current = false;
+    setFeedFiles([]);
+    if (feedFileRef.current) feedFileRef.current.value = "";
+    try {
+      const raw = sessionStorage.getItem(composerDraftStorageKey);
+      if (raw) {
+        const d = JSON.parse(raw) as { title?: string; body?: string };
+        setFeedTitle(typeof d.title === "string" ? d.title : "");
+        setFeedBody(typeof d.body === "string" ? d.body : "");
+      } else {
+        setFeedTitle("");
+        setFeedBody("");
+      }
+    } catch {
+      /* ignore */
+    }
+    composerDraftPersistReady.current = true;
+  }, [composerDraftStorageKey]);
+
+  useEffect(() => {
+    if (!composerDraftPersistReady.current) return;
+    try {
+      const empty = !feedTitle.trim() && !feedBody.trim() && feedFiles.length === 0;
+      if (empty) {
+        sessionStorage.removeItem(composerDraftStorageKey);
+        return;
+      }
+      sessionStorage.setItem(
+        composerDraftStorageKey,
+        JSON.stringify({
+          title: feedTitle,
+          body: feedBody,
+          fileNames: feedFiles.map((f) => f.name),
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [feedTitle, feedBody, feedFiles, composerDraftStorageKey]);
+
+  useEffect(() => {
+    setOpenCommentsByPostId((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const p of feedWallPosts) {
+        if ((p.comments_count ?? 0) > 0 && next[p.id] === undefined) {
+          next[p.id] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [feedWallPosts]);
+
+  const discardComposerDraft = useCallback(() => {
+    try {
+      sessionStorage.removeItem(composerDraftStorageKey);
+    } catch {
+      /* ignore */
+    }
+    setFeedTitle("");
+    setFeedBody("");
+    setFeedFiles([]);
+    if (feedFileRef.current) feedFileRef.current.value = "";
+  }, [composerDraftStorageKey]);
+
   const publishPost = () => {
     const body = feedBody.trim();
     if (!body) return;
     const filesToUpload = [...feedFiles];
+    setFeedPublishError(null);
     createPost.mutate(
       { title: feedTitle.trim() || null, body },
       {
         onSuccess: async (post) => {
+          try {
+            sessionStorage.removeItem(composerDraftStorageKey);
+          } catch {
+            /* ignore */
+          }
           setFeedTitle("");
           setFeedBody("");
           setFeedFiles([]);
+          if (feedFileRef.current) feedFileRef.current.value = "";
+          const failedFileNames: string[] = [];
           for (const f of filesToUpload) {
             try {
               const fd = new FormData();
@@ -650,10 +775,27 @@ export default function AdminDashboardPage() {
               );
             } catch (e) {
               console.error("feed attachment upload", e);
+              failedFileNames.push(f.name);
             }
           }
-          void queryClient.invalidateQueries({ queryKey: queryKeys.staffCollab.feedPosts() });
+          if (failedFileNames.length > 0) {
+            setStaffFeedAttachmentWarning(
+              failedFileNames.length === 1
+                ? `Пост опубликован, но файл «${failedFileNames[0]}» не удалось прикрепить. Добавьте вложение через «Редактировать» у поста.`
+                : `Пост опубликован, но не удалось прикрепить файлы: ${failedFileNames.join(", ")}. Добавьте вложения через «Редактировать» у поста.`
+            );
+          } else {
+            setStaffFeedAttachmentWarning(null);
+          }
+          setFeedPublishError(null);
           setIsComposerOpen(false);
+        },
+        onError: (err: unknown) => {
+          setFeedPublishError(
+            err instanceof ApiErrorWithCode
+              ? err.message
+              : "Не удалось опубликовать пост. Попробуйте ещё раз."
+          );
         },
       }
     );
@@ -663,17 +805,19 @@ export default function AdminDashboardPage() {
     return (
       <Stack gap="lg">
         <ContextBar title="Лента" />
-        {clinics.length > 0 && (
-          <MultiSelect
-            label="Клиники"
-            placeholder="Выберите одну или несколько клиник (пусто = все)"
-            data={clinicOptions}
-            value={selectedClinicIds}
-            onChange={setSelectedClinicIds}
-            searchable
-            clearable
-          />
-        )}
+        {clinics.length > 0 ? (
+          <Box maw={750}>
+            <MultiSelect
+              label="Клиники"
+              placeholder="Выберите одну или несколько клиник (пусто = все)"
+              data={clinicOptions}
+              value={selectedClinicIds}
+              onChange={setSelectedClinicIds}
+              searchable
+              clearable
+            />
+          </Box>
+        ) : null}
         <Text size="sm" c="dimmed">
           {BACKEND_HINT}
         </Text>
@@ -704,17 +848,19 @@ export default function AdminDashboardPage() {
     return (
       <Stack gap="lg">
         <ContextBar title="Лента" />
-        {clinics.length > 0 && (
-          <MultiSelect
-            label="Клиники"
-            placeholder="Выберите одну или несколько клиник (пусто = все)"
-            data={clinicOptions}
-            value={selectedClinicIds}
-            onChange={setSelectedClinicIds}
-            searchable
-            clearable
-          />
-        )}
+        {clinics.length > 0 ? (
+          <Box maw={750}>
+            <MultiSelect
+              label="Клиники"
+              placeholder="Выберите одну или несколько клиник (пусто = все)"
+              data={clinicOptions}
+              value={selectedClinicIds}
+              onChange={setSelectedClinicIds}
+              searchable
+              clearable
+            />
+          </Box>
+        ) : null}
         <QueryErrorAlert error={error} />
         <Text size="sm" c="dimmed">
           {BACKEND_HINT}
@@ -732,12 +878,38 @@ export default function AdminDashboardPage() {
     <Stack gap="md">
       <ContextBar title="Лента" />
 
+      {staffFeedAttachmentWarning ? (
+        <Alert
+          color="orange"
+          variant="light"
+          title="Вложения не загружены"
+          withCloseButton
+          onClose={() => setStaffFeedAttachmentWarning(null)}
+        >
+          {staffFeedAttachmentWarning}
+        </Alert>
+      ) : null}
+
+      {clinics.length > 0 ? (
+        <Box maw={750}>
+          <MultiSelect
+            label="Клиники"
+            placeholder="Выберите одну или несколько клиник (пусто = все)"
+            data={clinicOptions}
+            value={selectedClinicIds}
+            onChange={setSelectedClinicIds}
+            searchable
+            clearable
+          />
+        </Box>
+      ) : null}
+
       <Group justify="space-between" align="center" wrap="wrap">
         <Button
           component={Link}
           to={ROUTE_PATHS.admin.attention}
           variant={hasUnreadAttention ? "filled" : "light"}
-          color={hasUnreadAttention ? "orange" : "teal"}
+          color={hasUnreadAttention ? "orange" : "slate"}
           leftSection={<IconAlertTriangle size={18} />}
           className={hasUnreadAttention ? "admin-emergency-blink" : undefined}
         >
@@ -746,403 +918,505 @@ export default function AdminDashboardPage() {
         </Button>
       </Group>
 
-      {clinics.length > 0 && (
-        <MultiSelect
-          label="Клиники"
-          placeholder="Выберите одну или несколько клиник (пусто = все)"
-          data={clinicOptions}
-          value={selectedClinicIds}
-          onChange={setSelectedClinicIds}
-          searchable
-          clearable
-        />
-      )}
-
-      <Grid>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
-            <Group gap="xs" mb={2} wrap="nowrap">
-              <ThemeIcon variant="light" color="teal" size="md" radius="md">
-                <IconCalendarStats size={18} />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                Всего посещений
-              </Text>
-            </Group>
-            <Text fw={700} fz="lg" c="gray.9">
-              {data?.bookings_completed ?? 0}
-            </Text>
-            <Text size="xs" c="dimmed" mt={0}>
-              завершённые записи
-            </Text>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
-            <Group gap="xs" mb={2} wrap="nowrap">
-              <ThemeIcon variant="light" color={SEMANTIC.metrics.patients} size="md" radius="md">
-                <IconUsers size={18} />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                Новые пациенты
-              </Text>
-            </Group>
-            <Text fw={700} fz="lg" c="gray.9">
-              {data?.new_patients ?? 0}
-            </Text>
-            <Text size="xs" c="dimmed" mt={0}>
-              за день
-            </Text>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
-            <Group gap="xs" mb={2} wrap="nowrap">
-              <ThemeIcon variant="light" color={SEMANTIC.metrics.cancellations} size="md" radius="md">
-                <IconX size={18} />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                Отмены / неявки
-              </Text>
-            </Group>
-            <Text fw={700} fz="lg" c="gray.9">
-              {(data?.bookings_cancelled ?? 0) + (data?.bookings_no_show ?? 0)}
-            </Text>
-            <Text size="xs" c="dimmed" mt={0}>
-              отмены {data?.bookings_cancelled ?? 0} · неявки {data?.bookings_no_show ?? 0}
-            </Text>
-          </Card>
-        </Grid.Col>
-        {canViewRevenueDashboard ? (
-          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-            <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
-              <Group gap="xs" mb={2} wrap="nowrap">
-                <ThemeIcon variant="light" color={SEMANTIC.metrics.appointments} size="md" radius="md">
-                  <IconMail size={18} />
-                </ThemeIcon>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                  Количество обращений
-                </Text>
-              </Group>
-              <Text fw={700} fz="lg" c="gray.9">
-                {requestsCount}
-              </Text>
-              <Text size="xs" c="dimmed" mt={0}>
-                уникальные пациенты в чате
-              </Text>
-            </Card>
-          </Grid.Col>
-        ) : null}
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
-            <Group gap="xs" mb={2} wrap="nowrap">
-              <ThemeIcon variant="light" color="grape" size="md" radius="md">
-                <IconSun size={18} />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                Настроение дня
-              </Text>
-            </Group>
-            <Progress value={pulse} size="sm" radius="md" color="grape" mb={4} />
-            <Text fw={600} fz="lg" c="gray.9">
-              {pulse} / 100
-            </Text>
-            <Text size="xs" c="dimmed" mt={0}>
-              коэф. занятые / пустые
-            </Text>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <Card padding="sm" radius="md" shadow="sm" withBorder {...metricCardShell}>
-            <Group gap="xs" mb={2} wrap="nowrap">
-              <ThemeIcon variant="light" color="gray" size="md" radius="md">
-                <IconClock size={18} />
-              </ThemeIcon>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                Пустые окна
-              </Text>
-            </Group>
-            <Text fw={700} fz="lg" c="gray.9">
-              {emptyH.toFixed(1)} ч
-            </Text>
-            <Text size="xs" c="dimmed" mt={0}>
-              свободные слоты
-            </Text>
-          </Card>
-        </Grid.Col>
-      </Grid>
-
-      {revenueHunter && isRevenueHunterEnabled(revenueHunter) && canViewRevenueDashboard ? (
-        <Card
-          padding="md"
-          radius="md"
-          shadow="sm"
+      <Group align="flex-start" gap="lg" wrap="wrap" justify="space-between">
+        <Paper
           withBorder
+          radius="md"
+          p="md"
           bg="white"
-          styles={{
-            root: {
-              borderColor: "var(--mantine-color-gray-2)",
-            },
+          style={{ flex: "1 1 360px", maxWidth: 750, minWidth: 0, borderColor: "var(--mantine-color-gray-2)" }}
+        >
+        <Box style={{ width: "100%", minWidth: 0 }}>
+          <Box
+            id="clinic-wall"
+            style={
+              isWideLayout
+                ? {
+                    maxHeight: "calc(100vh - 220px)",
+                    overflowY: "auto",
+                    paddingRight: 6,
+                    paddingBottom: "var(--mantine-spacing-lg)",
+                  }
+                : { paddingBottom: "var(--mantine-spacing-lg)" }
+            }
+          >
+            <Stack gap="md" pr="xs">
+              {canPostToStaffFeed && !sessionLoading ? (
+                <Paper withBorder radius="md" p="sm" bg="white">
+                  <UnstyledButton
+                    type="button"
+                    w="100%"
+                    onClick={() => {
+                      setFeedPublishError(null);
+                      setStaffFeedAttachmentWarning(null);
+                      setIsComposerOpen(true);
+                    }}
+                    style={{ textAlign: "left", cursor: "pointer" }}
+                    aria-label="Создать пост в ленте клиники"
+                  >
+                    <Group wrap="nowrap" gap="sm" align="center">
+                      <Avatar
+                        size="md"
+                        radius="xl"
+                        color="slate"
+                        variant="light"
+                        src={myStaffProfile?.avatar_url ?? undefined}
+                        alt=""
+                      >
+                        {staffInitials(composerDisplayName)}
+                      </Avatar>
+                      <Box
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          borderRadius: 9999,
+                          padding: "10px 14px",
+                          background: "var(--mantine-color-gray-1)",
+                          border: "1px solid var(--mantine-color-gray-3)",
+                        }}
+                      >
+                        <Text size="sm" c="dimmed">
+                          Написать в ленту клиники…
+                        </Text>
+                      </Box>
+                    </Group>
+                  </UnstyledButton>
+                </Paper>
+              ) : null}
+
+              {!sessionLoading && !canPostToStaffFeed ? (
+                <Text size="xs" c="dimmed" maw={480}>
+                  Публикация в ленте доступна при праве на совместную работу персонала (доступ к ленте).
+                </Text>
+              ) : null}
+
+              {staffPostsLoading ? (
+                <PageSkeleton variant="table" rows={2} />
+              ) : feedWallPosts.length === 0 ? (
+                <EmptyState
+                  title="Пока нет постов"
+                  description="Делитесь новостями клиники — посты видят все сотрудники с доступом к ленте."
+                />
+              ) : (
+                <Stack gap="md">
+                  {feedWallPosts.map((p) => (
+                      <Paper
+                        key={p.id}
+                        withBorder
+                        radius="md"
+                        p={0}
+                        bg="white"
+                        styles={{ root: { borderColor: "var(--mantine-color-gray-2)" } }}
+                      >
+                        <Stack gap={0}>
+                          <Box p="md">
+                            <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
+                              <Group align="flex-start" gap="sm" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+                                <Avatar size="md" radius="xl" color="gray.5" variant="light">
+                                  {staffInitials(p.author.full_name)}
+                                </Avatar>
+                                <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+                                  <Text size="sm" fw={500} lineClamp={2}>
+                                    <PersonNameLink
+                                      kind="staff"
+                                      id={p.author.id}
+                                      label={p.author.full_name}
+                                      size="sm"
+                                    />
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    {new Date(p.created_at).toLocaleString()}
+                                  </Text>
+                                  {p.title ? (
+                                    <Text size="sm" fw={600} c="gray.9">
+                                      {p.title}
+                                    </Text>
+                                  ) : null}
+                                  <Text size="sm" style={{ whiteSpace: "pre-wrap" }} maw="100%">
+                                    <AppleEmojiRichText text={p.body ?? ""} />
+                                  </Text>
+                                </Stack>
+                              </Group>
+                              {canPostToStaffFeed ? (
+                                <Menu position="bottom-end" withinPortal>
+                                  <Menu.Target>
+                                    <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Действия с постом">
+                                      <IconDots size={18} stroke={1.5} />
+                                    </ActionIcon>
+                                  </Menu.Target>
+                                  <Menu.Dropdown>
+                                    <Menu.Item
+                                      onClick={() => {
+                                        setEditingPost(p);
+                                      }}
+                                    >
+                                      Редактировать
+                                    </Menu.Item>
+                                    <Menu.Item
+                                      color="red"
+                                      disabled={deletePost.isPending}
+                                      onClick={() => {
+                                        const ok = window.confirm("Удалить пост?");
+                                        if (!ok) return;
+                                        void deletePost.mutateAsync(p.id).then(() => {
+                                          setEditingPost(null);
+                                        });
+                                      }}
+                                    >
+                                      Удалить
+                                    </Menu.Item>
+                                  </Menu.Dropdown>
+                                </Menu>
+                              ) : null}
+                            </Group>
+                            {(p.attachments ?? []).length > 0 ? (
+                              <Stack gap="xs" mt="sm">
+                                {(p.attachments ?? []).map((att) => (
+                                  <StaffFeedAttachmentPreview key={att.id} attachment={att} />
+                                ))}
+                              </Stack>
+                            ) : null}
+                          </Box>
+
+                          <Group gap="xs" align="center" px="md" pb="sm" pt={0} wrap="wrap">
+                            <Button
+                              variant="subtle"
+                              color="gray"
+                              size="sm"
+                              aria-label={
+                                p.liked_by_me
+                                  ? `Снять отметку «нравится», сейчас ${p.likes_count ?? 0}`
+                                  : `Отметить «нравится», сейчас ${p.likes_count ?? 0}`
+                              }
+                              aria-pressed={Boolean(p.liked_by_me)}
+                              leftSection={
+                                <IconHeart
+                                  size={18}
+                                  stroke={1.5}
+                                  style={{
+                                    color: p.liked_by_me
+                                      ? "var(--mantine-color-pink-6)"
+                                      : "var(--mantine-color-gray-6)",
+                                  }}
+                                />
+                              }
+                              loading={toggleLike.isPending && toggleLike.variables === p.id}
+                              onClick={() => toggleLike.mutate(p.id)}
+                            >
+                              {p.likes_count ?? 0}
+                            </Button>
+                            <Button
+                              variant="subtle"
+                              color="gray"
+                              size="sm"
+                              aria-label={`Комментарии к записи, всего ${p.comments_count ?? 0}`}
+                              aria-expanded={Boolean(openCommentsByPostId[p.id])}
+                              aria-controls={`staff-feed-comments-${p.id}`}
+                              leftSection={<IconMessageCircle size={18} stroke={1.5} />}
+                              onClick={() =>
+                                setOpenCommentsByPostId((prev) => ({
+                                  ...prev,
+                                  [p.id]: !prev[p.id],
+                                }))
+                              }
+                              styles={{
+                                section: {
+                                  color: openCommentsByPostId[p.id]
+                                    ? "var(--mantine-color-gray-9)"
+                                    : undefined,
+                                },
+                              }}
+                            >
+                              Комментарии
+                              {typeof p.comments_count === "number" ? ` (${p.comments_count})` : ""}
+                            </Button>
+                          </Group>
+
+                          <StaffFeedPostComments
+                            postId={p.id}
+                            isOpen={Boolean(openCommentsByPostId[p.id])}
+                            regionId={`staff-feed-comments-${p.id}`}
+                          />
+                        </Stack>
+                      </Paper>
+                    ))}
+                </Stack>
+              )}
+            </Stack>
+          </Box>
+        </Box>
+        </Paper>
+
+        <Box
+          w={350}
+          maw="100%"
+          style={{
+            flexShrink: 0,
+            position: "sticky",
+            top: 4,
+            alignSelf: "flex-start",
+            background: "transparent",
           }}
         >
-          <Group gap="xs" mb={4} wrap="nowrap">
-            <ThemeIcon variant="light" color={SEMANTIC.ai.accent} size="lg" radius="md">
-              <IconRobot size={18} />
-            </ThemeIcon>
-            <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-              Выручка, спасённая ИИ{" "}
-              {revenueHunter.period === "night"
-                ? "за ночь"
-                : revenueHunter.period === "day"
-                  ? "за день"
-                  : revenueHunter.period === "week"
-                    ? "за неделю"
-                    : "за ночь"}
-            </Text>
-          </Group>
-          <Text fw={700} fz="xl" c="teal.8">
-            {revenueHunter.amount} ₽
-          </Text>
-        </Card>
-      ) : null}
+          <Stack gap="sm">
+            <Paper radius="md" bg="gray.0" p="sm" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+              <Group gap={6} mb={2} wrap="nowrap">
+                <ThemeIcon variant="light" color="slate" size="sm" radius="md">
+                  <IconCalendarStats size={16} />
+                </ThemeIcon>
+                <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
+                  Всего посещений
+                </Text>
+              </Group>
+              <Text fw={700} fz="md" c="gray.9">
+                {data?.bookings_completed ?? 0}
+              </Text>
+              <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
+                завершённые записи
+              </Text>
+            </Paper>
 
-      <Divider my="xs" />
+            <Paper radius="md" bg="gray.0" p="sm" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+              <Group gap={6} mb={2} wrap="nowrap">
+                <ThemeIcon variant="light" color="slate" size="sm" radius="md">
+                  <IconUsers size={16} />
+                </ThemeIcon>
+                <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
+                  Новые пациенты
+                </Text>
+              </Group>
+              <Text fw={700} fz="md" c="gray.9">
+                {data?.new_patients ?? 0}
+              </Text>
+              <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
+                за день
+              </Text>
+            </Paper>
 
-      <div id="clinic-wall">
-        <Stack
-          gap="sm"
-          mt="xs"
-          bg="var(--mantine-color-gray-0)"
-          p="sm"
-          style={{ borderRadius: "var(--radius-md)" }}
-        >
-          <Group justify="flex-start" align="center" wrap="wrap">
-            <Button
-              variant="light"
-              color="brand"
-              disabled={!canPostToStaffFeed || sessionLoading}
-              onClick={() => {
-                if (!canPostToStaffFeed) return;
-                setIsComposerOpen((v) => !v);
+            <Paper radius="md" bg="gray.0" p="sm" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+              <Group gap={6} mb={2} wrap="nowrap">
+                <ThemeIcon variant="light" color="slate" size="sm" radius="md">
+                  <IconX size={16} />
+                </ThemeIcon>
+                <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
+                  Отмены / неявки
+                </Text>
+              </Group>
+              <Text fw={700} fz="md" c="gray.9">
+                {(data?.bookings_cancelled ?? 0) + (data?.bookings_no_show ?? 0)}
+              </Text>
+              <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
+                отмены {data?.bookings_cancelled ?? 0} · неявки {data?.bookings_no_show ?? 0}
+              </Text>
+            </Paper>
+
+            {canViewRevenueDashboard ? (
+              <Paper radius="md" bg="gray.0" p="sm" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+                <Group gap={6} mb={2} wrap="nowrap">
+                  <ThemeIcon variant="light" color="slate" size="sm" radius="md">
+                    <IconMail size={16} />
+                  </ThemeIcon>
+                  <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
+                    Количество обращений
+                  </Text>
+                </Group>
+                <Text fw={700} fz="md" c="gray.9">
+                  {requestsCount}
+                </Text>
+                <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
+                  уникальные пациенты в чате
+                </Text>
+              </Paper>
+            ) : null}
+
+            <Paper radius="md" bg="gray.0" p="sm" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+              <Group gap={6} mb={2} wrap="nowrap">
+                <ThemeIcon variant="light" color="slate" size="sm" radius="md">
+                  <IconStack2 size={16} />
+                </ThemeIcon>
+                <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
+                  Плотность записи
+                </Text>
+              </Group>
+              <Progress value={pulse} size="xs" radius="md" color="slate" mb={2} />
+              <Text fw={600} fz="md" c="gray.9">
+                {pulse} / 100
+              </Text>
+              <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
+                загрузка расписания (занято / свободно)
+              </Text>
+            </Paper>
+
+            <Paper radius="md" bg="gray.0" p="sm" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+              <Group gap={6} mb={2} wrap="nowrap">
+                <ThemeIcon variant="light" color="slate" size="sm" radius="md">
+                  <IconClock size={16} />
+                </ThemeIcon>
+                <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
+                  Пустые окна
+                </Text>
+              </Group>
+              <Text fw={700} fz="md" c="gray.9">
+                {emptyH.toFixed(1)} ч
+              </Text>
+              <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
+                свободные слоты
+              </Text>
+            </Paper>
+
+            {revenueHunter && isRevenueHunterEnabled(revenueHunter) && canViewRevenueDashboard ? (
+              <Paper radius="md" bg="gray.0" p="sm" style={{ border: "1px solid var(--mantine-color-gray-2)" }}>
+                <Group gap="xs" mb={4} wrap="nowrap">
+                  <ThemeIcon variant="light" color="slate" size="sm" radius="md">
+                    <IconRobot size={16} />
+                  </ThemeIcon>
+                  <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={3}>
+                    Удержанная выручка{" "}
+                    {revenueHunter.period === "night"
+                      ? "за ночь"
+                      : revenueHunter.period === "day"
+                        ? "за день"
+                        : revenueHunter.period === "week"
+                          ? "за неделю"
+                          : "за ночь"}
+                  </Text>
+                </Group>
+                <Text fw={700} fz="lg" c="slate.8">
+                  {revenueHunter.amount} ₽
+                </Text>
+              </Paper>
+            ) : null}
+          </Stack>
+        </Box>
+      </Group>
+
+      <GlassModal
+        opened={isComposerOpen}
+        onClose={() => {
+          setIsComposerOpen(false);
+          setFeedPublishError(null);
+        }}
+        title="Новый пост"
+        size="xl"
+        padding="md"
+        styles={{
+          content: {
+            width: "calc(100vw - 2rem)",
+            maxWidth: "calc(100vw - 2rem)",
+            maxHeight: "calc(100vh - 2rem)",
+          },
+          body: {
+            maxHeight: "calc(100vh - 7rem)",
+            overflowY: "auto",
+          },
+        }}
+      >
+        <Stack gap="sm">
+          {feedPublishError ? (
+            <Alert color="red" variant="light" title="Не удалось опубликовать" onClose={() => setFeedPublishError(null)} withCloseButton>
+              {feedPublishError}
+            </Alert>
+          ) : null}
+          <TextInput
+            label="Тема"
+            placeholder="Например: С праздником 8 Марта!"
+            value={feedTitle}
+            onChange={(e) => setFeedTitle(e.currentTarget.value)}
+          />
+          <Input.Wrapper label="Текст">
+            <AppleEmojiOverlayTextarea
+              placeholder="Текст новости для персонала…"
+              minRows={16}
+              value={feedBody}
+              onChange={(e) => setFeedBody(e.currentTarget.value)}
+            />
+          </Input.Wrapper>
+          <Group gap="xs">
+            <input
+              ref={feedFileRef}
+              type="file"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const list = e.target.files;
+                if (!list?.length) return;
+                setFeedFiles(Array.from(list));
               }}
+            />
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              aria-label="Прикрепить файлы"
+              onClick={() => feedFileRef.current?.click()}
             >
-              Добавить пост
+              <IconPaperclip size={20} stroke={1.5} />
+            </ActionIcon>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              aria-label="Изображение"
+              onClick={() => feedFileRef.current?.click()}
+            >
+              <IconPhoto size={20} stroke={1.5} />
+            </ActionIcon>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              aria-label="Аудио (в разработке)"
+              title="Аудио: единый контур для админки и чатов — в плане"
+              disabled
+              styles={{ root: { opacity: 0.45 } }}
+            >
+              <IconMicrophone size={20} stroke={1.5} />
+            </ActionIcon>
+            {feedFiles.length > 0 ? (
+              <Text size="xs" c="dimmed">
+                Файлов: {feedFiles.length} (загрузятся после публикации)
+              </Text>
+            ) : null}
+          </Group>
+          <Group justify="flex-end" mt="md">
+            <Button
+              variant="default"
+              onClick={() => {
+                discardComposerDraft();
+                setFeedPublishError(null);
+                setIsComposerOpen(false);
+              }}
+              disabled={createPost.isPending}
+            >
+              Отмена
+            </Button>
+            <Button
+              color="slate"
+              variant="filled"
+              onClick={() => void publishPost()}
+              loading={createPost.isPending}
+              disabled={!feedBody.trim()}
+            >
+              Опубликовать
             </Button>
           </Group>
-
-          {!sessionLoading && !canPostToStaffFeed ? (
-            <Text size="xs" c="dimmed" maw={480}>
-              Публикация постов только при праве manage_staff_collab.
-            </Text>
-          ) : null}
-
-          {canPostToStaffFeed && isComposerOpen ? (
-            <Card withBorder radius="md" padding="md" bg="var(--mantine-color-gray-0)">
-              <Stack gap="sm">
-                <Text size="xs" c="dimmed" fw={600}>
-                  Добавить пост
-                </Text>
-                <TextInput
-                  label="Тема"
-                  placeholder="Например: С праздником 8 Марта!"
-                  value={feedTitle}
-                  onChange={(e) => setFeedTitle(e.currentTarget.value)}
-                />
-                <Input.Wrapper label="Текст">
-                  <AppleEmojiOverlayTextarea
-                    placeholder="Текст новости для персонала…"
-                    minRows={5}
-                    value={feedBody}
-                    onChange={(e) => setFeedBody(e.currentTarget.value)}
-                  />
-                </Input.Wrapper>
-                <Group gap="xs">
-                  <input
-                    ref={feedFileRef}
-                    type="file"
-                    multiple
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      const list = e.target.files;
-                      if (!list?.length) return;
-                      setFeedFiles(Array.from(list));
-                    }}
-                  />
-                  <ActionIcon
-                    {...STAFF_FEED_CHROME.actionIcon}
-                    aria-label="Прикрепить файлы"
-                    onClick={() => feedFileRef.current?.click()}
-                  >
-                    <IconPaperclip size={20} />
-                  </ActionIcon>
-                  <ActionIcon
-                    {...STAFF_FEED_CHROME.actionIcon}
-                    aria-label="Изображение"
-                    onClick={() => feedFileRef.current?.click()}
-                  >
-                    <IconPhoto size={20} />
-                  </ActionIcon>
-                  <ActionIcon
-                    {...STAFF_FEED_CHROME.actionIcon}
-                    aria-label="Аудио (в разработке)"
-                    title="Аудио: единый контур для админки и чатов — в плане"
-                    disabled
-                    styles={{ root: { opacity: 0.45 } }}
-                  >
-                    <IconMicrophone size={20} />
-                  </ActionIcon>
-                  {feedFiles.length > 0 ? (
-                    <Text size="xs" c="dimmed">
-                      Файлов: {feedFiles.length} (загрузятся после публикации)
-                    </Text>
-                  ) : null}
-                </Group>
-                <Group justify="flex-end">
-                  <Button
-                    {...STAFF_FEED_CHROME.primaryButton}
-                    onClick={() => void publishPost()}
-                    loading={createPost.isPending}
-                    disabled={!feedBody.trim()}
-                  >
-                    Опубликовать
-                  </Button>
-                </Group>
-              </Stack>
-            </Card>
-          ) : null}
-
-          {staffPostsLoading ? (
-            <PageSkeleton variant="table" rows={2} />
-          ) : !staffPosts?.length ? (
-            <EmptyState
-              title="Пока нет постов"
-              description="Делитесь новостями клиники — посты видят все сотрудники с доступом к ленте."
-            />
-          ) : (
-            <Stack gap="sm">
-              {staffPosts
-                .filter((p) => !p.is_announcement)
-                .slice()
-                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                .map((p) => (
-                  <Paper
-                    key={p.id}
-                    withBorder
-                    shadow="sm"
-                    radius="md"
-                    p="lg"
-                    bg="white"
-                    styles={{ root: { borderColor: "var(--mantine-color-gray-2)" } }}
-                  >
-                    <Stack gap="sm">
-                      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
-                        <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-                          {p.title ? (
-                            <Text size="sm" fw={600}>
-                              {p.title}
-                            </Text>
-                          ) : null}
-                          <Text size="xs" c="dimmed">
-                            <PersonNameLink kind="staff" id={p.author.id} label={p.author.full_name} size="xs" /> ·{" "}
-                            {new Date(p.created_at).toLocaleString()}
-                          </Text>
-                        </Stack>
-                        {canPostToStaffFeed ? (
-                          <Menu position="bottom-end" withinPortal>
-                            <Menu.Target>
-                              <ActionIcon {...STAFF_FEED_CHROME.actionIcon} aria-label="Действия с постом">
-                                <IconDots size={18} stroke={1.5} />
-                              </ActionIcon>
-                            </Menu.Target>
-                            <Menu.Dropdown>
-                              <Menu.Item
-                                onClick={() => {
-                                  setEditingPost(p);
-                                }}
-                              >
-                                Редактировать
-                              </Menu.Item>
-                              <Menu.Item
-                                color="red"
-                                disabled={deletePost.isPending}
-                                onClick={() => {
-                                  const ok = window.confirm("Удалить пост?");
-                                  if (!ok) return;
-                                  void deletePost.mutateAsync(p.id).then(() => {
-                                    setEditingPost(null);
-                                  });
-                                }}
-                              >
-                                Удалить
-                              </Menu.Item>
-                            </Menu.Dropdown>
-                          </Menu>
-                        ) : null}
-                      </Group>
-                      <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                        <AppleEmojiRichText text={p.body ?? ""} />
-                      </Text>
-                      {(p.attachments ?? []).length > 0 ? (
-                        <Stack gap="xs">
-                          {(p.attachments ?? []).map((att) => (
-                            <StaffFeedAttachmentPreview key={att.id} attachment={att} />
-                          ))}
-                        </Stack>
-                      ) : null}
-                      <Group gap="md" align="center" mt={4}>
-                        <Group gap={6} align="center">
-                          <ActionIcon
-                            aria-label="Лайк"
-                            loading={toggleLike.isPending && toggleLike.variables === p.id}
-                            variant={p.liked_by_me ? "filled" : "light"}
-                            color={p.liked_by_me ? "red" : "brand"}
-                            size="lg"
-                            radius="md"
-                            onClick={() => toggleLike.mutate(p.id)}
-                          >
-                            {p.liked_by_me ? (
-                              <IconHeartFilled size={20} stroke={1.5} />
-                            ) : (
-                              <IconHeart size={20} stroke={1.5} />
-                            )}
-                          </ActionIcon>
-                          <Text size="sm" c="dimmed" component="span">
-                            {p.likes_count ?? 0}
-                          </Text>
-                        </Group>
-                        <Group gap={6} align="center">
-                          <ActionIcon
-                            {...STAFF_FEED_CHROME.actionIcon}
-                            aria-label="Комментарии"
-                            variant={openCommentsByPostId[p.id] ? "filled" : "light"}
-                            onClick={() =>
-                              setOpenCommentsByPostId((prev) => ({
-                                ...prev,
-                                [p.id]: !prev[p.id],
-                              }))
-                            }
-                          >
-                            <IconMessageCircle size={20} stroke={1.5} />
-                          </ActionIcon>
-                          <Text size="sm" c="dimmed" component="span">
-                            {p.comments_count ?? 0}
-                          </Text>
-                        </Group>
-                      </Group>
-
-                      <StaffFeedPostComments postId={p.id} isOpen={Boolean(openCommentsByPostId[p.id])} />
-                    </Stack>
-                  </Paper>
-                ))}
-            </Stack>
-          )}
         </Stack>
-      </div>
+      </GlassModal>
 
       <GlassModal
         opened={!!editingPost}
         onClose={() => setEditingPost(null)}
         title="Редактировать пост"
+        size="xl"
+        padding="md"
+        styles={{
+          content: {
+            width: "calc(100vw - 2rem)",
+            maxWidth: "calc(100vw - 2rem)",
+            maxHeight: "calc(100vh - 2rem)",
+          },
+          body: {
+            maxHeight: "calc(100vh - 7rem)",
+            overflowY: "auto",
+          },
+        }}
       >
         {editingPost ? (
           <Stack gap="md">
@@ -1156,7 +1430,7 @@ export default function AdminDashboardPage() {
               <AppleEmojiOverlayTextarea
                 value={editBody}
                 onChange={(e) => setEditBody(e.currentTarget.value)}
-                minRows={5}
+                minRows={14}
               />
             </Input.Wrapper>
 

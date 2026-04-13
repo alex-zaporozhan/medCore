@@ -1,5 +1,6 @@
 import { API_BASE, getAdminToken } from "@/api/client";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
+import { useClinics, useUpdateClinicMutation } from "@/hooks";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { AdminSettingsSectionCard, ContextBar } from "@/shared/ui";
 import {
@@ -12,14 +13,18 @@ import {
   Group,
   Modal,
   NumberInput,
+  Paper,
   Select,
+  SimpleGrid,
   Stack,
   Table,
   Text,
   Textarea,
   TextInput,
+  ThemeIcon,
 } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { IconShoppingBag } from "@tabler/icons-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Overview = {
   clinic_id: string;
@@ -114,6 +119,16 @@ async function parseJsonError(r: Response): Promise<string | null> {
 export default function AdminCommercePage() {
   const { data: adminSession } = useAdminSession();
   const { currentClinicId } = useAdminClinic();
+  const { data: clinics } = useClinics();
+  const updateClinic = useUpdateClinicMutation();
+  const activeClinic = useMemo(
+    () => clinics?.find((c) => c.id === currentClinicId) ?? null,
+    [clinics, currentClinicId],
+  );
+  const [storeVisible, setStoreVisible] = useState(false);
+  const [storeTitle, setStoreTitle] = useState("");
+  const [storeSubtitle, setStoreSubtitle] = useState("");
+  const [storeSaving, setStoreSaving] = useState(false);
   const orgReady = Boolean(adminSession?.organization_id);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [networkOverview, setNetworkOverview] = useState<NetworkOverview | null>(null);
@@ -225,6 +240,18 @@ export default function AdminCommercePage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!activeClinic) return;
+    setStoreVisible(Boolean(activeClinic.patient_store_visible));
+    setStoreTitle(activeClinic.patient_store_title ?? "");
+    setStoreSubtitle(activeClinic.patient_store_subtitle ?? "");
+  }, [
+    activeClinic?.id,
+    activeClinic?.patient_store_visible,
+    activeClinic?.patient_store_title,
+    activeClinic?.patient_store_subtitle,
+  ]);
 
   useEffect(() => {
     if (!locations.length) {
@@ -682,6 +709,67 @@ export default function AdminCommercePage() {
         </Alert>
       )}
 
+      {!entitlementDenied && orgReady && currentClinicId && activeClinic && (
+        <AdminSettingsSectionCard
+          title="Витрина в приложении пациента (PWA)"
+          description="Шаблон витрины как у простого онлайн-магазина: карточки активных позиций номенклатуры, без корзины и оплаты в этом релизе. Включите, когда готовы показывать ассортимент клиентам."
+        >
+          <Stack gap="sm">
+            <Checkbox
+              label="Показывать раздел «Магазин» в меню приложения пациента"
+              checked={storeVisible}
+              onChange={(e) => setStoreVisible(e.currentTarget.checked)}
+            />
+            <TextInput
+              label="Заголовок раздела"
+              placeholder="Например: Магазин клиники"
+              value={storeTitle}
+              onChange={(e) => setStoreTitle(e.currentTarget.value)}
+              disabled={!storeVisible}
+            />
+            <Textarea
+              label="Подзаголовок (опционально)"
+              placeholder="Короткий текст под заголовком"
+              value={storeSubtitle}
+              onChange={(e) => setStoreSubtitle(e.currentTarget.value)}
+              minRows={2}
+              disabled={!storeVisible}
+            />
+            <Text size="xs" c="dimmed">
+              Публичный каталог (без авторизации):{" "}
+              <Code>
+                {typeof window !== "undefined" ? window.location.origin : ""}
+                /api/v1/public/clinics/{currentClinicId}/commerce/vitrine
+              </Code>
+            </Text>
+            <Button
+              size="sm"
+              variant="filled"
+              color="slate"
+              loading={storeSaving}
+              onClick={async () => {
+                if (!currentClinicId) return;
+                setStoreSaving(true);
+                try {
+                  await updateClinic.mutateAsync({
+                    clinicId: currentClinicId,
+                    body: {
+                      patient_store_visible: storeVisible,
+                      patient_store_title: storeTitle.trim() || null,
+                      patient_store_subtitle: storeSubtitle.trim() || null,
+                    },
+                  });
+                } finally {
+                  setStoreSaving(false);
+                }
+              }}
+            >
+              Сохранить настройки витрины
+            </Button>
+          </Stack>
+        </AdminSettingsSectionCard>
+      )}
+
       <AdminSettingsSectionCard title="Сводка" description="Точки продаж и номенклатура (ADR-013).">
         {loading && <Text size="sm">Загрузка…</Text>}
         {!loading && overview && (
@@ -1074,6 +1162,40 @@ export default function AdminCommercePage() {
       </AdminSettingsSectionCard>
 
       <AdminSettingsSectionCard title="Номенклатура" description="SKU в контексте Commerce (не путать с ERP products).">
+        {nomenclature.some((r) => r.is_active) ? (
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md" mb="lg">
+            {nomenclature
+              .filter((r) => r.is_active)
+              .map((row) => (
+                <Paper key={row.id} withBorder radius="md" p="md" shadow="xs">
+                  <Group align="flex-start" wrap="nowrap" gap="sm">
+                    <ThemeIcon size={44} radius="md" variant="light" color="slate">
+                      <IconShoppingBag size={22} stroke={1.25} />
+                    </ThemeIcon>
+                    <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
+                      <Text fw={700} size="sm" lineClamp={2}>
+                        {row.name}
+                      </Text>
+                      <Group gap={6}>
+                        {row.sku ? (
+                          <Badge size="xs" variant="light" color="gray">
+                            {row.sku}
+                          </Badge>
+                        ) : null}
+                        <Badge size="xs" variant="outline" color="gray">
+                          {row.unit}
+                        </Badge>
+                      </Group>
+                    </Stack>
+                  </Group>
+                </Paper>
+              ))}
+          </SimpleGrid>
+        ) : (
+          <Text size="sm" c="dimmed" mb="md">
+            Карточки появятся после создания активных позиций ниже или импорта CSV.
+          </Text>
+        )}
         <Stack gap="sm" mb="md">
           <Text size="sm" c="dimmed">
             Импорт CSV (профиль <Code>commerce_nomenclature_csv_v1</Code>): колонка <Code>name</Code> обязательна;

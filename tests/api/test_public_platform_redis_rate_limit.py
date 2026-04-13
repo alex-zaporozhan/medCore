@@ -1,25 +1,18 @@
 """10-Q8 / 1b-F3: Redis-backed rate limit keys for public platform checkout/catalog (real Redis).
 
-Run with ``RUN_REDIS_INTEGRATION_TESTS=1`` and reachable ``REDIS_URL`` / ``REDIS_URL_TEST``.
-CI: ``build-and-test-entitlements.yml`` and ``full-backend-tests`` set the env when Redis service is up.
+``tests/conftest.py`` sets ``RUN_REDIS_INTEGRATION_TESTS=1`` by default with ``TESTING=1``; Redis must be reachable
+(see ``REDIS_URL`` / ``.env``). To opt out locally: ``RUN_REDIS_INTEGRATION_TESTS=0`` and ``pytest -m 'not redis_integration'``.
 """
 
 from __future__ import annotations
 
-import os
 from uuid import uuid4
 
 import pytest
 
 from src.infrastructure.rate_limiter import RateLimitExceeded, RateLimiter
 
-pytestmark = [
-    pytest.mark.redis_integration,
-    pytest.mark.skipif(
-        os.environ.get("RUN_REDIS_INTEGRATION_TESTS", "").strip().lower() not in ("1", "true", "yes"),
-        reason="Set RUN_REDIS_INTEGRATION_TESTS=1 to run Redis integration tests (10-Q8)",
-    ),
-]
+pytestmark = [pytest.mark.redis_integration]
 
 
 @pytest.mark.asyncio

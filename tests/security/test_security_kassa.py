@@ -1,6 +1,6 @@
 """Security tests: payment gateway (Kassa) — SEC-K1–K5.
 
-No secrets in API responses; foreign clinic 404; credentials stored encrypted; webhook signature (skip).
+No secrets in API responses; foreign clinic 404; credentials stored encrypted; patient payment webhook secret (SEC-K4).
 """
 
 import json
@@ -109,14 +109,36 @@ async def test_sec_k3_credentials_stored_encrypted_in_db(init_db, seed_data):
         assert "password" not in enc
 
 
-# --- SEC-K4: Webhook signature (not implemented) ---
+# --- SEC-K4: Patient payment webhook shared secret (contour A) ---
+
 
 @pytest.mark.security
-@pytest.mark.skip(reason="Webhook signature not implemented yet")
 @pytest.mark.asyncio
-async def test_sec_k4_webhook_rejects_invalid_signature():
-    """When webhook signature verification is implemented: invalid signature must return 401/400."""
-    pass
+async def test_sec_k4_webhook_rejects_wrong_secret_when_configured(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """U-006: when PATIENT_PAYMENT_WEBHOOK_SECRET is set, wrong X-Patient-Payment-Webhook-Secret → 403."""
+    from src.core.config import settings
+
+    monkeypatch.setattr(settings, "patient_payment_webhook_secret", "k4-test-secret", raising=False)
+    payload = {
+        "type": "notification",
+        "event": "payment.succeeded",
+        "object": {"id": "sec-k4-noop"},
+    }
+    r = await client.post(
+        "/api/v1/payments/webhook",
+        json=payload,
+        headers={"X-Patient-Payment-Webhook-Secret": "wrong-secret"},
+    )
+    assert r.status_code == 403, r.text
+    data = r.json()
+    detail = data.get("detail")
+    code = data.get("code") if isinstance(data, dict) else None
+    if code is None and isinstance(detail, dict):
+        code = detail.get("code")
+    assert code == "webhook_forbidden"
 
 
 # --- SEC-K5: No raw credentials in logs (review item; not implemented) ---

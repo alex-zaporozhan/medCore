@@ -42,6 +42,42 @@ groups:
           description: "Check Celery erp_tasks.refresh_erp_aggregates_nightly logs; metric label aggregate_kind only (clinic_id in structured logs on failure)."
           runbook_url: "docs/operations/RELEASE_CHECKLIST.md"
 
+      - alert: ERP_NightlyRunPartialFailures
+        expr: |
+          increase(erp_aggregate_nightly_run_total{result="partial_failures"}[30h]) >= 1
+        for: 15m
+        labels:
+          severity: warning
+          owner: erp
+        annotations:
+          summary: "Nightly ERP sweep finished with at least one failed clinic refresh"
+          description: "erp_aggregate_nightly_run_total{result=\"partial_failures\"} — inspect Celery logs for erp_aggregate_refresh_clinic_failed."
+          runbook_url: "documentation/OBSERVABILITY.md"
+
+      - alert: PaymentLocalPendingReconcileErrors
+        expr: |
+          sum(rate(payment_local_pending_reconcile_total{result="error"}[1h])) > 0
+        for: 20m
+        labels:
+          severity: warning
+          owner: patient-payments
+        annotations:
+          summary: "Errors reconciling stale local-pending YooKassa rows"
+          description: "Celery payment_reconciliation.reconcile_local_pending — check YooKassa credentials and DB rows."
+          runbook_url: "documentation/OBSERVABILITY.md"
+
+      - alert: WebchatRedisFanoutPublishErrors
+        expr: |
+          sum(rate(webchat_redis_fanout_total{op="publish",result="error"}[5m])) > 0.02
+        for: 10m
+        labels:
+          severity: warning
+          owner: omnichannel
+        annotations:
+          summary: "Redis publish failures for webchat long-poll fan-out"
+          description: "WEBCHAT_REDIS_FANOUT_ENABLED: verify Redis from API pods; widget may lag until recovery."
+          runbook_url: "documentation/OBSERVABILITY.md"
+
       - alert: HTTPHigh5xxRate
         expr: |
           sum(rate(http_request_duration_seconds_count{status_class="5xx"}[5m]))
@@ -80,6 +116,30 @@ groups:
           summary: "Elevated Omnichannel+AI chain errors"
           description: "business_chain_omni_ai_errors_total — low-cardinality account_bucket in metrics; tenant detail in logs."
           runbook_url: "docs/architecture/arch_plan/07_PHASE_2_RELIABILITY.md"
+
+      - alert: OmniRealtimeRedisPublishFailureBurst
+        expr: |
+          sum(rate(omni_realtime_publish_failed_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          owner: omnichannel
+        annotations:
+          summary: "Redis publish for admin omni realtime failing (HTTP mutations still commit)"
+          description: "Check Redis from API pods; admin inbox SSE may lag until Redis recovers. Metric: omni_realtime_publish_failed_total{event}."
+          runbook_url: "documentation/OBSERVABILITY.md"
+
+      - alert: OmniOutboundDispatchFailureBurst
+        expr: |
+          sum(rate(omni_outbound_dispatch_failed_total[5m])) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+          owner: omnichannel
+        annotations:
+          summary: "Elevated omnichannel outbound adapter failures"
+          description: "Slice by reason on omni_outbound_dispatch_failed_total; message.source_metadata.delivery_failure_reason in API/DB."
+          runbook_url: "documentation/OBSERVABILITY.md"
 
       - alert: CrmLeadActualValueErpMissingFact
         expr: |

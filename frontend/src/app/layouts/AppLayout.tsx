@@ -2,8 +2,8 @@ import { usePatientAuth } from "@/contexts/PatientAuthContext";
 import { useClinics, usePatientConversation } from "@/hooks";
 import { Anchor, AppShell, Badge, Box, Button, Group, Text, Alert, MantineProvider } from "@mantine/core";
 import { Outlet, Link, useNavigate, useLocation, createSearchParams } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { ROUTE_PATHS } from "@/routePaths";
+import { useEffect, useMemo, useState } from "react";
+import { ROUTE_PATHS, patientPublicLoginSearch } from "@/routePaths";
 import { isPatientLoginPath } from "@/routePathUtils";
 import { usePatientEntry } from "@/contexts/PatientEntryContext";
 import { appTheme } from "@/theme";
@@ -11,16 +11,22 @@ import { applyPwaUpdate, PWA_NEED_REFRESH, PWA_OFFLINE_READY } from "@/pwa/regis
 
 const SELECTED_CLINIC_KEY = "app.selectedClinicId";
 
-const mainNav = [
-  { to: ROUTE_PATHS.patient.home, label: "Главная" },
-  { to: ROUTE_PATHS.patient.booking, label: "Запись" },
-  { to: ROUTE_PATHS.patient.chat, label: "Чат" },
-  { to: ROUTE_PATHS.patient.profile, label: "Профиль" },
-];
-const mainNavWithHistory = [
-  ...mainNav,
-  { to: ROUTE_PATHS.patient.history, label: "История" },
-];
+type PatientPrimaryNavItem = { to: string; label: string };
+
+function buildPatientPrimaryNav(showStore: boolean): PatientPrimaryNavItem[] {
+  const items: PatientPrimaryNavItem[] = [
+    { to: ROUTE_PATHS.patient.home, label: "Главная" },
+    { to: ROUTE_PATHS.patient.booking, label: "Запись" },
+  ];
+  if (showStore) {
+    items.push({ to: ROUTE_PATHS.patient.store, label: "Магазин" });
+  }
+  items.push(
+    { to: ROUTE_PATHS.patient.chat, label: "Чат" },
+    { to: ROUTE_PATHS.patient.profile, label: "Профиль" },
+  );
+  return items;
+}
 
 /** Спокойный светлый chrome: без сплошной «плашки» primary — только тонкая линия бренда клиники и тень. */
 const patientChromeHeader = {
@@ -51,6 +57,16 @@ export default function AppLayout() {
     typeof localStorage !== "undefined" ? localStorage.getItem(SELECTED_CLINIC_KEY) : null;
   const themeClinic = clinics?.find((c) => c.id === selectedClinicId);
 
+  const showPatientStore = Boolean(themeClinic?.patient_store_visible);
+  const patientNavMobile = useMemo(
+    () => buildPatientPrimaryNav(showPatientStore),
+    [showPatientStore],
+  );
+  const patientNavDesktop = useMemo(
+    () => [...buildPatientPrimaryNav(showPatientStore), { to: ROUTE_PATHS.patient.history, label: "История" }],
+    [showPatientStore],
+  );
+
   useEffect(() => {
     document.body.classList.add("app-pwa-body");
     return () => {
@@ -76,7 +92,10 @@ export default function AppLayout() {
         navigate({ pathname: `/c/${clinicSlug}/sign-in`, search }, { replace: true });
       } else {
         navigate(
-          { pathname: ROUTE_PATHS.marketing.landing, search: "?patientEntry=need-clinic" },
+          {
+            pathname: ROUTE_PATHS.other.login,
+            search: patientPublicLoginSearch("need-clinic"),
+          },
           { replace: true },
         );
       }
@@ -143,11 +162,11 @@ export default function AppLayout() {
             />
           ) : (
             <Text fw={700} c="gray.9" visibleFrom="xs">
-              Dental Booking
+              Единая система управления
             </Text>
           )}
           <Group gap="md" style={{ flex: 1, justifyContent: "center" }} visibleFrom="sm">
-            {mainNavWithHistory.map((item) => {
+            {patientNavDesktop.map((item) => {
               const isChat = item.to === ROUTE_PATHS.patient.chat;
               const showBadge = isChat && chatUnread > 0;
               const active = location.pathname === item.to;
@@ -238,7 +257,7 @@ export default function AppLayout() {
           zIndex: 100,
         }}
       >
-        {mainNav.map((item) => {
+        {patientNavMobile.map((item) => {
           const isActive = location.pathname === item.to;
           const isChat = item.to === ROUTE_PATHS.patient.chat;
           const showBadge = isChat && chatUnread > 0;

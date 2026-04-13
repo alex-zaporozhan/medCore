@@ -43,11 +43,8 @@ async def test_services_list(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_doctor_schedule(client: AsyncClient, seed_data):
     """App booking, admin schedule: GET doctor schedule."""
-    doctors = (await client.get("/api/v1/doctors")).json()
-    if not doctors:
-        pytest.skip("No doctors in seed")
-    doctor_id = doctors[0]["id"]
-    clinic_id = doctors[0]["clinic_id"]
+    doctor_id = str(seed_data["doctor_id"])
+    clinic_id = str(seed_data["clinic_id"])
     day = seed_data["date"]
     r = await client.get(
         f"/api/v1/doctors/{doctor_id}/schedule",
@@ -116,10 +113,7 @@ async def test_patients_list(client: AsyncClient, admin_auth: dict):
 @pytest.mark.asyncio
 async def test_admin_doctor_schedule(client: AsyncClient, seed_data, admin_auth: dict):
     """Admin schedule: GET admin doctor schedule."""
-    doctors = (await client.get("/api/v1/doctors")).json()
-    if not doctors:
-        pytest.skip("No doctors in seed")
-    doctor_id = doctors[0]["id"]
+    doctor_id = str(seed_data["doctor_id"])
     day = seed_data["date"]
     headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
     r = await client.get(

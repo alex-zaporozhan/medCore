@@ -2,7 +2,7 @@ import { usePatientAuth } from "@/contexts/PatientAuthContext";
 import { Center, Loader, Paper, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ROUTE_PATHS } from "@/routePaths";
+import { ROUTE_PATHS, patientPublicLoginSearch } from "@/routePaths";
 
 function useQueryParams() {
   const { search } = useLocation();
@@ -32,19 +32,25 @@ export default function OAuthResultPage() {
     }
 
     if (status === "cancelled") {
-      navigate(`${ROUTE_PATHS.marketing.landing}?patientEntry=oauth-cancelled`, { replace: true });
+      navigate(`${ROUTE_PATHS.other.login}${patientPublicLoginSearch("oauth-cancelled")}`, {
+        replace: true,
+      });
       return;
     }
 
     if (status && ["error", "state_invalid", "provider_error"].includes(status)) {
       // stay on this page to show error, then redirect back to login after short delay
       const timeout = setTimeout(() => {
-        navigate(`${ROUTE_PATHS.marketing.landing}?patientEntry=oauth-error`, { replace: true });
+        navigate(`${ROUTE_PATHS.other.login}${patientPublicLoginSearch("oauth-error")}`, {
+          replace: true,
+        });
       }, 3000);
       return () => clearTimeout(timeout);
     }
 
-    navigate(`${ROUTE_PATHS.marketing.landing}?patientEntry=need-clinic`, { replace: true });
+    navigate(`${ROUTE_PATHS.other.login}${patientPublicLoginSearch("need-clinic")}`, {
+      replace: true,
+    });
   }, [status, token, patientId, login, navigate]);
 
   let message = "Обрабатываем результат входа...";

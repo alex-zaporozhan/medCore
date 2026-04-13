@@ -250,6 +250,8 @@ async def dispatch_domain_outbox_batch(*, limit: int | None = None) -> int:
     Returns how many rows were processed in this batch (marked published or advanced); not all imply bus success.
     """
     batch = limit if limit is not None else settings.domain_outbox_dispatch_batch_limit
+    if batch <= 0:
+        batch = 50
     from src.infrastructure.database.base import AsyncSessionLocal
 
     if AsyncSessionLocal is None:

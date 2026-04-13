@@ -106,7 +106,7 @@ export function PlatformFounderMfaPanel() {
         <Button variant="default" onClick={goBackToLogin}>
           Назад
         </Button>
-        <Button loading={busy} onClick={() => void submitMfa()}>
+        <Button loading={busy} color="slate" radius="md" onClick={() => void submitMfa()}>
           Подтвердить
         </Button>
       </Group>

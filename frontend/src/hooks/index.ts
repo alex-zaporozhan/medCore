@@ -173,8 +173,13 @@ export type { IntegrationSettings1c } from "./useAdminIntegrations";
 export {
   useAdminRetentionSegments,
   useAdminRetentionCampaignsRoi,
+  useGenerateRetentionOffers,
 } from "./useAdminRetention";
-export type { RetentionSegment, RetentionCampaignRoi } from "./useAdminRetention";
+export type {
+  RetentionSegment,
+  RetentionCampaignRoi,
+  RetentionOfferItem,
+} from "./useAdminRetention";
 export {
   OMNI_VAULT_EXPORT_PRESETS,
   useOmniVaultMediaGallery,

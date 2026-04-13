@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f4f6f8"/>
+      <stop offset="100%" stop-color="#e8eef3"/>
+    </linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="960" height="600" rx="20" fill="url(#bg)" filter="url(#sh)"/>
+  <rect x="0" y="0" width="200" height="600" fill="#ffffff" stroke="#e2e6ea"/>
+  <rect x="16" y="20" width="168" height="36" rx="8" fill="#e8eef3"/>
+  <text x="28" y="44" fill="#1c2e45" font-family="system-ui,Segoe UI,sans-serif" font-size="13" font-weight="700">Dental Booking</text>
+  <text x="20" y="88" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="10" font-weight="600">!" #</text>
+  <rect x="16" y="98" width="168" height="32" rx="6" fill="#e8eef3"/>
+  <text x="48" y="118" fill="#1c2e45" font-family="system-ui,Segoe UI,sans-serif" font-size="11" font-weight="600">5=B0</text>
+  <rect x="16" y="136" width="168" height="32" rx="6" fill="transparent"/>
+  <text x="48" y="156" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="11">040G8</text>
+  <text x="20" y="200" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="10" font-weight="600">"+</text>
+  <rect x="16" y="210" width="168" height="32" rx="6" fill="transparent"/>
+  <text x="48" y="230" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="11"><=8-G0B</text>
+  <rect x="16" y="248" width="168" height="32" rx="6" fill="transparent"/>
+  <text x="48" y="268" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="11">0F85=BK</text>
+  <rect x="200" y="0" width="760" height="56" fill="#ffffff" stroke="#e2e6ea"/>
+  <rect x="220" y="16" width="200" height="24" rx="6" fill="#f4f6f8"/>
+  <text x="232" y="32" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="11">>8A:&</text>
+  <rect x="220" y="72" width="200" height="508" rx="10" fill="#ffffff" stroke="#e2e6ea"/>
+  <text x="236" y="100" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="10" font-weight="600"></text>
+  <rect x="232" y="112" width="176" height="44" rx="8" fill="#e8eef3"/>
+  <text x="244" y="138" fill="#1c2e45" font-family="system-ui,Segoe UI,sans-serif" font-size="11" font-weight="600">20= . � WhatsApp</text>
+  <rect x="232" y="164" width="176" height="44" rx="8" fill="#f4f6f8"/>
+  <text x="244" y="190" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="11">0@8O . � A09B</text>
+  <rect x="436" y="72" width="308" height="508" rx="10" fill="#fafbfc" stroke="#e2e6ea"/>
+  <text x="452" y="104" fill="#1c2e45" font-family="system-ui,Segoe UI,sans-serif" font-size="12" font-weight="700">"5:CI89 480;>3</text>
+  <rect x="452" y="120" width="276" height="64" rx="10" fill="#ffffff" stroke="#e2e6ea"/>
+  <text x="468" y="148" fill="#334155" font-family="system-ui,Segoe UI,sans-serif" font-size="11">4@02AB2C9B5! %>GC 70?8AL =0 G8AB:C&</text>
+  <rect x="452" y="196" width="200" height="40" rx="10" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="468" y="220" fill="#065f46" font-family="system-ui,Segoe UI,sans-serif" font-size="11">@54;>65= A;>B 14:30</text>
+  <rect x="760" y="72" width="180" height="508" rx="10" fill="#ffffff" stroke="#e2e6ea"/>
+  <text x="776" y="100" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="10" font-weight="600">"!" CRM</text>
+  <rect x="776" y="112" width="148" height="72" rx="8" fill="#f4f6f8"/>
+  <text x="788" y="138" fill="#1c2e45" font-family="system-ui,Segoe UI,sans-serif" font-size="10" font-weight="600">>@>=:0</text>
+  <text x="788" y="156" fill="#5c6d7a" font-family="system-ui,Segoe UI,sans-serif" font-size="10">84 � 2878B</text>
+  <rect x="776" y="196" width="148" height="56" rx="8" fill="#f5f3ff"/>
+  <text x="788" y="220" fill="#5b21b6" font-family="system-ui,Segoe UI,sans-serif" font-size="10" font-weight="600">AI-?>4A:07:0</text>
+  <text x="788" y="238" fill="#6d28d9" font-family="system-ui,Segoe UI,sans-serif" font-size="9">!>740BL 7040GC</text>
+</svg>

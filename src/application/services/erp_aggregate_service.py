@@ -24,6 +24,7 @@ from src.application.services.erp_reports_repository import (
 from src.core.config import settings
 from src.core.metrics import (
     erp_aggregate_nightly_kind_failures_total,
+    erp_aggregate_nightly_run_total,
     erp_aggregate_refresh_seconds,
     erp_aggregate_rows_processed,
 )
@@ -564,6 +565,7 @@ async def refresh_all_clinics_erp_aggregates_nightly(
         res = await list_session.execute(select(Clinic.id))
         clinic_ids = [row[0] for row in res.all()]
 
+    had_failure = False
     for cid in clinic_ids:
         try:
             async with factory() as session:
@@ -586,9 +588,13 @@ async def refresh_all_clinics_erp_aggregates_nightly(
             )
             await invalidate_clinic_erp_report_cache(cid)
         except Exception:
+            had_failure = True
             for kind in ("visit_revenue", "payroll", "materials", "attribution"):
                 erp_aggregate_nightly_kind_failures_total.labels(aggregate_kind=kind).inc()
             logger.exception(
                 "erp_aggregate_refresh_clinic_failed",
                 extra={"clinic_id": str(cid)},
             )
+    erp_aggregate_nightly_run_total.labels(
+        result="partial_failures" if had_failure else "success"
+    ).inc()

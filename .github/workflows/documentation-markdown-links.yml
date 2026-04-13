@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "documentation/**"
       - "DOCUMENTATION_POLICY.md"
       - "README.md"
       - ".github/workflows/documentation-markdown-links.yml"
@@ -13,6 +14,7 @@ on:
     branches: [main, master]
     paths:
       - "docs/**"
+      - "documentation/**"
       - "DOCUMENTATION_POLICY.md"
       - "README.md"
       - ".github/workflows/documentation-markdown-links.yml"
@@ -29,6 +31,13 @@ jobs:
           use-quiet-mode: "yes"
           use-verbose-mode: "no"
           folder-path: "docs"
+          config-file: ".markdown-link-check.json"
+
+      - uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: "yes"
+          use-verbose-mode: "no"
+          folder-path: "documentation"
           config-file: ".markdown-link-check.json"
 
       - uses: gaurav-nelson/github-action-markdown-link-check@v1

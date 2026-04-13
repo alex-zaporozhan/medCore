@@ -1,40 +1,45 @@
 # Политика документации (репозиторий)
 
-> **Версия:** 2026-04-03 (аудит @QA_ARCH)  
+> **Версия:** 2026-04-10 (фаза 3: навигация `architecture/`, слой W)  
 > **Аудитория:** участники команды, интеграторы, индексация RAG.
 
-## Что лежит в git
+## Два контура в git
 
-- **`docs/`** — основное дерево markdown: процесс, роли, шаблоны, NFR, запуск сервисов. Порядок приоритетов для AI: [`docs/RAG_CANON.md`](docs/RAG_CANON.md).  
-- **`docs/product_state/`** (слой **S**) — паспорта и снимки **строго по коду** (API, SPA, архитектура, структура репо, карта всех `.md`). Вход: [`docs/product_state/INDEX.md`](docs/product_state/INDEX.md).  
-- **Корень репозитория** — `README.md`, `CONTRIBUTING.md`, **`CI_CD.md`** (Jenkins + GHCR как канон CI/CD), **`AGENTS.md`** (краткие факты для автоматизации), этот файл.
+| Контур | Каталог | Содержание |
+|--------|---------|------------|
+| **Инженерия** | **`docs/`** | Архитектура ([`docs/architecture/INDEX.md`](docs/architecture/INDEX.md)), роли, review, `docs/design/`, слой S — `docs/product_state/`, слой W — `docs/artifacts/` (процесс, не факты кода), рубрики. Порядок для AI: [`docs/RAG_CANON.md`](docs/RAG_CANON.md), карта папок: [`docs/DOC_TOPOLOGY.md`](docs/DOC_TOPOLOGY.md). |
+| **Клиенты и пользователи** | **`documentation/`** | Публично ориентированные материалы: обзоры продукта, user-facing гайды (`documentation/USER_DOCS/`), питч, то, что можно отдавать интеграторам без внутренних регламентов. Технический канон по теме UI для разработчиков — в **`docs/frontend/UI_THEME.md`**. |
 
-**Каталог `documentation/`** в репозитории **не используется** (исторически удалён). Новые материалы туда не класть.
+**Корень репозитория:** `README.md`, `CONTRIBUTING.md`, **`CI_CD.md`**, **`AGENTS.md`**, этот файл.
+
+## Слой S (факты по коду)
+
+- **`docs/product_state/`** — паспорта и снимки строго по коду. Вход: [`docs/product_state/INDEX.md`](docs/product_state/INDEX.md).
 
 ## CI/CD (канон репозитория)
 
-- **Сборка образов, публикация и деплой** описываются **`Jenkinsfile`** и документом **`CI_CD.md`**. Реестр: **GitHub Container Registry (`ghcr.io`)**; **Docker Hub** для этого потока **не обязателен** (в т.ч. без платного тарифа Docker Hub).
-- Workflow в **`.github/workflows/`** — дополнение (PR-гейты), не замена Jenkins для релизного образа.
+- **Сборка образов, публикация и деплой** — **`Jenkinsfile`** и **`CI_CD.md`**. Реестр: **GHCR (`ghcr.io`)**.
+- Workflow в **`.github/workflows/`** — дополнение к PR, не замена Jenkins для релизного образа.
 
 ## Чего нет в git
 
-- Закрытые рабочие материалы команды — вне этого репозитория, без ссылок из прикладного кода.
+- Закрытые рабочие материалы команды — вне репозитория, без ссылок из прикладного кода.
 
 ## Архивы
 
-- Каталоги резервных копий документации (`docs_archives`, `docs_archive` и аналоги) в **`.gitignore`** — не коммитить.
+- Каталоги `docs_archives`, `docs_archive` и аналоги в **`.gitignore`** — не коммитить.
 
 ## Код (жёстко)
 
-- Прикладной код в **`src/`** и **`frontend/src/`** **не содержит** ссылок на файлы **`*.md`** и путей вида `documentation/…` / `docs/….md` в комментариях, пользовательских строках и docstring’ах. Канон — сам код и при необходимости слой **`docs/product_state/`** (читается людьми и RAG **вне** исходников).  
-- Исключение: генераторы и скрипты в **`scripts/`** могут записывать markdown **в `docs/product_state/generated/`**, не ссылаясь в своём выводе на несуществующие пути.  
-- Внутренние роли (`@LEAD` и т.д.) не помещать в строки UI и пользовательские сообщения.
+- Прикладной код в **`src/`** и **`frontend/src/`** не содержит ссылок на **`*.md`** и путей `documentation/…` / `docs/….md` в пользовательских строках и docstring’ах. Канон — код и при необходимости **`docs/product_state/`**.
+- Исключение: скрипты в **`scripts/`** могут писать markdown в **`docs/product_state/generated/`**.
+- Внутренние роли (`@LEAD` и т.д.) не в UI.
 
 ## Авторы продуктовых текстов
 
-- Обновление слоя S при изменении контракта API/SPA: см. [`docs/product_state/RAG_NECESSARY_IMPROVEMENTS.md`](docs/product_state/RAG_NECESSARY_IMPROVEMENTS.md).  
-- Роли документирования процесса: `docs/ROLE_SCRIBE.md` (если ведётся).
+- Обновление слоя S: [`docs/product_state/RAG_NECESSARY_IMPROVEMENTS.md`](docs/product_state/RAG_NECESSARY_IMPROVEMENTS.md).  
+- Политика русского копирайта в UI: [`docs/COPY_STYLE_POLICY_RU.md`](docs/COPY_STYLE_POLICY_RU.md).
 
 ---
 
-Reference: [`docs/RAG_CANON.md`](docs/RAG_CANON.md) · [`docs/DOC_TOPOLOGY.md`](docs/DOC_TOPOLOGY.md) · корневой [`README.md`](README.md)
+Reference: [`docs/RAG_CANON.md`](docs/RAG_CANON.md) · [`docs/DOC_TOPOLOGY.md`](docs/DOC_TOPOLOGY.md) · [`README.md`](README.md)

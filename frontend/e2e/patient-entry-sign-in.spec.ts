@@ -12,9 +12,9 @@ test.describe("patient entry by clinic slug", () => {
     await expect(page.getByText(/Личный кабинет клиники/i)).toBeVisible();
   });
 
-  test("invalid /c/sign-in (no clinic slug) redirects to landing with hint", async ({ page }) => {
+  test("invalid /c/sign-in (no clinic slug) redirects to public login with hint", async ({ page }) => {
     await page.goto("/c/sign-in");
-    await expect(page).toHaveURL(/patientEntry=patient-url-needs-clinic-slug/);
+    await expect(page).toHaveURL(/\/login.*patientEntry=patient-url-needs-clinic-slug/);
     await expect(page.getByText(/три части пути/i)).toBeVisible();
   });
 

@@ -182,10 +182,12 @@ async def run_campaign(
     session: AsyncSession,
     clinic_id: UUID,
     campaign_id: UUID,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """
     Run campaign: resolve segment, send via template to each patient, write RecallLog.
-    Returns (sent_count, failed_count).
+
+    Returns ``(sent_count, failed_count, skipped_no_channel_count)`` — skipped counts
+    log-only / no outbound channel (P1-5), not delivered to patient.
     """
     result = await session.execute(
         select(RecallCampaign, RecallSegment, RecallTemplate)
@@ -198,17 +200,17 @@ async def run_campaign(
     )
     row = result.one_or_none()
     if not row:
-        return 0, 0
+        return 0, 0, 0
     campaign, segment, template = row
     if campaign.status not in ("draft", "scheduled"):
-        return 0, 0
+        return 0, 0, 0
 
     campaign.status = "running"
     campaign.started_at = utc_now_naive()
     await session.flush()
 
     patient_ids = await get_segment_patient_ids(session, clinic_id, segment)
-    sent, failed = 0, 0
+    sent, failed, skipped = 0, 0, 0
     for patient_id in patient_ids:
         log = RecallLog(
             clinic_id=clinic_id,
@@ -224,7 +226,7 @@ async def run_campaign(
         await session.flush()
 
         body = _render_body(template.body_template, {"patient_id": str(patient_id)})
-        success, err = await send_recall_message(
+        success, err, delivery = await send_recall_message(
             session,
             clinic_id=clinic_id,
             patient_id=patient_id,
@@ -234,10 +236,15 @@ async def run_campaign(
             template=f"recall_campaign_{campaign_id}",
         )
         now = utc_now_naive()
-        if success:
+        if success and delivery == "channel":
             log.status = "sent"
             log.sent_at = now
             sent += 1
+        elif success and delivery == "log_only":
+            log.status = "skipped_no_channel"
+            log.sent_at = now
+            log.error = None
+            skipped += 1
         else:
             log.status = "failed"
             log.sent_at = now
@@ -248,4 +255,4 @@ async def run_campaign(
     campaign.status = "completed"
     campaign.completed_at = utc_now_naive()
     await session.flush()
-    return sent, failed
+    return sent, failed, skipped

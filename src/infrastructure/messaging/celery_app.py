@@ -51,6 +51,7 @@ celery_app = Celery(
         "src.infrastructure.messaging.tasks.staff_collab_tasks",
         "src.infrastructure.messaging.tasks.platform_billing_tasks",
         "src.infrastructure.messaging.tasks.domain_outbox_tasks",
+        "src.infrastructure.messaging.tasks.payment_reconciliation_tasks",
     ],
 )
 
@@ -61,6 +62,15 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
+    task_time_limit=settings.celery_task_time_limit_seconds,
+    task_soft_time_limit=settings.celery_task_soft_time_limit_seconds,
+    broker_connection_retry_on_startup=True,
+    task_acks_late=settings.celery_task_acks_late,
+    task_reject_on_worker_lost=settings.celery_task_reject_on_worker_lost,
+    worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
+    worker_cancel_long_running_tasks_on_connection_loss=(
+        settings.celery_worker_cancel_long_running_tasks_on_connection_loss
+    ),
     beat_schedule={
         "run-reminders-every-15min": {
             "task": "notifications.run_reminders",
@@ -117,6 +127,10 @@ celery_app.conf.update(
         "domain-outbox-dispatch-pending": {
             "task": "domain_outbox.dispatch_pending",
             "schedule": 30.0,
+        },
+        "payment-reconciliation-local-pending": {
+            "task": "payment_reconciliation.reconcile_local_pending",
+            "schedule": 600.0,
         },
     },
 )

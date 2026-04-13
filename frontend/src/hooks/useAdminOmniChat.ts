@@ -220,8 +220,11 @@ export function useAdminOmniChatPresence() {
 export function useResolveAdminOmniChat() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ chatId }: { chatId: string }) =>
-      api.post<OmniChatResolveResponse>(`/v1/admin/omni-chats/${chatId}/resolve`, {}),
+    mutationFn: ({ chatId, force }: { chatId: string; force?: boolean }) =>
+      api.post<OmniChatResolveResponse>(
+        `/v1/admin/omni-chats/${chatId}/resolve${force ? "?force=true" : ""}`,
+        {},
+      ),
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["admin-omni-chats"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-omni-chat-detail", variables.chatId] });

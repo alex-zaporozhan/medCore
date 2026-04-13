@@ -62,6 +62,12 @@ class Clinic(Base):
     staff_chat_scope: Mapped[str] = mapped_column(String(32), nullable=False, server_default="clinic_isolated")
     #: Public URL slug for client-facing pages (SEO). Unique across the system.
     clinic_slug: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True, index=True)
+    #: Витрина Commerce в PWA пациента: показывать раздел «Магазин» и публичный каталог номенклатуры.
+    patient_store_visible: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    patient_store_title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    patient_store_subtitle: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), nullable=False
     )

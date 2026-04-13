@@ -1,5 +1,5 @@
 import { Anchor, Box, Group, Image, Skeleton, Stack } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChatInlineAudioPlayer } from "@/shared/ChatInlineAudioPlayer";
 
 export type ClinicChatAttachmentBrief = {
@@ -45,6 +45,8 @@ export function ClinicChatAttachments({
 }: Props) {
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const attKey = attachments.map((a) => a.id).join(",");
+  const getBlobRef = useRef(getBlob);
+  getBlobRef.current = getBlob;
 
   useEffect(() => {
     const created: string[] = [];
@@ -52,12 +54,11 @@ export function ClinicChatAttachments({
     const imgs = attachments.filter(
       (a) => a.content_type.startsWith("image/") || a.content_type.startsWith("audio/")
     );
-    setImageUrls({});
     void (async () => {
       const next: Record<string, string> = {};
       for (const a of imgs) {
         try {
-          const blob = await getBlob(a.id);
+          const blob = await getBlobRef.current(a.id);
           if (cancelled) return;
           const u = URL.createObjectURL(blob);
           created.push(u);
@@ -72,7 +73,7 @@ export function ClinicChatAttachments({
       cancelled = true;
       created.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, [attKey, attachments, getBlob]);
+  }, [attKey, attachments]);
 
   if (!attachments.length) return null;
 

@@ -83,8 +83,8 @@ export function ClinicStaffSignInPanel() {
             description={`Минимум ${MIN_PASSWORD_LENGTH} символов`}
             autoComplete="current-password"
           />
-          <Button type="submit" loading={loading} fullWidth>
-            Войти в Business OS
+          <Button type="submit" loading={loading} fullWidth color="slate" radius="md">
+            Войти
           </Button>
         </Stack>
       </form>

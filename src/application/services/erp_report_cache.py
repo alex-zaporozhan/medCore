@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from uuid import UUID
 
@@ -15,6 +16,11 @@ from src.infrastructure.database.redis_client import get_redis
 logger = logging.getLogger(__name__)
 
 _CACHE_PREFIX = "erp:rpt:v1"
+
+
+def _cache_key_fingerprint(key: str) -> str:
+    """Short stable id for logs (no tenant-identifying Redis key)."""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 
 def dashboard_cache_key(clinic_id: UUID, *, anchor: str, period: str) -> str:
@@ -45,7 +51,10 @@ async def get_cached_json(key: str) -> str | None:
         return v
     except Exception as exc:
         erp_dashboard_cache_requests_total.labels(result="error").inc()
-        logger.warning("erp_report_cache_get_failed", extra={"key": key, "error": str(exc)})
+        logger.warning(
+            "erp_report_cache_get_failed",
+            extra={"cache_key_sha256_16": _cache_key_fingerprint(key), "error": str(exc)},
+        )
         return None
 
 
@@ -56,7 +65,10 @@ async def set_cached_json(key: str, body: str) -> None:
         r = await get_redis()
         await r.setex(key, settings.erp_dashboard_cache_ttl_seconds, body)
     except Exception as exc:
-        logger.warning("erp_report_cache_set_failed", extra={"key": key, "error": str(exc)})
+        logger.warning(
+            "erp_report_cache_set_failed",
+            extra={"cache_key_sha256_16": _cache_key_fingerprint(key), "error": str(exc)},
+        )
 
 
 async def invalidate_clinic_erp_report_cache(clinic_id: UUID) -> None:

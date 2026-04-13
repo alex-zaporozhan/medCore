@@ -8,7 +8,7 @@
  */
 
 import type { ApiErrorResponseBody } from "@/api/types";
-import { ROUTE_PATHS } from "@/routePaths";
+import { ROUTE_PATHS, patientPublicLoginSearch } from "@/routePaths";
 import { isPatientLoginPath } from "@/routePathUtils";
 
 /** Базовый префикс HTTP-моста; dev-прокси в `vite.config.ts` не менять без согласования с деплоем. */
@@ -146,7 +146,7 @@ function clearPatientAuth(): void {
     const scoped = path.match(/^\/c\/([^/]+)\//);
     window.location.href = scoped
       ? `/c/${scoped[1]}/sign-in`
-      : `${ROUTE_PATHS.marketing.landing}?patientEntry=session-expired`;
+      : `${ROUTE_PATHS.other.login}${patientPublicLoginSearch("session-expired")}`;
   }
 }
 

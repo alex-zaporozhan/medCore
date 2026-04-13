@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 # Default: docker.io (works with standard daemon/proxy). Override if needed:
 #   docker build --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:20-alpine -t dental-booking-frontend:local .
 ARG NODE_IMAGE=node:20-alpine
@@ -6,7 +7,14 @@ FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci
+# npm registry flakiness (ECONNRESET): more retries + longer backoff; fewer parallel sockets.
+# BuildKit cache mount cuts repeat traffic on rebuilds (enable: DOCKER_BUILDKIT=1).
+RUN --mount=type=cache,target=/root/.npm \
+    npm config set fetch-retries 7 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 180000 && \
+    npm config set maxsockets 5 && \
+    npm ci
 
 COPY . .
 

@@ -1,0 +1,54 @@
+# Push app images to Docker Hub from GitHub Actions (optional).
+# Password cannot be typed interactively in Actions — use repo secrets DOCKERHUB_USERNAME / DOCKERHUB_TOKEN.
+# Recommended for solo VPS: build + interactive login on your machine — scripts/docker_hub_release.ps1 or .sh (see CI_CD.md).
+# Jenkins → GHCR remains the team pipeline in Jenkinsfile for orgs that use it.
+name: Docker Hub publish (optional)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag for backend and frontend images (e.g. main, latest, v1.2.3)"
+        required: true
+        default: "manual"
+
+jobs:
+  dockerhub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Docker Hub secrets
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DH_USER:-}" ] || [ -z "${DH_TOKEN:-}" ]; then
+            echo "::error::Set repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN, or push from your PC: scripts/docker_hub_release.ps1 / docker_hub_release.sh"
+            exit 1
+          fi
+
+      # Build first without registry credentials; push only after green builds.
+      - name: Build backend image (no push)
+        run: docker build -t dental-booking-backend:ci -f Dockerfile .
+
+      - name: Build frontend image (no push)
+        run: docker build -t dental-booking-frontend:ci -f Dockerfile ./frontend
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag and push
+        env:
+          USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          docker tag dental-booking-backend:ci "${USER}/dental-booking-backend:${TAG}"
+          docker tag dental-booking-frontend:ci "${USER}/dental-booking-frontend:${TAG}"
+          docker push "${USER}/dental-booking-backend:${TAG}"
+          docker push "${USER}/dental-booking-frontend:${TAG}"

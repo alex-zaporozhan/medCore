@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
+from sqlalchemy import delete
+
+from src.domain.entities.role import Role
 
 
 @pytest.mark.asyncio
@@ -204,14 +209,31 @@ async def test_owner_can_delete_clinic_role_without_users(client, admin_auth):
 
 
 @pytest.mark.asyncio
-async def test_cannot_delete_global_role(client, admin_auth):
+async def test_cannot_delete_global_role(client, admin_auth, db_session):
+    """TRUNCATE removes migration-seeded globals; insert a minimal global role to assert delete is forbidden."""
+    gid = uuid.uuid4()
+    db_session.add(
+        Role(
+            id=gid,
+            clinic_id=None,
+            code="pytest_global_delete_guard",
+            name="Pytest global delete guard",
+            description=None,
+        )
+    )
+    await db_session.commit()
+
     owner_headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
-    catalog = await client.get("/api/v1/admin/rbac/catalog", headers=owner_headers)
-    assert catalog.status_code == 200, catalog.text
-    global_role = next((r for r in catalog.json()["roles"] if r.get("clinic_id") is None), None)
-    if global_role is None:
-        pytest.skip("No global roles in catalog for this DB (all roles may be clinic-scoped)")
-    resp = await client.delete(f"/api/v1/admin/rbac/roles/{global_role['id']}", headers=owner_headers)
+    resp = await client.delete(f"/api/v1/admin/rbac/roles/{gid}", headers=owner_headers)
     assert resp.status_code == 403, resp.text
-    assert "Global" in resp.json()["detail"] or "глобальн" in resp.json()["detail"].lower() or "system" in resp.json()["detail"].lower()
+    detail = resp.json().get("detail", "")
+    assert isinstance(detail, str)
+    assert (
+        "Global" in detail
+        or "глобальн" in detail.lower()
+        or "system" in detail.lower()
+        or "global" in detail.lower()
+    )
+    await db_session.execute(delete(Role).where(Role.id == gid))
+    await db_session.commit()
 

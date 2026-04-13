@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.dependencies import get_session, get_request_context, require_permissions
@@ -21,6 +21,9 @@ from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
 
 router = APIRouter(prefix="/admin/ai-reports", tags=["admin-ai-reports"])
 logger = logging.getLogger(__name__)
+
+_DEFAULT_AI_CONFLICTS_LIMIT = 2000
+_MAX_AI_CONFLICTS_LIMIT = 5000
 
 
 class ConflictItem(BaseModel):
@@ -45,6 +48,8 @@ class ConflictReportResponse(BaseModel):
     summary: ConflictSummary
     items: list[ConflictItem]
     ai_status: str | None = None
+    items_skip: int = 0
+    items_limit: int = _DEFAULT_AI_CONFLICTS_LIMIT
 
 
 class ReanalyzeRequest(BaseModel):
@@ -60,6 +65,8 @@ class ReanalyzeRequest(BaseModel):
 async def get_conflict_report(
     date_from: date = Query(...),
     date_to: date = Query(...),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_AI_CONFLICTS_LIMIT, ge=1, le=_MAX_AI_CONFLICTS_LIMIT),
     session: AsyncSession = Depends(get_session),
     current_admin=Depends(get_current_admin),
     ctx: RequestContext = Depends(get_request_context),
@@ -77,16 +84,50 @@ async def get_conflict_report(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Слишком много запросов к AI-отчётам. Попробуйте позже.",
         )
-    stmt = (
-        select(ConversationAiAnalysis)
-        .where(
-            ConversationAiAnalysis.clinic_id == clinic_id,
-            ConversationAiAnalysis.analysis_date >= date_from,
-            ConversationAiAnalysis.analysis_date <= date_to,
-        )
-        .order_by(ConversationAiAnalysis.created_at.desc())
+    base_filter = (
+        ConversationAiAnalysis.clinic_id == clinic_id,
+        ConversationAiAnalysis.analysis_date >= date_from,
+        ConversationAiAnalysis.analysis_date <= date_to,
     )
-    result = await session.execute(stmt)
+
+    total = int(
+        await session.scalar(
+            select(func.count()).select_from(ConversationAiAnalysis).where(*base_filter)
+        )
+        or 0
+    )
+    unresolved_conflicts = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ConversationAiAnalysis)
+            .where(
+                *base_filter,
+                ConversationAiAnalysis.is_conflict.is_(True),
+                ConversationAiAnalysis.is_resolved.is_(False),
+            )
+        )
+        or 0
+    )
+
+    cat_rows = (
+        await session.execute(
+            select(ConversationAiAnalysis.issue_category, func.count().label("n"))
+            .where(*base_filter)
+            .group_by(ConversationAiAnalysis.issue_category)
+            .order_by(func.count().desc())
+            .limit(3)
+        )
+    ).all()
+    top_issue_categories = [str(r[0]) for r in cat_rows if r[0] is not None]
+
+    stmt_page = (
+        select(ConversationAiAnalysis)
+        .where(*base_filter)
+        .order_by(ConversationAiAnalysis.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await session.execute(stmt_page)
     rows: list[ConversationAiAnalysis] = list(result.scalars().all())
 
     # Use centralized AI config to indicate whether conflict reports can rely on external AI.
@@ -101,13 +142,6 @@ async def get_conflict_report(
         },
     )
     ai_configured = safe_client.is_configured()
-
-    total = len(rows)
-    unresolved_conflicts = sum(1 for r in rows if r.is_conflict and not r.is_resolved)
-    category_counts: dict[str, int] = {}
-    for r in rows:
-        category_counts[r.issue_category] = category_counts.get(r.issue_category, 0) + 1
-    top_issue_categories = sorted(category_counts, key=category_counts.get, reverse=True)[:3]
 
     items = [
         ConflictItem(
@@ -130,12 +164,18 @@ async def get_conflict_report(
         top_issue_categories=top_issue_categories,
     )
 
-    if not rows and not ai_configured:
+    if total == 0 and not ai_configured:
         ai_status = "fallback_local"
     else:
         ai_status = "external_active"
 
-    return ConflictReportResponse(summary=summary, items=items, ai_status=ai_status)
+    return ConflictReportResponse(
+        summary=summary,
+        items=items,
+        ai_status=ai_status,
+        items_skip=skip,
+        items_limit=limit,
+    )
 
 
 @router.post(

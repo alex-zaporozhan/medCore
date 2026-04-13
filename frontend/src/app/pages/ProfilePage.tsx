@@ -20,7 +20,7 @@ export default function ProfilePage() {
     if (navigator.share) {
       navigator
         .share({
-          title: "Dental Booking",
+          title: "Единая система управления",
           text: "Подари другу 1000₽ — запишись по моей ссылке!",
           url: window.location.origin + ROUTE_PATHS.patient.home,
         })

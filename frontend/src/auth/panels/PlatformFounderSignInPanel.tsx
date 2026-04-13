@@ -89,7 +89,7 @@ export function PlatformFounderSignInPanel() {
       <Text size="xs" c="dimmed">
         Если включена 2FA, после входа откроется отдельный шаг с кодом из приложения-аутентификатора.
       </Text>
-      <Button loading={busy} onClick={() => void submitCredentials()} fullWidth>
+      <Button loading={busy} onClick={() => void submitCredentials()} fullWidth color="slate" radius="md">
         Войти
       </Button>
 

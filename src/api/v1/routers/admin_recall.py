@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.api.v1.entitlement_dependencies import require_entitlement
 from sqlalchemy import select
@@ -39,6 +39,9 @@ from src.domain.entities.recall_log import RecallLog
 from src.domain.entities.recall_segment import RecallSegment
 from src.domain.entities.recall_template import RecallTemplate
 
+_DEFAULT_RECALL_LIST_LIMIT = 2000
+_MAX_RECALL_LIST_LIMIT = 5000
+
 router = APIRouter(
     prefix="/admin/clinics",
     tags=["admin-recall"],
@@ -53,13 +56,19 @@ router = APIRouter(
 )
 async def list_recall_segments(
     clinic_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_RECALL_LIST_LIMIT, ge=1, le=_MAX_RECALL_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != _perm_ctx.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
-        select(RecallSegment).where(RecallSegment.clinic_id == clinic_id)
+        select(RecallSegment)
+        .where(RecallSegment.clinic_id == clinic_id)
+        .order_by(RecallSegment.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     segments = result.scalars().all()
     out = []
@@ -181,13 +190,19 @@ async def delete_recall_segment(
 )
 async def list_recall_templates(
     clinic_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_RECALL_LIST_LIMIT, ge=1, le=_MAX_RECALL_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != _perm_ctx.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
-        select(RecallTemplate).where(RecallTemplate.clinic_id == clinic_id)
+        select(RecallTemplate)
+        .where(RecallTemplate.clinic_id == clinic_id)
+        .order_by(RecallTemplate.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return [RecallTemplateRead.model_validate(r) for r in result.scalars().all()]
 
@@ -295,13 +310,19 @@ async def delete_recall_template(
 )
 async def list_recall_campaigns(
     clinic_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_RECALL_LIST_LIMIT, ge=1, le=_MAX_RECALL_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != _perm_ctx.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
-        select(RecallCampaign).where(RecallCampaign.clinic_id == clinic_id)
+        select(RecallCampaign)
+        .where(RecallCampaign.clinic_id == clinic_id)
+        .order_by(RecallCampaign.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return [RecallCampaignRead.model_validate(r) for r in result.scalars().all()]
 
@@ -414,8 +435,8 @@ async def run_recall_campaign(
 ):
     if clinic_id != _perm_ctx.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    sent, failed = await run_campaign(session, clinic_id, campaign_id)
-    return {"sent": sent, "failed": failed}
+    sent, failed, skipped_no_channel = await run_campaign(session, clinic_id, campaign_id)
+    return {"sent": sent, "failed": failed, "skipped_no_channel": skipped_no_channel}
 
 
 # --- Automations ---
@@ -425,13 +446,19 @@ async def run_recall_campaign(
 )
 async def list_recall_automations(
     clinic_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_RECALL_LIST_LIMIT, ge=1, le=_MAX_RECALL_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != _perm_ctx.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     result = await session.execute(
-        select(RecallAutomation).where(RecallAutomation.clinic_id == clinic_id)
+        select(RecallAutomation)
+        .where(RecallAutomation.clinic_id == clinic_id)
+        .order_by(RecallAutomation.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return [RecallAutomationRead.model_validate(r) for r in result.scalars().all()]
 
@@ -540,13 +567,20 @@ async def delete_recall_automation(
 async def list_recall_logs(
     clinic_id: UUID,
     campaign_id: UUID | None = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_RECALL_LIST_LIMIT, ge=1, le=_MAX_RECALL_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     _perm_ctx: AdminContext = Depends(require_permissions("view_marketing_analytics")),
 ):
     if clinic_id != _perm_ctx.clinic_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    stmt = select(RecallLog).where(RecallLog.clinic_id == clinic_id)
+    stmt = (
+        select(RecallLog)
+        .where(RecallLog.clinic_id == clinic_id)
+        .order_by(RecallLog.created_at.desc())
+    )
     if campaign_id is not None:
         stmt = stmt.where(RecallLog.campaign_id == campaign_id)
+    stmt = stmt.offset(skip).limit(limit)
     result = await session.execute(stmt)
     return [RecallLogRead.model_validate(r) for r in result.scalars().all()]

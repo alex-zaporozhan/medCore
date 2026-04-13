@@ -17,8 +17,9 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.application.services.webchat_push_manager import get_webchat_push_manager
+from src.application.services.webchat_push_manager import notify_webchat_outbound_wake
 from src.core.config import settings
+from src.core.metrics import omni_outbound_dispatch_failed_total
 from src.domain.entities.omnichannel_channel import Channel as OmniChannel
 from src.domain.entities.omnichannel_chat import Chat as OmniChat
 from src.domain.entities.omnichannel_contact import Contact as OmniContact
@@ -35,6 +36,34 @@ class OmnichannelOutboundDispatcher:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def _persist_delivery_meta(self, message: Message, meta_updates: dict) -> None:
+        base = dict(message.source_metadata or {})
+        base.update(meta_updates)
+        message.source_metadata = base
+        await self.session.flush()
+
+    async def _mark_outbound_failed(
+        self,
+        message: Message,
+        reason: str,
+        *,
+        delivery_channel: str | None = None,
+    ) -> None:
+        meta: dict[str, str] = {
+            "delivery_status": "FAILED",
+            "delivery_failure_reason": reason,
+        }
+        if delivery_channel:
+            meta["delivery_channel"] = delivery_channel
+        await self._persist_delivery_meta(message, meta)
+        omni_outbound_dispatch_failed_total.labels(reason=reason).inc()
+
+    async def _mark_outbound_skipped(self, message: Message, skip_reason: str) -> None:
+        await self._persist_delivery_meta(
+            message,
+            {"delivery_status": "SKIPPED", "delivery_skip_reason": skip_reason},
+        )
+
     async def dispatch_to_channel(self, message: Message) -> None:
         """Dispatch outbound message to underlying channel (Telegram, Web-chat, etc.)."""
         if not message.channel_id:
@@ -46,6 +75,7 @@ class OmnichannelOutboundDispatcher:
                     "chat_id": str(message.chat_id),
                 },
             )
+            await self._mark_outbound_failed(message, "no_channel")
             return
 
         result = await self.session.execute(
@@ -57,6 +87,7 @@ class OmnichannelOutboundDispatcher:
                 "OmnichannelOutboundDispatcher: chat not found",
                 extra={"message_id": str(message.id), "chat_id": str(message.chat_id)},
             )
+            await self._mark_outbound_failed(message, "chat_missing")
             return
 
         result = await self.session.execute(
@@ -68,6 +99,7 @@ class OmnichannelOutboundDispatcher:
                 "OmnichannelOutboundDispatcher: channel not found",
                 extra={"message_id": str(message.id), "channel_id": str(message.channel_id)},
             )
+            await self._mark_outbound_failed(message, "channel_missing")
             return
 
         contact: OmniContact | None = None
@@ -98,6 +130,11 @@ class OmnichannelOutboundDispatcher:
                     "correlation_message_id": str(message.id),
                 },
             )
+            await self._mark_outbound_failed(
+                message,
+                "unsupported_channel",
+                delivery_channel=(channel_type or "UNKNOWN")[:32],
+            )
 
     async def _dispatch_telegram(
         self,
@@ -114,6 +151,9 @@ class OmnichannelOutboundDispatcher:
             logger.warning(
                 "OmnichannelOutboundDispatcher: Telegram contact has no telegram_user_id",
                 extra={"contact_id": str(contact.id) if contact else None, "message_id": str(message.id)},
+            )
+            await self._mark_outbound_failed(
+                message, "telegram_no_recipient", delivery_channel="TELEGRAM_BOT"
             )
             return
 
@@ -138,6 +178,9 @@ class OmnichannelOutboundDispatcher:
             logger.warning(
                 "OmnichannelOutboundDispatcher: no Telegram token for channel",
                 extra={"channel_id": str(channel.id), "message_id": str(message.id)},
+            )
+            await self._mark_outbound_failed(
+                message, "telegram_no_credentials", delivery_channel="TELEGRAM_BOT"
             )
             return
 
@@ -232,6 +275,9 @@ class OmnichannelOutboundDispatcher:
 
                 ok = await _telegram_post_with_retries(lambda cl: _build(cl))
                 if not ok:
+                    await self._mark_outbound_failed(
+                        message, "telegram_media_failed", delivery_channel="TELEGRAM_BOT"
+                    )
                     return
             logger.info(
                 "OmnichannelOutboundDispatcher: Telegram media sent",
@@ -245,6 +291,7 @@ class OmnichannelOutboundDispatcher:
                 "OmnichannelOutboundDispatcher: Telegram skip empty text message",
                 extra={"message_id": str(message.id)},
             )
+            await self._mark_outbound_skipped(message, "empty_telegram_text")
             return
 
         url = f"{TELEGRAM_API_BASE}/bot{token}/sendMessage"
@@ -254,6 +301,7 @@ class OmnichannelOutboundDispatcher:
             return await client.post(url, json=payload)
 
         if not await _telegram_post_with_retries(_send_text):
+            await self._mark_outbound_failed(message, "telegram_failed", delivery_channel="TELEGRAM_BOT")
             return
 
         logger.info(
@@ -280,12 +328,18 @@ class OmnichannelOutboundDispatcher:
                 "OmnichannelOutboundDispatcher: WEB_APP contact has no external_ids",
                 extra={"message_id": str(message.id), "chat_id": str(chat.id)},
             )
+            await self._mark_outbound_failed(
+                message, "webapp_contact_invalid", delivery_channel="WEB_APP"
+            )
             return
         patient_id_str = (contact.external_ids.get("patient_id") or "").strip()
         if not patient_id_str:
             logger.warning(
                 "OmnichannelOutboundDispatcher: WEB_APP contact has no patient_id",
                 extra={"message_id": str(message.id), "contact_id": str(contact.id)},
+            )
+            await self._mark_outbound_failed(
+                message, "webapp_contact_invalid", delivery_channel="WEB_APP"
             )
             return
         try:
@@ -294,6 +348,9 @@ class OmnichannelOutboundDispatcher:
             logger.warning(
                 "OmnichannelOutboundDispatcher: invalid patient_id in contact",
                 extra={"message_id": str(message.id), "patient_id": patient_id_str},
+            )
+            await self._mark_outbound_failed(
+                message, "webapp_contact_invalid", delivery_channel="WEB_APP"
             )
             return
         business_account_id = chat.business_account_id
@@ -313,6 +370,9 @@ class OmnichannelOutboundDispatcher:
                     "chat_id": str(chat.id),
                     "patient_id": patient_id_str,
                 },
+            )
+            await self._mark_outbound_failed(
+                message, "webapp_no_conversation", delivery_channel="WEB_APP"
             )
             return
         now = utc_now_naive()
@@ -404,19 +464,21 @@ class OmnichannelOutboundDispatcher:
 
     async def _dispatch_webchat(self, message: Message) -> None:
         """Notify webchat long-poll waiters so widget can receive the message."""
-        manager = get_webchat_push_manager()
-        manager.notify(
+        meta = dict(message.source_metadata or {})
+        meta["delivery_status"] = "NOTIFIED_WAITER"
+        meta["delivery_channel"] = "WEB_WIDGET"
+        meta["delivery_semantics"] = (
+            "redis_fanout" if settings.webchat_redis_fanout_enabled else "long_poll_same_worker"
+        )
+        message.source_metadata = meta
+        await self.session.flush()
+        await notify_webchat_outbound_wake(
             chat_id=message.chat_id,
             message_id=message.id,
             content=message.content or "",
             created_at=message.created_at,
             actor_type=message.actor_type or "SYSTEM",
         )
-        meta = dict(message.source_metadata or {})
-        meta["delivery_status"] = "DELIVERED"
-        meta["delivery_channel"] = "WEB_WIDGET"
-        message.source_metadata = meta
-        await self.session.flush()
         logger.info(
             "OmnichannelOutboundDispatcher: Webchat push notified",
             extra={

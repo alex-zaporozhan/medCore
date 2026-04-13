@@ -24,6 +24,7 @@ from src.application.dto.booking_dto import BookingErrorResponse
 from src.application.booking_error_observability import record_booking_error_event
 from src.core.context import RequestContext
 from src.application.services.payment_service import PaymentService
+from src.application.webhook_provider_verify import PaymentWebhookProviderVerifyError
 from src.application.errors import (
     payment_error_from_lookup_error,
     payment_error_from_value_error,
@@ -118,6 +119,12 @@ async def create_payment(
         },
         429: {"description": "Per-IP rate limit (contour A; `code`: `rate_limited`)"},
         500: {"description": "Processing error after body parse (`code`: `webhook_processing_failed`)"},
+        502: {
+            "description": (
+                "YooKassa ``get_payment`` failed for a **known** local payment row — no state change; "
+                "PSP should retry (`code`: `provider_verify_failed`)"
+            ),
+        },
     },
 )
 async def payments_webhook(
@@ -183,6 +190,16 @@ async def payments_webhook(
     service = PaymentService(session)
     try:
         await service.handle_webhook(payload)
+    except PaymentWebhookProviderVerifyError:
+        payment_webhook_failures_total.labels(reason="provider_unavailable").inc()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "provider_verify_failed",
+                "message": "Payment provider could not be reached to verify this notification; retry later",
+                "trace_id": trace_id,
+            },
+        ) from None
     except Exception as e:
         payment_webhook_failures_total.labels(reason="processing_error").inc()
         logger.exception(

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,8 @@ from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE, EMPLOYM
 router = APIRouter(prefix="/admin/admins", tags=["admin-admins"])
 
 MIN_PASSWORD_LENGTH = 8
+_DEFAULT_ADMINS_LIST_LIMIT = 500
+_MAX_ADMINS_LIST_LIMIT = 2000
 
 
 class AdminRead(BaseModel):
@@ -48,14 +50,20 @@ class AdminPatch(BaseModel):
 
 @router.get("", response_model=list[AdminRead])
 async def list_admins(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_ADMINS_LIST_LIMIT, ge=1, le=_MAX_ADMINS_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> list[AdminRead]:
     result = await session.execute(
-        select(AdminUser).where(
+        select(AdminUser)
+        .where(
             AdminUser.clinic_id == current_admin.clinic_id,
             AdminUser.deleted_at.is_(None),
-        ).order_by(AdminUser.created_at.asc())
+        )
+        .order_by(AdminUser.created_at.asc())
+        .offset(skip)
+        .limit(limit)
     )
     admins = list(result.scalars().all())
     return [

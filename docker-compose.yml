@@ -3,11 +3,14 @@
 # задаются только в .env; .env не коммитить (см. .gitignore).
 # Контейнеры приложения получают .env через env_file: - .env
 #
-# Образы приложения (релиз: Jenkins → push в GHCR; Docker Hub не используется):
-# - production/staging: фиксируйте digest (GHCR), например:
+# Образы приложения:
+# - VPS / демо (по умолчанию для многих сценариев): Docker Hub после scripts/docker_hub_release.ps1 / .sh — см. documentation/VPS_IMAGE_AND_DATA.md
+#   BACKEND_IMAGE=docker.io/<DOCKERHUB_USER>/dental-booking-backend:<tag>
+#   FRONTEND_IMAGE=docker.io/<DOCKERHUB_USER>/dental-booking-frontend:<tag>
+# - Корпоративный релиз: Jenkins → GHCR; фиксируйте digest, например:
 #   BACKEND_IMAGE=ghcr.io/<GHCR_OWNER>/dental-booking-backend@sha256:<immutable_digest>
 #   FRONTEND_IMAGE=ghcr.io/<GHCR_OWNER>/dental-booking-frontend@sha256:<immutable_digest>
-# Локальные имена после `docker compose build` без привязки к Hub — в .env:
+# - Локальная сборка: docker compose build — в .env:
 #   BACKEND_IMAGE=dental-booking-backend:local
 #   FRONTEND_IMAGE=dental-booking-frontend:local
 #

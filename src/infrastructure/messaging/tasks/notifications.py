@@ -62,7 +62,7 @@ async def _send_notification_async(
                         email = patient.email
                         preferred_channel = patient.preferred_channel or channel
 
-                success, error_msg = await send_with_fallback(
+                success, error_msg, delivery = await send_with_fallback(
                     chat_id=chat_id,
                     phone=phone,
                     email=email,
@@ -72,8 +72,12 @@ async def _send_notification_async(
                     preferred_channel=preferred_channel,
                 )
                 now = utc_now()
-                if success:
+                if success and delivery == "channel":
                     notification.status = "sent"
+                    notification.sent_at = now
+                elif success and delivery == "log_only":
+                    notification.status = "skipped_no_channel"
+                    notification.error = None
                     notification.sent_at = now
                 else:
                     notification.status = "failed"

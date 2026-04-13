@@ -1,7 +1,7 @@
 /**
- * Swiss Slate / Ink (светлая админка): brand = сине-графит, холодные нейтрали,
- * многослойные тени с подтоном ink, карточки с микрограницей.
- * Канон темы: этот файл, `index.css` и Mantine theme override.
+ * Enterprise B2B: корпоративный цвет Swiss Slate (глубокий серо-сине-зелёный).
+ * primaryColor `slate`, primaryShade 7 (#2a3843) для основных кнопок; hover → индекс 8 (#1e293b).
+ * Канон: этот файл и `index.css`.
  */
 
 import {
@@ -9,32 +9,35 @@ import {
   Button,
   Card,
   Paper,
+  PasswordInput,
+  TextInput,
+  Title,
   createTheme,
   rem,
   type MantineColorsTuple,
 } from "@mantine/core";
 
-/** Тени Crisp × Ink — шкала в этом файле. */
+/** Тени в холодном нейтрале (slate / ink). */
 const crispShadows = {
-  xs: "0 1px 2px rgba(15, 20, 25, 0.05)",
-  sm: "0 1px 2px rgba(15,20,25,0.05), 0 4px 12px rgba(15,20,25,0.06)",
-  md: "0 4px 8px rgba(15,20,25,0.06), 0 16px 40px rgba(15,20,25,0.08)",
-  lg: "0 10px 15px -3px rgba(15,20,25,0.07), 0 4px 6px -2px rgba(15,20,25,0.05)",
-  xl: "0 20px 25px -5px rgba(15,20,25,0.08), 0 10px 10px -5px rgba(15,20,25,0.04)",
+  xs: "0 1px 2px rgba(15, 23, 42, 0.04)",
+  sm: "0 1px 3px rgba(15, 23, 42, 0.06), 0 6px 16px rgba(30, 41, 59, 0.06)",
+  md: "0 4px 12px rgba(15, 23, 42, 0.07), 0 2px 6px rgba(15, 23, 42, 0.04)",
+  lg: "0 12px 32px -8px rgba(15, 23, 42, 0.1), 0 8px 20px -6px rgba(30, 41, 59, 0.07)",
+  xl: "0 24px 56px -12px rgba(15, 23, 42, 0.14), 0 12px 28px -8px rgba(30, 41, 59, 0.1), 0 0 0 1px rgba(148, 163, 184, 0.12)",
 };
 
-/** Swiss Slate / Ink — brand (шкала ink-50…900). */
-const swissInk: MantineColorsTuple = [
-  "#e8eef3", // ink-50
-  "#dce4eb", // между 50 и 100
-  "#c5d4e0", // ink-100
-  "#8a9faf", // ink-300
-  "#6b7f90", // между 300 и 500
-  "#4a5f73", // ink-500
-  "#1c2e45", // primary
-  "#152338", // hover
-  "#0f1a28", // между hover и 900
-  "#0a1018", // ink-900
+/** Swiss Slate — основной корпоративный; кнопки: [7], hover: [8]. */
+const swissSlate: MantineColorsTuple = [
+  "#f1f5f9",
+  "#e2e8f0",
+  "#cbd5e1",
+  "#94a3b8",
+  "#64748b",
+  "#475569",
+  "#334155",
+  "#2a3843",
+  "#1e293b",
+  "#0f172a",
 ];
 
 /** Нейтраль Swiss (поверхности + лестница n-50…text main). */
@@ -140,13 +143,14 @@ export const appTheme = createTheme({
     xl: rem(24),
     "2xl": rem(32),
   },
-  primaryColor: "brand",
-  primaryShade: 6,
-  defaultRadius: "sm",
+  primaryColor: "slate",
+  primaryShade: 7,
+  defaultRadius: "md",
   colors: {
-    brand: swissInk,
-    /** Алиас для существующих `color="indigo"` — та же шкала ink */
-    indigo: swissInk,
+    slate: swissSlate,
+    /** Алиас для существующего `color="brand"` в админке и маркетинге */
+    brand: swissSlate,
+    indigo: swissSlate,
     gray: slateCool,
     red: swissDanger,
     green: swissSuccess,
@@ -197,7 +201,7 @@ export const appTheme = createTheme({
       defaultProps: {
         withBorder: true,
         shadow: "sm",
-        radius: "sm",
+        radius: "lg",
         bg: "#ffffff",
       },
       styles: {
@@ -211,7 +215,7 @@ export const appTheme = createTheme({
       defaultProps: {
         withBorder: true,
         shadow: "sm",
-        radius: "sm",
+        radius: "lg",
         bg: "#ffffff",
       },
       styles: {
@@ -221,9 +225,28 @@ export const appTheme = createTheme({
         },
       },
     }),
+    TextInput: TextInput.extend({
+      defaultProps: {
+        radius: "md",
+      },
+    }),
+    PasswordInput: PasswordInput.extend({
+      defaultProps: {
+        radius: "md",
+      },
+    }),
+    Title: Title.extend({
+      styles: (_theme, props) => {
+        const order = props.order ?? 1;
+        if (order === 1 || order === 2) {
+          return { root: { color: "#0f172a" } };
+        }
+        return {};
+      },
+    }),
     Button: Button.extend({
       defaultProps: {
-        radius: "sm",
+        radius: "md",
         fw: 500,
       },
       styles: (theme, props) => {
@@ -242,9 +265,21 @@ export const appTheme = createTheme({
           });
         }
         if (props.variant === "filled") {
-          Object.assign(root, {
-            boxShadow: theme.shadows.sm,
-          });
+          const colorKey = (props.color ?? theme.primaryColor) as string;
+          if (colorKey === "slate" || colorKey === "brand" || colorKey === "indigo") {
+            const s = theme.colors.slate;
+            Object.assign(root, {
+              backgroundColor: s[7],
+              color: theme.white,
+              boxShadow: theme.shadows.sm,
+              "&:hover": { backgroundColor: s[8] },
+              "&:active": { backgroundColor: s[9] },
+            });
+          } else {
+            Object.assign(root, {
+              boxShadow: theme.shadows.sm,
+            });
+          }
         }
         return { root };
       },

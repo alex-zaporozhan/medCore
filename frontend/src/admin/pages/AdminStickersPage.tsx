@@ -1,7 +1,7 @@
 import { Stack, Text } from "@mantine/core";
 import { ContextBar } from "@/shared/ui/ContextBar";
 
-/** Stickers management. MVP — built-in set only. */
+/** Управление стикерами: встроенный набор. */
 export default function AdminStickersPage() {
   return (
     <Stack gap="md">

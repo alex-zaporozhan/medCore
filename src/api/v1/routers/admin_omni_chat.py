@@ -59,6 +59,7 @@ from src.domain.entities.admin_user import AdminUser
 from src.domain.entities.omnichannel_channel import Channel as OmniChannel
 from src.domain.entities.omnichannel_chat import Chat as OmniChat
 from src.application.services.rbac_service import RbacServiceImpl
+from src.infrastructure.database import base as db_base
 from src.infrastructure.database.rbac_repo_impl import RbacRepositoryImpl
 from src.domain.entities.omnichannel_chat_closure import (
     OmniChatClosure,
@@ -237,7 +238,6 @@ async def issue_omni_chat_sse_token(
 @router.get("/events")
 async def omni_chat_event_stream(
     current_admin: AdminUser = Depends(get_current_admin_sse),
-    session: AsyncSession = Depends(get_session),
 ) -> StreamingResponse:
     """SSE: `message.created` for current clinic (no message body). ARCH §6."""
     clinic_id = current_admin.clinic_id
@@ -245,18 +245,21 @@ async def omni_chat_event_stream(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     # RBAC for SSE: EventSource может передавать токен в query и не попадает в require_permissions().
     # Поэтому проверяем права вручную через RBAC сервис.
-    rbac = RbacServiceImpl(RbacRepositoryImpl(session))
-    perms = await rbac.get_permissions_for_user(current_admin.id, clinic_id)
+    # Short-lived session only — do not use Depends(get_session): it stays open for the whole stream.
+    async with db_base.AsyncSessionLocal() as session:
+        rbac = RbacServiceImpl(RbacRepositoryImpl(session))
+        perms = await rbac.get_permissions_for_user(current_admin.id, clinic_id)
     if "omni.inbox.manage" not in perms:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     channel = f"{OMNI_EVENTS_CHANNEL_PREFIX}:{clinic_id}"
 
     async def event_generator():
+        # Yield immediately so clients see bytes before Redis subscribe (same event loop as ASGI tests).
+        yield ": connected\n\n"
         redis = await get_redis()
         pubsub = redis.pubsub()
         await pubsub.subscribe(channel)
         try:
-            yield ": connected\n\n"
             while True:
                 msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=25.0)
                 if msg and msg.get("type") == "message":

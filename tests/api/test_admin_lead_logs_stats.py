@@ -141,6 +141,8 @@ async def test_admin_resolve_conflicts_on_active_lease_unless_force(init_db, see
             force=True,
         )
         assert dto.lead_log_id
+        # Route uses get_session → commit at end; raw session must commit or the row never persists.
+        await session.commit()
 
     async with db_base.AsyncSessionLocal() as session:
         res = await session.execute(

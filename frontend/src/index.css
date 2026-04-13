@@ -1,7 +1,5 @@
 /*
- * Глобальные токены + админ-навигация (Swiss Slate / Ink) — см. frontend/src/theme.ts.
- * Mantine: primaryColor brand (ink) в `theme.ts`; `indigo` в теме = алиас той же шкалы.
- * Семантика success/warn/danger — hex как в `DESIGN_PALETTE_SPECTRUM_SWATCHES.html` §1 Swiss.
+ * Глобальные токены — см. frontend/src/theme.ts (primaryColor slate / Swiss Slate).
  */
 :root {
   /* Surfaces — Swiss: app #f4f6f8 = Mantine gray.0 */
@@ -11,11 +9,11 @@
   --bg-card-soft: #eef1f4;
   --bg-sidebar: #ffffff;
 
-  /* Primary — brand.6 / ink #1c2e45 (один hue с alpha и focus) */
-  --primary: #1c2e45;
-  --primary-hover: #152338;
-  --primary-active: #0f1a28;
-  --primary-light: #e8eef3;
+  /* Primary — slate.7 Swiss Slate (кнопки); hover slate.8 */
+  --primary: #2a3843;
+  --primary-hover: #1e293b;
+  --primary-active: #0f172a;
+  --primary-light: #f1f5f9;
 
   --accent-slate: #5c6d7a;
   --accent-teal: #0d9488;
@@ -39,13 +37,13 @@
   --danger-text: #7f1d1d;
   --danger-bg: #fef2f2;
 
-  --focus-ring: rgba(28, 46, 69, 0.22);
+  --focus-ring: rgba(42, 56, 67, 0.28);
   --overlay-backdrop: rgba(0, 0, 0, 0.08);
   --overlay-glass-surface: rgba(255, 255, 255, 0.92);
   --drawer-glass-surface: rgba(255, 255, 255, 0.96);
   --contextbar-surface: rgba(255, 255, 255, 0.7);
 
-  /* Админка: белый сайдбар; активный пункт — brand.0 / brand.6 (ink) */
+  /* Админка: белый сайдбар; активный пункт — slate.0 / slate.6 (ink) */
   --admin-sidebar-bg: #ffffff;
   --admin-sidebar-border: var(--mantine-color-gray-2);
   --admin-sidebar-text: #334155;
@@ -72,12 +70,12 @@
   --shadow-soft-md: 0 4px 8px rgba(15, 20, 25, 0.06), 0 16px 40px rgba(15, 20, 25, 0.08);
   --shadow-card: 0 2px 5px rgba(15, 20, 25, 0.05), 0 8px 24px rgba(15, 20, 25, 0.07);
 
-  /* Alpha brand — RGB ink #1c2e45 = 28, 46, 69 */
-  --primary-alpha-02: rgba(28, 46, 69, 0.02);
-  --primary-alpha-06: rgba(28, 46, 69, 0.06);
-  --primary-alpha-08: rgba(28, 46, 69, 0.08);
-  --primary-alpha-12: rgba(28, 46, 69, 0.12);
-  --primary-alpha-25: rgba(28, 46, 69, 0.25);
+  /* Alpha primary — RGB #2a3843 (slate.7) */
+  --primary-alpha-02: rgba(42, 56, 67, 0.02);
+  --primary-alpha-06: rgba(42, 56, 67, 0.06);
+  --primary-alpha-08: rgba(42, 56, 67, 0.08);
+  --primary-alpha-12: rgba(42, 56, 67, 0.12);
+  --primary-alpha-25: rgba(42, 56, 67, 0.25);
 
   --dark-alpha-02: rgba(15, 23, 42, 0.02);
   --dark-alpha-06: rgba(15, 23, 42, 0.06);
@@ -346,6 +344,15 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Маркетинг / вход / тарифы: едва заметный светлый радиальный фон */
+.marketing-gradient-bg {
+  background-color: var(--mantine-color-gray-0, #f8f9fa);
+  background-image:
+    radial-gradient(ellipse 120% 90% at 50% -30%, rgba(42, 56, 67, 0.07), transparent 55%),
+    radial-gradient(ellipse 80% 60% at 100% 0%, rgba(30, 41, 59, 0.05), transparent 50%),
+    radial-gradient(ellipse 70% 50% at 0% 100%, rgba(13, 148, 136, 0.04), transparent 45%);
+}
+
 /* Generic app container card for landing and dashboards */
 .app-shell-card {
   background: var(--bg-card);
@@ -438,7 +445,7 @@ body {
   --rgb-background: 255, 255, 255;
   --rgb-input: 238, 241, 244;
   --rgb-color: 15, 20, 25;
-  --rgb-accent: 28, 46, 69;
+  --rgb-accent: 30, 64, 175;
   --border-radius: var(--radius-md);
   --font-family: var(--mantine-font-family), system-ui, sans-serif;
   --font-size: 14px;

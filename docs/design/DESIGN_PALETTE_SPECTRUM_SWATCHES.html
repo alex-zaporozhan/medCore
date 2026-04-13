@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Палитры: полный спектр (квадраты)</title>
+  <style>
+    :root {
+      --page-bg: #f0f0f0;
+      --label: #374151;
+      --label-muted: #6b7280;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+      background: var(--page-bg);
+      color: var(--label);
+      padding: 24px 20px 80px;
+      line-height: 1.4;
+    }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin: 0 0 8px;
+      letter-spacing: -0.02em;
+    }
+    .intro {
+      max-width: 900px;
+      margin-bottom: 28px;
+      font-size: 0.9rem;
+      color: var(--label-muted);
+    }
+    section {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px 20px 24px;
+      margin-bottom: 28px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06);
+      max-width: 1200px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    section h2 {
+      margin: 0 0 4px;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+    section .sub {
+      font-size: 0.8rem;
+      color: var(--label-muted);
+      margin-bottom: 16px;
+    }
+    .row-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--label-muted);
+      margin: 18px 0 10px;
+    }
+    .row-title:first-child { margin-top: 0; }
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .swatch {
+      width: 72px;
+      flex-shrink: 0;
+    }
+    .sq {
+      width: 72px;
+      height: 72px;
+      border-radius: 8px;
+      border: 1px solid rgba(0,0,0,0.06);
+      margin-bottom: 6px;
+    }
+    .sq.ring {
+      box-sizing: border-box;
+      background: #fff;
+    }
+    .sq.shadow-sm {
+      border: 1px solid var(--b, #e5e5e5);
+    }
+    .sq.shadow-md {
+      border: 1px solid var(--b, #e5e5e5);
+    }
+    .cap {
+      font-size: 0.65rem;
+      color: var(--label-muted);
+      word-break: break-all;
+      line-height: 1.25;
+    }
+    .cap strong {
+      display: block;
+      color: var(--label);
+      font-size: 0.68rem;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    @media (max-width: 640px) {
+      .swatch, .sq { width: 64px; }
+      .sq { height: 64px; }
+    }
+    /* Calendar semantic previews (Swiss) */
+    .cal-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px;
+      align-items: stretch;
+    }
+    .cal-mini {
+      flex: 1 1 160px;
+      min-width: 140px;
+      max-width: 220px;
+      border-radius: 8px;
+      border: 1px solid #e2e6ea;
+      padding: 10px 10px 10px 12px;
+      font-size: 0.72rem;
+      position: relative;
+      box-shadow: 0 1px 2px rgba(15,20,25,0.05);
+    }
+    .cal-mini::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      border-radius: 8px 0 0 8px;
+      background: var(--cal-bar, #ccc);
+    }
+    .cal-mini .t {
+      font-weight: 600;
+      color: var(--cal-title, #0f1419);
+      margin-bottom: 4px;
+      padding-left: 2px;
+    }
+    .cal-mini .m {
+      color: var(--cal-meta, #5c6d7a);
+      font-size: 0.68rem;
+      padding-left: 2px;
+    }
+    .cal-mini .pill {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.6rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .neg-variants {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 10px;
+    }
+    .neg-var {
+      flex: 1 1 200px;
+      min-width: 180px;
+      max-width: 280px;
+    }
+    .neg-var .tag {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+    .neg-var .hint {
+      font-size: 0.65rem;
+      color: #6b7280;
+      margin-bottom: 8px;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body>
+  <h1>Пять палитр — почти весь спектр квадратиками</h1>
+  <p class="intro">
+    Поверхности, нейтральная лестница, бренд-лестница, обводки, текст, кнопки (primary / secondary / tertiary),
+    фокус, семантика (успех / предупреждение / опасность / info), тени на карточке-образце.
+    Откройте файл в браузере. Источник значений: <code>DESIGN_PALETTE_OPTIONS_PREMIUM_V1.md</code>.
+    <strong>Секция 1 (Swiss Slate / Ink)</strong> зафиксирована в коде: <code>frontend/src/theme.ts</code> (brand, gray, green/red/yellow),
+    <code>frontend/src/index.css</code> (<code>:root</code> семантика и primary).
+    Ниже также <strong>секция «Swiss — календарь»</strong>: пять семейств семантики слотов (позитив, нейтраль, внимание, негатив, система).
+  </p>
+
+  <!-- 1 Swiss Slate / Ink -->
+  <section>
+    <h2>1 — Swiss Slate / Ink</h2>
+    <p class="sub">Холодный графит · primary #1c2e45</p>
+
+    <div class="row-title">Поверхности</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f4f6f8"></div><div class="cap"><strong>bg app</strong>#f4f6f8</div></div>
+      <div class="swatch"><div class="sq" style="background:#eef1f4"></div><div class="cap"><strong>bg hover</strong>#eef1f4</div></div>
+      <div class="swatch"><div class="sq" style="background:#ffffff"></div><div class="cap"><strong>card</strong>#ffffff</div></div>
+      <div class="swatch"><div class="sq" style="background:#e8eaee"></div><div class="cap"><strong>bg muted</strong>#e8eaee</div></div>
+    </div>
+
+    <div class="row-title">Нейтраль (свет → тёмный)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f1f3f5"></div><div class="cap"><strong>n-50</strong>#f1f3f5</div></div>
+      <div class="swatch"><div class="sq" style="background:#e2e6ea"></div><div class="cap"><strong>border</strong>#e2e6ea</div></div>
+      <div class="swatch"><div class="sq" style="background:#d0d7de"></div><div class="cap"><strong>border 2°</strong>#d0d7de</div></div>
+      <div class="swatch"><div class="sq" style="background:#9aa8b3"></div><div class="cap"><strong>n-400</strong>#9aa8b3</div></div>
+      <div class="swatch"><div class="sq" style="background:#5c6d7a"></div><div class="cap"><strong>text ·</strong>#5c6d7a</div></div>
+      <div class="swatch"><div class="sq" style="background:#3d4f5c"></div><div class="cap"><strong>n-700</strong>#3d4f5c</div></div>
+      <div class="swatch"><div class="sq" style="background:#0f1419"></div><div class="cap"><strong>text main</strong>#0f1419</div></div>
+    </div>
+
+    <div class="row-title">Brand · ink (светлый тинт → глубина)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#e8eef3"></div><div class="cap"><strong>ink-50</strong>#e8eef3</div></div>
+      <div class="swatch"><div class="sq" style="background:#c5d4e0"></div><div class="cap"><strong>ink-100</strong>#c5d4e0</div></div>
+      <div class="swatch"><div class="sq" style="background:#8a9faf"></div><div class="cap"><strong>ink-300</strong>#8a9faf</div></div>
+      <div class="swatch"><div class="sq" style="background:#4a5f73"></div><div class="cap"><strong>ink-500</strong>#4a5f73</div></div>
+      <div class="swatch"><div class="sq" style="background:#1c2e45"></div><div class="cap"><strong>primary</strong>#1c2e45</div></div>
+      <div class="swatch"><div class="sq" style="background:#152338"></div><div class="cap"><strong>hover</strong>#152338</div></div>
+      <div class="swatch"><div class="sq" style="background:#0a1018"></div><div class="cap"><strong>ink-900</strong>#0a1018</div></div>
+    </div>
+
+    <div class="row-title">Кнопки и фокус</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#1c2e45"></div><div class="cap"><strong>CTA filled</strong>#1c2e45</div></div>
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #d0d7de"></div><div class="cap"><strong>secondary</strong>#fff / bd</div></div>
+      <div class="swatch"><div class="sq" style="background:transparent;border:1px dashed #cbd5e1"></div><div class="cap"><strong>tertiary</strong>—</div></div>
+      <div class="swatch"><div class="sq ring" style="border:3px solid rgba(28,46,69,0.22)"></div><div class="cap"><strong>focus ring</strong>rgba…</div></div>
+    </div>
+
+    <div class="row-title">Семантика</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#ecfdf5"></div><div class="cap"><strong>success bg</strong>#ecfdf5</div></div>
+      <div class="swatch"><div class="sq" style="background:#065f46"></div><div class="cap"><strong>success</strong>#065f46</div></div>
+      <div class="swatch"><div class="sq" style="background:#fffbeb"></div><div class="cap"><strong>warn bg</strong>#fffbeb</div></div>
+      <div class="swatch"><div class="sq" style="background:#b45309"></div><div class="cap"><strong>warn</strong>#b45309</div></div>
+      <div class="swatch"><div class="sq" style="background:#fef2f2"></div><div class="cap"><strong>danger bg</strong>#fef2f2</div></div>
+      <div class="swatch"><div class="sq" style="background:#b42318"></div><div class="cap"><strong>danger</strong>#b42318</div></div>
+      <div class="swatch"><div class="sq" style="background:#7f1d1d"></div><div class="cap"><strong>danger text</strong>#7f1d1d</div></div>
+    </div>
+
+    <div class="row-title">Тени (карточка-образец)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq shadow-sm" style="background:#fff;--b:#e2e6ea;box-shadow:0 1px 2px rgba(15,20,25,0.05),0 4px 12px rgba(15,20,25,0.06)"></div><div class="cap"><strong>shadow sm</strong></div></div>
+      <div class="swatch"><div class="sq shadow-md" style="background:#fff;--b:#e2e6ea;box-shadow:0 4px 8px rgba(15,20,25,0.06),0 16px 40px rgba(15,20,25,0.08)"></div><div class="cap"><strong>shadow md</strong></div></div>
+    </div>
+  </section>
+
+  <!-- 2 Warm Stone -->
+  <section>
+    <h2>2 — Warm Stone / Private Practice</h2>
+    <p class="sub">Тёплый фон · primary #6b5c4c</p>
+
+    <div class="row-title">Поверхности</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f6f4f1"></div><div class="cap"><strong>bg app</strong>#f6f4f1</div></div>
+      <div class="swatch"><div class="sq" style="background:#f0ebe6"></div><div class="cap"><strong>bg hover</strong>#f0ebe6</div></div>
+      <div class="swatch"><div class="sq" style="background:#fffcf9"></div><div class="cap"><strong>card</strong>#fffcf9</div></div>
+      <div class="swatch"><div class="sq" style="background:#ebe7e2"></div><div class="cap"><strong>bg muted</strong>#ebe7e2</div></div>
+    </div>
+
+    <div class="row-title">Нейтраль (тёплый)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#faf8f5"></div><div class="cap"><strong>w-50</strong>#faf8f5</div></div>
+      <div class="swatch"><div class="sq" style="background:#e8e4de"></div><div class="cap"><strong>border</strong>#e8e4de</div></div>
+      <div class="swatch"><div class="sq" style="background:#d6d0c8"></div><div class="cap"><strong>border 2°</strong>#d6d0c8</div></div>
+      <div class="swatch"><div class="sq" style="background:#a8a29e"></div><div class="cap"><strong>w-400</strong>#a8a29e</div></div>
+      <div class="swatch"><div class="sq" style="background:#78716c"></div><div class="cap"><strong>text ·</strong>#78716c</div></div>
+      <div class="swatch"><div class="sq" style="background:#44403c"></div><div class="cap"><strong>text strong</strong>#44403c</div></div>
+      <div class="swatch"><div class="sq" style="background:#1c1917"></div><div class="cap"><strong>text main</strong>#1c1917</div></div>
+    </div>
+
+    <div class="row-title">Brand · mocha / bronze</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f3ede8"></div><div class="cap"><strong>mocha-50</strong>#f3ede8</div></div>
+      <div class="swatch"><div class="sq" style="background:#dccdc0"></div><div class="cap"><strong>mocha-100</strong>#dccdc0</div></div>
+      <div class="swatch"><div class="sq" style="background:#a89484"></div><div class="cap"><strong>mocha-300</strong>#a89484</div></div>
+      <div class="swatch"><div class="sq" style="background:#8a7355"></div><div class="cap"><strong>accent 2°</strong>#8a7355</div></div>
+      <div class="swatch"><div class="sq" style="background:#6b5c4c"></div><div class="cap"><strong>primary</strong>#6b5c4c</div></div>
+      <div class="swatch"><div class="sq" style="background:#5a4d3f"></div><div class="cap"><strong>hover</strong>#5a4d3f</div></div>
+      <div class="swatch"><div class="sq" style="background:#3d3429"></div><div class="cap"><strong>mocha-800</strong>#3d3429</div></div>
+    </div>
+
+    <div class="row-title">Кнопки и фокус</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#6b5c4c"></div><div class="cap"><strong>CTA</strong>#6b5c4c</div></div>
+      <div class="swatch"><div class="sq" style="background:#fffcf9;border:1px solid #d6d0c8"></div><div class="cap"><strong>secondary</strong></div></div>
+      <div class="swatch"><div class="sq ring" style="border:3px solid rgba(107,92,76,0.25)"></div><div class="cap"><strong>focus ring</strong></div></div>
+    </div>
+
+    <div class="row-title">Семантика</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#ecfdf5"></div><div class="cap"><strong>success bg</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#047857"></div><div class="cap"><strong>success</strong>#047857</div></div>
+      <div class="swatch"><div class="sq" style="background:#fffbeb"></div><div class="cap"><strong>warn bg</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#c2410c"></div><div class="cap"><strong>warn</strong>#c2410c</div></div>
+      <div class="swatch"><div class="sq" style="background:#fef2f2"></div><div class="cap"><strong>danger bg</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#b91c1c"></div><div class="cap"><strong>danger</strong>#b91c1c</div></div>
+      <div class="swatch"><div class="sq" style="background:#991b1b"></div><div class="cap"><strong>danger text</strong>#991b1b</div></div>
+    </div>
+
+    <div class="row-title">Тени</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#fffcf9;border:1px solid #e8e4de;box-shadow:0 1px 2px rgba(28,25,23,0.04),0 6px 16px rgba(28,25,23,0.07)"></div><div class="cap"><strong>shadow sm</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fffcf9;border:1px solid #e8e4de;box-shadow:0 4px 10px rgba(28,25,23,0.06),0 20px 44px rgba(28,25,23,0.09)"></div><div class="cap"><strong>shadow md</strong></div></div>
+    </div>
+  </section>
+
+  <!-- 3 Graphite Mono -->
+  <section>
+    <h2>3 — Graphite Mono</h2>
+    <p class="sub">Почти ч/б · primary #262626</p>
+
+    <div class="row-title">Поверхности</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#fafafa"></div><div class="cap"><strong>bg app</strong>#fafafa</div></div>
+      <div class="swatch"><div class="sq" style="background:#f5f5f5"></div><div class="cap"><strong>bg hover</strong>#f5f5f5</div></div>
+      <div class="swatch"><div class="sq" style="background:#ffffff"></div><div class="cap"><strong>card</strong>#ffffff</div></div>
+      <div class="swatch"><div class="sq" style="background:#eeeeee"></div><div class="cap"><strong>bg muted</strong>#eeeeee</div></div>
+    </div>
+
+    <div class="row-title">Нейтраль (лестница)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#fafafa"></div><div class="cap"><strong>g-50</strong>#fafafa</div></div>
+      <div class="swatch"><div class="sq" style="background:#e5e5e5"></div><div class="cap"><strong>border</strong>#e5e5e5</div></div>
+      <div class="swatch"><div class="sq" style="background:#d4d4d4"></div><div class="cap"><strong>border 2°</strong>#d4d4d4</div></div>
+      <div class="swatch"><div class="sq" style="background:#a3a3a3"></div><div class="cap"><strong>g-400</strong>#a3a3a3</div></div>
+      <div class="swatch"><div class="sq" style="background:#737373"></div><div class="cap"><strong>text ·</strong>#737373</div></div>
+      <div class="swatch"><div class="sq" style="background:#525252"></div><div class="cap"><strong>g-600</strong>#525252</div></div>
+      <div class="swatch"><div class="sq" style="background:#404040"></div><div class="cap"><strong>g-700</strong>#404040</div></div>
+      <div class="swatch"><div class="sq" style="background:#262626"></div><div class="cap"><strong>primary</strong>#262626</div></div>
+      <div class="swatch"><div class="sq" style="background:#171717"></div><div class="cap"><strong>hover / text</strong>#171717</div></div>
+    </div>
+
+    <div class="row-title">Brand (узкая шкала — почти нет хромы)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f5f5f5"></div><div class="cap"><strong>tint</strong>#f5f5f5</div></div>
+      <div class="swatch"><div class="sq" style="background:#d4d4d4"></div><div class="cap"><strong>mid</strong>#d4d4d4</div></div>
+      <div class="swatch"><div class="sq" style="background:#262626"></div><div class="cap"><strong>CTA</strong>#262626</div></div>
+      <div class="swatch"><div class="sq" style="background:#0a0a0a"></div><div class="cap"><strong>ink max</strong>#0a0a0a</div></div>
+    </div>
+
+    <div class="row-title">Кнопки и фокус</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#262626"></div><div class="cap"><strong>CTA filled</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #d4d4d4"></div><div class="cap"><strong>secondary</strong></div></div>
+      <div class="swatch"><div class="sq ring" style="border:3px solid rgba(38,38,38,0.2)"></div><div class="cap"><strong>focus ring</strong></div></div>
+    </div>
+
+    <div class="row-title">Семантика (редко)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f0fdf4"></div><div class="cap"><strong>success bg</strong>#f0fdf4</div></div>
+      <div class="swatch"><div class="sq" style="background:#15803d"></div><div class="cap"><strong>success</strong>#15803d</div></div>
+      <div class="swatch"><div class="sq" style="background:#fffbeb"></div><div class="cap"><strong>warn bg</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#ca8a04"></div><div class="cap"><strong>warn</strong>#ca8a04</div></div>
+      <div class="swatch"><div class="sq" style="background:#fef2f2"></div><div class="cap"><strong>danger bg</strong>#fef2f2</div></div>
+      <div class="swatch"><div class="sq" style="background:#fecaca"></div><div class="cap"><strong>danger bd</strong>#fecaca</div></div>
+      <div class="swatch"><div class="sq" style="background:#dc2626"></div><div class="cap"><strong>danger</strong>#dc2626</div></div>
+    </div>
+
+    <div class="row-title">Тени (самые сдержанные)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #e5e5e5;box-shadow:0 1px 2px rgba(0,0,0,0.04),0 4px 14px rgba(0,0,0,0.06)"></div><div class="cap"><strong>shadow sm</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #e5e5e5;box-shadow:0 4px 8px rgba(0,0,0,0.05),0 18px 42px rgba(0,0,0,0.08)"></div><div class="cap"><strong>shadow md</strong></div></div>
+    </div>
+  </section>
+
+  <!-- 4 Desaturated Indigo -->
+  <section>
+    <h2>4 — Desaturated Indigo</h2>
+    <p class="sub">Mantine-friendly · primary #3730a3</p>
+
+    <div class="row-title">Поверхности (slate)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f8fafc"></div><div class="cap"><strong>bg app</strong>#f8fafc</div></div>
+      <div class="swatch"><div class="sq" style="background:#f1f5f9"></div><div class="cap"><strong>bg hover</strong>#f1f5f9</div></div>
+      <div class="swatch"><div class="sq" style="background:#ffffff"></div><div class="cap"><strong>card</strong>#ffffff</div></div>
+      <div class="swatch"><div class="sq" style="background:#e2e8f0"></div><div class="cap"><strong>bg muted</strong>#e2e8f0</div></div>
+    </div>
+
+    <div class="row-title">Нейтраль</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f8fafc"></div><div class="cap"><strong>slate-50</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#e2e8f0"></div><div class="cap"><strong>border</strong>#e2e8f0</div></div>
+      <div class="swatch"><div class="sq" style="background:#cbd5e1"></div><div class="cap"><strong>border 2°</strong>#cbd5e1</div></div>
+      <div class="swatch"><div class="sq" style="background:#94a3b8"></div><div class="cap"><strong>slate-400</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#64748b"></div><div class="cap"><strong>text ·</strong>#64748b</div></div>
+      <div class="swatch"><div class="sq" style="background:#334155"></div><div class="cap"><strong>slate-700</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#0f172a"></div><div class="cap"><strong>text main</strong>#0f172a</div></div>
+    </div>
+
+    <div class="row-title">Brand · indigo</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#eef2ff"></div><div class="cap"><strong>indigo-50</strong>#eef2ff</div></div>
+      <div class="swatch"><div class="sq" style="background:#c7d2fe"></div><div class="cap"><strong>indigo-100</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#818cf8"></div><div class="cap"><strong>indigo-400</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#4f46e5"></div><div class="cap"><strong>indigo-600 ref</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#3730a3"></div><div class="cap"><strong>primary</strong>#3730a3</div></div>
+      <div class="swatch"><div class="sq" style="background:#312e81"></div><div class="cap"><strong>hover</strong>#312e81</div></div>
+      <div class="swatch"><div class="sq" style="background:#1e1b4b"></div><div class="cap"><strong>indigo-900</strong></div></div>
+    </div>
+
+    <div class="row-title">Кнопки и фокус</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#3730a3"></div><div class="cap"><strong>CTA</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #cbd5e1"></div><div class="cap"><strong>secondary</strong></div></div>
+      <div class="swatch"><div class="sq ring" style="border:3px solid rgba(55,48,163,0.22)"></div><div class="cap"><strong>focus ring</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#e0e7ff"></div><div class="cap"><strong>info bg</strong>#e0e7ff</div></div>
+      <div class="swatch"><div class="sq" style="background:#4338ca"></div><div class="cap"><strong>info</strong>#4338ca</div></div>
+    </div>
+
+    <div class="row-title">Семантика</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#ecfdf5"></div><div class="cap"><strong>success bg</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#059669"></div><div class="cap"><strong>success</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fffbeb"></div><div class="cap"><strong>warn bg</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#d97706"></div><div class="cap"><strong>warn</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fff1f2"></div><div class="cap"><strong>danger bg</strong>#fff1f2</div></div>
+      <div class="swatch"><div class="sq" style="background:#e11d48"></div><div class="cap"><strong>danger</strong>#e11d48</div></div>
+      <div class="swatch"><div class="sq" style="background:#9f1239"></div><div class="cap"><strong>danger text</strong></div></div>
+    </div>
+
+    <div class="row-title">Тени</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #e2e8f0;box-shadow:0 1px 2px rgba(15,23,42,0.04),0 4px 12px rgba(15,23,42,0.06)"></div><div class="cap"><strong>shadow sm</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #e2e8f0;box-shadow:0 4px 8px rgba(15,23,42,0.05),0 14px 36px rgba(15,23,42,0.08)"></div><div class="cap"><strong>shadow md</strong></div></div>
+    </div>
+  </section>
+
+  <!-- 5 Deep Teal Clinical -->
+  <section>
+    <h2>5 — Deep Teal Clinical</h2>
+    <p class="sub">Медицинский доверие · primary #0f766e</p>
+
+    <div class="row-title">Поверхности</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f3f8f8"></div><div class="cap"><strong>bg app</strong>#f3f8f8</div></div>
+      <div class="swatch"><div class="sq" style="background:#ecfdf5"></div><div class="cap"><strong>bg mint hint</strong>#ecfdf5</div></div>
+      <div class="swatch"><div class="sq" style="background:#ffffff"></div><div class="cap"><strong>card</strong>#ffffff</div></div>
+      <div class="swatch"><div class="sq" style="background:#e0f2f1"></div><div class="cap"><strong>bg muted</strong>#e0f2f1</div></div>
+    </div>
+
+    <div class="row-title">Нейтраль (холодный зелёный серый)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f4f6f6"></div><div class="cap"><strong>t-50</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#d8e8e6"></div><div class="cap"><strong>border</strong>#d8e8e6</div></div>
+      <div class="swatch"><div class="sq" style="background:#b2cdc9"></div><div class="cap"><strong>border 2°</strong>#b2cdc9</div></div>
+      <div class="swatch"><div class="sq" style="background:#7a948f"></div><div class="cap"><strong>t-400</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#5a706e"></div><div class="cap"><strong>text ·</strong>#5a706e</div></div>
+      <div class="swatch"><div class="sq" style="background:#2d3d3c"></div><div class="cap"><strong>t-700</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#0c1f1e"></div><div class="cap"><strong>text main</strong>#0c1f1e</div></div>
+    </div>
+
+    <div class="row-title">Brand · teal</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#ecfdf5"></div><div class="cap"><strong>teal-50</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#99f6e4"></div><div class="cap"><strong>teal-200</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#5eead4"></div><div class="cap"><strong>teal-300</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#14b8a6"></div><div class="cap"><strong>teal-500</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#0f766e"></div><div class="cap"><strong>primary</strong>#0f766e</div></div>
+      <div class="swatch"><div class="sq" style="background:#115e59"></div><div class="cap"><strong>hover</strong>#115e59</div></div>
+      <div class="swatch"><div class="sq" style="background:#134e4a"></div><div class="cap"><strong>teal-900 tone</strong></div></div>
+    </div>
+
+    <div class="row-title">Кнопки и фокус</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#0f766e"></div><div class="cap"><strong>CTA</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #a7f3d0"></div><div class="cap"><strong>secondary bd</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#ecfdf5;border:1px solid #6ee7b7"></div><div class="cap"><strong>secondary alt</strong></div></div>
+      <div class="swatch"><div class="sq ring" style="border:3px solid rgba(15,118,110,0.22)"></div><div class="cap"><strong>focus ring</strong></div></div>
+    </div>
+
+    <div class="row-title">Семантика (danger не смешивать с teal)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#ecfdf5"></div><div class="cap"><strong>success bg</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#047857"></div><div class="cap"><strong>success</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fffbeb"></div><div class="cap"><strong>warn bg</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#b45309"></div><div class="cap"><strong>warn</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fef2f2"></div><div class="cap"><strong>danger bg</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#b42318"></div><div class="cap"><strong>danger</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#7f1d1d"></div><div class="cap"><strong>danger text</strong></div></div>
+    </div>
+
+    <div class="row-title">Тени</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #d8e8e6;box-shadow:0 1px 2px rgba(12,31,30,0.05),0 4px 14px rgba(12,31,30,0.06)"></div><div class="cap"><strong>shadow sm</strong></div></div>
+      <div class="swatch"><div class="sq" style="background:#fff;border:1px solid #d8e8e6;box-shadow:0 4px 10px rgba(12,31,30,0.06),0 18px 40px rgba(12,31,30,0.09)"></div><div class="cap"><strong>shadow md</strong></div></div>
+    </div>
+  </section>
+
+  <!-- Swiss — календарь: пять семейств семантики -->
+  <section>
+    <h2>Swiss — календарь (пять семейств семантики)</h2>
+    <p class="sub">
+      Расписание / модалка «События»: полоска слева 3px + тинт фона + тёмный текст (§3.6.3 концепта).
+      <strong>Завершено</strong> — нейтраль + ink (§1); <strong>Идёт приём</strong> — изумруд (§1b). Positive / Neutral / System — как в токенах. <strong>Negative:</strong> опорные <strong>вишня (N1)</strong> и <strong>слива (N2)</strong> — см. §4 и §4b (сохраняем). <strong>Attention:</strong> slate (§3) + альтернативы без жёлтого — коралл / деним / лёд (§3a). Календарные hex не подменяют §3.6.2a для тостов — завести <code>calendar.attention.*</code> / <code>calendar.negative.*</code>.
+    </p>
+
+    <div class="row-title">1 — Positive (completed / «Завершено») — канон</div>
+    <p class="sub" style="margin:-6px 0 10px;font-size:0.78rem">
+      <strong>Не зелёный</strong>, чтобы не путать с «Идёт приём» (§1b). Завершение = «архив / закрыто»: холодный нейтраль + полоска <strong>ink</strong>. ФИО и время — <code>#0f1419</code> / <code>#5c6d7a</code>, не изумруд.
+    </p>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f4f6f8"></div><div class="cap"><strong>card bg</strong>#f4f6f8</div></div>
+      <div class="swatch"><div class="sq" style="background:#eef1f4"></div><div class="cap"><strong>bg alt</strong>#eef1f4</div></div>
+      <div class="swatch"><div class="sq" style="background:#1c2e45"></div><div class="cap"><strong>bar brand</strong>#1c2e45</div></div>
+      <div class="swatch"><div class="sq" style="background:#4a5f73"></div><div class="cap"><strong>accent 2°</strong>#4a5f73</div></div>
+      <div class="swatch"><div class="sq" style="background:#0f1419"></div><div class="cap"><strong>title</strong>#0f1419</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#f4f6f8;--cal-bar:#1c2e45;--cal-title:#0f1419;--cal-meta:#5c6d7a">
+        <div class="t">Иванов Пётр</div>
+        <div class="m">27.03.2026 10:00 — 10:30</div>
+        <span class="pill" style="background:#e8eef3;color:#1c2e45">Завершено</span>
+      </div>
+    </div>
+
+    <div class="row-title">1 — черновик (было: зелёный success для «Завершено»)</div>
+    <p class="sub" style="margin:-6px 0 10px;font-size:0.78rem">Сохранено как референс; визуально сливалось с §1b. Не использовать в проде без отдельного решения.</p>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#ecfdf5;opacity:0.92"></div><div class="cap"><strong>card bg</strong>#ecfdf5</div></div>
+      <div class="swatch"><div class="sq" style="background:#065f46;opacity:0.92"></div><div class="cap"><strong>bar</strong>#065f46</div></div>
+      <div class="swatch"><div class="sq" style="background:#065f46;opacity:0.92"></div><div class="cap"><strong>title</strong>#065f46</div></div>
+    </div>
+
+    <div class="row-title">1b — Positive+ (in_progress / «идёт приём») — без изменений</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#d1fae5"></div><div class="cap"><strong>card bg</strong>#d1fae5</div></div>
+      <div class="swatch"><div class="sq" style="background:#059669"></div><div class="cap"><strong>bar</strong>#059669</div></div>
+      <div class="swatch"><div class="sq" style="background:#065f46"></div><div class="cap"><strong>title</strong>#065f46</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#d1fae5;--cal-bar:#059669;--cal-title:#065f46;--cal-meta:#047857">
+        <div class="t">Сидорова Анна</div>
+        <div class="m">27.03.2026 11:00 — 11:45</div>
+        <span class="pill" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0">Идёт приём</span>
+      </div>
+    </div>
+
+    <div class="row-title">2 — Neutral (pending, confirmed, scheduled, draft…)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#ffffff;border:1px solid #e2e6ea"></div><div class="cap"><strong>card bg</strong>#ffffff</div></div>
+      <div class="swatch"><div class="sq" style="background:#f4f6f8"></div><div class="cap"><strong>alt bg</strong>#f4f6f8</div></div>
+      <div class="swatch"><div class="sq" style="background:#8a9faf"></div><div class="cap"><strong>bar ink-300</strong>#8a9faf</div></div>
+      <div class="swatch"><div class="sq" style="background:#0f1419"></div><div class="cap"><strong>title</strong>#0f1419</div></div>
+      <div class="swatch"><div class="sq" style="background:#5c6d7a"></div><div class="cap"><strong>meta</strong>#5c6d7a</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#ffffff;--cal-bar:#8a9faf;--cal-title:#0f1419;--cal-meta:#5c6d7a">
+        <div class="t">Королёв Игорь</div>
+        <div class="m">27.03.2026 09:00 — 09:30</div>
+        <span class="pill" style="background:#e8eef3;color:#4a5f73">Подтверждено</span>
+      </div>
+    </div>
+
+    <div class="row-title">2b — Scheduled (pending / «ожидает», fallback «занято») — канон: персиковый янтарь</div>
+    <p class="sub" style="margin:-6px 0 10px;font-size:0.78rem">
+      Токены <code>--calendar-scheduled-*</code> в <code>frontend/src/index.css</code>. Референс выбора:
+      <code>docs/design/DESIGN_PENDING_SLOT_PALETTE_OPTIONS.html</code> · <strong>H</strong>. Текст бейджа — ink <code>#1c2e45</code>, не коричневый.
+    </p>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#fffef8"></div><div class="cap"><strong>card bg</strong>#fffef8</div></div>
+      <div class="swatch"><div class="sq" style="background:#ffedd5"></div><div class="cap"><strong>bg alt</strong>#ffedd5</div></div>
+      <div class="swatch"><div class="sq" style="background:#ea580c"></div><div class="cap"><strong>bar</strong>#ea580c</div></div>
+      <div class="swatch"><div class="sq" style="background:#fed7aa"></div><div class="cap"><strong>badge</strong>#fed7aa</div></div>
+      <div class="swatch"><div class="sq" style="background:#1c2e45"></div><div class="cap"><strong>badge text</strong>#1c2e45</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#fffef8;--cal-bar:#ea580c;--cal-title:#0f1419;--cal-meta:#5c6d7a">
+        <div class="t">Лебедева Ирина</div>
+        <div class="m">Дентальный имплант (работа)</div>
+        <span class="pill" style="background:#fed7aa;color:#1c2e45">Ожидает</span>
+      </div>
+    </div>
+
+    <div class="row-title">3 — Attention (без коричневого: холодный slate / ink)</div>
+    <p class="sub" style="margin:-8px 0 10px;font-size:0.78rem">Вместо янтаря и охры: фон холодный сланец, полоска <strong>ink-500</strong> — «требует внимания», но не оранжевый светофор и не коричневый.</p>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f8fafc"></div><div class="cap"><strong>card bg</strong>#f8fafc</div></div>
+      <div class="swatch"><div class="sq" style="background:#e2e8f0"></div><div class="cap"><strong>bg alt</strong>#e2e8f0</div></div>
+      <div class="swatch"><div class="sq" style="background:#4a5f73"></div><div class="cap"><strong>bar ink-500</strong>#4a5f73</div></div>
+      <div class="swatch"><div class="sq" style="background:#0f1419"></div><div class="cap"><strong>title</strong>#0f1419</div></div>
+      <div class="swatch"><div class="sq" style="background:#5c6d7a"></div><div class="cap"><strong>meta</strong>#5c6d7a</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#f8fafc;--cal-bar:#4a5f73;--cal-title:#0f1419;--cal-meta:#5c6d7a">
+        <div class="t">Перенос слота</div>
+        <div class="m">Было 26.03 → стало 28.03</div>
+        <span class="pill" style="background:#e8eef3;color:#4a5f73">Оплата ожидается</span>
+      </div>
+    </div>
+
+    <div class="row-title">3a — Attention: не жёлтый (коралл · деним · лёд)</div>
+    <p class="sub" style="margin:-8px 0 10px;font-size:0.78rem">
+      Жёлтый и янтарь на большой площади легко выглядят дёшево или уходят в коричневый. Для «посмотри сюда» без тревоги лучше <strong>мягкий розово-коралл</strong> (не вишня!), <strong>пыльный сине-серый</strong> (не яркий info-blue) или <strong>холодный циан</strong> (не teal success). ФИО — <code>#0f1419</code>, полоска — единственный яркий акцент. Вишня/слива в §4b без изменений.
+    </p>
+
+    <div class="row-title" style="margin-top:14px">A — Пудровый коралл</div>
+    <p class="sub" style="margin:-6px 0 8px;font-size:0.72rem">Тёплое внимание без охры: полоска <strong>rose-400</strong>, фон почти белый с розовым туманом. Отличается от негатива (вишня) — там бордо и холоднее.</p>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#fff5f5"></div><div class="cap"><strong>card bg</strong>#fff5f5</div></div>
+      <div class="swatch"><div class="sq" style="background:#ffe4e6"></div><div class="cap"><strong>bg alt</strong>#ffe4e6</div></div>
+      <div class="swatch"><div class="sq" style="background:#fb7185"></div><div class="cap"><strong>bar</strong>#fb7185</div></div>
+      <div class="swatch"><div class="sq" style="background:#64748b"></div><div class="cap"><strong>meta</strong>#64748b</div></div>
+      <div class="swatch"><div class="sq" style="background:#0f1419"></div><div class="cap"><strong>title</strong>#0f1419</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#fff5f5;--cal-bar:#fb7185;--cal-title:#0f1419;--cal-meta:#64748b">
+        <div class="t">Требуется ответ пациента</div>
+        <div class="m">SMS · ждём подтверждения</div>
+        <span class="pill" style="background:#ffe4e6;color:#9d174d">pending_reply</span>
+      </div>
+    </div>
+
+    <div class="row-title" style="margin-top:14px">B — Пыльный деним</div>
+    <p class="sub" style="margin:-6px 0 8px;font-size:0.72rem">«Деловое» внимание: сине-серый, как дорогая рубашка. Не конкурирует с brand-ink на CTA — это фон слота.</p>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f0f4f8"></div><div class="cap"><strong>card bg</strong>#f0f4f8</div></div>
+      <div class="swatch"><div class="sq" style="background:#e2eaf2"></div><div class="cap"><strong>bg alt</strong>#e2eaf2</div></div>
+      <div class="swatch"><div class="sq" style="background:#5b7c9a"></div><div class="cap"><strong>bar</strong>#5b7c9a</div></div>
+      <div class="swatch"><div class="sq" style="background:#475569"></div><div class="cap"><strong>meta</strong>#475569</div></div>
+      <div class="swatch"><div class="sq" style="background:#0f1419"></div><div class="cap"><strong>title</strong>#0f1419</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#f0f4f8;--cal-bar:#5b7c9a;--cal-title:#0f1419;--cal-meta:#475569">
+        <div class="t">Оплата частичная</div>
+        <div class="m">Доплатить до визита</div>
+        <span class="pill" style="background:#e2eaf2;color:#334155">awaiting_balance</span>
+      </div>
+    </div>
+
+    <div class="row-title" style="margin-top:14px">C — Лёд (циан)</div>
+    <p class="sub" style="margin:-6px 0 8px;font-size:0.72rem">Холодное «в очереди на действие»; полоска sky-600, не teal-зелёный — меньше путаницы с success.</p>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f0f9ff"></div><div class="cap"><strong>card bg</strong>#f0f9ff</div></div>
+      <div class="swatch"><div class="sq" style="background:#e0f2fe"></div><div class="cap"><strong>bg alt</strong>#e0f2fe</div></div>
+      <div class="swatch"><div class="sq" style="background:#0284c7"></div><div class="cap"><strong>bar</strong>#0284c7</div></div>
+      <div class="swatch"><div class="sq" style="background:#5c6d7a"></div><div class="cap"><strong>meta</strong>#5c6d7a</div></div>
+      <div class="swatch"><div class="sq" style="background:#0f1419"></div><div class="cap"><strong>title</strong>#0f1419</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#f0f9ff;--cal-bar:#0284c7;--cal-title:#0f1419;--cal-meta:#5c6d7a">
+        <div class="t">Слот изменён клиникой</div>
+        <div class="m">Проверьте новое время</div>
+        <span class="pill" style="background:#e0f2fe;color:#0369a1">rescheduled</span>
+      </div>
+    </div>
+
+    <div class="row-title">4 — Negative (альтернатива: бордо / вино)</div>
+    <p class="sub" style="margin:-8px 0 10px;font-size:0.78rem">Вместо алертного <code>#fef2f2</code> + <code>#b42318</code>: холодный розово-винный ряд — потеря слота читается, без клинического «красного тревога».</p>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#f7f1f3"></div><div class="cap"><strong>card bg</strong>#f7f1f3</div></div>
+      <div class="swatch"><div class="sq" style="background:#fce8ee"></div><div class="cap"><strong>bg alt</strong>#fce8ee</div></div>
+      <div class="swatch"><div class="sq" style="background:#9f1239"></div><div class="cap"><strong>bar</strong>#9f1239</div></div>
+      <div class="swatch"><div class="sq" style="background:#881337"></div><div class="cap"><strong>title strong</strong>#881337</div></div>
+      <div class="swatch"><div class="sq" style="background:#4c0519"></div><div class="cap"><strong>meta</strong>#4c0519</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#f7f1f3;--cal-bar:#9f1239;--cal-title:#881337;--cal-meta:#6b1a2e">
+        <div class="t">Неявка</div>
+        <div class="m">27.03.2026 08:30 — 09:00</div>
+        <span class="pill" style="background:#fce8ee;color:#881337">no_show</span>
+      </div>
+    </div>
+
+    <div class="row-title">4b — Negative: пять направлений</div>
+    <p class="sub" style="margin:-8px 0 10px;font-size:0.78rem"><strong>N1</strong> — опорная вишня (как в блоке 4). <strong>N2–N5</strong> — альтернативы без «пожарного» красного. Один ряд — в <code>calendar.negative.*</code>.</p>
+
+    <div class="neg-variants">
+      <div class="neg-var">
+        <div class="tag">N1 · Вишня (опорный)</div>
+        <div class="hint">Розово-винный, как в блоке 4. Универсально.</div>
+        <div class="grid" style="gap:6px">
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#f7f1f3"></div><div class="cap" style="font-size:0.6rem"><strong>bg</strong>#f7f1f3</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#9f1239"></div><div class="cap" style="font-size:0.6rem"><strong>bar</strong>#9f1239</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#881337"></div><div class="cap" style="font-size:0.6rem"><strong>text</strong>#881337</div></div>
+        </div>
+      </div>
+      <div class="neg-var">
+        <div class="tag">N2 · Слива (plum)</div>
+        <div class="hint">Фиолетово-бордовый, холоднее вишни. Премиум, клиника-люкс.</div>
+        <div class="grid" style="gap:6px">
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#f3f0f7"></div><div class="cap" style="font-size:0.6rem"><strong>bg</strong>#f3f0f7</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#6b2d5c"></div><div class="cap" style="font-size:0.6rem"><strong>bar</strong>#6b2d5c</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#4c1d42"></div><div class="cap" style="font-size:0.6rem"><strong>text</strong>#4c1d42</div></div>
+        </div>
+      </div>
+      <div class="neg-var">
+        <div class="tag">N3 · Пыльная роза</div>
+        <div class="hint">Мягче, редакционный «отказ»; меньше драмы на сетке.</div>
+        <div class="grid" style="gap:6px">
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#f8f2f4"></div><div class="cap" style="font-size:0.6rem"><strong>bg</strong>#f8f2f4</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#a37483"></div><div class="cap" style="font-size:0.6rem"><strong>bar</strong>#a37483</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#6b3d4a"></div><div class="cap" style="font-size:0.6rem"><strong>text</strong>#6b3d4a</div></div>
+        </div>
+      </div>
+      <div class="neg-var">
+        <div class="tag">N4 · Холодный кармин</div>
+        <div class="hint">Розово-красный с синим подтоном; ближе к моде/косметологии.</div>
+        <div class="grid" style="gap:6px">
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#fdf2f8"></div><div class="cap" style="font-size:0.6rem"><strong>bg</strong>#fdf2f8</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#be123c"></div><div class="cap" style="font-size:0.6rem"><strong>bar</strong>#be123c</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#9f1239"></div><div class="cap" style="font-size:0.6rem"><strong>text</strong>#9f1239</div></div>
+        </div>
+      </div>
+      <div class="neg-var">
+        <div class="tag">N5 · Графитовая отмена</div>
+        <div class="hint">Не «ошибка», а аннулирование слота — почти монохром, без красного.</div>
+        <div class="grid" style="gap:6px">
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#f4f4f5"></div><div class="cap" style="font-size:0.6rem"><strong>bg</strong>#f4f4f5</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#71717a"></div><div class="cap" style="font-size:0.6rem"><strong>bar</strong>#71717a</div></div>
+          <div class="swatch" style="width:56px"><div class="sq" style="width:56px;height:56px;background:#3f3f46"></div><div class="cap" style="font-size:0.6rem"><strong>text</strong>#3f3f46</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row-title">5 — System (blocked, maintenance, error, inconsistent)</div>
+    <div class="grid">
+      <div class="swatch"><div class="sq" style="background:#eef2f7"></div><div class="cap"><strong>card bg</strong>#eef2f7</div></div>
+      <div class="swatch"><div class="sq" style="background:#64748b"></div><div class="cap"><strong>bar</strong>#64748b</div></div>
+      <div class="swatch"><div class="sq" style="background:#334155"></div><div class="cap"><strong>title</strong>#334155</div></div>
+      <div class="swatch"><div class="sq" style="background:#475569"></div><div class="cap"><strong>meta</strong>#475569</div></div>
+    </div>
+    <div class="cal-strip">
+      <div class="cal-mini" style="background:#eef2f7;--cal-bar:#64748b;--cal-title:#334155;--cal-meta:#475569">
+        <div class="t">Технический перерыв</div>
+        <div class="m">Кабинет 2 · 12:00 — 13:00</div>
+        <span class="pill" style="background:#e2e8f0;color:#475569">blocked</span>
+      </div>
+    </div>
+  </section>
+
+  <p class="intro" style="text-align:center;margin-top:8px">
+    Файл: <code>docs/design/DESIGN_PALETTE_SPECTRUM_SWATCHES.html</code>
+  </p>
+</body>
+</html>

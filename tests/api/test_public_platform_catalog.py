@@ -5,19 +5,22 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_public_catalog_plans_includes_starter_rf(client: AsyncClient):
+async def test_public_catalog_plans_includes_start_growth_business_os(client: AsyncClient):
     r = await client.get("/api/v1/public/platform/catalog/plans")
     assert r.status_code == 200
     data = r.json()
     assert isinstance(data, list)
     slugs = {row.get("slug") for row in data}
-    assert "starter_rf" in slugs
-    starter = next(x for x in data if x.get("slug") == "starter_rf")
-    keys = starter.get("option_keys") or []
+    assert "start" in slugs
+    assert "growth" in slugs
+    assert "business_os" in slugs
+    start = next(x for x in data if x.get("slug") == "start")
+    keys = start.get("option_keys") or []
     assert "core.base" in keys
+    assert "crm.pipeline" in keys
     assert "tasks.kanban" in keys
-    assert starter.get("price_monthly_rub") == "4990.00"
-    assert starter.get("price_annual_rub") == "49900.00"
+    assert start.get("price_monthly_rub") == "2900.00"
+    assert start.get("price_annual_rub") == "29000.00"
 
 
 @pytest.mark.asyncio

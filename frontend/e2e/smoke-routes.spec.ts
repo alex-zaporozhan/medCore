@@ -7,23 +7,31 @@ import { test, expect } from "@playwright/test";
 test.describe("route shells (no auth)", () => {
   test("landing", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: /Dental Booking Business OS/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Операционная система для роста вашего бизнеса/i })).toBeVisible();
   });
 
   test("clinic sign-in at /admin/login", async ({ page }) => {
     await page.goto("/admin/login");
     await expect(page).toHaveURL(/\/admin\/login/);
-    await expect(page.getByRole("heading", { name: /Вход в Business OS/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Вход для сотрудников клиники/i })).toBeVisible();
   });
 
-  test("legacy /login redirects to landing with patient hint", async ({ page }) => {
+  test("public /login shows patient and clinic entry", async ({ page }) => {
     await page.goto("/login");
-    await expect(page).toHaveURL(/\/\?patientEntry=need-clinic/);
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByRole("heading", { name: /^Вход$/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Клиника: сотрудники и владелец/i })).toBeVisible();
   });
 
-  test("marketing pricing shell (FE-E1)", async ({ page }) => {
+  test("marketing /pricing redirects to signup (unified checkout)", async ({ page }) => {
     await page.goto("/pricing");
-    await expect(page.getByRole("heading", { name: /Тарифы для клиник/i })).toBeVisible();
+    await expect(page).toHaveURL(/\/signup$/);
+    await expect(page.getByRole("heading", { name: /Регистрация организации/i })).toBeVisible();
+  });
+
+  test("marketing sandbox shell", async ({ page }) => {
+    await page.goto("/sandbox");
+    await expect(page.getByRole("heading", { name: /Демо-версия системы готовится к запуску/i })).toBeVisible();
   });
 
   test("marketing signup shell (PII consent gate)", async ({ page }) => {
@@ -47,6 +55,11 @@ test.describe("route shells (no auth)", () => {
     page,
   }) => {
     await page.goto("/platform/provision-queue");
+    await expect(page).toHaveURL(/\/platform\/login/);
+  });
+
+  test("platform enterprise leads redirects without founder JWT", async ({ page }) => {
+    await page.goto("/platform/leads");
     await expect(page).toHaveURL(/\/platform\/login/);
   });
 });

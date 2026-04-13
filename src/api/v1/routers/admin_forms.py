@@ -35,6 +35,12 @@ from src.domain.entities.e_signature import ESignature
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_FORMS_LIST_LIMIT = 2000
+_MAX_FORMS_LIST_LIMIT = 5000
+_DEFAULT_FORMS_EXPORT_SUBMISSION_LIMIT = 5000
+_MAX_FORMS_EXPORT_SUBMISSION_LIMIT = 10000
+
+
 def _form_link_base_url() -> str:
     """Base URL for form fill page (send-link). Prefer form_link_base_url, else first CORS origin."""
     base = (settings.form_link_base_url or "").strip()
@@ -57,6 +63,12 @@ router = APIRouter(
 )
 async def export_forms(
     patient_id: UUID,
+    submission_limit: int = Query(
+        _DEFAULT_FORMS_EXPORT_SUBMISSION_LIMIT,
+        ge=1,
+        le=_MAX_FORMS_EXPORT_SUBMISSION_LIMIT,
+        description="Max submissions to include (newest first after ordering).",
+    ),
     session: AsyncSession = Depends(get_session),
     admin: AdminContext = Depends(require_permissions("export_forms")),
 ) -> dict:
@@ -73,10 +85,15 @@ async def export_forms(
             "admin_user_id": str(admin.user_id) if getattr(admin, "user_id", None) else None,
         },
     )
-    submissions_stmt = select(DigitalFormSubmission).where(
-        DigitalFormSubmission.clinic_id == admin.clinic_id,
-        DigitalFormSubmission.patient_id == patient_id,
-    ).order_by(DigitalFormSubmission.created_at.asc())
+    submissions_stmt = (
+        select(DigitalFormSubmission)
+        .where(
+            DigitalFormSubmission.clinic_id == admin.clinic_id,
+            DigitalFormSubmission.patient_id == patient_id,
+        )
+        .order_by(DigitalFormSubmission.created_at.asc())
+        .limit(submission_limit)
+    )
     submissions_result = await session.execute(submissions_stmt)
     submissions = list(submissions_result.scalars().all())
 
@@ -182,6 +199,8 @@ async def send_form_link(
     response_model=list[DigitalFormTemplateRead],
 )
 async def list_form_templates(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_FORMS_LIST_LIMIT, ge=1, le=_MAX_FORMS_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     admin: AdminContext = Depends(require_permissions("view_forms")),
 ) -> list[DigitalFormTemplateRead]:
@@ -190,6 +209,8 @@ async def list_form_templates(
         select(DigitalFormTemplate)
         .where(DigitalFormTemplate.clinic_id == admin.clinic_id)
         .order_by(DigitalFormTemplate.code, DigitalFormTemplate.version.desc())
+        .offset(skip)
+        .limit(limit)
     )
     result = await session.execute(stmt)
     templates = list(result.scalars().all())
@@ -278,6 +299,8 @@ async def list_form_submissions(
     booking_id: UUID | None = Query(None),
     template_code: str | None = Query(None),
     form_status: str | None = Query(None, alias="status", description="Filter by FormStatus value"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(_DEFAULT_FORMS_LIST_LIMIT, ge=1, le=_MAX_FORMS_LIST_LIMIT),
     session: AsyncSession = Depends(get_session),
     admin: AdminContext = Depends(require_permissions("view_forms")),
 ) -> list[DigitalFormSubmissionListItem]:
@@ -301,7 +324,7 @@ async def list_form_submissions(
         else:
             return []
 
-    stmt = stmt.order_by(DigitalFormSubmission.created_at.desc())
+    stmt = stmt.order_by(DigitalFormSubmission.created_at.desc()).offset(skip).limit(limit)
     result = await session.execute(stmt)
     submissions = list(result.scalars().all())
     if not submissions:

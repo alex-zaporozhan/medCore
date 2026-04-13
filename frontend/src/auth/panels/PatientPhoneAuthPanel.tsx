@@ -140,6 +140,7 @@ export function PatientPhoneAuthPanel() {
       <SegmentedControl
         fullWidth
         size="sm"
+        color="slate"
         value={mode}
         onChange={(v) => {
           setMode(v as "login" | "register");
@@ -164,7 +165,7 @@ export function PatientPhoneAuthPanel() {
         <Button
           type="button"
           variant="outline"
-          color={SEMANTIC.action.send}
+          color="slate"
           size="xs"
             onClick={() => {
                 window.location.href = `${API_BASE}/v1/auth/oauth/vk/start?${oauthStartQuery}`;
@@ -175,7 +176,7 @@ export function PatientPhoneAuthPanel() {
         <Button
           type="button"
           variant="outline"
-          color={SEMANTIC.action.send}
+          color="slate"
           size="xs"
             onClick={() => {
                 window.location.href = `${API_BASE}/v1/auth/oauth/yandex/start?${oauthStartQuery}`;
@@ -233,7 +234,7 @@ export function PatientPhoneAuthPanel() {
           )}
           <Button
             type="button"
-            color={SEMANTIC.action.confirm}
+            color="slate"
             onClick={mode === "login" ? handleSendCodeLogin : handleSendCodeRegister}
             loading={sendCode.isPending}
             fullWidth
@@ -256,7 +257,7 @@ export function PatientPhoneAuthPanel() {
           />
           <Button
             type="button"
-            color={SEMANTIC.action.confirm}
+            color="slate"
             onClick={handleVerify}
             loading={verifyCode.isPending}
             fullWidth
