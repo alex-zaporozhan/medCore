@@ -1,0 +1,2 @@
+status=200
+{"signup_intent_id":"de047301-7ce6-4df9-93f6-635854eaca29","payment_url":"https://pay.example/yk","amount_rub":"2900.00","currency":"RUB"}

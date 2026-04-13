@@ -6,7 +6,7 @@ alwaysApply: true
 # CI/CD (dental_booking)
 
 - **VPS / single-server default:** local **`docker build`** then interactive **`docker login`** + **`docker push`** to Docker Hub — **`scripts/docker_hub_release.ps1`** / **`docker_hub_release.sh`**; docs **`CI_CD.md`**, **`documentation/VPS_IMAGE_AND_DATA.md`**.
-- **Optional Hub push from GitHub Actions:** **`.github/workflows/docker-hub-publish.yml`** — needs **`DOCKERHUB_USERNAME`** / **`DOCKERHUB_TOKEN`** secrets; build steps run **before** login (no push on build failure).
+- **Optional Hub push from GitHub Actions:** **`.github/workflows/docker-hub-publish.yml`** — **`workflow_dispatch`** or **git tag `v*`**; needs **`DOCKERHUB_USERNAME`** / **`DOCKERHUB_TOKEN`** secrets; build steps run **before** login (no push on build failure).
 - **No-secrets image verify:** **`.github/workflows/docker-images-build-verify.yml`** (`push: false`).
 - **Corporate pipeline:** **Jenkins** (`Jenkinsfile`) → **GHCR** for image publish + deploy when Jenkins is the org standard.
 - **GitHub Actions:** supplementary PR checks; not a substitute for Jenkins unless the team does not use Jenkins.

@@ -26,6 +26,8 @@ Run from project root: poetry run pytest tests/
 - TRUNCATE runs only when the DB name contains "test". Never point at production.
 - Before TRUNCATE, other ``client backend`` sessions on the same database are terminated so
   ``TRUNCATE`` is not blocked by stray uvicorn/psql/pytest (set ``PYTEST_DISABLE_TEST_DB_SESSION_KILL=1`` to skip).
+- If Postgres returns ``too many clients already``, the server hit ``max_connections`` (often shared with a running
+  uvicorn using a large pool). Stop the API or raise Postgres limits (``docker-compose`` ``db`` sets ``max_connections=200``).
 """
 import logging
 import os
@@ -761,3 +763,41 @@ else:
 
         request.addfinalizer(_finalizer)
         return session
+
+
+# redis_integration: skip when Redis is down — RateLimiter fails open on errors, so tests would
+# falsely expect RateLimitExceeded while teardown then fails on redis.delete (see 10-Q8).
+_redis_sync_ping_result: bool | None = None
+
+
+def _redis_reachable_for_integration_tests() -> bool:
+    global _redis_sync_ping_result
+    if _redis_sync_ping_result is not None:
+        return _redis_sync_ping_result
+    url = (os.environ.get("REDIS_URL") or "redis://localhost:6379/0").strip()
+    try:
+        import redis as redis_sync
+
+        client = redis_sync.Redis.from_url(
+            url,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+        client.ping()
+        _redis_sync_ping_result = True
+    except Exception:
+        _redis_sync_ping_result = False
+    return _redis_sync_ping_result
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    if not item.get_closest_marker("redis_integration"):
+        return
+    flag = os.environ.get("RUN_REDIS_INTEGRATION_TESTS", "1").strip().lower()
+    if flag in ("0", "false", "no", "off"):
+        pytest.skip("redis_integration tests skipped (RUN_REDIS_INTEGRATION_TESTS disabled)")
+    if not _redis_reachable_for_integration_tests():
+        pytest.skip(
+            "Redis not reachable for redis_integration tests (check REDIS_URL; e.g. docker compose up -d redis). "
+            "Opt out: RUN_REDIS_INTEGRATION_TESTS=0"
+        )

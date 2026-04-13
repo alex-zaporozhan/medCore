@@ -75,7 +75,13 @@ describe("mergeDrawerStyles", () => {
     const s = mergeDrawerStyles({ body: { paddingTop: 0 } });
     expect(typeof s).toBe("object");
     if (typeof s === "object" && s && "body" in s) {
-      expect(s.body).toEqual({ paddingTop: 0 });
+      expect(s.body).toMatchObject({
+        flex: 1,
+        minHeight: 0,
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+        paddingTop: 0,
+      });
     }
   });
 
@@ -90,7 +96,13 @@ describe("mergeDrawerStyles", () => {
       { opened: true, onClose: () => {} } as DrawerProps,
       {}
     );
-    expect(resolved.body).toEqual({ padding: 8 });
+    expect(resolved.body).toMatchObject({
+      flex: 1,
+      minHeight: 0,
+      overflowY: "auto",
+      overscrollBehavior: "contain",
+      padding: 8,
+    });
     expect(resolved.content).toMatchObject({ backdropFilter: "blur(10px)" });
   });
 });
