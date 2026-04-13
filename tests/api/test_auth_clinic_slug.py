@@ -9,7 +9,7 @@ async def test_agreement_unknown_clinic_slug_400(client: AsyncClient) -> None:
     r = await client.get("/api/v1/auth/agreement?clinic_slug=does-not-exist-slug-xyz")
     assert r.status_code == 400
     body = r.json()
-    assert body["detail"]["code"] == "UNKNOWN_CLINIC_SLUG"
+    assert body["code"] == "unknown_clinic_slug"
 
 
 @pytest.mark.asyncio
@@ -29,7 +29,7 @@ async def test_send_code_unknown_slug_400(client: AsyncClient) -> None:
         json={"phone": "+79005550102", "clinic_slug": "missing-slug-abc"},
     )
     assert r.status_code == 400
-    assert r.json()["detail"]["code"] == "UNKNOWN_CLINIC_SLUG"
+    assert r.json()["code"] == "unknown_clinic_slug"
 
 
 @pytest.mark.asyncio
@@ -43,4 +43,4 @@ async def test_send_code_clinic_slug_required_when_flag(client: AsyncClient, mon
         json={"phone": "+79005550104"},
     )
     assert r.status_code == 400
-    assert r.json()["detail"]["code"] == "CLINIC_SLUG_REQUIRED"
+    assert r.json()["code"] == "clinic_slug_required"
