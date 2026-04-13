@@ -41,3 +41,6 @@ platform_catalog_plans
 platform_founder_users
 platform_signup_intents
 platform_subscription_payments
+
+# Публичные заявки с маркетинга (корпоративный лид) — без привязки к клинике
+enterprise_leads
