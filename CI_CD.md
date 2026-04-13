@@ -7,7 +7,7 @@
   - Windows: **`scripts/docker_hub_release.ps1`** (параметр `-Tag`, опционально `$env:DOCKERHUB_USERNAME`).
   - Linux/macOS: **`scripts/docker_hub_release.sh`** (`DOCKERHUB_USERNAME=... ./scripts/docker_hub_release.sh <tag>`).
 - На VPS в `.env` задайте, например: `BACKEND_IMAGE=docker.io/<user>/dental-booking-backend:<tag>` и то же для frontend (см. **`documentation/VPS_IMAGE_AND_DATA.md`**).
-- **GitHub Actions** с push на Hub возможны только с секретами **`DOCKERHUB_USERNAME`** / **`DOCKERHUB_TOKEN`** в настройках репозитория (интерактивный ввод в CI недоступен). Workflow **`.github/workflows/docker-hub-publish.yml`** сначала выполняет **два `docker build` без логина**, затем логин и push — при падении сборки push не выполняется.
+- **GitHub Actions** с push на Hub возможны только с секретами **`DOCKERHUB_USERNAME`** / **`DOCKERHUB_TOKEN`** в настройках репозитория (**Settings → Secrets and variables → Actions**). Workflow **`.github/workflows/docker-hub-publish.yml`**: **workflow_dispatch** (поле тега, по умолчанию `main`), при merge/push в **`main`/`master`** (образы с тегом **`main`**, с фильтром путей — см. YAML), или при push **git-тега `v*`** (тег образа = имя git-тега). Сначала **два `docker build` без логина**, затем login и push. Без секретов job завершится ошибкой — используйте локальные **`scripts/docker_hub_release.*`**.
 
 ## Проверка Dockerfile без пуша и без секретов
 

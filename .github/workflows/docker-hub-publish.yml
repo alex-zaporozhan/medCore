@@ -1,5 +1,6 @@
 # Push app images to Docker Hub from GitHub Actions (optional).
 # Password cannot be typed interactively in Actions — use repo secrets DOCKERHUB_USERNAME / DOCKERHUB_TOKEN.
+# Triggers: push to main/master (tag: main), git tag v*, or manual workflow_dispatch.
 # Recommended for solo VPS: build + interactive login on your machine — scripts/docker_hub_release.ps1 or .sh (see CI_CD.md).
 # Jenkins → GHCR remains the team pipeline in Jenkinsfile for orgs that use it.
 name: Docker Hub publish (optional)
@@ -10,7 +11,26 @@ on:
       image_tag:
         description: "Tag for backend and frontend images (e.g. main, latest, v1.2.3)"
         required: true
-        default: "manual"
+        default: "main"
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - Dockerfile
+      - frontend/Dockerfile
+      - pyproject.toml
+      - poetry.lock
+      - frontend/package.json
+      - frontend/package-lock.json
+      - .github/workflows/docker-hub-publish.yml
+      - "src/**"
+      - "frontend/**"
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
 
 jobs:
   dockerhub:
@@ -29,6 +49,18 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve image tag
+        id: meta
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF}" == refs/heads/main || "${GITHUB_REF}" == refs/heads/master ]]; then
+            echo "tag=main" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       # Build first without registry credentials; push only after green builds.
       - name: Build backend image (no push)
         run: docker build -t dental-booking-backend:ci -f Dockerfile .
@@ -45,7 +77,7 @@ jobs:
       - name: Tag and push
         env:
           USER: ${{ secrets.DOCKERHUB_USERNAME }}
-          TAG: ${{ inputs.image_tag }}
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
           set -euo pipefail
           docker tag dental-booking-backend:ci "${USER}/dental-booking-backend:${TAG}"
