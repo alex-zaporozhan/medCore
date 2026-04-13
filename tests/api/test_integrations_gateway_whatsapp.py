@@ -23,7 +23,7 @@ async def test_whatsapp_webhook_creates_contact_chat_message_with_channel(  # no
         "text": "Hello from WhatsApp",
         "message_id": "wa-msg-1",
     }
-    r = await client.post("/api/v1/api/integrations/webhooks/whatsapp", json=payload)
+    r = await client.post("/api/v1/integrations/webhooks/whatsapp", json=payload)
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "ok"
 
