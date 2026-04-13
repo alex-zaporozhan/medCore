@@ -30,7 +30,7 @@ async def test_post_refresh_attribution_requires_attribution_permission(
     try:
         r = await client.post(
             "/api/v1/admin/auth/login",
-            json={"email": "admin@test-clinic.local", "password": "password123"},
+            json={"email": seed_data["admin_email"], "password": "password123"},
         )
         assert r.status_code == 200, r.text
         token = r.json()["access_token"]
@@ -68,7 +68,7 @@ async def test_post_refresh_all_requires_attribution_permission(
     try:
         r = await client.post(
             "/api/v1/admin/auth/login",
-            json={"email": "admin@test-clinic.local", "password": "password123"},
+            json={"email": seed_data["admin_email"], "password": "password123"},
         )
         assert r.status_code == 200, r.text
         token = r.json()["access_token"]
