@@ -36,7 +36,7 @@ export DATABASE_URL="${DATABASE_URL_TEST}"
 run_step "Backend lint (ruff)" poetry run ruff check src tests
 run_step "Backend tenant audit" poetry run python scripts/audit_tenant_columns.py
 run_step "Backend type-check (mypy JWT module)" poetry run mypy src/core/security.py --ignore-missing-imports --follow-imports=skip
-run_step "Backend tests (pytest, no e2e)" poetry run pytest tests/ -q --tb=short --ignore=tests/e2e --maxfail=1
+run_step "Backend tests (pytest, no e2e)" poetry run pytest tests/ -q --tb=short --ignore=tests/e2e
 
 cd "${ROOT_DIR}/frontend"
 run_step "Frontend lint" npm run lint

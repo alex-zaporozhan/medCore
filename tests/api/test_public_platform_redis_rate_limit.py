@@ -1,7 +1,7 @@
 """10-Q8 / 1b-F3: Redis-backed rate limit keys for public platform checkout/catalog (real Redis).
 
-``tests/conftest.py`` sets ``RUN_REDIS_INTEGRATION_TESTS=1`` by default with ``TESTING=1``; Redis must be reachable
-(see ``REDIS_URL`` / ``.env``). To opt out locally: ``RUN_REDIS_INTEGRATION_TESTS=0`` and ``pytest -m 'not redis_integration'``.
+``pytest_runtest_setup`` in ``conftest.py`` skips these if ``RUN_REDIS_INTEGRATION_TESTS=0`` or Redis is not reachable
+(``REDIS_URL``, e.g. ``docker compose up -d redis``). Otherwise RateLimiter fails open on Redis errors and assertions break.
 """
 
 from __future__ import annotations

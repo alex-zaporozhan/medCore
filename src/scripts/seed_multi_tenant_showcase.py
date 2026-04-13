@@ -4,7 +4,7 @@ Fills the **platform founder** dashboard (`compute_platform_founder_dashboard_su
 active organizations with non-revoked ``platform_signup_intents`` and catalog-backed MRR.
 
 Also seeds per clinic: owner (RBAC owner), 2× admin, 2× manager (маркетолог / широкий доступ),
-doctors, patients, recent completed bookings + payments, one omnichannel inbound thread.
+doctors, patients, dense calendar bookings (3 months via ``showcase_saas_extras``), one omnichannel inbound thread.
 
 **Not** an Alembic migration: schema stays in Alembic only; run ``alembic upgrade head`` first.
 
@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import random
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -34,14 +33,12 @@ from src.application.dto.omnichannel_dto import NormalizedMessageDTO
 from src.application.services.integration_gateway_service import IntegrationGatewayService
 from src.application.services.platform_billing_service import resolve_entitlement_keys_for_intent
 from src.domain.entities.admin_user import AdminUser
-from src.domain.entities.booking import Booking
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.doctor import Doctor
 from src.domain.entities.doctor_working_hours import DoctorWorkingHours
 from src.domain.entities.organization import Organization
 from src.domain.entities.organization_entitlement import OrganizationEntitlement
 from src.domain.entities.patient import Patient
-from src.domain.entities.payment import Payment
 from src.domain.entities.platform_signup_intent import PlatformSignupIntent
 from src.domain.entities.service import Service
 from src.domain.entities.service_doctor import ServiceDoctor
@@ -51,6 +48,7 @@ from src.scripts.seed_rbac_baseline import (
     ensure_user_owner_role,
     ensure_user_role_by_code,
 )
+from src.scripts.showcase_saas_extras import apply_showcase_saas_extras, clear_schedule_cache_best_effort
 
 SEED_MARKER = "seed:multi_tenant_showcase_v1"
 SHOWCASE_PASSWORD = "ShowcaseMT2026!"
@@ -231,6 +229,7 @@ async def _seed_one_org(
     owner = AdminUser(
         id=uuid.uuid4(),
         clinic_id=clinic.id,
+        organization_id=org.id,
         email=str(spec["owner_email"]).strip().lower(),
         password_hash=pbkdf2_sha256.hash(SHOWCASE_PASSWORD),
         full_name=str(spec["owner_name"]),
@@ -245,6 +244,7 @@ async def _seed_one_org(
         u = AdminUser(
             id=uuid.uuid4(),
             clinic_id=clinic.id,
+            organization_id=org.id,
             email=str(email).strip().lower(),
             password_hash=pbkdf2_sha256.hash(SHOWCASE_PASSWORD),
             full_name=str(full_name),
@@ -261,6 +261,7 @@ async def _seed_one_org(
         u = AdminUser(
             id=uuid.uuid4(),
             clinic_id=clinic.id,
+            organization_id=org.id,
             email=str(email).strip().lower(),
             password_hash=pbkdf2_sha256.hash(SHOWCASE_PASSWORD),
             full_name=str(full_name),
@@ -357,49 +358,6 @@ async def _seed_one_org(
         patients.append(patient)
     await session.flush()
 
-    rng = random.Random(100 + org_index)
-    today = date.today()
-    for day_offset in range(-21, 1):
-        d = today + timedelta(days=day_offset)
-        if d.weekday() >= 5:
-            continue
-        for doc in doctors:
-            if rng.random() > 0.35:
-                continue
-            pat = rng.choice(patients)
-            svc = rng.choice(services)
-            slot = time(10 + rng.randint(0, 6), rng.choice((0, 30)), 0)
-            st = "completed" if day_offset < -1 else rng.choice(["completed", "confirmed", "pending"])
-            b = Booking(
-                id=uuid.uuid4(),
-                clinic_id=clinic.id,
-                patient_id=pat.id,
-                doctor_id=doc.id,
-                service_id=svc.id,
-                appointment_date=d,
-                appointment_time=slot,
-                status=st,
-                prepayment_amount=Decimal("0"),
-                erp_processed=st == "completed",
-                erp_error_code=None,
-            )
-            session.add(b)
-            await session.flush()
-            if st == "completed":
-                pay = Payment(
-                    id=uuid.uuid4(),
-                    clinic_id=clinic.id,
-                    booking_id=b.id,
-                    provider="YOOKASSA",
-                    provider_payment_id=f"showcase-{b.id}",
-                    amount=svc.price,
-                    status="succeeded",
-                )
-                session.add(pay)
-                await session.flush()
-                b.payment_id = pay.id
-                b.prepayment_amount = svc.price
-
     gateway = IntegrationGatewayService(session=session, business_account_id=clinic.id)
     ext = f"tg_showcase_{spec['key']}"
     await gateway.handle_inbound_normalized_message(
@@ -413,6 +371,8 @@ async def _seed_one_org(
         )
     )
 
+    await apply_showcase_saas_extras(session, clinic=clinic, owner_admin_id=owner.id)
+
 
 async def seed_main() -> None:
     async with AsyncSessionLocal() as session:
@@ -422,7 +382,9 @@ async def seed_main() -> None:
         if res.scalar_one_or_none() is not None:
             print(
                 "Multi-tenant showcase already applied (notes marker on platform_signup_intents). "
-                "To re-run: reset DB, then alembic upgrade head."
+                "To re-run: reset DB, then alembic upgrade head.\n"
+                "To add Commerce, patient calendar, Kanban tasks, staff calendar, feed/chat on existing DB: "
+                "poetry run python -m src.scripts.backfill_showcase_saas_extras"
             )
             return
 
@@ -432,6 +394,7 @@ async def seed_main() -> None:
             await _seed_one_org(session, spec, i)
 
         await session.commit()
+        await clear_schedule_cache_best_effort()
         print("Multi-tenant showcase seed OK (5 orgs, founder KPIs + per-clinic staff).")
         print(f"  Shared password: {SHOWCASE_PASSWORD}")
         print("  Human-readable list: documentation/DEMO_MULTI_TENANT_CREDENTIALS.md")

@@ -166,5 +166,18 @@ export default defineConfig({
   preview: {
     port: 4173,
     host: true,
+    // Same as dev: без прокси запросы идут на 4173 и /api не доходит до API — форма входа «молчит» или 404.
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        secure: false,
+      },
+      "/health": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
 });

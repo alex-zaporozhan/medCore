@@ -204,24 +204,28 @@ async def admin_session(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Требуется контекст клиники",
         )
+    clinic_row = await session.get(Clinic, cid)
+    effective_org_id: UUID | None = current_admin.organization_id
+    if effective_org_id is None and clinic_row and clinic_row.organization_id is not None:
+        effective_org_id = clinic_row.organization_id
+
     accessible: list[str] = [str(cid)]
     org_id: str | None = None
-    if current_admin.organization_id and "owner" in set(admin_ctx.roles):
-        org_id = str(current_admin.organization_id)
+    if effective_org_id and "owner" in set(admin_ctx.roles):
+        org_id = str(effective_org_id)
         res = await session.execute(
             select(Clinic.id)
             .where(
-                Clinic.organization_id == current_admin.organization_id,
+                Clinic.organization_id == effective_org_id,
                 Clinic.deleted_at.is_(None),
             )
             .order_by(Clinic.name.asc())
         )
         accessible = [str(r[0]) for r in res.all()]
-    elif current_admin.organization_id:
-        org_id = str(current_admin.organization_id)
+    elif effective_org_id:
+        org_id = str(effective_org_id)
     enforced, ent_keys = await session_entitlement_view(session, current_admin)
     industry_profile = INDUSTRY_PROFILE_DENTAL
-    clinic_row = await session.get(Clinic, cid)
     if clinic_row and clinic_row.organization_id is not None:
         org_row = await session.get(Organization, clinic_row.organization_id)
         if org_row is not None:

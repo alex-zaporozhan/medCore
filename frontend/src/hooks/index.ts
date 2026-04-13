@@ -298,6 +298,37 @@ export {
   useOwnerDashboard,
 } from "./useAdminReports";
 export {
+  useAdminDataExportSummary,
+  useRequestDataExportMutation,
+} from "./useAdminDataExport";
+export type { DataExportSummaryDto, DataExportRequestDto } from "./useAdminDataExport";
+export {
+  useAdminEmbedSettings,
+  useAdminEmbedApiKeys,
+  useCreateAdminEmbedApiKeyMutation,
+  useRevokeAdminEmbedApiKeyMutation,
+  useRotateAdminEmbedWebhookMutation,
+} from "./useAdminEmbed";
+export type {
+  AdminEmbedSettingsDto,
+  AdminEmbedApiKeyItem,
+  AdminEmbedApiKeyListDto,
+  AdminEmbedApiKeyCreatedDto,
+  AdminEmbedWebhookRotateDto,
+} from "./useAdminEmbed";
+export {
+  useAdminRagKbDocuments,
+  useAdminRagKbDocument,
+  useCreateRagKbDocumentMutation,
+  useUpdateRagKbDocumentMutation,
+  useDeleteRagKbDocumentMutation,
+} from "./useAdminRagKb";
+export type {
+  RagKbDocumentItem,
+  RagKbListDto,
+  RagKbDocumentDetail,
+} from "./useAdminRagKb";
+export {
   useRbacCatalog,
   useRbacUsers,
   useRbacPolicies,
