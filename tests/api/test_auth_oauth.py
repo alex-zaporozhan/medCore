@@ -3,11 +3,35 @@
 import json
 
 import pytest
+import redis as sync_redis
 from httpx import AsyncClient
+
+from src.core.config import settings
+
+
+def _redis_sync() -> sync_redis.Redis:
+    return sync_redis.Redis.from_url(settings.redis_url, decode_responses=True)
+
+
+def _redis_sync_get(key: str) -> str | None:
+    """Read OAuth state without the asyncio redis pool (Windows / session loop stability)."""
+    r = _redis_sync()
+    try:
+        return r.get(key)
+    finally:
+        r.close()
+
+
+def _redis_sync_setex(key: str, ttl: int, value: str) -> None:
+    r = _redis_sync()
+    try:
+        r.setex(key, ttl, value)
+    finally:
+        r.close()
 
 
 @pytest.mark.asyncio
-async def test_oauth_vk_start_persists_state_and_redirects(client: AsyncClient, redis_client):
+async def test_oauth_vk_start_persists_state_and_redirects(client: AsyncClient):
     response = await client.get("/api/v1/auth/oauth/vk/start", params={"redirect": "/app"})
     assert response.status_code == 302
     assert "https://oauth.vk.com/authorize" in response.headers["location"]
@@ -17,10 +41,9 @@ async def test_oauth_vk_start_persists_state_and_redirects(client: AsyncClient, 
     assert "state=" in location
     state = location.split("state=")[1].split("&")[0]
 
-    raw = await redis_client.get(f"auth:vk:state:{state}")
+    raw = _redis_sync_get(f"auth:vk:state:{state}")
     assert raw
-    payload = raw.decode() if isinstance(raw, bytes) else raw
-    data = json.loads(payload)
+    data = json.loads(raw)
     assert data.get("redirect") == "/app"
 
 
@@ -37,10 +60,10 @@ async def test_oauth_vk_callback_invalid_state_redirects_to_login(client: AsyncC
 
 
 @pytest.mark.asyncio
-async def test_oauth_vk_callback_error_param_results_in_cancelled(client: AsyncClient, redis_client):
+async def test_oauth_vk_callback_error_param_results_in_cancelled(client: AsyncClient):
     # Seed state with redirect
     state = "vk_state_cancel"
-    await redis_client.setex(f"auth:vk:state:{state}", 600, json.dumps({"redirect": "/app"}))
+    _redis_sync_setex(f"auth:vk:state:{state}", 600, json.dumps({"redirect": "/app"}))
 
     response = await client.get(
         "/api/v1/auth/oauth/vk/callback",
@@ -52,7 +75,7 @@ async def test_oauth_vk_callback_error_param_results_in_cancelled(client: AsyncC
 
 
 @pytest.mark.asyncio
-async def test_oauth_yandex_start_persists_state_and_redirects(client: AsyncClient, redis_client):
+async def test_oauth_yandex_start_persists_state_and_redirects(client: AsyncClient):
     response = await client.get("/api/v1/auth/oauth/yandex/start", params={"redirect": "/app"})
     assert response.status_code == 302
     assert "https://oauth.yandex.ru/authorize" in response.headers["location"]
@@ -61,10 +84,9 @@ async def test_oauth_yandex_start_persists_state_and_redirects(client: AsyncClie
     assert "state=" in location
     state = location.split("state=")[1].split("&")[0]
 
-    raw = await redis_client.get(f"auth:yandex:state:{state}")
+    raw = _redis_sync_get(f"auth:yandex:state:{state}")
     assert raw
-    payload = raw.decode() if isinstance(raw, bytes) else raw
-    data = json.loads(payload)
+    data = json.loads(raw)
     assert data.get("redirect") == "/app"
 
 
@@ -81,9 +103,9 @@ async def test_oauth_yandex_callback_invalid_state_redirects_to_login(client: As
 
 
 @pytest.mark.asyncio
-async def test_oauth_yandex_callback_error_param_results_in_cancelled(client: AsyncClient, redis_client):
+async def test_oauth_yandex_callback_error_param_results_in_cancelled(client: AsyncClient):
     state = "yandex_state_cancel"
-    await redis_client.setex(f"auth:yandex:state:{state}", 600, json.dumps({"redirect": "/app"}))
+    _redis_sync_setex(f"auth:yandex:state:{state}", 600, json.dumps({"redirect": "/app"}))
 
     response = await client.get(
         "/api/v1/auth/oauth/yandex/callback",
