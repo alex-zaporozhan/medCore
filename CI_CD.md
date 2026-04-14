@@ -9,6 +9,17 @@
 - На VPS в `.env` задайте, например: `BACKEND_IMAGE=docker.io/<user>/dental-booking-backend:<tag>` и то же для frontend (см. **`documentation/VPS_IMAGE_AND_DATA.md`**).
 - **GitHub Actions** с push на Hub возможны только с секретами **`DOCKERHUB_USERNAME`** / **`DOCKERHUB_TOKEN`** в настройках репозитория (**Settings → Secrets and variables → Actions**). Workflow **`.github/workflows/docker-hub-publish.yml`**: **workflow_dispatch** (поле тега, по умолчанию `main`), при merge/push в **`main`/`master`** (образы с тегом **`main`**, с фильтром путей — см. YAML), или при push **git-тега `v*`** (тег образа = имя git-тега). Сначала **два `docker build` без логина**, затем login и push. Без секретов job завершится ошибкой — используйте локальные **`scripts/docker_hub_release.*`**.
 
+### Pytest-gates и публикация образов (частая путаница)
+
+- **`.github/workflows/docker-hub-publish.yml`** и **`.github/workflows/docker-images-build-verify.yml` выполняют только `docker build` (и при наличии секретов — push)**. Они **не вызывают pytest** и **не читают** production-данные.
+- **Красные проверки** обычно идут из других workflow: **`backend-ci.yml`**, **`build-and-test-entitlements.yml`**, **`critical-path-gate.yml`**, **`release-gate.yml`** — там Postgres/Redis из **services**, тестовая БД **пустая**, данные создают фикстуры (`tests/conftest.py`). Типичный CI **не требует** «лайв» продакшн-БД или реальных внешних API; если локально всё падает, чаще нет **`DATABASE_URL_TEST`**, Redis, **`FRONTEND_E2E_URL`** для Playwright или конфликт пула с запущенным API (см. **`documentation/DEVELOPMENT.md`**).
+- **Обойти только «образный» шаг, не трогая тесты:**  
+  1) **Локально:** **`scripts/docker_hub_release.ps1`** / **`.sh`** — сборка + push без pytest.  
+  2) **В GitHub:** **Actions → Docker Hub publish → Run workflow** (`workflow_dispatch`) на нужной ветке/теге при настроенных секретах — job соберёт образы даже если последний **`backend-ci`** на PR был красным (это **отдельный** workflow).  
+  3) Если в **Branch protection** в настройках репозитория обязательны именно **`backend-ci`** / **`critical-path-gate`**, merge в `main` без зелёных checks не пройдёт — это политика org, не YAML образов; тогда либо чинить тесты/инфру, либо временно ослабить required checks (owner), либо пушить образы с **ручного dispatch**, не ожидая merge.
+- **Не рекомендуется:** общий «allowlist» тестов в файле, чтобы массово отключать gate — это скрывает регрессии. Допустимо точечно: **`@pytest.mark.skip`** / **`xfail`** с ссылкой на задачу, моки внешних API, отдельный маркер **`integration`** и отдельный workflow без него — по решению команды.
+- **Локально `pytest -m critical_path`:** если выбран smoke Playwright и **`FRONTEND_E2E_URL`** не задан, тесты сами поднимают **`vite preview`** на **127.0.0.1:4173** (при необходимости выполняют **`npm run build`** в `frontend/`). Отключить автозапуск: **`PYTEST_DISABLE_VITE_AUTOSTART=1`**.
+
 ## Проверка Dockerfile без пуша и без секретов
 
 - **`.github/workflows/docker-images-build-verify.yml`** — только `docker build` (`push: false`), в т.ч. для форков.
