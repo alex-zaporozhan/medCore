@@ -1,0 +1,106 @@
+# LEAD A3 / U-008 — merge gate: pytest -m critical_path with skip=0, errors=0 (junit + assert script).
+name: Critical path gate
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "scripts/ci/**"
+      - "frontend/**"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - "alembic/**"
+      - ".github/workflows/critical-path-gate.yml"
+  push:
+    branches: [main, master]
+
+env:
+  PYTHON_VERSION: "3.11"
+  DATABASE_URL_TEST: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
+  DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/dental_booking_test
+  REDIS_URL: redis://localhost:6379/0
+  RUN_REDIS_INTEGRATION_TESTS: "1"
+  TESTING: "1"
+  CRITICAL_PATH_CI: "1"
+  SECRET_KEY: ci-secret-key-32-chars-minimum-xx
+  JWT_SECRET_KEY: ci-jwt-secret-key-32-chars-minimum
+  PLATFORM_BILLING_WEBHOOK_SECRET: test-platform-billing-webhook-secret
+
+jobs:
+  critical-path:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dental_booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        run: pip install "poetry<3"
+
+      - name: Backend dependencies
+        run: poetry install --no-interaction --no-ansi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend install and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Playwright (chromium)
+        run: poetry run playwright install chromium
+
+      - name: Critical path pytest + junit gate
+        env:
+          FRONTEND_E2E_URL: http://127.0.0.1:4173
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          cd frontend
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/vite-preview.log 2>&1 &
+          echo $! > /tmp/vite-preview.pid
+          cd ..
+          sleep 6
+          poetry run pytest tests/ -m critical_path --strict-markers -q --tb=short \
+            --junitxml=reports/critical-junit.xml
+          poetry run python scripts/ci/assert_pytest_junit_xml_gate.py reports/critical-junit.xml
+        timeout-minutes: 25
+
+      - name: Upload critical-path junit (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-path-junit
+          path: reports/
+          if-no-files-found: ignore

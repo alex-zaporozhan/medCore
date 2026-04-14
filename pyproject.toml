@@ -65,6 +65,7 @@ testpaths = ["tests"]
 timeout = 240
 timeout_func_only = true
 markers = [
+    "critical_path: LEAD A3 — signup/provision/webhooks/founder; CI gate requires skip=0",
     "regression_payments: regression tests for payments and payment gateway",
     "regression_pd: regression tests for personal data isolation and access",
     "regression_chats: regression tests for chats and omnichannel",

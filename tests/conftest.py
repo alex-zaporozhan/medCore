@@ -45,6 +45,68 @@ from httpx import ASGITransport, AsyncClient
 
 logger = logging.getLogger(__name__)
 
+# Windows: Selector avoids noisy Proactor teardown on interrupt; Playwright needs Proactor (subprocess).
+if sys.platform == "win32":
+    try:
+        if os.environ.get("FRONTEND_E2E_URL", "").strip():
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        else:
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except AttributeError:
+        pass
+
+
+def _critical_path_ci() -> bool:
+    """LEAD A3: CI sets CRITICAL_PATH_CI=1 so missing infra fails the job instead of skipping."""
+    return os.environ.get("CRITICAL_PATH_CI", "").strip().lower() in ("1", "true", "yes")
+
+
+def _item_path_norm(it) -> str:
+    try:
+        p = str(it.path)
+    except AttributeError:
+        p = str(getattr(it, "fspath", ""))
+    return p.replace("\\", "/")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Start vite preview when smoke is selected; reorder Playwright last on Windows."""
+    smokes = [
+        it
+        for it in items
+        if _item_path_norm(it).endswith("/tests/e2e/test_critical_path_smoke.py")
+    ]
+    if smokes and not (os.environ.get("FRONTEND_E2E_URL") or "").strip():
+        from tests.e2e.vite_preview_server import ensure_vite_preview_for_smoke
+
+        ensure_vite_preview_for_smoke(ci_strict=_critical_path_ci())
+
+    if not (os.environ.get("FRONTEND_E2E_URL") or "").strip():
+        return
+    e2e_other, e2e_playwright, e2e_critical_smoke, rest = [], [], [], []
+    for it in items:
+        norm = _item_path_norm(it)
+        if "/tests/e2e/" in norm:
+            if norm.endswith("/tests/e2e/test_frontend_pages.py"):
+                e2e_playwright.append(it)
+            elif norm.endswith("/tests/e2e/test_critical_path_smoke.py"):
+                e2e_critical_smoke.append(it)
+            else:
+                e2e_other.append(it)
+        else:
+            rest.append(it)
+    items[:] = e2e_other + e2e_playwright + rest + e2e_critical_smoke
+
+
+def pytest_sessionfinish(session, exitstatus):
+    try:
+        from tests.e2e.vite_preview_server import stop_vite_preview_if_started
+
+        stop_vite_preview_if_started()
+    except Exception:
+        logger.debug("vite preview teardown skipped", exc_info=True)
+
+
 # Minimal built-in async support for environments where pytest-asyncio plugin
 # is not installed (e.g. system Python runs).
 try:
@@ -155,7 +217,7 @@ if _skip_reason:
 
 else:
 
-    @pytest.fixture(scope="session")
+    @pytest_asyncio.fixture(scope="session", loop_scope="session")
     async def init_db():
         """Apply Alembic migrations to the test DB (single source of truth with prod). Session-scoped."""
         from src.infrastructure.database import base as db_base
@@ -213,7 +275,7 @@ else:
         db_name = (path.lstrip("/").split("/")[0] or "").split("?")[0]
         return "test" in db_name.lower()
 
-    @pytest.fixture(scope="session")
+    @pytest_asyncio.fixture(scope="session", loop_scope="session")
     async def truncate_tables(init_db):
         """Truncate all tables so auth tests see a single clinic (avoids stale data from previous runs).
         Runs on the REAL test database; only runs if DB name contains 'test' (e.g. dental_booking_test).
@@ -275,7 +337,7 @@ else:
                 raise
         yield
 
-    @pytest.fixture(scope="session")
+    @pytest_asyncio.fixture(scope="session", loop_scope="session")
     async def seed_data(init_db, truncate_tables):
         """
         Insert one clinic, one doctor (with working hours for today), one service,
