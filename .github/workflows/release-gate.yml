@@ -18,6 +18,10 @@ env:
   SECRET_KEY: ci-secret-key-32-chars-minimum-xx
   JWT_SECRET_KEY: ci-jwt-secret-key-32-chars-minimum
   PLATFORM_BILLING_WEBHOOK_SECRET: test-platform-billing-webhook-secret
+  VK_CLIENT_ID: ci-oauth-vk-client-id
+  VK_REDIRECT_URI: https://localhost:5173/api/v1/auth/oauth/vk/callback
+  YANDEX_CLIENT_ID: ci-oauth-yandex-client-id
+  YANDEX_REDIRECT_URI: https://localhost:5173/api/v1/auth/oauth/yandex/callback
 
 jobs:
   release-gate:
