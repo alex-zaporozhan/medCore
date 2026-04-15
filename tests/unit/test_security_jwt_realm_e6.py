@@ -126,8 +126,12 @@ def test_request_context_parser_admin_patient(monkeypatch: pytest.MonkeyPatch) -
     assert pl_p["role"] == "patient"
 
 
+# HS256: PyJWT warns if HMAC secret is shorter than 32 bytes — use a 32+ char test key.
+_FOUNDER_TEST_SECRET = "e2e-founder-key-e6-0123456789abcdef"
+
+
 def test_founder_access_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "platform_founder_jwt_secret", "e2e-founder-key-e6")
+    monkeypatch.setattr(settings, "platform_founder_jwt_secret", _FOUNDER_TEST_SECRET)
     monkeypatch.setattr(settings, "jwt_legacy_allow_missing_iss_aud", False)
     uid = uuid4()
     token = create_platform_founder_access_token(subject=uid)
@@ -138,7 +142,7 @@ def test_founder_access_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_founder_rejects_wrong_audience(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "platform_founder_jwt_secret", "e2e-founder-key-e6")
+    monkeypatch.setattr(settings, "platform_founder_jwt_secret", _FOUNDER_TEST_SECRET)
     monkeypatch.setattr(settings, "jwt_legacy_allow_missing_iss_aud", False)
     from src.core.datetime_utils import utc_now
 
@@ -152,14 +156,14 @@ def test_founder_rejects_wrong_audience(monkeypatch: pytest.MonkeyPatch) -> None
         "iat": utc_now(),
         "exp": expire,
     }
-    token = jwt.encode(payload, "e2e-founder-key-e6", algorithm=settings.jwt_algorithm)
+    token = jwt.encode(payload, _FOUNDER_TEST_SECRET, algorithm=settings.jwt_algorithm)
     with pytest.raises(JwtClaimValidationError) as exc:
         parse_platform_founder_access_token(token)
     assert exc.value.code == "invalid_token_audience"
 
 
 def test_founder_mfa_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "platform_founder_jwt_secret", "e2e-founder-key-e6")
+    monkeypatch.setattr(settings, "platform_founder_jwt_secret", _FOUNDER_TEST_SECRET)
     monkeypatch.setattr(settings, "jwt_legacy_allow_missing_iss_aud", False)
     uid = uuid4()
     token = create_platform_founder_mfa_token(subject=uid)

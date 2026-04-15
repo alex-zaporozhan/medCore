@@ -2,13 +2,13 @@
 
 from datetime import date, time
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import select
 
 from src.application.dto.waitlist_dto import WaitlistEntryCreate, WaitlistEntryUpdate
 from src.application.services.waitlist_service import (
-    WaitlistInvalidTransition,
     WaitlistService,
     WaitlistServiceError,
 )
@@ -17,6 +17,22 @@ from src.domain.entities.service import Service
 from src.domain.entities.service_doctor import ServiceDoctor
 from src.domain.entities.waitlist_entry import WaitlistEntry
 from src.domain.entities.waitlist_status import WaitlistStatus
+
+
+async def _ensure_sequential_queue_policy(db_session, clinic_id: UUID) -> None:
+    """Session-scoped seed + TRUNCATE-once: only one QueuePolicy per clinic for the whole pytest session."""
+    res = await db_session.execute(select(QueuePolicy).where(QueuePolicy.clinic_id == clinic_id))
+    if res.scalar_one_or_none() is not None:
+        return
+    db_session.add(
+        QueuePolicy(
+            clinic_id=clinic_id,
+            mode="sequential",
+            broadcast_size=5,
+            response_timeout_minutes=60,
+        )
+    )
+    await db_session.flush()
 
 
 @pytest.mark.asyncio
@@ -78,18 +94,10 @@ async def test_notify_slot_freed_marks_notified(db_session, seed_data):
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
 
-    db_session.add(
-        QueuePolicy(
-            clinic_id=clinic_id,
-            mode="sequential",
-            broadcast_size=5,
-            response_timeout_minutes=60,
-        )
-    )
-    await db_session.flush()
+    await _ensure_sequential_queue_policy(db_session, clinic_id)
 
     svc = WaitlistService(db_session)
-    await svc.create_entry(
+    created = await svc.create_entry(
         clinic_id,
         WaitlistEntryCreate(
             clinic_id=clinic_id,
@@ -97,6 +105,8 @@ async def test_notify_slot_freed_marks_notified(db_session, seed_data):
             doctor_id=doctor_id,
             preferred_service_id=service_id,
             preferred_date=date.today(),
+            # notify_slot_freed picks highest priority, then oldest id; other tests leave WAITING rows.
+            priority=10_000,
         ),
         actor_admin_id=seed_data["admin_id"],
     )
@@ -112,9 +122,10 @@ async def test_notify_slot_freed_marks_notified(db_session, seed_data):
     )
     await db_session.commit()
 
-    rows = await svc2.list_entries(clinic_id, include_inactive=True)
-    assert len(rows) == 1
-    assert rows[0].status == WaitlistStatus.NOTIFIED.value
+    # Other tests in this module (and the suite) leave more rows in waitlist_entry; assert only our row.
+    refreshed = await db_session.get(WaitlistEntry, created.id)
+    assert refreshed is not None
+    assert refreshed.status == WaitlistStatus.NOTIFIED.value
 
 
 @pytest.mark.asyncio
@@ -139,14 +150,7 @@ async def test_service_filter_skips_mismatched_service(db_session, seed_data):
     db_session.add(
         ServiceDoctor(service_id=other_service_id, doctor_id=doctor_id, is_active=True)
     )
-    db_session.add(
-        QueuePolicy(
-            clinic_id=clinic_id,
-            mode="sequential",
-            broadcast_size=5,
-            response_timeout_minutes=60,
-        )
-    )
+    await _ensure_sequential_queue_policy(db_session, clinic_id)
     await db_session.flush()
 
     svc = WaitlistService(db_session)
@@ -259,7 +263,8 @@ async def test_cannot_reopen_cancelled(db_session, seed_data):
     await svc.cancel_entry(clinic_id, entry.id, actor_admin_id=seed_data["admin_id"])
     await db_session.commit()
 
-    with pytest.raises(WaitlistInvalidTransition):
+    # Terminal rows reject any update before transition rules (see waitlist_service.update_entry).
+    with pytest.raises(WaitlistServiceError, match="entry_terminal_immutable"):
         await svc.update_entry(
             clinic_id,
             entry.id,

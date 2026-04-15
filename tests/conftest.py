@@ -46,10 +46,34 @@ from httpx import ASGITransport, AsyncClient
 
 logger = logging.getLogger(__name__)
 
-# Windows: Selector avoids noisy Proactor teardown on interrupt; Playwright needs Proactor (subprocess).
+# Bootstrap TESTING + .env before choosing the Windows event-loop policy (policy must be set
+# before the first asyncio loop exists). FRONTEND_E2E_URL in .env must not force Proactor for a
+# full backend suite — Proactor + redis + repeated httpx ASGI lifecycles flakes ("Event loop is closed").
+os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key")
+os.environ.setdefault(
+    "PLATFORM_BILLING_WEBHOOK_SECRET",
+    "test-platform-billing-webhook-secret",
+)
+os.environ.setdefault("PATIENT_PAYMENT_WEBHOOK_SECRET", "")
+os.environ["TESTING"] = "1"
+os.environ.setdefault("RUN_REDIS_INTEGRATION_TESTS", "1")
+_env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+if os.path.isfile(_env_path):
+    with open(_env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("=")
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                if k and os.environ.get(k) is None:
+                    os.environ[k] = v
+
+# Windows: default Selector for pytest; opt-in Proactor (Playwright/subprocess): PYTEST_WIN32_USE_PROACTOR=1
 if sys.platform == "win32":
     try:
-        if os.environ.get("FRONTEND_E2E_URL", "").strip():
+        if os.environ.get("PYTEST_WIN32_USE_PROACTOR", "").strip().lower() in ("1", "true", "yes"):
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
         else:
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -118,31 +142,6 @@ try:
     pytest_plugins = []
 except Exception:
     pytest_plugins = ["tests.pytest_asyncio_compat"]
-
-# Set test env before any src import so app uses test DB/Redis
-os.environ.setdefault("SECRET_KEY", "test-secret-key")
-os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key")
-os.environ.setdefault(
-    "PLATFORM_BILLING_WEBHOOK_SECRET",
-    "test-platform-billing-webhook-secret",
-)
-os.environ.setdefault("PATIENT_PAYMENT_WEBHOOK_SECRET", "")
-os.environ["TESTING"] = "1"
-# Redis-backed tests (rate limits, patient auth codes): same default as CI — run against real Redis or fail clearly.
-os.environ.setdefault("RUN_REDIS_INTEGRATION_TESTS", "1")
-
-# Load .env from project root so DATABASE_URL_TEST/REDIS_URL_TEST exist when not set in shell
-_env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
-if os.path.isfile(_env_path):
-    with open(_env_path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                k = k.strip()
-                v = v.strip().strip('"').strip("'")
-                if k and os.environ.get(k) is None:
-                    os.environ[k] = v
 
 def _resolve_database_url_test() -> str:
     """Prefer DATABASE_URL_TEST; else same host/credentials as DATABASE_URL with DB name dental_booking_test (CI)."""
@@ -741,20 +740,30 @@ else:
             "date": tomorrow,
         }
 
-    @pytest.fixture
+    @pytest_asyncio.fixture(scope="function", loop_scope="session")
     async def redis_client():
         """Redis client for tests (e.g. to set or read auth code)."""
         from src.infrastructure.database.redis_client import get_redis
         return await get_redis()
 
-    @pytest.fixture
-    async def patient_auth(client, seed_data, redis_client):
+    @pytest_asyncio.fixture(scope="function", loop_scope="session")
+    async def patient_auth(client, seed_data):
         """
         Log in as patient: random phone -> send-code -> read code from Redis -> verify-code.
         Returns dict: patient_id (UUID), access_token (str), phone (str).
+
+        Drops the process-wide async Redis pool before send-code: a prior test can leave
+        redis.asyncio connections bound to a torn Starlette/anyio task context on Windows
+        (next request then fails with "Future attached to a different loop").
         """
         import random
         from uuid import UUID
+
+        from src.infrastructure.database.redis_client import close_redis, get_redis
+
+        await close_redis()
+        redis = await get_redis()
+
         phone = ""
         r = None
         for _ in range(6):
@@ -775,7 +784,7 @@ else:
         assert r.status_code == 204, r.text
         clinic_id = seed_data["clinic_id"]
         key = f"auth:code:{clinic_id}:{phone}"
-        raw = await redis_client.get(key)
+        raw = await redis.get(key)
         assert raw, f"Auth code not in Redis for key {key}"
         code = raw.decode() if isinstance(raw, bytes) else raw
         r2 = await client.post(
@@ -794,7 +803,7 @@ else:
             "phone": phone,
         }
 
-    @pytest.fixture
+    @pytest_asyncio.fixture(scope="function", loop_scope="session")
     async def platform_founder_auth(client, seed_data):
         """Login as platform founder (1a-E2 seed user)."""
         r = await client.post(
@@ -811,7 +820,7 @@ else:
             "founder_id": data["founder_id"],
         }
 
-    @pytest.fixture
+    @pytest_asyncio.fixture(scope="function", loop_scope="session")
     async def admin_auth(client, seed_data):
         """Log in as admin (seed_data admin). Returns dict: access_token, admin_id, clinic_id.
         Kept function-scoped; rate limit for admin login is disabled in TESTING=1 (config) to avoid 429 in full suite."""
@@ -827,7 +836,7 @@ else:
             "clinic_id": data["clinic_id"],
         }
 
-    @pytest.fixture
+    @pytest_asyncio.fixture(scope="function", loop_scope="session")
     async def doctor_auth(client, seed_data):
         """Clinic user with role `doctor` (no ``patients.pii.read``)."""
         r = await client.post(
@@ -842,7 +851,7 @@ else:
             "clinic_id": data["clinic_id"],
         }
 
-    @pytest.fixture
+    @pytest_asyncio.fixture(scope="function", loop_scope="session")
     async def client(init_db, seed_data):
         """HTTP client for API tests (uses app and seed_data so DB is ready)."""
         from tests.conftest import app as app_ref
@@ -852,7 +861,7 @@ else:
         ) as ac:
             yield ac
 
-    @pytest.fixture
+    @pytest_asyncio.fixture(scope="function", loop_scope="session")
     async def db_session(init_db, seed_data):
         """
         Async SQLAlchemy session for service-layer tests.

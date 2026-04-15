@@ -59,6 +59,12 @@ def _booking_status_str(status: BookingStatus | str) -> str:
     return coerce_booking_status(status).value
 
 
+def _actor_trace_id(actor: object) -> str | None:
+    """``RequestContext`` has ``trace_id``; ORM ``AdminUser`` does not."""
+    tid = getattr(actor, "trace_id", None)
+    return str(tid) if tid is not None else None
+
+
 logger = logging.getLogger(__name__)
 
 # Metrics for visit completion attempts and outcomes.
@@ -159,14 +165,16 @@ class BookingCompletionService:
         ERP failure handling (erp_error_code, tasks, metrics) in a single commit.
         """
         started_at = datetime.now()
+        # AdminUser exposes ``id``; RequestContext uses ``user_id``.
+        actor_uid = getattr(actor, "user_id", None) or getattr(actor, "id", None)
 
         logger.info(
             "BookingCompletionService.complete_visit called",
             extra={
                 "booking_id": str(booking_id),
                 "actor_clinic_id": str(actor.clinic_id) if actor.clinic_id else None,
-                "actor_user_id": str(actor.user_id) if actor.user_id else None,
-                "trace_id": actor.trace_id,
+                "actor_user_id": str(actor_uid) if actor_uid else None,
+                "trace_id": _actor_trace_id(actor),
                 "chain": "booking_to_erp",
                 "step": "start",
             },
@@ -204,7 +212,7 @@ class BookingCompletionService:
                     "booking_id": str(booking_id),
                     "actor_clinic_id": str(actor.clinic_id) if actor.clinic_id else None,
                     "booking_clinic_id": str(booking.clinic_id) if booking else None,
-                    "trace_id": actor.trace_id,
+                    "trace_id": _actor_trace_id(actor),
                     "chain": "booking_to_erp",
                     "step": "start",
                 },
@@ -238,7 +246,7 @@ class BookingCompletionService:
                     "booking_id": str(booking.id),
                     "clinic_id": str(booking.clinic_id),
                     "status": booking.status,
-                    "trace_id": actor.trace_id,
+                    "trace_id": _actor_trace_id(actor),
                     "chain": "booking_to_erp",
                     "step": "start",
                 },
@@ -300,14 +308,14 @@ class BookingCompletionService:
                 await self.task_service.create_task(
                     clinic_id=booking.clinic_id,
                     title="PAPERLESS_REQUIRED_FORMS_MISSING",
-                    description=err_msg + (f" trace_id={actor.trace_id}" if actor.trace_id else ""),
+                    description=err_msg + (f" trace_id={_actor_trace_id(actor)}" if _actor_trace_id(actor) else ""),
                     priority="high",
                     role_assignee="owner",
                     booking_id=booking.id,
                     patient_id=booking.patient_id,
                     source="system",
                     source_event_id=booking.id,
-                    trace_id=actor.trace_id,
+                    trace_id=_actor_trace_id(actor),
                 )
             except Exception:
                 logger.exception(
@@ -315,7 +323,7 @@ class BookingCompletionService:
                     extra={
                         "booking_id": str(booking.id),
                         "clinic_id": str(booking.clinic_id),
-                        "trace_id": actor.trace_id,
+                        "trace_id": _actor_trace_id(actor),
                     },
                 )
             return BookingCompletionResult(
@@ -339,7 +347,7 @@ class BookingCompletionService:
                     extra={
                         "booking_id": str(booking.id),
                         "clinic_id": str(booking.clinic_id),
-                        "trace_id": actor.trace_id,
+                        "trace_id": _actor_trace_id(actor),
                         "chain": "booking_to_erp",
                         "step": "prepare",
                     },
@@ -413,7 +421,7 @@ class BookingCompletionService:
                                     "booking_id": str(booking.id),
                                     "clinic_id": str(booking.clinic_id),
                                     "subscription_id": str(candidate.id),
-                                    "trace_id": actor.trace_id,
+                                    "trace_id": _actor_trace_id(actor),
                                     "chain": "booking_to_erp",
                                     "step": "loyalty",
                                 },
@@ -450,7 +458,7 @@ class BookingCompletionService:
                                 "booking_id": str(booking.id),
                                 "clinic_id": str(booking.clinic_id),
                                 "subscription_id": str(candidate.id) if candidate else None,
-                                "trace_id": actor.trace_id,
+                                "trace_id": _actor_trace_id(actor),
                                 "chain": "booking_to_erp",
                                 "step": "loyalty",
                             },
@@ -571,8 +579,8 @@ class BookingCompletionService:
                                 "при списании по визиту (attempt_write_off_more_than_remaining). "
                                 "Проверьте остатки по подписке и ERP‑отчётности."
                             )
-                            if actor.trace_id:
-                                description += f" trace_id={actor.trace_id}."
+                            if _actor_trace_id(actor):
+                                description += f" trace_id={_actor_trace_id(actor)}."
                             await self.task_service.create_task(
                                 clinic_id=booking.clinic_id,
                                 title="LOYALTY_ERP_INCONSISTENT_OBLIGATION",
@@ -583,7 +591,7 @@ class BookingCompletionService:
                                 patient_id=booking.patient_id,
                                 source="system",
                                 source_event_id=booking.id,
-                                trace_id=actor.trace_id,
+                                trace_id=_actor_trace_id(actor),
                             )
                         except Exception:
                             logger.exception(
@@ -591,7 +599,7 @@ class BookingCompletionService:
                                 extra={
                                     "booking_id": str(booking.id),
                                     "clinic_id": str(booking.clinic_id),
-                                    "trace_id": actor.trace_id,
+                                    "trace_id": _actor_trace_id(actor),
                                     "chain": "booking_to_erp",
                                     "step": "erp",
                                 },
@@ -651,7 +659,7 @@ class BookingCompletionService:
             extra={
                 "booking_id": str(booking.id),
                 "clinic_id": str(booking.clinic_id),
-                "trace_id": actor.trace_id,
+                "trace_id": _actor_trace_id(actor),
                 "chain": "booking_to_erp",
                 "step": "crm_publish",
             },
@@ -679,7 +687,7 @@ class BookingCompletionService:
             extra={
                 "booking_id": str(booking.id),
                 "clinic_id": str(booking.clinic_id),
-                "trace_id": actor.trace_id,
+                "trace_id": _actor_trace_id(actor),
                 "chain": "booking_to_erp",
                 "step": "final",
             },
@@ -738,8 +746,8 @@ class BookingCompletionService:
                 f"Loyalty rules blocked visit completion (code={exc.code}): {str(exc)}. "
                 "Fix subscription/family access or adjust the visit before completing."
             )
-            if actor.trace_id:
-                description += f" trace_id={actor.trace_id}."
+            if _actor_trace_id(actor):
+                description += f" trace_id={_actor_trace_id(actor)}."
             await self.task_service.create_task(
                 clinic_id=booking.clinic_id,
                 title="LOYALTY_MISMATCH",
@@ -750,7 +758,7 @@ class BookingCompletionService:
                 patient_id=booking.patient_id,
                 source="system",
                 source_event_id=booking.id,
-                trace_id=actor.trace_id,
+                trace_id=_actor_trace_id(actor),
             )
         except Exception:
             logger.exception(
@@ -758,7 +766,7 @@ class BookingCompletionService:
                 extra={
                     "booking_id": str(booking.id),
                     "clinic_id": str(booking.clinic_id),
-                    "trace_id": actor.trace_id,
+                    "trace_id": _actor_trace_id(actor),
                 },
             )
         elapsed = (datetime.now() - started_at).total_seconds()
@@ -825,8 +833,8 @@ class BookingCompletionService:
                 f"тип: {error_type.upper()}). "
                 "Проверьте настройки кассы/ЗП/склада и перепроведите визит."
             )
-            if actor.trace_id:
-                description += f" trace_id={actor.trace_id}."
+            if _actor_trace_id(actor):
+                description += f" trace_id={_actor_trace_id(actor)}."
             await self.task_service.create_task(
                 clinic_id=booking.clinic_id,
                 title="ERP‑ошибка при завершении визита",
@@ -837,7 +845,7 @@ class BookingCompletionService:
                 patient_id=booking.patient_id,
                 source="system",
                 source_event_id=booking.id,
-                trace_id=actor.trace_id,
+                trace_id=_actor_trace_id(actor),
             )
         except Exception:
             logger.exception(
@@ -846,7 +854,7 @@ class BookingCompletionService:
                     "booking_id": str(booking.id),
                     "clinic_id": str(booking.clinic_id),
                     "error_code": exc.code,
-                    "trace_id": actor.trace_id,
+                    "trace_id": _actor_trace_id(actor),
                     "chain": "booking_to_erp",
                     "step": "erp",
                 },

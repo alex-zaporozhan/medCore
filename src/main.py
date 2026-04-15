@@ -1,6 +1,7 @@
 """Main FastAPI application entry point."""
 
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -76,8 +77,14 @@ async def lifespan(app: FastAPI):
     register_tasks_event_handlers(event_bus)
     register_marketing_event_handlers(event_bus)
     yield
-    from src.infrastructure.database.redis_client import close_redis
-    await close_redis()
+    # Pytest drives many ASGI client lifecycles per session on one event loop. Closing the pooled
+    # Redis client on every httpx AsyncClient teardown + reopening breaks Windows Proactor + redis.asyncio
+    # (half-torn loop: "Event loop is closed" on the next request). Skip per-lifespan close in TESTING;
+    # the process exits after the suite (CI/Linux unaffected).
+    if os.environ.get("TESTING") != "1":
+        from src.infrastructure.database.redis_client import close_redis
+
+        await close_redis()
     logger.info("[dental-booking] Application shutdown", extra={"component": "main"})
 
 
