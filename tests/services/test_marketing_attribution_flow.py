@@ -13,6 +13,12 @@ from src.domain.entities.lead_stage import LeadStage
 from src.domain.entities.visit_attribution import VisitAttribution
 
 
+def _appointment_days_for_seed_doctor(seed_data: dict) -> list[date]:
+    """Dates aligned with ``DoctorWorkingHours`` from ``seed_data`` (same weekday as ``seed_data['date']``)."""
+    base: date = seed_data["date"]
+    return [base + timedelta(weeks=w) for w in range(1, 20)]
+
+
 @pytest.mark.asyncio
 async def test_marketing_attribution_full_flow(
     init_db,
@@ -30,25 +36,37 @@ async def test_marketing_attribution_full_flow(
     # the next test's patient_auth / Redis on Windows.)
     clinic_id = seed_data["clinic_id"]
     session = db_session
-    pipeline = LeadPipeline(
-        clinic_id=clinic_id,
-        name="Default",
-        description=None,
-        is_default=True,
+    pl_row = await session.execute(
+        select(LeadPipeline).where(
+            LeadPipeline.clinic_id == clinic_id,
+            LeadPipeline.is_default.is_(True),
+        ).limit(1)
     )
-    session.add(pipeline)
-    await session.flush()
-    session.add(
-        LeadStage(
+    pipeline = pl_row.scalar_one_or_none()
+    if pipeline is None:
+        pipeline = LeadPipeline(
             clinic_id=clinic_id,
-            pipeline_id=pipeline.id,
-            order=1,
-            code="new",
-            name="New",
-            probability=10,
-            color="#999999",
+            name="Default",
+            description=None,
+            is_default=True,
         )
+        session.add(pipeline)
+        await session.flush()
+    st_row = await session.execute(
+        select(LeadStage.id).where(LeadStage.pipeline_id == pipeline.id).limit(1)
     )
+    if st_row.scalar_one_or_none() is None:
+        session.add(
+            LeadStage(
+                clinic_id=clinic_id,
+                pipeline_id=pipeline.id,
+                order=1,
+                code="new",
+                name="New",
+                probability=10,
+                color="#999999",
+            )
+        )
     await session.commit()
     # Unique per run: idempotent landing API returns an old VisitAttribution if session_id+lead already exist.
     session_id = f"test-session-attr-{uuid4()}"
@@ -105,11 +123,14 @@ async def test_marketing_attribution_full_flow(
     patient_id = UUID(r_auth.json()["patient_id"])
 
     # 3. Admin creates booking then completes visit (ERP revenue path for attribution summary).
-    # Full-suite DB accumulates active bookings on the shared seed doctor — retry on slot conflict.
+    # Use weekdays covered by seed ``DoctorWorkingHours`` (see conftest ``seed_data['date']``), not random
+    # calendar days — random 1..N days mostly miss that weekday and break completion/ERP in long runs.
+    # Retry on slot_unavailable (shared seed doctor, partial unique on active bookings).
     booking_id = None
-    for _ in range(16):
-        appt_day = date.today() + timedelta(days=1 + (uuid4().int % 200))
-        appt_h = 9 + (uuid4().int % 8)
+    candidate_days = _appointment_days_for_seed_doctor(seed_data)
+    for attempt in range(24):
+        appt_day = candidate_days[attempt % len(candidate_days)]
+        appt_h = 10 + (uuid4().int % 5)
         appt_m, appt_s = uuid4().int % 60, uuid4().int % 60
         booking_payload = {
             "clinic_id": str(clinic_id),
