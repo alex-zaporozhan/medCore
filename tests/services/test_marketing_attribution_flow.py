@@ -11,7 +11,6 @@ from src.domain.entities.lead_card import LeadCard
 from src.domain.entities.lead_pipeline import LeadPipeline
 from src.domain.entities.lead_stage import LeadStage
 from src.domain.entities.visit_attribution import VisitAttribution
-from src.infrastructure.database import base as db_base
 
 
 @pytest.mark.asyncio
@@ -53,9 +52,11 @@ async def test_marketing_attribution_full_flow(
     await session.commit()
     # Unique per run: idempotent landing API returns an old VisitAttribution if session_id+lead already exist.
     session_id = f"test-session-attr-{uuid4()}"
+    # Random E.164 suffix avoids cross-test patient/Redis collisions in long suites.
+    landing_phone = f"+7900{uuid4().int % 10_000_000:07d}"
     landing_payload = {
       "full_name": "UTM Patient",
-      "phone": "+79000000001",
+      "phone": landing_phone,
       "session_id": session_id,
       "landing_page": "/?utm_source=google&utm_campaign=test-campaign",
       "anchor": "#hero",
@@ -77,15 +78,15 @@ async def test_marketing_attribution_full_flow(
     # 2. Simulate patient auth with same session_id (links VisitAttribution to Patient)
     r_send = await client.post(
         "/api/v1/auth/send-code",
-        json={"phone": landing_payload["phone"], "clinic_slug": seed_data["clinic_slug"]},
+        json={"phone": landing_phone, "clinic_slug": seed_data["clinic_slug"]},
     )
     assert r_send.status_code == 204, r_send.text
-    code_key = f"auth:code:{clinic_id}:{landing_payload['phone']}"
+    code_key = f"auth:code:{clinic_id}:{landing_phone}"
     raw_code = await redis_client.get(code_key)
     assert raw_code, f"Auth code not in Redis for key {code_key}"
     code = raw_code.decode() if isinstance(raw_code, bytes) else raw_code
     auth_payload = {
-        "phone": landing_payload["phone"],
+        "phone": landing_phone,
         "code": code,
         "clinic_slug": seed_data["clinic_slug"],
         "consent_pd": True,
@@ -104,23 +105,41 @@ async def test_marketing_attribution_full_flow(
     patient_id = UUID(r_auth.json()["patient_id"])
 
     # 3. Admin creates booking then completes visit (ERP revenue path for attribution summary).
-    # Full-suite DB accumulates bookings on shared seed doctor: include seconds in time so
-    # (doctor_id, date, time) almost never collides (ux_bookings_doctor_slot_active).
-    appt_day = date.today() + timedelta(days=1 + (uuid4().int % 27))
-    appt_h = 9 + (uuid4().int % 8)
-    appt_m, appt_s = uuid4().int % 60, uuid4().int % 60
-    booking_payload = {
-        "clinic_id": str(clinic_id),
-        "patient_id": str(patient_id),
-        "doctor_id": str(seed_data["doctor_id"]),
-        "service_id": str(seed_data["service_id"]),
-        "appointment_date": appt_day.isoformat(),
-        "appointment_time": f"{appt_h:02d}:{appt_m:02d}:{appt_s:02d}",
-        "status": "pending",
-    }
-    r_create = await client.post("/api/v1/admin/bookings", json=booking_payload, headers=headers)
-    assert r_create.status_code == 201, r_create.text
-    booking_id = r_create.json()["id"]
+    # Full-suite DB accumulates active bookings on the shared seed doctor — retry on slot conflict.
+    booking_id = None
+    for _ in range(16):
+        appt_day = date.today() + timedelta(days=1 + (uuid4().int % 200))
+        appt_h = 9 + (uuid4().int % 8)
+        appt_m, appt_s = uuid4().int % 60, uuid4().int % 60
+        booking_payload = {
+            "clinic_id": str(clinic_id),
+            "patient_id": str(patient_id),
+            "doctor_id": str(seed_data["doctor_id"]),
+            "service_id": str(seed_data["service_id"]),
+            "appointment_date": appt_day.isoformat(),
+            "appointment_time": f"{appt_h:02d}:{appt_m:02d}:{appt_s:02d}",
+            "status": "pending",
+        }
+        r_create = await client.post("/api/v1/admin/bookings", json=booking_payload, headers=headers)
+        if r_create.status_code == 201:
+            booking_id = r_create.json()["id"]
+            break
+        if r_create.status_code == 400:
+            err_code = None
+            try:
+                body = r_create.json()
+                if isinstance(body, dict):
+                    detail = body.get("detail")
+                    if isinstance(detail, dict):
+                        err_code = detail.get("code")
+                    else:
+                        err_code = body.get("code")
+            except Exception:
+                pass
+            if err_code == "slot_unavailable":
+                continue
+        assert r_create.status_code == 201, r_create.text
+    assert booking_id is not None
     r_complete = await client.put(
         f"/api/v1/admin/bookings/{booking_id}/complete",
         headers=headers,
@@ -129,24 +148,18 @@ async def test_marketing_attribution_full_flow(
     assert r_complete.status_code == 200, r_complete.text
 
     # 4. Attribution chain must persist (LeadCard ↔ VisitAttribution, UTM on visit).
-    # Read in a fresh session: the shared db_session can sit in a state where post-HTTP SELECTs
-    # miss rows committed by other connections (long suite + rollback/identity map).
+    # Rollback clears any stale transaction/identity state so SELECTs see rows committed by the API
+    # without opening a second NullPool session (avoids SAWarning / GC connection leaks on Windows).
     lead_uuid = UUID(lead_id_str)
-    async with db_base.AsyncSessionLocal() as verify_session:
-        lc_row = await verify_session.execute(
-            select(LeadCard.visit_attribution_id, LeadCard.clinic_id).where(LeadCard.id == lead_uuid)
-        )
-        va_id, lc_clinic = lc_row.one()
-        assert lc_clinic == clinic_id
-        assert va_id is not None
+    await db_session.rollback()
+    lc_row = await db_session.execute(
+        select(LeadCard.visit_attribution_id, LeadCard.clinic_id).where(LeadCard.id == lead_uuid)
+    )
+    va_id, lc_clinic = lc_row.one()
+    assert lc_clinic == clinic_id
+    assert va_id is not None
 
-        va_row = await verify_session.execute(select(VisitAttribution).where(VisitAttribution.id == va_id))
-        va = va_row.scalar_one()
-        assert va.utm_source == "google"
-
-    # Tear down pooled Redis for this event loop so the next test's httpx/Starlette stack
-    # does not inherit broken connection state (Windows + BaseHTTPMiddleware + redis.asyncio).
-    from src.infrastructure.database.redis_client import close_redis
-
-    await close_redis()
+    va_row = await db_session.execute(select(VisitAttribution).where(VisitAttribution.id == va_id))
+    va = va_row.scalar_one()
+    assert va.utm_source == "google"
 
