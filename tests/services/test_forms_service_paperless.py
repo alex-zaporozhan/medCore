@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select
 from src.application.services.forms_service import FormsService
 from src.domain.entities.digital_form_submission import DigitalFormSubmission
 from src.domain.entities.digital_form_template import DigitalFormTemplate
+from src.domain.entities.form_link_token import FormLinkToken
 from src.infrastructure.database import base as db_base
 
 
@@ -61,6 +62,23 @@ async def test_create_form_link_reuses_non_expired_issued_submission(init_db, se
             assert cnt.scalar_one() == 1
     finally:
         async with db_base.AsyncSessionLocal() as session:
+            template_ids = (
+                await session.execute(
+                    select(DigitalFormTemplate.id).where(
+                        DigitalFormTemplate.clinic_id == clinic_id,
+                        DigitalFormTemplate.code == code,
+                    )
+                )
+            ).scalars().all()
+            if template_ids:
+                await session.execute(
+                    delete(FormLinkToken).where(FormLinkToken.template_id.in_(template_ids))
+                )
+                await session.execute(
+                    delete(DigitalFormSubmission).where(
+                        DigitalFormSubmission.template_id.in_(template_ids)
+                    )
+                )
             await session.execute(
                 delete(DigitalFormTemplate).where(
                     DigitalFormTemplate.clinic_id == clinic_id,

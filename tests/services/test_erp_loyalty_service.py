@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -15,16 +15,71 @@ from src.application.services.erp_loyalty_service import (
     ErpLoyaltyError,
     ErpLoyaltyService,
 )
+from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.customer_subscription import CustomerSubscription
 from src.domain.entities.erp_loyalty_obligation import ErpLoyaltyObligation
+from src.domain.entities.subscription_package import SubscriptionPackage
+from src.domain.entities.subscription_usage import SubscriptionUsage
+
+
+def _unique_booking_slot(base_day):
+    day = base_day + timedelta(days=(uuid4().int % 14) + 1)
+    minute = (uuid4().int % 50) + 5
+    return day, minute
+
+
+async def _create_subscription(
+    db_session: AsyncSession,
+    *,
+    clinic_id,
+    patient_id,
+    now: datetime,
+    kind: str = "balance",
+    remaining_amount: Decimal | None = Decimal("1000.00"),
+) -> CustomerSubscription:
+    pkg = SubscriptionPackage(
+        clinic_id=clinic_id,
+        code=f"erp-loyalty-{uuid4().hex[:8]}",
+        name="ERP Loyalty Test Package",
+        description=None,
+        kind=kind,
+        services_included=[],
+        total_visits=10 if kind == "visits" else None,
+        total_amount=Decimal("2000.00") if kind == "balance" else None,
+        price=Decimal("1000.00"),
+        validity_days=30,
+        is_active=True,
+    )
+    db_session.add(pkg)
+    await db_session.flush()
+    sub = CustomerSubscription(
+        clinic_id=clinic_id,
+        patient_id=patient_id,
+        subscription_package_id=pkg.id,
+        status="active",
+        purchased_at=now,
+        activated_at=now,
+        expires_at=None,
+        remaining_visits=10 if kind == "visits" else None,
+        remaining_amount=remaining_amount,
+        payment_id=None,
+        notes=None,
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    return sub
 
 
 @pytest.mark.asyncio
-async def test_create_obligation_from_sale_count_based(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
-    patient_id = uuid4()
-    subscription_id = uuid4()
+async def test_create_obligation_from_sale_count_based(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
+    patient_id = seed_data["patient_id"]
     now = datetime.now(timezone.utc)
+    sub = await _create_subscription(
+        db_session, clinic_id=clinic_id, patient_id=patient_id, now=now, kind="visits"
+    )
 
     service = ErpLoyaltyService(session=db_session)
 
@@ -32,7 +87,7 @@ async def test_create_obligation_from_sale_count_based(db_session: AsyncSession)
         CreateObligationFromSaleInput(
             clinic_id=clinic_id,
             patient_id=patient_id,
-            customer_subscription_id=subscription_id,
+            customer_subscription_id=sub.id,
             package_price=Decimal("1000.00"),
             kind="COUNT_BASED",
             total_visits=10,
@@ -43,7 +98,7 @@ async def test_create_obligation_from_sale_count_based(db_session: AsyncSession)
 
     assert snapshot.clinic_id == clinic_id
     assert snapshot.patient_id == patient_id
-    assert snapshot.customer_subscription_id == subscription_id
+    assert snapshot.customer_subscription_id == sub.id
     assert snapshot.initial_amount == Decimal("1000.00")
     assert snapshot.remaining_amount == Decimal("1000.00")
     assert snapshot.status == "active"
@@ -54,11 +109,15 @@ async def test_create_obligation_from_sale_count_based(db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
-async def test_create_obligation_from_sale_balance_based(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
-    patient_id = uuid4()
-    subscription_id = uuid4()
+async def test_create_obligation_from_sale_balance_based(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
+    patient_id = seed_data["patient_id"]
     now = datetime.now(timezone.utc)
+    sub = await _create_subscription(
+        db_session, clinic_id=clinic_id, patient_id=patient_id, now=now, kind="balance"
+    )
 
     service = ErpLoyaltyService(session=db_session)
 
@@ -66,7 +125,7 @@ async def test_create_obligation_from_sale_balance_based(db_session: AsyncSessio
         CreateObligationFromSaleInput(
             clinic_id=clinic_id,
             patient_id=patient_id,
-            customer_subscription_id=subscription_id,
+            customer_subscription_id=sub.id,
             package_price=Decimal("1500.00"),
             kind="BALANCE_BASED",
             total_visits=None,
@@ -80,29 +139,39 @@ async def test_create_obligation_from_sale_balance_based(db_session: AsyncSessio
 
 
 @pytest.mark.asyncio
-async def test_register_write_off_for_visit_full_and_partial(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
-    patient_id = uuid4()
-    booking_id = uuid4()
+async def test_register_write_off_for_visit_full_and_partial(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
+    patient_id = seed_data["patient_id"]
     usage_id = uuid4()
     now = datetime.now(timezone.utc)
-
-    # Prepare subscription and obligation
-    sub = CustomerSubscription(
+    booking_day, booking_minute = _unique_booking_slot(seed_data["date"])
+    booking = Booking(
         clinic_id=clinic_id,
         patient_id=patient_id,
-        subscription_package_id=uuid4(),
-        status="active",
-        purchased_at=now,
-        activated_at=now,
-        expires_at=None,
-        remaining_visits=None,
-        remaining_amount=Decimal("1000.00"),
+        doctor_id=seed_data["doctor_id"],
+        service_id=seed_data["service_id"],
+        appointment_date=booking_day,
+        appointment_time=time(11, booking_minute),
+        status=BookingStatus.CONFIRMED,
+        prepayment_amount=Decimal("0.00"),
         payment_id=None,
-        notes=None,
+        paid_by_subscription=False,
+        notes="erp loyalty write-off test",
     )
-    db_session.add(sub)
+    db_session.add(booking)
     await db_session.flush()
+
+    # Prepare subscription and obligation
+    sub = await _create_subscription(
+        db_session,
+        clinic_id=clinic_id,
+        patient_id=patient_id,
+        now=now,
+        kind="balance",
+        remaining_amount=Decimal("1000.00"),
+    )
 
     service = ErpLoyaltyService(session=db_session)
     create_snapshot = await service.create_obligation_from_sale(
@@ -117,12 +186,25 @@ async def test_register_write_off_for_visit_full_and_partial(db_session: AsyncSe
             created_at=now,
         )
     )
+    usage = SubscriptionUsage(
+        id=usage_id,
+        clinic_id=clinic_id,
+        customer_subscription_id=sub.id,
+        booking_id=booking.id,
+        used_visits=None,
+        used_amount=Decimal("0.00"),
+        used_at=now,
+        beneficiary_patient_id=None,
+        family_link_id=None,
+    )
+    db_session.add(usage)
+    await db_session.flush()
 
     # Partial write-off
     summary_partial = await service.register_write_off_for_visit(
         RegisterWriteOffForVisitInput(
             clinic_id=clinic_id,
-            booking_id=booking_id,
+            booking_id=booking.id,
             customer_subscription_id=sub.id,
             subscription_usage_id=usage_id,
             used_visits=None,
@@ -141,7 +223,7 @@ async def test_register_write_off_for_visit_full_and_partial(db_session: AsyncSe
     summary_full = await service.register_write_off_for_visit(
         RegisterWriteOffForVisitInput(
             clinic_id=clinic_id,
-            booking_id=booking_id,
+            booking_id=booking.id,
             customer_subscription_id=sub.id,
             subscription_usage_id=usage_id,
             used_visits=None,
@@ -159,28 +241,37 @@ async def test_register_write_off_for_visit_full_and_partial(db_session: AsyncSe
 @pytest.mark.asyncio
 async def test_register_write_off_for_visit_overspend_clamped_with_warning(
     db_session: AsyncSession,
+    seed_data,
 ) -> None:
-    clinic_id = uuid4()
-    patient_id = uuid4()
-    booking_id = uuid4()
+    clinic_id = seed_data["clinic_id"]
+    patient_id = seed_data["patient_id"]
     usage_id = uuid4()
     now = datetime.now(timezone.utc)
-
-    sub = CustomerSubscription(
+    booking_day, booking_minute = _unique_booking_slot(seed_data["date"])
+    booking = Booking(
         clinic_id=clinic_id,
         patient_id=patient_id,
-        subscription_package_id=uuid4(),
-        status="active",
-        purchased_at=now,
-        activated_at=now,
-        expires_at=None,
-        remaining_visits=None,
-        remaining_amount=Decimal("500.00"),
+        doctor_id=seed_data["doctor_id"],
+        service_id=seed_data["service_id"],
+        appointment_date=booking_day,
+        appointment_time=time(12, booking_minute),
+        status=BookingStatus.CONFIRMED,
+        prepayment_amount=Decimal("0.00"),
         payment_id=None,
-        notes=None,
+        paid_by_subscription=False,
+        notes="erp loyalty overspend test",
     )
-    db_session.add(sub)
+    db_session.add(booking)
     await db_session.flush()
+
+    sub = await _create_subscription(
+        db_session,
+        clinic_id=clinic_id,
+        patient_id=patient_id,
+        now=now,
+        kind="balance",
+        remaining_amount=Decimal("500.00"),
+    )
 
     service = ErpLoyaltyService(session=db_session)
     create_snapshot = await service.create_obligation_from_sale(
@@ -195,11 +286,24 @@ async def test_register_write_off_for_visit_overspend_clamped_with_warning(
             created_at=now,
         )
     )
+    usage = SubscriptionUsage(
+        id=usage_id,
+        clinic_id=clinic_id,
+        customer_subscription_id=sub.id,
+        booking_id=booking.id,
+        used_visits=None,
+        used_amount=Decimal("0.00"),
+        used_at=now,
+        beneficiary_patient_id=None,
+        family_link_id=None,
+    )
+    db_session.add(usage)
+    await db_session.flush()
 
     summary = await service.register_write_off_for_visit(
         RegisterWriteOffForVisitInput(
             clinic_id=clinic_id,
-            booking_id=booking_id,
+            booking_id=booking.id,
             customer_subscription_id=sub.id,
             subscription_usage_id=usage_id,
             used_visits=None,
@@ -218,9 +322,11 @@ async def test_register_write_off_for_visit_overspend_clamped_with_warning(
 
 
 @pytest.mark.asyncio
-async def test_create_obligation_from_sale_invalid_inputs(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
-    patient_id = uuid4()
+async def test_create_obligation_from_sale_invalid_inputs(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
+    patient_id = seed_data["patient_id"]
     subscription_id = uuid4()
     now = datetime.now(timezone.utc)
 

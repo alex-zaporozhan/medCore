@@ -19,7 +19,7 @@ from src.core.config import settings
 from src.core.datetime_utils import utc_now
 from src.domain.entities.booking import Booking
 from src.domain.entities.payment import Payment
-from src.infrastructure.database.base import AsyncSessionLocal
+from src.infrastructure.database import base as db_base
 from src.infrastructure.database.redis_client import get_redis
 from src.infrastructure.messaging.tasks.erp_tasks import refresh_clinic_erp_aggregates_window
 
@@ -35,7 +35,7 @@ async def _run_erp_node_in_transaction(booking_id: UUID) -> None:
     """
     async_session: AsyncSession | None = None
     try:
-        async_session = AsyncSessionLocal()
+        async_session = db_base.AsyncSessionLocal()
         async with async_session.begin():
             erp_service = BookingErpService(async_session)
             await erp_service.process_booking_completed(booking_id)
@@ -56,7 +56,7 @@ async def _mark_booking_erp_error(
     """
     async_session: AsyncSession | None = None
     try:
-        async_session = AsyncSessionLocal()
+        async_session = db_base.AsyncSessionLocal()
         async with async_session.begin():
             booking = await async_session.get(Booking, booking_id)
             if not booking or booking.clinic_id != clinic_id:
@@ -139,7 +139,7 @@ async def handle_erp_on_payment_success(event: DomainEvent) -> None:
 
     async_session: AsyncSession | None = None
     try:
-        async_session = AsyncSessionLocal()
+        async_session = db_base.AsyncSessionLocal()
         async with async_session.begin():
             payment = await async_session.get(Payment, payment_id)
             if not payment:

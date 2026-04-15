@@ -19,17 +19,46 @@ from src.application.services.wallet_service import (
     EarnPointsInput,
     SpendPointsInput,
 )
+from src.domain.entities.booking import Booking, BookingStatus
+from src.domain.entities.patient import Patient
+from src.domain.entities.payment import Payment
 from src.domain.entities.subscription_package import SubscriptionPackage
 
 
 @pytest.mark.asyncio
-async def test_loyalty_purchase_and_use_visits(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
+async def test_loyalty_purchase_and_use_visits(db_session: AsyncSession, seed_data) -> None:
+    clinic_id = seed_data["clinic_id"]
     patient_id = uuid4()
     booking_id = uuid4()
-    payment_id = uuid4()
 
     service = LoyaltyService(db_session)
+
+    db_session.add(
+        Patient(
+            id=patient_id,
+            clinic_id=clinic_id,
+            phone=f"+79{str(patient_id.int)[:9]}",
+            full_name="Loyalty patient",
+        )
+    )
+    await db_session.flush()
+    db_session.add(
+        Booking(
+            id=booking_id,
+            clinic_id=clinic_id,
+            patient_id=patient_id,
+            doctor_id=seed_data["doctor_id"],
+            service_id=seed_data["service_id"],
+            appointment_date=seed_data["date"] + timedelta(days=(uuid4().int % 180) + 1),
+            appointment_time=datetime.now(timezone.utc).time().replace(second=0, microsecond=0, tzinfo=None),
+            status=BookingStatus.CONFIRMED,
+            prepayment_amount=Decimal("0.00"),
+            payment_id=None,
+            paid_by_subscription=False,
+            notes=None,
+        )
+    )
+    await db_session.flush()
 
     package = SubscriptionPackage(
         clinic_id=clinic_id,
@@ -54,7 +83,7 @@ async def test_loyalty_purchase_and_use_visits(db_session: AsyncSession) -> None
             clinic_id=clinic_id,
             patient_id=patient_id,
             package_id=package.id,
-            payment_id=payment_id,
+            payment_id=None,
             purchased_at=now,
         )
     )
@@ -94,13 +123,54 @@ async def test_loyalty_purchase_and_use_visits(db_session: AsyncSession) -> None
 
 @pytest.mark.asyncio
 async def test_loyalty_purchase_subscription_idempotent_by_payment_id(
-    db_session: AsyncSession,
+    db_session: AsyncSession, seed_data
 ) -> None:
-    clinic_id = uuid4()
+    clinic_id = seed_data["clinic_id"]
     patient_id = uuid4()
+    booking_id = uuid4()
     payment_id = uuid4()
 
     service = LoyaltyService(db_session)
+
+    db_session.add(
+        Patient(
+            id=patient_id,
+            clinic_id=clinic_id,
+            phone=f"+79{str(patient_id.int)[:9]}",
+            full_name="Loyalty idempotent patient",
+        )
+    )
+    await db_session.flush()
+    db_session.add(
+        Booking(
+            id=booking_id,
+            clinic_id=clinic_id,
+            patient_id=patient_id,
+            doctor_id=seed_data["doctor_id"],
+            service_id=seed_data["service_id"],
+            appointment_date=seed_data["date"] + timedelta(days=(uuid4().int % 180) + 1),
+            appointment_time=datetime.now(timezone.utc).time().replace(second=0, microsecond=0, tzinfo=None),
+            status=BookingStatus.CONFIRMED,
+            prepayment_amount=Decimal("0.00"),
+            payment_id=None,
+            paid_by_subscription=False,
+            notes=None,
+        )
+    )
+    db_session.add(
+        Payment(
+            id=payment_id,
+            clinic_id=clinic_id,
+            booking_id=booking_id,
+            provider="test",
+            provider_payment_id=f"idempotent-{payment_id}",
+            amount=Decimal("100.00"),
+            currency="RUB",
+            status="succeeded",
+            provider_metadata=None,
+        )
+    )
+    await db_session.flush()
 
     package = SubscriptionPackage(
         clinic_id=clinic_id,
@@ -143,12 +213,21 @@ async def test_loyalty_purchase_subscription_idempotent_by_payment_id(
 
 
 @pytest.mark.asyncio
-async def test_wallet_earn_and_spend(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
+async def test_wallet_earn_and_spend(db_session: AsyncSession, seed_data) -> None:
+    clinic_id = seed_data["clinic_id"]
     patient_id = uuid4()
     now = datetime.now(timezone.utc)
 
     wallet_service = WalletService(db_session)
+    db_session.add(
+        Patient(
+            id=patient_id,
+            clinic_id=clinic_id,
+            phone=f"+79{str(patient_id.int)[:9]}",
+            full_name="Wallet patient",
+        )
+    )
+    await db_session.flush()
 
     earn_tx = await wallet_service.earn_points(
         EarnPointsInput(

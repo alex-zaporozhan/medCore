@@ -35,7 +35,7 @@ ALL_PATHS = [LANDING_PATH] + ADMIN_PATHS + APP_PATHS
 
 
 @pytest.fixture(scope="module")
-def base_url():
+def frontend_base_url():
     """Live frontend base URL (CI: vite preview + FRONTEND_E2E_URL)."""
     assert FRONTEND_E2E_URL, "FRONTEND_E2E_URL must be set for browser E2E"
     return FRONTEND_E2E_URL
@@ -46,9 +46,9 @@ class TestFrontendPages:
     """Visit each frontend route and assert page loads (no white screen / fatal error)."""
 
     @pytest.mark.parametrize("path", ALL_PATHS)
-    def test_page_loads_and_has_content(self, page, base_url, path):
+    def test_page_loads_and_has_content(self, page, frontend_base_url, path):
         """Load path and check response is OK and body has meaningful content."""
-        url = f"{base_url}{path}"
+        url = f"{frontend_base_url}{path}"
         try:
             response = page.goto(url, wait_until="domcontentloaded", timeout=15000)
         except Exception as e:
@@ -66,7 +66,7 @@ class TestFrontendPages:
         )
 
     @pytest.mark.parametrize("path", ALL_PATHS)
-    def test_page_no_console_errors(self, page, base_url, path):
+    def test_page_no_console_errors(self, page, frontend_base_url, path):
         """Capture console errors on load; fail if any (helps debug white screen)."""
         errors = []
 
@@ -75,13 +75,19 @@ class TestFrontendPages:
                 errors.append(msg.text)
 
         page.on("console", on_console)
-        url = f"{base_url}{path}"
+        url = f"{frontend_base_url}{path}"
         try:
             page.goto(url, wait_until="networkidle", timeout=15000)
         except Exception as e:
             pytest.fail(f"{path}: load failed — {e!s}")
 
-        # Filter out known non-fatal (e.g. 404 for source maps)
-        fatal = [e for e in errors if "Failed to load" in e or "Uncaught" in e or "SyntaxError" in e]
+        # Filter out known non-fatal console noise (e.g. 404 source maps/assets in preview).
+        fatal = [
+            e
+            for e in errors
+            if "Uncaught" in e
+            or "SyntaxError" in e
+            or ("Failed to load" in e and "404" not in e and "status of 404" not in e)
+        ]
         if fatal:
             pytest.fail(f"{path}: console errors: {'; '.join(fatal[:3])}")

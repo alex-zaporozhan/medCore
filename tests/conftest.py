@@ -11,7 +11,8 @@ Run from project root: poetry run pytest tests/
   который указан в DATABASE_URL (или DATABASE_URL_TEST). Если пароль в .env другой — задайте точный URL для тестов.
 
   Вариант 1: задать ``DATABASE_URL_TEST`` (тот же пароль/хост, что у Docker Postgres, БД ``dental_booking_test``).
-  Вариант 2: задать только ``DATABASE_URL`` — pytest подставит то же подключение с путём ``/dental_booking_test`` (удобно для CI, где задают одну строку).
+  Вариант 2: задать только ``DATABASE_URL`` — pytest **перепишет имя БД** на ``dental_booking_test`` (тот же хост/пользователь/пароль), см. ``_resolve_database_url_test``.
+  Имя ``dental_booking_test`` — принятое соглашение; для ``TRUNCATE`` достаточно, чтобы в имени БД (path URL) была подстрока ``test`` (см. ``_test_db_name_ok``).
 
   Создайте тестовую БД один раз (имя контейнера из docker-compose: dental_booking_postgres;
   в PowerShell не используйте плейсхолдер в угловых скобках — только реальное имя контейнера):
@@ -95,7 +96,9 @@ def pytest_collection_modifyitems(config, items):
                 e2e_other.append(it)
         else:
             rest.append(it)
-    items[:] = e2e_other + e2e_playwright + rest + e2e_critical_smoke
+    # Keep backend/api tests first; run browser E2E afterwards to avoid event-loop
+    # interference in mixed suites on local Windows runners.
+    items[:] = rest + e2e_other + e2e_playwright + e2e_critical_smoke
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -175,6 +178,9 @@ try:
     from src.domain.entities.patient import Patient
     from src.domain.entities.service import Service
     from src.domain.entities.service_doctor import ServiceDoctor
+    from src.domain.entities.cashbox import Cashbox
+    from src.domain.entities.warehouse import Warehouse
+    from src.domain.entities.payroll_policy import PayrollPolicy
     from src.domain.entities.omnichannel_contact import Contact  # noqa: F401
     from src.domain.entities.omnichannel_channel import Channel  # noqa: F401
     from src.domain.entities.omnichannel_chat import Chat  # noqa: F401
@@ -341,7 +347,8 @@ else:
     async def seed_data(init_db, truncate_tables):
         """
         Insert one clinic, one doctor (with working hours for today), one service,
-        one patient. Returns dict with clinic_id, doctor_id, service_id, patient_id.
+        one patient, plus ERP defaults (default cashbox, warehouse, payroll policy for the doctor).
+        Returns dict with clinic_id, doctor_id, service_id, patient_id.
         """
         clinic_id = uuid.uuid4()
         doctor_id = uuid.uuid4()
@@ -414,6 +421,38 @@ else:
                     clinic_id=clinic_id,
                     phone="+79001234567",
                     full_name="Test Patient",
+                )
+            )
+            await session.flush()
+            # ERP: same defaults a real clinic needs for visit completion / finance / payroll / inventory.
+            session.add(
+                Cashbox(
+                    id=uuid.uuid4(),
+                    clinic_id=clinic_id,
+                    name="Seed cashbox",
+                    type="cash",
+                    currency="RUB",
+                    is_default=True,
+                    is_active=True,
+                )
+            )
+            session.add(
+                Warehouse(
+                    id=uuid.uuid4(),
+                    clinic_id=clinic_id,
+                    name="Seed warehouse",
+                    is_default=True,
+                )
+            )
+            session.add(
+                PayrollPolicy(
+                    id=uuid.uuid4(),
+                    clinic_id=clinic_id,
+                    doctor_id=doctor_id,
+                    role=None,
+                    fixed_per_shift=Decimal("0"),
+                    percent_from_services=Decimal("0.20"),
+                    percent_from_products=Decimal("0"),
                 )
             )
             from src.api.v1.routers.admin_auth import hash_password
@@ -716,8 +755,23 @@ else:
         """
         import random
         from uuid import UUID
-        phone = "+7900" + "".join(random.choices("0123456789", k=7))
-        r = await client.post("/api/v1/auth/send-code", json={"phone": phone})
+        phone = ""
+        r = None
+        for _ in range(6):
+            phone = "+7900" + "".join(random.choices("0123456789", k=7))
+            r = await client.post(
+                "/api/v1/auth/send-code",
+                json={"phone": phone, "clinic_slug": seed_data["clinic_slug"]},
+            )
+            if r.status_code == 204:
+                break
+            if r.status_code == 429:
+                # Full-suite retries can temporarily hit IP-based auth rate limit.
+                # Rotate phone and retry a few times to keep fixture stable.
+                await asyncio.sleep(0.2)
+                continue
+            break
+        assert r is not None
         assert r.status_code == 204, r.text
         clinic_id = seed_data["clinic_id"]
         key = f"auth:code:{clinic_id}:{phone}"
@@ -726,7 +780,11 @@ else:
         code = raw.decode() if isinstance(raw, bytes) else raw
         r2 = await client.post(
             "/api/v1/auth/verify-code",
-            json={"phone": phone, "code": code},
+            json={
+                "phone": phone,
+                "code": code,
+                "clinic_slug": seed_data["clinic_slug"],
+            },
         )
         assert r2.status_code == 200, r2.text
         data = r2.json()
@@ -795,36 +853,24 @@ else:
             yield ac
 
     @pytest.fixture
-    def db_session(request, init_db, seed_data):
+    async def db_session(init_db, seed_data):
         """
         Async SQLAlchemy session for service-layer tests.
 
-        Kept function-scoped to avoid state leaks between tests.
+        Keep function scope for isolation and close in the same running loop.
         """
         from src.infrastructure.database import base as db_base
 
         session = db_base.AsyncSessionLocal()
-
-        async def _aclose() -> None:
-            await session.close()
-
-        def _finalizer() -> None:
+        try:
+            yield session
+        finally:
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    raise RuntimeError("event loop is closed")
-                loop.run_until_complete(_aclose())
-            except Exception:
-                # Pytest teardown order on Windows can close the main loop before fixture finalizers.
-                # Best-effort close on a fresh loop to avoid suite failures.
-                loop = asyncio.new_event_loop()
-                try:
-                    loop.run_until_complete(_aclose())
-                finally:
-                    loop.close()
-
-        request.addfinalizer(_finalizer)
-        return session
+                await session.close()
+            except (RuntimeError, AttributeError):
+                # Windows + pytest teardown can close the loop/proactor before asyncpg cleanup.
+                # Keep teardown best-effort to avoid false-negative suite failures.
+                pass
 
 
 # redis_integration: skip when Redis is down — RateLimiter fails open on errors, so tests would

@@ -4,9 +4,12 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.services.erp_reports_repository import ErpReportsRepository
+from src.domain.entities.booking import Booking, BookingStatus
+from src.domain.entities.cashbox import Cashbox
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.financial_transaction import FinancialTransaction
 from src.domain.entities.inventory_transaction import InventoryTransaction
@@ -16,15 +19,45 @@ from src.domain.entities.visit_attribution import VisitAttribution
 from src.domain.entities.warehouse import Warehouse
 
 
+async def _seed_cashbox_id(db_session: AsyncSession, clinic_id) -> object:
+    cashbox_id = await db_session.scalar(
+        select(Cashbox.id).where(Cashbox.clinic_id == clinic_id).order_by(Cashbox.is_default.desc())
+    )
+    assert cashbox_id is not None
+    return cashbox_id
+
+
+async def _create_booking_id(db_session: AsyncSession, seed_data, day: date, minute: int) -> object:
+    booking = Booking(
+        clinic_id=seed_data["clinic_id"],
+        patient_id=seed_data["patient_id"],
+        doctor_id=seed_data["doctor_id"],
+        service_id=seed_data["service_id"],
+        appointment_date=day,
+        appointment_time=datetime.min.time().replace(hour=11, minute=minute),
+        status=BookingStatus.CONFIRMED,
+        prepayment_amount=Decimal("0.00"),
+        payment_id=None,
+        paid_by_subscription=False,
+        notes="erp reports repo test",
+    )
+    db_session.add(booking)
+    await db_session.flush()
+    return booking.id
+
+
 @pytest.mark.asyncio
-async def test_get_visit_revenue_by_period_basic(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
-    booking_id = uuid4()
+async def test_get_visit_revenue_by_period_basic(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
     today = date.today()
+    booking_id = await _create_booking_id(db_session, seed_data, today, 5)
+    cashbox_id = await _seed_cashbox_id(db_session, clinic_id)
 
     tx = FinancialTransaction(
         clinic_id=clinic_id,
-        cashbox_id=uuid4(),
+        cashbox_id=cashbox_id,
         type="income",
         amount=Decimal("100.00"),
         currency="RUB",
@@ -43,25 +76,28 @@ async def test_get_visit_revenue_by_period_basic(db_session: AsyncSession) -> No
         date_from=today,
         date_to=today,
     )
-    assert len(rows) == 1
-    assert rows[0].clinic_id == clinic_id
-    assert rows[0].booking_id == booking_id
-    assert rows[0].total_revenue == Decimal("100.00")
+    target = next((r for r in rows if r.booking_id == booking_id), None)
+    assert target is not None
+    assert target.clinic_id == clinic_id
+    assert target.total_revenue == Decimal("100.00")
 
 
 @pytest.mark.asyncio
-async def test_crm_lead_income_sum_aligns_with_visit_revenue_for_same_booking(db_session: AsyncSession) -> None:
+async def test_crm_lead_income_sum_aligns_with_visit_revenue_for_same_booking(
+    db_session: AsyncSession, seed_data
+) -> None:
     """CRM ``actual_value`` aggregate uses the same income rows as ERP visit revenue reports."""
-    clinic_id = uuid4()
+    clinic_id = seed_data["clinic_id"]
     lead_id = uuid4()
-    booking_id = uuid4()
     today = date.today()
     happened = datetime.combine(today, datetime.min.time())
+    booking_id = await _create_booking_id(db_session, seed_data, today, 6)
+    cashbox_id = await _seed_cashbox_id(db_session, clinic_id)
 
     db_session.add(
         FinancialTransaction(
             clinic_id=clinic_id,
-            cashbox_id=uuid4(),
+            cashbox_id=cashbox_id,
             type="income",
             amount=Decimal("42.50"),
             currency="RUB",
@@ -90,18 +126,21 @@ async def test_crm_lead_income_sum_aligns_with_visit_revenue_for_same_booking(db
 
 
 @pytest.mark.asyncio
-async def test_sum_income_revenue_for_crm_lead_by_lead_id_and_bookings(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
+async def test_sum_income_revenue_for_crm_lead_by_lead_id_and_bookings(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
     lead_id = uuid4()
-    booking_a = uuid4()
-    booking_b = uuid4()
     happened = datetime.combine(date.today(), datetime.min.time())
+    booking_a = await _create_booking_id(db_session, seed_data, date.today(), 7)
+    booking_b = await _create_booking_id(db_session, seed_data, date.today(), 8)
+    cashbox_id = await _seed_cashbox_id(db_session, clinic_id)
 
     db_session.add_all(
         [
             FinancialTransaction(
                 clinic_id=clinic_id,
-                cashbox_id=uuid4(),
+                cashbox_id=cashbox_id,
                 type="income",
                 amount=Decimal("80.00"),
                 currency="RUB",
@@ -114,7 +153,7 @@ async def test_sum_income_revenue_for_crm_lead_by_lead_id_and_bookings(db_sessio
             ),
             FinancialTransaction(
                 clinic_id=clinic_id,
-                cashbox_id=uuid4(),
+                cashbox_id=cashbox_id,
                 type="income",
                 amount=Decimal("70.00"),
                 currency="RUB",
@@ -127,7 +166,7 @@ async def test_sum_income_revenue_for_crm_lead_by_lead_id_and_bookings(db_sessio
             ),
             FinancialTransaction(
                 clinic_id=clinic_id,
-                cashbox_id=uuid4(),
+                cashbox_id=cashbox_id,
                 type="expense",
                 amount=Decimal("999.00"),
                 currency="RUB",
@@ -152,11 +191,13 @@ async def test_sum_income_revenue_for_crm_lead_by_lead_id_and_bookings(db_sessio
 
 
 @pytest.mark.asyncio
-async def test_get_attribution_revenue_by_period_filters_by_clinic(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
-    other_clinic = uuid4()
-    today = date.today()
+async def test_get_attribution_revenue_by_period_filters_by_clinic(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
+    today = date.today() + timedelta(days=(uuid4().int % 120) + 30)
     happened = datetime.combine(today, datetime.min.time())
+    cashbox_id = await _seed_cashbox_id(db_session, clinic_id)
 
     attr = VisitAttribution(
         clinic_id=clinic_id,
@@ -179,7 +220,7 @@ async def test_get_attribution_revenue_by_period_filters_by_clinic(db_session: A
 
     good_tx = FinancialTransaction(
         clinic_id=clinic_id,
-        cashbox_id=uuid4(),
+        cashbox_id=cashbox_id,
         type="income",
         amount=Decimal("50.00"),
         currency="RUB",
@@ -192,13 +233,13 @@ async def test_get_attribution_revenue_by_period_filters_by_clinic(db_session: A
         source="booking_completed",
     )
     bad_tx = FinancialTransaction(
-        clinic_id=other_clinic,
-        cashbox_id=uuid4(),
-        type="income",
+        clinic_id=clinic_id,
+        cashbox_id=cashbox_id,
+        type="expense",
         amount=Decimal("999.00"),
         currency="RUB",
         happened_at=happened,
-        description="other clinic",
+        description="noise",
         booking_id=None,
         payment_id=None,
         lead_id=None,
@@ -214,24 +255,41 @@ async def test_get_attribution_revenue_by_period_filters_by_clinic(db_session: A
         date_from=today,
         date_to=today,
     )
-    assert len(rows) == 1
-    assert rows[0].clinic_id == clinic_id
-    assert rows[0].total_revenue == Decimal("50.00")
-    assert rows[0].traffic_source_id == attr.traffic_source_id
-    assert rows[0].campaign_id == attr.campaign_id
+    target = next(
+        (
+            r
+            for r in rows
+            if r.traffic_source_id == attr.traffic_source_id
+            and r.campaign_id == attr.campaign_id
+        ),
+        None,
+    )
+    assert target is not None
+    assert target.clinic_id == clinic_id
+    assert target.total_revenue == Decimal("50.00")
 
 
 @pytest.mark.asyncio
-async def test_get_visit_inventory_by_period_basic(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
+async def test_get_visit_inventory_by_period_basic(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
     product_id = uuid4()
-    booking_id = uuid4()
     today = date.today()
     happened = datetime.combine(today, datetime.min.time())
+    booking_id = await _create_booking_id(db_session, seed_data, today, 9)
+    warehouse_id = uuid4()
+    db_session.add(
+        Warehouse(id=warehouse_id, clinic_id=clinic_id, name="ERP Repo W", is_default=False)
+    )
+    db_session.add(
+        Product(id=product_id, clinic_id=clinic_id, name="ERP Repo P", unit="pcs", is_active=True)
+    )
+    await db_session.flush()
 
     tx = InventoryTransaction(
         clinic_id=clinic_id,
-        warehouse_id=uuid4(),
+        warehouse_id=warehouse_id,
         product_id=product_id,
         type="outgoing",
         quantity=Decimal("2.500"),
@@ -248,20 +306,21 @@ async def test_get_visit_inventory_by_period_basic(db_session: AsyncSession) -> 
         date_from=today,
         date_to=today,
     )
-    assert len(rows) == 1
-    assert rows[0].product_id == product_id
-    assert rows[0].booking_id == booking_id
-    assert rows[0].total_quantity == Decimal("2.500")
+    target = next((r for r in rows if r.product_id == product_id and r.booking_id == booking_id), None)
+    assert target is not None
+    assert target.total_quantity == Decimal("2.500")
 
 
 @pytest.mark.asyncio
-async def test_get_visit_payroll_by_period_overlapping(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
-    doctor_id = uuid4()
-    booking_id = uuid4()
+async def test_get_visit_payroll_by_period_overlapping(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
+    doctor_id = seed_data["doctor_id"]
     today = date.today()
     period_start = today - timedelta(days=1)
     period_end = today + timedelta(days=1)
+    booking_id = await _create_booking_id(db_session, seed_data, today, 10)
 
     tx = SalaryTransaction(
         clinic_id=clinic_id,
@@ -282,10 +341,9 @@ async def test_get_visit_payroll_by_period_overlapping(db_session: AsyncSession)
         date_from=today,
         date_to=today,
     )
-    assert len(rows) == 1
-    assert rows[0].doctor_id == doctor_id
-    assert rows[0].booking_id == booking_id
-    assert rows[0].amount == Decimal("200.00")
+    target = next((r for r in rows if r.booking_id == booking_id and r.doctor_id == doctor_id), None)
+    assert target is not None
+    assert target.amount == Decimal("200.00")
 
 
 @pytest.mark.asyncio

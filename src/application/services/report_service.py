@@ -6,7 +6,7 @@ from datetime import date, datetime, time as dtime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.dto.reports_dto import (
@@ -968,19 +968,19 @@ class ReportsService:
         subs_stmt = select(
             func.count().label("total"),
             func.sum(
-                func.case(
+                case(
                     (CustomerSubscription.status == "active", 1),
                     else_=0,
                 )
             ).label("active"),
             func.sum(
-                func.case(
+                case(
                     (CustomerSubscription.status != "active", 1),
                     else_=0,
                 )
             ).label("expired"),
             func.sum(
-                func.case(
+                case(
                     (
                         (
                             (CustomerSubscription.remaining_visits.is_not(None))

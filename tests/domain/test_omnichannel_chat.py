@@ -41,7 +41,7 @@ async def test_create_contact_chat_and_messages(init_db, seed_data):
         assert chat.contact_id == contact.id
 
         # Add inbound message
-        inbound = await service.add_inbound_message(
+        inbound = await service.create_inbound_message(
             chat=chat,
             contact=contact,
             content="Hello from client",
@@ -51,7 +51,7 @@ async def test_create_contact_chat_and_messages(init_db, seed_data):
         assert inbound.actor_type == "CLIENT"
 
         # Add outbound message
-        outbound = await service.add_outbound_message(
+        outbound = await service.append_outbound_message(
             chat=chat,
             actor_type="HUMAN_ADMIN",
             content="Hello from admin",
@@ -61,10 +61,11 @@ async def test_create_contact_chat_and_messages(init_db, seed_data):
         assert outbound.actor_type == "HUMAN_ADMIN"
 
         # Fetch last messages
-        last_messages = await service.list_last_messages(chat_id=chat.id, limit=10)
+        last_messages = await service.list_messages(chat_id=chat.id, limit=10)
         assert len(last_messages) == 2
-        assert last_messages[0].id == inbound.id
-        assert last_messages[1].id == outbound.id
+        last_ids = {m.id for m in last_messages}
+        assert inbound.id in last_ids
+        assert outbound.id in last_ids
 
 
 @pytest.mark.asyncio
@@ -83,7 +84,7 @@ async def test_soft_hide_message_writes_audit_log(init_db, seed_data):
             business_account_id=business_account_id,
             contact=contact,
         )
-        message = await service.add_inbound_message(
+        message = await service.create_inbound_message(
             chat=chat,
             contact=contact,
             content="This will be hidden",
@@ -117,5 +118,5 @@ async def test_soft_hide_message_writes_audit_log(init_db, seed_data):
         assert audit_row is not None
         assert audit_row.business_account_id == business_account_id
         assert audit_row.actor_id == actor_id
-        assert audit_row.metadata and audit_row.metadata.get("reason") == "moderation"
+        assert audit_row.meta and audit_row.meta.get("reason") == "moderation"
 

@@ -121,6 +121,13 @@ async def test_platform_internal_provision_queue_requires_founder_jwt(client: As
 
 @pytest.mark.asyncio
 async def test_platform_internal_dashboard_summary_counts_active_org_and_mrr(client: AsyncClient, seed_data: dict):
+    token = create_platform_founder_access_token(subject=seed_data["platform_founder_id"])
+    r0 = await client.get(DASHBOARD_SUMMARY_PATH, headers={"Authorization": f"Bearer {token}"})
+    assert r0.status_code == 200
+    j0 = r0.json()
+    baseline_active = int(j0.get("active_organizations") or 0)
+    baseline_mrr = float(j0.get("mrr_rub_monthly") or 0)
+
     org_id = uuid4()
     intent_id = uuid4()
     async with db_base.AsyncSessionLocal() as session:
@@ -140,13 +147,12 @@ async def test_platform_internal_dashboard_summary_counts_active_org_and_mrr(cli
         )
         await session.commit()
 
-    token = create_platform_founder_access_token(subject=seed_data["platform_founder_id"])
     r = await client.get(DASHBOARD_SUMMARY_PATH, headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
     body = r.json()
-    assert body.get("active_organizations") == 1
-    assert body.get("mrr_partial") is False
-    assert float(body.get("mrr_rub_monthly", "0")) == pytest.approx(2900.0)
+    assert body.get("active_organizations") == baseline_active + 1
+    # mrr_partial может оставаться True из‑за других org в общей БД (session seed); важен прирост по каталогу.
+    assert float(body.get("mrr_rub_monthly", "0")) == pytest.approx(baseline_mrr + 2900.0)
 
 
 @pytest.mark.asyncio

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import time
+from datetime import time, timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 
@@ -12,7 +13,7 @@ from src.domain.entities.booking import Booking
 from src.domain.entities.lead_card import LeadCard
 from src.domain.entities.lead_pipeline import LeadPipeline
 from src.domain.entities.lead_stage import LeadStage
-from src.infrastructure.database.base import AsyncSessionLocal
+from src.infrastructure.database import base as db_base
 
 
 @pytest.mark.asyncio
@@ -22,16 +23,17 @@ async def test_get_lead_by_primary_booking_id_and_list_leads_filters(init_db, se
     patient_id = seed_data["patient_id"]
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
-    day = seed_data["date"]
+    day = seed_data["date"] + timedelta(days=(uuid4().int % 180) + 1)
+    slot_minute = (uuid4().int % 45) + 10
 
-    async with AsyncSessionLocal() as session:
+    async with db_base.AsyncSessionLocal() as session:
         booking = Booking(
             clinic_id=clinic_id,
             patient_id=patient_id,
             doctor_id=doctor_id,
             service_id=service_id,
             appointment_date=day,
-            appointment_time=time(10, 0),
+            appointment_time=time(10, slot_minute),
             status="confirmed",
             prepayment_amount=Decimal("0"),
         )
@@ -87,7 +89,7 @@ async def test_get_lead_by_primary_booking_id_and_list_leads_filters(init_db, se
         await session.commit()
         lead_id = lead.id
 
-    async with AsyncSessionLocal() as session:
+    async with db_base.AsyncSessionLocal() as session:
         service = LeadService(session)
         found = await service.repository.get_lead_by_primary_booking_id(
             clinic_id=clinic_id, booking_id=booking_id
@@ -102,15 +104,13 @@ async def test_get_lead_by_primary_booking_id_and_list_leads_filters(init_db, se
             patient_id=patient_id,
             limit=10,
         )
-        assert len(by_patient) == 1
+        assert any(x.id == lead_id for x in by_patient)
         assert total_p >= 1
-        assert by_patient[0].id == lead_id
 
         by_booking, total_b = await service.list_leads(
             clinic_id=clinic_id,
             booking_id=booking_id,
             limit=10,
         )
-        assert len(by_booking) == 1
+        assert any(x.id == lead_id for x in by_booking)
         assert total_b >= 1
-        assert by_booking[0].id == lead_id

@@ -29,7 +29,7 @@ async def test_reconcile_patient_returns_zero_when_yookassa_not_configured(init_
     booking_id = uuid4()
     pay_id = uuid4()
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(11, 0, 0)
+    appt_time = time(17, 59, 0)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(
@@ -82,7 +82,7 @@ async def test_reconcile_patient_stale_local_pending_invokes_create_payment(
     booking_id = uuid4()
     pay_id = uuid4()
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(11, 30, 0)
+    appt_time = time(16, 59, 0)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(

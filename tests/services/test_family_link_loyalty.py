@@ -20,23 +20,44 @@ from src.application.services.wallet_service import (
     WalletFamilySpendDenied,
     WalletService,
 )
-from src.domain.entities.clinic import Clinic
+from src.domain.entities.booking import Booking, BookingStatus
+from src.domain.entities.loyalty_group import LoyaltyGroup  # noqa: F401
 from src.domain.entities.patient import Patient
 from src.domain.entities.subscription_package import SubscriptionPackage
 
 
 @pytest.mark.asyncio
-async def test_family_link_allows_beneficiary_spend(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
+async def test_family_link_allows_beneficiary_spend(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
     owner_id = uuid4()
     child_id = uuid4()
     booking_id = uuid4()
-    db_session.add(Clinic(id=clinic_id, name="C", prepayment_amount=0))
+    doctor_id = seed_data["doctor_id"]
+    service_id = seed_data["service_id"]
     db_session.add(
         Patient(id=owner_id, clinic_id=clinic_id, phone="+1001", full_name="Owner")
     )
     db_session.add(
         Patient(id=child_id, clinic_id=clinic_id, phone="+1002", full_name="Child")
+    )
+    await db_session.flush()
+    db_session.add(
+        Booking(
+            id=booking_id,
+            clinic_id=clinic_id,
+            patient_id=owner_id,
+            doctor_id=doctor_id,
+            service_id=service_id,
+            appointment_date=(now := datetime.now(timezone.utc)).date(),
+            appointment_time=now.time().replace(second=0, microsecond=0),
+            status=BookingStatus.CONFIRMED,
+            prepayment_amount=Decimal("0.00"),
+            payment_id=None,
+            paid_by_subscription=False,
+            notes=None,
+        )
     )
     await db_session.flush()
 
@@ -64,7 +85,7 @@ async def test_family_link_allows_beneficiary_spend(db_session: AsyncSession) ->
             clinic_id=clinic_id,
             patient_id=owner_id,
             package_id=package.id,
-            payment_id=uuid4(),
+            payment_id=None,
             purchased_at=now,
         )
     )
@@ -102,12 +123,13 @@ async def test_family_link_allows_beneficiary_spend(db_session: AsyncSession) ->
 
 
 @pytest.mark.asyncio
-async def test_family_link_denies_without_link(db_session: AsyncSession) -> None:
-    clinic_id = uuid4()
+async def test_family_link_denies_without_link(
+    db_session: AsyncSession, seed_data
+) -> None:
+    clinic_id = seed_data["clinic_id"]
     owner_id = uuid4()
     child_id = uuid4()
     booking_id = uuid4()
-    db_session.add(Clinic(id=clinic_id, name="C", prepayment_amount=0))
     db_session.add(
         Patient(id=owner_id, clinic_id=clinic_id, phone="+2001", full_name="Owner")
     )
@@ -139,7 +161,7 @@ async def test_family_link_denies_without_link(db_session: AsyncSession) -> None
             clinic_id=clinic_id,
             patient_id=owner_id,
             package_id=package.id,
-            payment_id=uuid4(),
+            payment_id=None,
             purchased_at=now,
         )
     )
@@ -161,11 +183,11 @@ async def test_family_link_denies_without_link(db_session: AsyncSession) -> None
 @pytest.mark.asyncio
 async def test_patient_can_use_subscription_respects_family_link(
     db_session: AsyncSession,
+    seed_data,
 ) -> None:
-    clinic_id = uuid4()
+    clinic_id = seed_data["clinic_id"]
     owner_id = uuid4()
     child_id = uuid4()
-    db_session.add(Clinic(id=clinic_id, name="C", prepayment_amount=0))
     db_session.add(
         Patient(id=owner_id, clinic_id=clinic_id, phone="+3001", full_name="Owner")
     )
@@ -198,7 +220,7 @@ async def test_patient_can_use_subscription_respects_family_link(
             clinic_id=clinic_id,
             patient_id=owner_id,
             package_id=package.id,
-            payment_id=uuid4(),
+            payment_id=None,
             purchased_at=now,
         )
     )
@@ -223,11 +245,11 @@ async def test_patient_can_use_subscription_respects_family_link(
 @pytest.mark.asyncio
 async def test_wallet_spend_for_beneficiary_with_family_link(
     db_session: AsyncSession,
+    seed_data,
 ) -> None:
-    clinic_id = uuid4()
+    clinic_id = seed_data["clinic_id"]
     owner_id = uuid4()
     child_id = uuid4()
-    db_session.add(Clinic(id=clinic_id, name="C", prepayment_amount=0))
     db_session.add(
         Patient(id=owner_id, clinic_id=clinic_id, phone="+4001", full_name="Owner")
     )
@@ -273,11 +295,11 @@ async def test_wallet_spend_for_beneficiary_with_family_link(
 @pytest.mark.asyncio
 async def test_wallet_spend_beneficiary_denied_without_link(
     db_session: AsyncSession,
+    seed_data,
 ) -> None:
-    clinic_id = uuid4()
+    clinic_id = seed_data["clinic_id"]
     owner_id = uuid4()
     child_id = uuid4()
-    db_session.add(Clinic(id=clinic_id, name="C", prepayment_amount=0))
     db_session.add(
         Patient(id=owner_id, clinic_id=clinic_id, phone="+5001", full_name="Owner")
     )
