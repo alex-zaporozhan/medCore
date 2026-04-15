@@ -138,10 +138,15 @@ class OmnichannelIntegrationsConfigService:
         Used by omni orchestrator and by booking/notification tasks to notify admin.
         """
         try:
-            stmt = select(Channel).where(
-                Channel.business_account_id == clinic_id,
-                Channel.type == "TELEGRAM_BOT",
-            ).limit(1)
+            stmt = (
+                select(Channel)
+                .where(
+                    Channel.business_account_id == clinic_id,
+                    Channel.type == "TELEGRAM_BOT",
+                )
+                .order_by(Channel.created_at.desc())
+                .limit(1)
+            )
             result = await self.session.execute(stmt)
             channel = result.scalar_one_or_none()
             if not channel:

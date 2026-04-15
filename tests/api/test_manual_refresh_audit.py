@@ -20,7 +20,7 @@ async def test_post_refresh_erp_aggregates_creates_audit_row(
     admin_id = seed_data["admin_id"]
     r = await client.post(
         "/api/v1/admin/auth/login",
-        json={"email": "admin@test-clinic.local", "password": "password123"},
+        json={"email": seed_data["admin_email"], "password": "password123"},
     )
     assert r.status_code == 200, r.text
     token = r.json()["access_token"]

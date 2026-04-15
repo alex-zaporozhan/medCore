@@ -47,6 +47,11 @@ async def get_patient_ai_insight(
     try:
         return await service.analyze_patient(clinic_id, patient_id)
     except ChatAiServiceError as exc:
+        if str(exc) == "Patient not found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Patient not found",
+            ) from exc
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),

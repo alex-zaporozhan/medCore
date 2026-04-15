@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.inventory_transaction import InventoryTransaction
@@ -100,10 +100,13 @@ class WarehouseRepositoryImpl(WarehouseRepository):
 
     async def get_default_for_clinic(self, clinic_id: UUID) -> Warehouse | None:
         result = await self.session.execute(
-            select(Warehouse).where(
+            select(Warehouse)
+            .where(
                 Warehouse.clinic_id == clinic_id,
                 Warehouse.is_default.is_(True),
             )
+            .order_by(Warehouse.id)
+            .limit(1)
         )
         return result.scalar_one_or_none()
 
@@ -182,10 +185,8 @@ class InventoryTransactionRepositoryImpl(InventoryTransactionRepository):
         warehouse_id: UUID,
     ) -> Decimal:
         amount_case = func.sum(
-            func.case(
-                (
-                    (InventoryTransaction.type == "incoming", InventoryTransaction.quantity),
-                ),
+            case(
+                (InventoryTransaction.type == "incoming", InventoryTransaction.quantity),
                 else_=-InventoryTransaction.quantity,
             )
         )

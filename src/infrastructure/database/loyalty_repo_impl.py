@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.customer_subscription import CustomerSubscription
@@ -210,10 +210,8 @@ class WalletTransactionRepositoryImpl(WalletTransactionRepository):
         )
 
         amount_case = func.sum(
-            func.case(
-                (
-                    (WalletTransaction.type == "earn", WalletTransaction.amount),
-                ),
+            case(
+                (WalletTransaction.type == "earn", WalletTransaction.amount),
                 else_=-WalletTransaction.amount,
             )
         )

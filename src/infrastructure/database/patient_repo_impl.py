@@ -108,8 +108,8 @@ class PatientRepositoryImpl(PatientRepository):
         """Soft delete patient."""
         patient = await self.get_by_id(patient_id)
         if patient:
-            from src.core.datetime_utils import utc_now
+            from src.core.datetime_utils import utc_now_naive
 
-            patient.deleted_at = utc_now()
+            patient.deleted_at = utc_now_naive()
             await self.session.flush()
             logger.info("Patient deleted", extra={"patient_id": str(patient_id)})

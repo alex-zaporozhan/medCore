@@ -453,9 +453,22 @@ async def test_cancel_booking_success(init_db, seed_data, redis_client):
             patient_service=patient_service,
         )
 
-        daily = await schedule_service.get_daily_schedule(doctor_id=doctor_id, day=day)
-        slot = next(s for s in daily.slots if s.is_available)
-        appointment_start = datetime.combine(day, slot.start_time)
+        target_day = day
+        slot = None
+        now = datetime.now()
+        for _ in range(8):
+            daily = await schedule_service.get_daily_schedule(doctor_id=doctor_id, day=target_day)
+            future_slots = [
+                s
+                for s in daily.slots
+                if s.is_available and datetime.combine(target_day, s.start_time) > now + timedelta(minutes=1)
+            ]
+            if future_slots:
+                slot = future_slots[0]
+                break
+            target_day = target_day + timedelta(days=1)
+        assert slot is not None
+        appointment_start = datetime.combine(target_day, slot.start_time)
 
         create_args = CreateBookingArgs(
             clinic_id=clinic_id,
@@ -517,12 +530,24 @@ async def test_reschedule_booking_success(init_db, seed_data, redis_client):
             patient_service=patient_service,
         )
 
-        daily = await schedule_service.get_daily_schedule(doctor_id=doctor_id, day=day)
-        free_slots = [s for s in daily.slots if s.is_available]
+        target_day = day
+        free_slots = []
+        now = datetime.now()
+        for _ in range(8):
+            daily = await schedule_service.get_daily_schedule(doctor_id=doctor_id, day=target_day)
+            free_slots = [
+                s
+                for s in daily.slots
+                if s.is_available and datetime.combine(target_day, s.start_time) > now + timedelta(minutes=1)
+            ]
+            if len(free_slots) >= 2:
+                break
+            target_day = target_day + timedelta(days=1)
+        assert len(free_slots) >= 2
         first_slot, second_slot = free_slots[0], free_slots[1]
 
-        first_start = datetime.combine(day, first_slot.start_time)
-        second_start = datetime.combine(day, second_slot.start_time)
+        first_start = datetime.combine(target_day, first_slot.start_time)
+        second_start = datetime.combine(target_day, second_slot.start_time)
 
         create_args = CreateBookingArgs(
             clinic_id=clinic_id,

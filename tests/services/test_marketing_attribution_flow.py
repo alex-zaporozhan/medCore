@@ -3,6 +3,10 @@
 import pytest
 from httpx import AsyncClient
 
+from src.domain.entities.lead_pipeline import LeadPipeline
+from src.domain.entities.lead_stage import LeadStage
+from src.infrastructure.database import base as db_base
+
 
 @pytest.mark.asyncio
 async def test_marketing_attribution_full_flow(
@@ -10,12 +14,34 @@ async def test_marketing_attribution_full_flow(
     seed_data,
     client: AsyncClient,
     admin_auth: dict,
+    redis_client,
 ) -> None:
     """Landing lead with UTM + patient auth + booking/payment should appear in admin attribution summary."""
     headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
 
     # 1. Create landing lead with UTM tags
-    clinic_id = seed_data["clinic"]["id"]
+    clinic_id = seed_data["clinic_id"]
+    async with db_base.AsyncSessionLocal() as session:
+        pipeline = LeadPipeline(
+            clinic_id=clinic_id,
+            name="Default",
+            description=None,
+            is_default=True,
+        )
+        session.add(pipeline)
+        await session.flush()
+        session.add(
+            LeadStage(
+                clinic_id=clinic_id,
+                pipeline_id=pipeline.id,
+                order=1,
+                code="new",
+                name="New",
+                probability=10,
+                color="#999999",
+            )
+        )
+        await session.commit()
     session_id = "test-session-attr-1"
     landing_payload = {
       "full_name": "UTM Patient",
@@ -38,9 +64,19 @@ async def test_marketing_attribution_full_flow(
     assert landing_data["visit_attribution_id"]
 
     # 2. Simulate patient auth with same session_id (links VisitAttribution to Patient)
+    r_send = await client.post(
+        "/api/v1/auth/send-code",
+        json={"phone": landing_payload["phone"], "clinic_slug": seed_data["clinic_slug"]},
+    )
+    assert r_send.status_code == 204, r_send.text
+    code_key = f"auth:code:{clinic_id}:{landing_payload['phone']}"
+    raw_code = await redis_client.get(code_key)
+    assert raw_code, f"Auth code not in Redis for key {code_key}"
+    code = raw_code.decode() if isinstance(raw_code, bytes) else raw_code
     auth_payload = {
         "phone": landing_payload["phone"],
-        "code": "0000",
+        "code": code,
+        "clinic_slug": seed_data["clinic_slug"],
         "consent_pd": True,
         "consent_mailing": False,
         "session_id": session_id,
@@ -52,7 +88,6 @@ async def test_marketing_attribution_full_flow(
         "landing_page": landing_payload["landing_page"],
         "anchor": landing_payload["anchor"],
     }
-    # Project uses two-step auth; here we directly hit verify endpoint used in tests
     r_auth = await client.post("/api/v1/auth/verify-code", json=auth_payload)
     assert r_auth.status_code in (200, 201), r_auth.text
 
@@ -61,7 +96,7 @@ async def test_marketing_attribution_full_flow(
     booking_payload = {
         "clinic_id": str(clinic_id),
         "patient_phone": landing_payload["phone"],
-        "service_id": str(seed_data["service"]["id"]),
+        "service_id": str(seed_data["service_id"]),
     }
     r_booking = await client.post(
         "/api/v1/bookings/debug-create-and-complete",

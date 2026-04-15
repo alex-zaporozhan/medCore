@@ -35,6 +35,6 @@
 
 ## Связь с кодом
 
-Матрица «путь → тест → защита»: [PUBLIC_PERIMETER_RATE_LIMIT_MATRIX.md](../../review/PUBLIC_PERIMETER_RATE_LIMIT_MATRIX.md).
+Матрица «путь → тест → защита»: [PUBLIC_PERIMETER_RATE_LIMIT_MATRIX.md](../review/PUBLIC_PERIMETER_RATE_LIMIT_MATRIX.md).
 
 **Версия:** 2026-04-08

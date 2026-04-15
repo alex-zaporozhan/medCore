@@ -29,9 +29,14 @@ async def test_whatsapp_webhook_creates_contact_chat_message_with_channel(  # no
 
     # Verify that Contact, Chat, and Message were created with correct provider/channel
     async with db_base.AsyncSessionLocal() as session:
-        # There should be exactly one message with provider WHATSAPP in source_metadata
+        # Find the webhook-created message by provider + external_message_id.
         result_msg = await session.execute(select(OmniMessage))
-        msgs = list(result_msg.scalars().all())
+        msgs = [
+            m
+            for m in result_msg.scalars().all()
+            if (m.source_metadata or {}).get("provider") == "WHATSAPP"
+            and (m.source_metadata or {}).get("external_message_id") == "wa-msg-1"
+        ]
         assert len(msgs) == 1
         msg = msgs[0]
         assert msg.content == "Hello from WhatsApp"

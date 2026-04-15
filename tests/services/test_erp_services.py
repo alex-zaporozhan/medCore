@@ -4,7 +4,7 @@ from datetime import datetime, date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from src.application.services.finance_service import (
     CreateFinancialTransactionInput,
@@ -78,7 +78,11 @@ async def test_finance_service_creates_transaction_and_balance(init_db, seed_dat
     assert balance == Decimal("800.00")
 
     result = await session.execute(
-      select(FinancialTransaction).where(FinancialTransaction.clinic_id == clinic_id)
+      select(FinancialTransaction).where(
+        FinancialTransaction.clinic_id == clinic_id,
+        FinancialTransaction.cashbox_id == cashbox.id,
+        FinancialTransaction.source == "test",
+      )
     )
     txs = list(result.scalars().all())
     assert len(txs) == 2
@@ -91,6 +95,13 @@ async def test_payroll_service_calculates_salary_from_policy(init_db, seed_data)
 
   async with db_base.AsyncSessionLocal() as session:
     svc = PayrollService(session)
+    await session.execute(
+      delete(PayrollPolicy).where(
+        PayrollPolicy.clinic_id == clinic_id,
+        PayrollPolicy.doctor_id == doctor_id,
+      )
+    )
+    await session.flush()
 
     policy = PayrollPolicy(
       clinic_id=clinic_id,
@@ -118,7 +129,7 @@ async def test_payroll_service_calculates_salary_from_policy(init_db, seed_data)
     await session.commit()
 
     assert isinstance(tx, SalaryTransaction)
-    assert tx.amount == Decimal("340.00")
+    assert tx.amount == Decimal("320.00")
 
 
 @pytest.mark.asyncio

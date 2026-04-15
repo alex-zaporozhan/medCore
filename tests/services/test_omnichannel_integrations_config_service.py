@@ -57,9 +57,9 @@ async def test_store_integration_secret_creates_config_and_audit(init_db, seed_d
         assert audit.business_account_id == business_account_id
         assert audit.actor_id == actor_id
         assert audit.actor_type == "OWNER"
-        assert audit.metadata is not None
-        assert audit.metadata.get("provider_type") == "TELEGRAM"
-        assert audit.metadata.get("scopes") == "messages:read, messages:write"
+        assert audit.meta is not None
+        assert audit.meta.get("provider_type") == "TELEGRAM"
+        assert audit.meta.get("scopes") == "messages:read, messages:write"
 
 
 @pytest.mark.asyncio
@@ -83,6 +83,7 @@ async def test_store_integration_secret_updates_config_and_audit_rotated(init_db
             actor_type="OWNER",
         )
         cfg1_id = cfg1.id
+        first_cipher = cfg1.credentials_encrypted
 
         # Rotate secret
         cfg2 = await service.store_integration_secret(
@@ -98,8 +99,8 @@ async def test_store_integration_secret_updates_config_and_audit_rotated(init_db
 
         assert cfg2.id == cfg1_id
         assert cfg2.credentials_encrypted is not None
-        # Encrypted blob should change after rotation
-        assert cfg2.credentials_encrypted != cfg1.credentials_encrypted
+        # Encrypted blob should change after rotation (compare to snapshot; cfg1 may be same ORM row)
+        assert cfg2.credentials_encrypted != first_cipher
 
         # There must be at least one ROTATED audit entry
         result = await session.execute(

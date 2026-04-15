@@ -55,9 +55,10 @@ class RecordingSafeAiClient:
         }
 
 
-async def _prepare_conversation_with_pd(session, clinic_id):
+async def _prepare_conversation_with_pd(session, clinic_id, patient_id):
     convo = Conversation(
         clinic_id=clinic_id,
+        patient_id=patient_id,
     )
     session.add(convo)
     await session.flush()
@@ -78,9 +79,10 @@ async def test_conversation_analysis_masks_pd_when_not_allowed(init_db, seed_dat
     """When allow_personal_data=False in factory context, PD must be masked in transcript."""
 
     clinic_id = seed_data["clinic_id"]
+    patient_id = seed_data["patient_id"]
 
     async with db_base.AsyncSessionLocal() as session:
-        convo = await _prepare_conversation_with_pd(session, clinic_id)
+        convo = await _prepare_conversation_with_pd(session, clinic_id, patient_id)
 
         ai_client = RecordingSafeAiClient()
         ctx = RequestContext(
@@ -115,9 +117,10 @@ async def test_conversation_analysis_passes_pd_when_allowed(init_db, seed_data):
     """When allow_personal_data=True in factory context, transcript should be pass-through."""
 
     clinic_id = seed_data["clinic_id"]
+    patient_id = seed_data["patient_id"]
 
     async with db_base.AsyncSessionLocal() as session:
-        convo = await _prepare_conversation_with_pd(session, clinic_id)
+        convo = await _prepare_conversation_with_pd(session, clinic_id, patient_id)
 
         ai_client = RecordingSafeAiClient()
         ctx = RequestContext(

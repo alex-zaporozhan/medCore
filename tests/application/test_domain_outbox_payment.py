@@ -38,7 +38,7 @@ async def test_payment_webhook_leaves_no_pending_outbox_after_dispatch(
     payment_row_id = uuid4()
     provider_pid = f"yookassa-outbox-{uuid4().hex[:12]}"
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(10, 0, 0)
+    appt_time = time(17, 55, 0)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(
@@ -105,7 +105,7 @@ async def test_dispatch_domain_outbox_batch_second_run_empty(seed_data: dict):
     booking_id = uuid4()
     payment_row_id = uuid4()
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(12, 0, 0)
+    appt_time = time(17, 56, 0)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(

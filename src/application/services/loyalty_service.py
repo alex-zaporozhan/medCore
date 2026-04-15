@@ -48,6 +48,12 @@ from src.application.loyalty_completion_errors import LoyaltyVisitCompletionBloc
 logger = logging.getLogger(__name__)
 
 
+def _to_utc_naive(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 class SubscriptionBusinessError(LoyaltyVisitCompletionBlocked):
     """Base class for subscription-related business errors with code attribute."""
 
@@ -320,9 +326,11 @@ class LoyaltyService:
         if not subs:
             return None
 
+        on_date_cmp = _to_utc_naive(on_date)
         active: list[CustomerSubscription] = []
         for s in subs:
-            if s.expires_at is not None and s.expires_at < on_date:
+            expires_at_cmp = _to_utc_naive(s.expires_at) if s.expires_at is not None else None
+            if expires_at_cmp is not None and expires_at_cmp < on_date_cmp:
                 continue
             active.append(s)
         if not active:
@@ -338,7 +346,11 @@ class LoyaltyService:
 
         def _priority_key(s: CustomerSubscription) -> tuple:
             pkg = packages.get(s.subscription_package_id)
-            expires = s.expires_at or (on_date + timedelta(days=3650))
+            expires = (
+                _to_utc_naive(s.expires_at)
+                if s.expires_at is not None
+                else on_date_cmp + timedelta(days=3650)
+            )
             has_services = bool(pkg and pkg.services_included)
             remaining_visits = s.remaining_visits or 0
             remaining_amount = s.remaining_amount or Decimal("0")
@@ -396,9 +408,11 @@ class LoyaltyService:
         )
         result = await self.session.execute(stmt)
         subs: list[CustomerSubscription] = list(result.scalars().all())
+        on_date_cmp = _to_utc_naive(on_date)
         active: list[CustomerSubscription] = []
         for s in subs:
-            if s.expires_at is not None and s.expires_at < on_date:
+            expires_at_cmp = _to_utc_naive(s.expires_at) if s.expires_at is not None else None
+            if expires_at_cmp is not None and expires_at_cmp < on_date_cmp:
                 continue
             if (s.remaining_visits or 0) <= 0 and (s.remaining_amount or Decimal("0")) <= 0:
                 continue
@@ -623,7 +637,10 @@ class LoyaltyService:
         ):
             raise ValueError("Active customer subscription not found for clinic")
 
-        if subscription.expires_at is not None and subscription.expires_at < data.used_at:
+        if (
+            subscription.expires_at is not None
+            and _to_utc_naive(subscription.expires_at) < _to_utc_naive(data.used_at)
+        ):
             raise SubscriptionExpired("Subscription expired")
 
         if data.used_visits is None and data.used_amount is None:

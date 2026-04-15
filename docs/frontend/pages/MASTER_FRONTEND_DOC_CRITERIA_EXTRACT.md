@@ -41,11 +41,11 @@
 |----|----------|
 | D1 | Нет логических дыр в ключевых сценариях; состояния loading/empty/error осмысленны. **Чеклист:** [`../PHASE_8_LEAD_ACCEPTANCE_CHECKLIST.md`](../PHASE_8_LEAD_ACCEPTANCE_CHECKLIST.md) §D1. |
 | D2 | Безопасность периметра и данных — по регламентам проекта (не заменяется паспортом страницы). **Чеклист:** тот же файл §D2. |
-| D3 | Несколько **итераций** рубрики Enterprise SaaS (макро/микро), сужение gap со временем. **Чеклист:** тот же файл §D3 + [`../architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md`](../architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md) §7. |
+| D3 | Несколько **итераций** рубрики Enterprise SaaS (макро/микро), сужение gap со временем. **Чеклист:** тот же файл §D3 + [`../../architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md`](../../architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md) §7. |
 
 ## Связь с артефактами
 
 - **Мастер-план эпиков:** [`../MASTER_FRONTEND_EXECUTION_PLAN.md`](../MASTER_FRONTEND_EXECUTION_PLAN.md).  
-- Рубрика и итерации: [`../architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md`](../architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md) (если файл в дереве пустой/заглушка — отдельная задача наполнения).  
+- Рубрика и итерации: [`../../architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md`](../../architecture/ENTERPRISE_SAAS_FRONTEND_RUBRIC_AND_ITERATIONS.md) (если файл в дереве пустой/заглушка — отдельная задача наполнения).  
 - Критерии паспорта страницы: [`../PAGE_PASSPORT_CRITERIA.md`](../PAGE_PASSPORT_CRITERIA.md).  
 - Последовательное заполнение паспортов: [`PAGE_PASSPORT_V2_AGENT_RUNBOOK.md`](./PAGE_PASSPORT_V2_AGENT_RUNBOOK.md).

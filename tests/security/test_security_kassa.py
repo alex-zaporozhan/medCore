@@ -103,10 +103,13 @@ async def test_sec_k3_credentials_stored_encrypted_in_db(init_db, seed_data):
         assert row is not None
         assert row.credentials_encrypted is not None
         enc = row.credentials_encrypted
-        assert "T1" not in enc
-        assert "P1" not in enc
-        assert "terminal_key" not in enc
-        assert "password" not in enc
+        assert enc != raw_payload
+        assert '"terminal_key":"T1"' not in enc
+        assert '"password":"P1"' not in enc
+
+        svc = ClinicPaymentGatewayService(session)
+        decrypted = await svc.get_credentials(clinic_id=clinic_id, gateway="tinkoff")
+        assert decrypted == raw_payload
 
 
 # --- SEC-K4: Patient payment webhook shared secret (contour A) ---

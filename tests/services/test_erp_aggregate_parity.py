@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import delete
 
 from src.application.services.erp_aggregate_service import ErpAggregateService
 from src.application.services.erp_reports_repository import ErpReportsRepository
@@ -38,10 +39,18 @@ async def test_visit_revenue_aggregate_matches_raw_repository(init_db, seed_data
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day: date = seed_data["date"]
+    day: date = seed_data["date"] + timedelta(days=(uuid.uuid4().int % 300) + 1)
 
     async with db_base.AsyncSessionLocal() as session:
         async with session.begin():
+            await session.execute(
+                delete(Booking).where(
+                    Booking.clinic_id == clinic_id,
+                    Booking.doctor_id == doctor_id,
+                    Booking.appointment_date == day,
+                    Booking.appointment_time.in_([time(10, 0), time(14, 0)]),
+                )
+            )
             cashbox = Cashbox(
                 clinic_id=clinic_id,
                 name="Parity test",
@@ -338,7 +347,7 @@ async def test_visit_revenue_aggregate_stale_range_triggers_fallback_metadata(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post(
             "/api/v1/admin/auth/login",
-            json={"email": "admin@test-clinic.local", "password": "password123"},
+            json={"email": seed_data["admin_email"], "password": "password123"},
         )
         assert r.status_code == 200, r.text
         token = r.json()["access_token"]
@@ -505,7 +514,8 @@ async def test_materials_aggregate_matches_raw_repository(init_db, seed_data) ->
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day: date = seed_data["date"] + timedelta(days=11)
+    day: date = seed_data["date"] + timedelta(days=(uuid.uuid4().int % 300) + 1)
+    booking_minute = (uuid.uuid4().int % 50) + 5
     warehouse_id = uuid.uuid4()
     product_id = uuid.uuid4()
 
@@ -537,7 +547,7 @@ async def test_materials_aggregate_matches_raw_repository(init_db, seed_data) ->
                     doctor_id=doctor_id,
                     service_id=service_id,
                     appointment_date=day,
-                    appointment_time=time(11, 0),
+                    appointment_time=time(11, booking_minute),
                     status=BookingStatus.CONFIRMED,
                     prepayment_amount=Decimal("0.00"),
                 )
@@ -749,7 +759,7 @@ async def test_payroll_by_period_stale_range_triggers_fallback_metadata(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post(
             "/api/v1/admin/auth/login",
-            json={"email": "admin@test-clinic.local", "password": "password123"},
+            json={"email": seed_data["admin_email"], "password": "password123"},
         )
         assert r.status_code == 200, r.text
         token = r.json()["access_token"]
@@ -858,7 +868,7 @@ async def test_materials_by_period_stale_range_triggers_fallback_metadata(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post(
             "/api/v1/admin/auth/login",
-            json={"email": "admin@test-clinic.local", "password": "password123"},
+            json={"email": seed_data["admin_email"], "password": "password123"},
         )
         assert r.status_code == 200, r.text
         token = r.json()["access_token"]
@@ -959,7 +969,7 @@ async def test_roi_by_source_stale_range_triggers_fallback_metadata(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post(
             "/api/v1/admin/auth/login",
-            json={"email": "admin@test-clinic.local", "password": "password123"},
+            json={"email": seed_data["admin_email"], "password": "password123"},
         )
         assert r.status_code == 200, r.text
         token = r.json()["access_token"]

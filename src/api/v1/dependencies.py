@@ -21,7 +21,8 @@ from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
 from src.domain.entities.platform_founder_user import PlatformFounderUser
 from src.domain.entities.clinic import Clinic
 from src.domain.entities.patient import Patient
-from src.infrastructure.database.base import AsyncSessionLocal, get_db, get_db_reporting
+from src.infrastructure.database import base as db_base
+from src.infrastructure.database.base import get_db, get_db_reporting
 from src.core.config import settings
 from src.core.context import RequestContext
 from src.core.user_messages import ADMIN_ORG_PLATFORM_BILLING_REVOKED
@@ -281,14 +282,14 @@ async def get_session_booking_domain_outbox() -> AsyncGenerator[AsyncSession, No
     DB session for booking mutations: commit then drain domain_outbox (ADR-009 / 2-E2).
     When ``domain_outbox_booking_events_enabled`` is false, matches standard ``get_session``.
     """
-    if AsyncSessionLocal is None:
+    if db_base.AsyncSessionLocal is None:
         async for session in get_db():
             yield session
         return
 
     from src.application.services.domain_outbox_service import dispatch_domain_outbox_batch
 
-    async with AsyncSessionLocal() as session:
+    async with db_base.AsyncSessionLocal() as session:
         try:
             yield session
             await session.commit()
@@ -313,14 +314,14 @@ async def get_session_payment_webhook() -> AsyncGenerator[AsyncSession, None]:
     DB session for POST /payments/webhook: commit then dispatch domain_outbox (ADR-009).
     When ``domain_outbox_payment_webhook_enabled`` is false, matches standard get_session behavior.
     """
-    if AsyncSessionLocal is None:
+    if db_base.AsyncSessionLocal is None:
         async for session in get_db():
             yield session
         return
 
     from src.application.services.domain_outbox_service import dispatch_domain_outbox_batch
 
-    async with AsyncSessionLocal() as session:
+    async with db_base.AsyncSessionLocal() as session:
         try:
             yield session
             await session.commit()

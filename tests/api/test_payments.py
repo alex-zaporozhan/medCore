@@ -211,17 +211,19 @@ async def test_payments_webhook_optional_secret_header(client: AsyncClient, monk
 @pytest.mark.regression_payments
 @pytest.mark.asyncio
 async def test_payments_webhook_rate_limited_per_ip(
-    client: AsyncClient, monkeypatch, redis_client
+    client: AsyncClient, monkeypatch
 ):
     """Contour A: Redis per-IP limit when enabled (symmetry with contour B)."""
     from src.core.config import settings
+    from src.infrastructure.database.redis_client import get_redis
 
     monkeypatch.setattr(settings, "rate_patient_payment_webhook_ip_limit", 1)
     monkeypatch.setattr(settings, "rate_patient_payment_webhook_ip_window_seconds", 60)
     # Earlier tests in this module share the same ASGI client IP; reset counters so
     # this test observes limit=1 from a clean window (order-independent).
-    async for key in redis_client.scan_iter(match="rate:patient_payment_webhook:ip:*"):
-        await redis_client.delete(key)
+    redis = await get_redis()
+    async for key in redis.scan_iter(match="rate:patient_payment_webhook:ip:*"):
+        await redis.delete(key)
     payload = {
         "type": "notification",
         "event": "payment.succeeded",

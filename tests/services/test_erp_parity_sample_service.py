@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -28,12 +28,13 @@ def test_pick_clinic_for_day_stable() -> None:
 
 @pytest.mark.asyncio
 async def test_compare_visit_revenue_totals_zero_without_transactions(init_db, seed_data) -> None:
+    empty_day = seed_data["date"] + timedelta(days=(uuid4().int % 365) + 365)
     async with db_base.AsyncSessionLocal() as session:
         s_raw, s_agg = await compare_visit_revenue_totals(
             session,
             clinic_id=seed_data["clinic_id"],
-            date_from=seed_data["date"],
-            date_to=seed_data["date"],
+            date_from=empty_day,
+            date_to=empty_day,
         )
     assert s_raw == Decimal("0")
     assert s_agg == Decimal("0")

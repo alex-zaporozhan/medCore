@@ -16,6 +16,7 @@ from src.application.services.loyalty_campaign_engine import (
 from src.core.datetime_utils import utc_now
 from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.customer_subscription import CustomerSubscription
+from src.domain.entities.patient import Patient
 from src.domain.entities.subscription_package import SubscriptionPackage
 from src.domain.entities.task import Task
 from src.domain.entities.wallet import Wallet
@@ -35,14 +36,26 @@ async def test_get_or_create_settings_idempotent(seed_data):
 @pytest.mark.asyncio
 async def test_run_campaigns_creates_expiring_task(seed_data):
     clinic_id = seed_data["clinic_id"]
-    patient_id = seed_data["patient_id"]
+    patient_id = uuid.uuid4()
     service_id = seed_data["service_id"]
 
     async with db_base.AsyncSessionLocal() as session:
+        session.add(
+            Patient(
+                id=patient_id,
+                clinic_id=clinic_id,
+                phone=f"+79{str(patient_id.int)[:9]}",
+                full_name="Campaign patient",
+                consent_mailing=True,
+                disable_reminders=False,
+                disable_all_notifications=False,
+            )
+        )
+        await session.flush()
         pkg = SubscriptionPackage(
             id=uuid.uuid4(),
             clinic_id=clinic_id,
-            code="t_pkg",
+            code=f"t_pkg_{uuid.uuid4().hex[:8]}",
             name="Test Pkg",
             kind="visits",
             price=Decimal("1000.00"),
@@ -54,6 +67,7 @@ async def test_run_campaigns_creates_expiring_task(seed_data):
             is_active=True,
         )
         session.add(pkg)
+        await session.flush()
         exp = utc_now() + timedelta(days=7)
         sub = CustomerSubscription(
             id=uuid.uuid4(),

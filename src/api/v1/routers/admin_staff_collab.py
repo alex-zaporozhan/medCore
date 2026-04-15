@@ -756,7 +756,7 @@ async def delete_staff_feed_comment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Комментарий не найден или нет доступа")
 
 
-@router.get(
+@router.post(
     "/feed/comments/{comment_id}/attachments",
     response_model=StaffAttachmentBrief,
     status_code=status.HTTP_201_CREATED,

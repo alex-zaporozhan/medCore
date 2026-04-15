@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 
@@ -14,6 +15,7 @@ from src.domain.entities.financial_transaction import FinancialTransaction
 from src.domain.entities.lead_card import LeadCard
 from src.domain.entities.lead_pipeline import LeadPipeline
 from src.domain.entities.lead_stage import LeadStage
+from src.domain.entities.service import Service
 
 
 @pytest.mark.asyncio
@@ -24,7 +26,8 @@ async def test_update_actual_value_from_erp_sums_income(init_db, seed_data) -> N
     patient_id = seed_data["patient_id"]
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
-    day = seed_data["date"]
+    day = seed_data["date"] + timedelta(days=(uuid4().int % 180) + 1)
+    slot_minute = (uuid4().int % 45) + 10
 
     async with db_base.AsyncSessionLocal() as session:
         booking = Booking(
@@ -33,7 +36,7 @@ async def test_update_actual_value_from_erp_sums_income(init_db, seed_data) -> N
             doctor_id=doctor_id,
             service_id=service_id,
             appointment_date=day,
-            appointment_time=time(11, 0),
+            appointment_time=time(11, slot_minute),
             status="completed",
             prepayment_amount=Decimal("0"),
         )
@@ -143,7 +146,8 @@ async def test_recalculate_estimated_value_from_primary_booking_service_price(in
     patient_id = seed_data["patient_id"]
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
-    day = seed_data["date"]
+    day = seed_data["date"] + timedelta(days=(uuid4().int % 180) + 1)
+    slot_minute = (uuid4().int % 45) + 10
 
     async with db_base.AsyncSessionLocal() as session:
         booking = Booking(
@@ -152,7 +156,7 @@ async def test_recalculate_estimated_value_from_primary_booking_service_price(in
             doctor_id=doctor_id,
             service_id=service_id,
             appointment_date=day,
-            appointment_time=time(11, 30),
+            appointment_time=time(11, slot_minute),
             status="confirmed",
             prepayment_amount=Decimal("0"),
         )
@@ -201,4 +205,6 @@ async def test_recalculate_estimated_value_from_primary_booking_service_price(in
     async with db_base.AsyncSessionLocal() as session:
         svc = LeadService(session)
         updated = await svc.recalculate_estimated_value(clinic_id=clinic_id, lead_id=lead_id)
-        assert updated.estimated_value == Decimal("1000.00")
+        service = await session.get(Service, service_id)
+        assert service is not None
+        assert updated.estimated_value == Decimal(str(service.price))

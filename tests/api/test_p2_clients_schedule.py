@@ -17,7 +17,7 @@ async def test_admin_patch_booking_notes(client: AsyncClient, admin_auth: dict, 
             "doctor_id": str(seed_data["doctor_id"]),
             "service_id": str(seed_data["service_id"]),
             "appointment_date": day.isoformat(),
-            "appointment_time": "09:00:00",
+            "appointment_time": "17:11:00",
             "notes": "старый",
         },
     )
@@ -54,7 +54,7 @@ async def test_admin_put_booking_status_pending_to_confirmed(
             "doctor_id": str(seed_data["doctor_id"]),
             "service_id": str(seed_data["service_id"]),
             "appointment_date": day.isoformat(),
-            "appointment_time": "10:00:00",
+            "appointment_time": "17:22:00",
             "status": "pending",
         },
     )
@@ -86,7 +86,7 @@ async def test_admin_patch_booking_rejects_status_field(
             "doctor_id": str(seed_data["doctor_id"]),
             "service_id": str(seed_data["service_id"]),
             "appointment_date": day.isoformat(),
-            "appointment_time": "11:00:00",
+            "appointment_time": "17:33:00",
             "status": "pending",
         },
     )
@@ -142,7 +142,7 @@ async def test_patients_visit_filter_by_date(client: AsyncClient, admin_auth: di
             "doctor_id": str(seed_data["doctor_id"]),
             "service_id": str(seed_data["service_id"]),
             "appointment_date": day.isoformat(),
-            "appointment_time": "10:00:00",
+            "appointment_time": "17:44:00",
         },
     )
     assert r.status_code == 201, r.text

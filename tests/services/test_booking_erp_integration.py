@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from datetime import time
+from datetime import date, time, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 
+from src.application.dto.booking_dto import BookingCreateAdmin
 from src.application.events.domain_event import DomainEvent
 from src.application.events.erp_event_handlers import handle_erp_on_booking_completed
 from src.application.events.standard_events import BOOKING_COMPLETED
@@ -16,7 +17,6 @@ from src.core.datetime_utils import utc_now
 from src.domain.entities.booking import Booking
 from src.domain.entities.cashbox import Cashbox
 from src.domain.entities.financial_transaction import FinancialTransaction
-from src.domain.entities.payroll_policy import PayrollPolicy
 from src.domain.entities.salary_transaction import SalaryTransaction
 from src.domain.entities.service import Service
 from src.domain.entities.service_consumable import ServiceConsumable
@@ -25,7 +25,36 @@ from src.domain.entities.warehouse import Warehouse
 from src.infrastructure.database import base as db_base
 from src.domain.entities.payment import Payment
 from src.application.services.wallet_service import WalletService, EarnPointsInput, SpendPointsInput
-from src.infrastructure.database.base import AsyncSessionLocal
+
+
+def _admin_booking_create(
+  clinic_id: UUID,
+  patient_id: UUID,
+  doctor_id: UUID,
+  service_id: UUID,
+  appointment_date: date,
+  appointment_time: time,
+  *,
+  status: str = "confirmed",
+  prepayment_amount: Decimal | None = Decimal("0.00"),
+  notes: str | None = None,
+) -> BookingCreateAdmin:
+  return BookingCreateAdmin(
+    clinic_id=clinic_id,
+    patient_id=patient_id,
+    doctor_id=doctor_id,
+    service_id=service_id,
+    appointment_date=appointment_date,
+    appointment_time=appointment_time,
+    status=status,
+    prepayment_amount=prepayment_amount,
+    notes=notes,
+  )
+
+
+def _unique_test_day(base_day: date) -> date:
+  """Shift test day forward to avoid collisions in shared persistent DB."""
+  return base_day + timedelta(days=(uuid4().int % 14) + 1)
 
 
 @pytest.mark.asyncio
@@ -34,28 +63,16 @@ async def test_booking_completed_triggers_erp_and_creates_records(init_db, seed_
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = seed_data["date"]
+  day = _unique_test_day(seed_data["date"])
 
   async with db_base.AsyncSessionLocal() as session:
-    cashbox = Cashbox(
-      clinic_id=clinic_id,
-      name="Default",
-      type="cash",
-      currency="RUB",
-      is_default=True,
-      is_active=True,
+    wres = await session.execute(
+      select(Warehouse).where(
+        Warehouse.clinic_id == clinic_id,
+        Warehouse.is_default.is_(True),
+      ).limit(1)
     )
-    session.add(cashbox)
-
-    policy = PayrollPolicy(
-      clinic_id=clinic_id,
-      doctor_id=doctor_id,
-      role=None,
-      fixed_per_shift=Decimal("0.00"),
-      percent_from_services=Decimal("0.2000"),
-      percent_from_products=Decimal("0.0000"),
-    )
-    session.add(policy)
+    warehouse = wres.scalar_one()
 
     product = Product(
       clinic_id=clinic_id,
@@ -64,13 +81,7 @@ async def test_booking_completed_triggers_erp_and_creates_records(init_db, seed_
       unit="pcs",
       is_active=True,
     )
-    warehouse = Warehouse(
-      clinic_id=clinic_id,
-      name="Main",
-      is_default=True,
-    )
     session.add(product)
-    session.add(warehouse)
     await session.flush()
 
     from src.domain.entities.inventory_transaction import InventoryTransaction
@@ -108,21 +119,21 @@ async def test_booking_completed_triggers_erp_and_creates_records(init_db, seed_
     daily_time = time(10, 0)
     booking_read = await booking_service.create_admin_booking(
       clinic_id=clinic_id,
-      data=type("obj", (), {
-        "patient_id": patient_id,
-        "doctor_id": doctor_id,
-        "service_id": service_id,
-        "appointment_date": day,
-        "appointment_time": daily_time,
-        "status": "confirmed",
-        "prepayment_amount": Decimal("0.00"),
-        "notes": None,
-      })(),
+      data=_admin_booking_create(
+        clinic_id,
+        patient_id,
+        doctor_id,
+        service_id,
+        day,
+        daily_time,
+      ),
     )
 
     booking = await session.get(Booking, booking_read.id)
     assert booking is not None
     assert booking.erp_processed is False
+
+    await session.commit()
 
     event = DomainEvent(
       name=BOOKING_COMPLETED,
@@ -181,29 +192,12 @@ async def test_booking_completed_with_full_wallet_payment_results_in_zero_income
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = seed_data["date"]
+  day = _unique_test_day(seed_data["date"])
 
   async with db_base.AsyncSessionLocal() as session:
-    cashbox = Cashbox(
-      clinic_id=clinic_id,
-      name="Default",
-      type="cash",
-      currency="RUB",
-      is_default=True,
-      is_active=True,
+    await session.execute(
+      delete(ServiceConsumable).where(ServiceConsumable.service_id == service_id)
     )
-    session.add(cashbox)
-
-    policy = PayrollPolicy(
-      clinic_id=clinic_id,
-      doctor_id=doctor_id,
-      role=None,
-      fixed_per_shift=Decimal("0.00"),
-      percent_from_services=Decimal("0.2000"),
-      percent_from_products=Decimal("0.0000"),
-    )
-    session.add(policy)
-
     service = await session.get(Service, service_id)
     assert service is not None
     service.price = Decimal("500.00")
@@ -216,16 +210,14 @@ async def test_booking_completed_with_full_wallet_payment_results_in_zero_income
     daily_time = time(11, 0)
     booking_read = await booking_service.create_admin_booking(
       clinic_id=clinic_id,
-      data=type("obj", (), {
-        "patient_id": patient_id,
-        "doctor_id": doctor_id,
-        "service_id": service_id,
-        "appointment_date": day,
-        "appointment_time": daily_time,
-        "status": "confirmed",
-        "prepayment_amount": Decimal("0.00"),
-        "notes": None,
-      })(),
+      data=_admin_booking_create(
+        clinic_id,
+        patient_id,
+        doctor_id,
+        service_id,
+        day,
+        daily_time,
+      ),
     )
 
     booking = await session.get(Booking, booking_read.id)
@@ -295,29 +287,12 @@ async def test_booking_completed_with_partial_wallet_and_payment(
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = seed_data["date"]
+  day = _unique_test_day(seed_data["date"])
 
   async with db_base.AsyncSessionLocal() as session:
-    cashbox = Cashbox(
-      clinic_id=clinic_id,
-      name="Default",
-      type="cash",
-      currency="RUB",
-      is_default=True,
-      is_active=True,
+    await session.execute(
+      delete(ServiceConsumable).where(ServiceConsumable.service_id == service_id)
     )
-    session.add(cashbox)
-
-    policy = PayrollPolicy(
-      clinic_id=clinic_id,
-      doctor_id=doctor_id,
-      role=None,
-      fixed_per_shift=Decimal("0.00"),
-      percent_from_services=Decimal("0.2000"),
-      percent_from_products=Decimal("0.0000"),
-    )
-    session.add(policy)
-
     service = await session.get(Service, service_id)
     assert service is not None
     service.price = Decimal("1000.00")
@@ -330,16 +305,14 @@ async def test_booking_completed_with_partial_wallet_and_payment(
     daily_time = time(12, 0)
     booking_read = await booking_service.create_admin_booking(
       clinic_id=clinic_id,
-      data=type("obj", (), {
-        "patient_id": patient_id,
-        "doctor_id": doctor_id,
-        "service_id": service_id,
-        "appointment_date": day,
-        "appointment_time": daily_time,
-        "status": "confirmed",
-        "prepayment_amount": Decimal("0.00"),
-        "notes": None,
-      })(),
+      data=_admin_booking_create(
+        clinic_id,
+        patient_id,
+        doctor_id,
+        service_id,
+        day,
+        daily_time,
+      ),
     )
 
     booking = await session.get(Booking, booking_read.id)
@@ -421,30 +394,12 @@ async def test_erp_handles_many_bookings_sequentially(init_db, seed_data):
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = seed_data["date"]
+  day = _unique_test_day(seed_data["date"])
 
-  async with AsyncSessionLocal() as session:
-    # Общая конфигурация ERP: касса, политика ЗП и цена услуги.
-    cashbox = Cashbox(
-      clinic_id=clinic_id,
-      name="Default",
-      type="cash",
-      currency="RUB",
-      is_default=True,
-      is_active=True,
+  async with db_base.AsyncSessionLocal() as session:
+    await session.execute(
+      delete(ServiceConsumable).where(ServiceConsumable.service_id == service_id)
     )
-    session.add(cashbox)
-
-    policy = PayrollPolicy(
-      clinic_id=clinic_id,
-      doctor_id=doctor_id,
-      role=None,
-      fixed_per_shift=Decimal("0.00"),
-      percent_from_services=Decimal("0.2000"),
-      percent_from_products=Decimal("0.0000"),
-    )
-    session.add(policy)
-
     service = await session.get(Service, service_id)
     assert service is not None
     service.price = Decimal("700.00")
@@ -452,26 +407,24 @@ async def test_erp_handles_many_bookings_sequentially(init_db, seed_data):
 
     await session.commit()
 
-  # Большая серия завершений визитов (нагрузочный сценарий).
+  # Уникальные слоты (doctor_id + day + time): минуты 17:00–17:29 не пересекаются с другими тестами на тот же день.
   total_bookings = 30
   booking_ids: list[str] = []
 
-  async with AsyncSessionLocal() as session:
+  async with db_base.AsyncSessionLocal() as session:
     booking_service = BookingService(session)
     for i in range(total_bookings):
-      daily_time = time(9, i % 60)
+      daily_time = time(17, i % 60)
       booking_read = await booking_service.create_admin_booking(
         clinic_id=clinic_id,
-        data=type("obj", (), {
-          "patient_id": patient_id,
-          "doctor_id": doctor_id,
-          "service_id": service_id,
-          "appointment_date": day,
-          "appointment_time": daily_time,
-          "status": "confirmed",
-          "prepayment_amount": Decimal("0.00"),
-          "notes": None,
-        })(),
+        data=_admin_booking_create(
+          clinic_id,
+          patient_id,
+          doctor_id,
+          service_id,
+          day,
+          daily_time,
+        ),
       )
       booking_ids.append(str(booking_read.id))
 
@@ -495,7 +448,7 @@ async def test_erp_handles_many_bookings_sequentially(init_db, seed_data):
     await handle_erp_on_booking_completed(event)
 
   # Проверяем, что все визиты обработаны и нет подвисших ERP-состояний.
-  async with AsyncSessionLocal() as session:
+  async with db_base.AsyncSessionLocal() as session:
     processed_count = 0
     for bid in booking_ids:
       booking = await session.get(Booking, UUID(bid))
@@ -521,56 +474,88 @@ async def test_erp_configuration_error_sets_error_code_on_booking(init_db, seed_
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = seed_data["date"]
+  day = _unique_test_day(seed_data["date"])
 
-  # Не создаём кассу намеренно, чтобы спровоцировать missing_cashbox.
-  async with AsyncSessionLocal() as session:
-    booking_service = BookingService(session)
-    booking_read = await booking_service.create_admin_booking(
-      clinic_id=clinic_id,
-      data=type("obj", (), {
-        "patient_id": patient_id,
-        "doctor_id": doctor_id,
-        "service_id": service_id,
-        "appointment_date": day,
-        "appointment_time": time(15, 0),
-        "status": "confirmed",
-        "prepayment_amount": Decimal("0.00"),
-        "notes": None,
-      })(),
+  # Убираем расходники по услуге, иначе ERP упадёт по складу раньше, чем по кассе.
+  async with db_base.AsyncSessionLocal() as session:
+    await session.execute(
+      delete(ServiceConsumable).where(ServiceConsumable.service_id == service_id)
     )
     await session.commit()
 
-  event = DomainEvent(
-    name=BOOKING_COMPLETED,
-    payload={
-      "booking_id": str(booking_read.id),
-      "clinic_id": str(clinic_id),
-      "patient_id": str(patient_id),
-      "doctor_id": str(doctor_id),
-      "service_id": str(service_id),
-      "status": "completed",
-      "appointment_date": day.isoformat(),
-      "appointment_time": time(15, 0).isoformat(),
-    },
-  )
+  default_cashbox_ids: list[UUID] = []
+  try:
+    # Session-scoped seed: другие тесты могли оставить default-кассы — снимаем флаг, иначе не сработает missing_cashbox.
+    async with db_base.AsyncSessionLocal() as session:
+      default_ids_res = await session.execute(
+        select(Cashbox.id).where(
+          Cashbox.clinic_id == clinic_id,
+          Cashbox.is_default.is_(True),
+        )
+      )
+      default_cashbox_ids = list(default_ids_res.scalars().all())
+      await session.execute(
+        update(Cashbox).where(Cashbox.clinic_id == clinic_id).values(is_default=False)
+      )
+      await session.commit()
 
-  await handle_erp_on_booking_completed(event)
+    # Не создаём кассу намеренно, чтобы спровоцировать missing_cashbox.
+    async with db_base.AsyncSessionLocal() as session:
+      booking_service = BookingService(session)
+      booking_read = await booking_service.create_admin_booking(
+        clinic_id=clinic_id,
+        data=_admin_booking_create(
+          clinic_id,
+          patient_id,
+          doctor_id,
+          service_id,
+          day,
+          time(17, 45),
+        ),
+      )
+      await session.commit()
 
-  async with AsyncSessionLocal() as session:
-    updated = await session.get(Booking, booking_read.id)
-    assert updated is not None
-    # ERP-узел не должен помечать визит как обработанный.
-    assert updated.erp_processed is False
-    # Код ошибки конфигурации должен быть выставлен.
-    assert updated.erp_error_code == "missing_cashbox"
-
-    fin_res = await session.execute(
-      select(FinancialTransaction).where(FinancialTransaction.booking_id == updated.id)
+    event = DomainEvent(
+      name=BOOKING_COMPLETED,
+      payload={
+        "booking_id": str(booking_read.id),
+        "clinic_id": str(clinic_id),
+        "patient_id": str(patient_id),
+        "doctor_id": str(doctor_id),
+        "service_id": str(service_id),
+        "status": "completed",
+        "appointment_date": day.isoformat(),
+        "appointment_time": time(17, 45).isoformat(),
+      },
     )
-    fin_txs = list(fin_res.scalars().all())
-    # При конфигурационной ошибке приход не создаётся.
-    assert len(fin_txs) == 0
+
+    await handle_erp_on_booking_completed(event)
+
+    async with db_base.AsyncSessionLocal() as session:
+      updated = await session.get(Booking, booking_read.id)
+      assert updated is not None
+      # ERP-узел не должен помечать визит как обработанный.
+      assert updated.erp_processed is False
+      # Код ошибки конфигурации должен быть выставлен.
+      assert updated.erp_error_code == "missing_cashbox"
+
+      fin_res = await session.execute(
+        select(FinancialTransaction).where(FinancialTransaction.booking_id == updated.id)
+      )
+      fin_txs = list(fin_res.scalars().all())
+      # При конфигурационной ошибке приход не создаётся.
+      assert len(fin_txs) == 0
+  finally:
+    # Restore original default cashbox state so later tests keep ERP prerequisites.
+    async with db_base.AsyncSessionLocal() as session:
+      await session.execute(
+        update(Cashbox).where(Cashbox.clinic_id == clinic_id).values(is_default=False)
+      )
+      if default_cashbox_ids:
+        await session.execute(
+          update(Cashbox).where(Cashbox.id.in_(default_cashbox_ids)).values(is_default=True)
+        )
+      await session.commit()
 
 
 @pytest.mark.asyncio
@@ -580,46 +565,22 @@ async def test_erp_fatal_error_rolls_back_no_stale_state(init_db, seed_data):
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = seed_data["date"]
+  day = _unique_test_day(seed_data["date"])
 
-  async with AsyncSessionLocal() as session:
-    cashbox = Cashbox(
-      clinic_id=clinic_id,
-      name="Default",
-      type="cash",
-      currency="RUB",
-      is_default=True,
-      is_active=True,
-    )
-    session.add(cashbox)
-    policy = PayrollPolicy(
-      clinic_id=clinic_id,
-      doctor_id=doctor_id,
-      role=None,
-      fixed_per_shift=Decimal("0.00"),
-      percent_from_services=Decimal("0.2000"),
-      percent_from_products=Decimal("0.0000"),
-    )
-    session.add(policy)
-    service = await session.get(Service, service_id)
-    assert service is not None
-    session.add(service)
-    await session.commit()
+  # seed_data provides default cashbox, warehouse, and payroll policy; no extra ERP rows needed here.
 
-  async with AsyncSessionLocal() as session:
+  async with db_base.AsyncSessionLocal() as session:
     booking_service = BookingService(session)
     booking_read = await booking_service.create_admin_booking(
       clinic_id=clinic_id,
-      data=type("obj", (), {
-        "patient_id": patient_id,
-        "doctor_id": doctor_id,
-        "service_id": service_id,
-        "appointment_date": day,
-        "appointment_time": time(14, 0),
-        "status": "confirmed",
-        "prepayment_amount": Decimal("0.00"),
-        "notes": None,
-      })(),
+      data=_admin_booking_create(
+        clinic_id,
+        patient_id,
+        doctor_id,
+        service_id,
+        day,
+        time(14, 0),
+      ),
     )
     await session.commit()
 
@@ -645,7 +606,7 @@ async def test_erp_fatal_error_rolls_back_no_stale_state(init_db, seed_data):
   ):
     await handle_erp_on_booking_completed(event)
 
-  async with AsyncSessionLocal() as session:
+  async with db_base.AsyncSessionLocal() as session:
     booking = await session.get(Booking, UUID(booking_id))
     assert booking is not None
     assert booking.erp_processed is False

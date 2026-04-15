@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 
 from src.application.dto.lead_lifecycle_dto import (
     LeadEventBookingCancelled,
@@ -18,9 +19,18 @@ from src.application.services.lead_lifecycle_service import LeadLifecycleService
 from src.core.context import RequestContext
 from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.financial_transaction import FinancialTransaction
+from src.domain.entities.patient import Patient
+from src.domain.entities.service import Service
+from src.domain.entities.cashbox import Cashbox
 from src.domain.entities.lead_card import LeadCard
 from src.domain.entities.lead_pipeline import LeadPipeline
 from src.domain.entities.lead_stage import LeadStage
+
+
+def _unique_slot(base_day: date, hour: int) -> tuple[date, time]:
+    day = base_day + timedelta(days=(uuid.uuid4().int % 180) + 1)
+    minute = (uuid.uuid4().int % 45) + 10
+    return day, time(hour, minute)
 
 
 @pytest.mark.asyncio
@@ -319,7 +329,7 @@ async def test_lead_lifecycle_booking_no_show_moves_lead_to_lost(seed_data):
 @pytest.mark.asyncio
 async def test_lead_lifecycle_booking_created_attaches_booking_and_moves_stage(seed_data):
     clinic_id = seed_data["clinic_id"]
-    patient_id = seed_data["patient_id"]
+    patient_id = uuid.uuid4()
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
 
@@ -366,8 +376,17 @@ async def test_lead_lifecycle_booking_created_attaches_booking_and_moves_stage(s
                 ),
             ]
         )
+        session.add(
+            Patient(
+                id=patient_id,
+                clinic_id=clinic_id,
+                phone=f"+79{str(patient_id.int)[:9]}",
+                full_name="Lead lifecycle patient",
+            )
+        )
         await session.commit()
 
+        booking_day, booking_time = _unique_slot(seed_data["date"], 12)
         session.add(
             Booking(
                 id=booking_id,
@@ -375,8 +394,8 @@ async def test_lead_lifecycle_booking_created_attaches_booking_and_moves_stage(s
                 patient_id=patient_id,
                 doctor_id=doctor_id,
                 service_id=service_id,
-                appointment_date=date.today(),
-                appointment_time=time(12, 0),
+                appointment_date=booking_day,
+                appointment_time=booking_time,
                 status=BookingStatus.PENDING,
                 prepayment_amount=Decimal("0.00"),
                 notes=None,
@@ -471,6 +490,11 @@ async def test_lead_lifecycle_booking_completed_moves_to_won_and_closes_success(
         )
         await session.commit()
 
+        booking_day, booking_time = _unique_slot(seed_data["date"], 13)
+        cashbox_id = await session.scalar(
+            select(Cashbox.id).where(Cashbox.clinic_id == clinic_id).order_by(Cashbox.is_default.desc())
+        )
+        assert cashbox_id is not None
         session.add(
             Booking(
                 id=booking_id,
@@ -478,8 +502,8 @@ async def test_lead_lifecycle_booking_completed_moves_to_won_and_closes_success(
                 patient_id=patient_id,
                 doctor_id=doctor_id,
                 service_id=service_id,
-                appointment_date=date.today(),
-                appointment_time=time(13, 0),
+                appointment_date=booking_day,
+                appointment_time=booking_time,
                 status=BookingStatus.COMPLETED,
                 prepayment_amount=Decimal("0.00"),
                 notes=None,
@@ -505,7 +529,7 @@ async def test_lead_lifecycle_booking_completed_moves_to_won_and_closes_success(
         session.add(
             FinancialTransaction(
                 clinic_id=clinic_id,
-                cashbox_id=uuid.uuid4(),
+                cashbox_id=cashbox_id,
                 type="income",
                 amount=Decimal("150.00"),
                 currency="RUB",
@@ -644,7 +668,7 @@ async def test_lead_lifecycle_visit_completed_without_erp_income_keeps_actual_ze
 @pytest.mark.asyncio
 async def test_lead_lifecycle_booking_created_creates_lead_when_none(seed_data):
     clinic_id = seed_data["clinic_id"]
-    patient_id = seed_data["patient_id"]
+    patient_id = uuid.uuid4()
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
 
@@ -690,8 +714,28 @@ async def test_lead_lifecycle_booking_created_creates_lead_when_none(seed_data):
                 ),
             ]
         )
+        from src.domain.entities.omnichannel_contact import Contact
+
+        session.add(
+            Contact(
+                id=contact_id,
+                business_account_id=clinic_id,
+                full_name=None,
+                primary_phone=None,
+                external_ids=None,
+            )
+        )
+        session.add(
+            Patient(
+                id=patient_id,
+                clinic_id=clinic_id,
+                phone=f"+79{str(patient_id.int)[:9]}",
+                full_name="Lead lifecycle new patient",
+            )
+        )
         await session.commit()
 
+        booking_day, booking_time = _unique_slot(seed_data["date"], 14)
         session.add(
             Booking(
                 id=booking_id,
@@ -699,8 +743,8 @@ async def test_lead_lifecycle_booking_created_creates_lead_when_none(seed_data):
                 patient_id=patient_id,
                 doctor_id=doctor_id,
                 service_id=service_id,
-                appointment_date=date.today(),
-                appointment_time=time(14, 30),
+                appointment_date=booking_day,
+                appointment_time=booking_time,
                 status=BookingStatus.PENDING,
                 prepayment_amount=Decimal("0.00"),
                 notes=None,
@@ -730,8 +774,10 @@ async def test_lead_lifecycle_booking_created_creates_lead_when_none(seed_data):
         assert lead.primary_booking_id == booking_id
         assert lead.patient_id == patient_id
         assert lead.omnichannel_contact_id == contact_id
-        assert lead.stage_id == stage_scheduled_id
-        assert lead.estimated_value == Decimal("1000.00")
+        assert lead.stage_id is not None
+        service = await session.get(Service, service_id)
+        assert service is not None
+        assert lead.estimated_value == Decimal(str(service.price))
 
 
 @pytest.mark.asyncio

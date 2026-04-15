@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.cashbox import Cashbox
@@ -50,10 +50,13 @@ class CashboxRepositoryImpl(CashboxRepository):
 
     async def get_default_for_clinic(self, clinic_id: UUID) -> Cashbox | None:
         result = await self.session.execute(
-            select(Cashbox).where(
+            select(Cashbox)
+            .where(
                 Cashbox.clinic_id == clinic_id,
                 Cashbox.is_default.is_(True),
             )
+            .order_by(Cashbox.id)
+            .limit(1)
         )
         return result.scalar_one_or_none()
 
@@ -136,10 +139,8 @@ class FinancialTransactionRepositoryImpl(FinancialTransactionRepository):
         cashbox_id: UUID,
     ) -> Decimal:
         amount_case = func.sum(
-            func.case(
-                (
-                    (FinancialTransaction.type == "income", FinancialTransaction.amount),
-                ),
+            case(
+                (FinancialTransaction.type == "income", FinancialTransaction.amount),
                 else_=-FinancialTransaction.amount,
             )
         )

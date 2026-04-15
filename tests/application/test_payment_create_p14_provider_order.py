@@ -40,7 +40,7 @@ async def test_create_payment_yookassa_fail_leaves_local_pending_row(
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
                 appointment_date=seed_data["date"],
-                appointment_time=time(11, 0, 0),
+                appointment_time=time(17, 57, 0),
                 status=BookingStatus.AWAITING_PAYMENT,
                 prepayment_amount=500,
             )
@@ -103,7 +103,7 @@ async def test_create_payment_idempotent_second_call_uses_get_payment_only(
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
                 appointment_date=seed_data["date"],
-                appointment_time=time(12, 0, 0),
+                appointment_time=time(17, 58, 0),
                 status=BookingStatus.AWAITING_PAYMENT,
                 prepayment_amount=500,
             )

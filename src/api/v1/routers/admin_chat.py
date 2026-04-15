@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from src.api.v1.chat_attachment_disposition import clinic_chat_attachment_content_disposition
-from src.api.v1.dependencies import AdminContext, get_session, require_permissions
+from src.api.v1.dependencies import (
+    AdminContext,
+    get_request_context,
+    get_session,
+    require_permissions,
+)
 from src.api.v1.routers.admin_auth import get_current_admin, get_current_admin_optional
 from src.application.dto.chat_ai_dto import ConversationSummaryResponse, SuggestReplyResponse
 from src.application.dto.chat_dto import (
@@ -26,6 +31,7 @@ from src.application.dto.chat_dto import (
 from src.application.services.chat_ai_service import ChatAiService, ChatAiServiceError
 from src.application.services.chat_service import ChatService
 from src.core.config import settings
+from src.core.context import RequestContext
 from src.domain.entities.admin_user import AdminUser
 from src.infrastructure.rate_limiter import RateLimitExceeded, get_rate_limiter
 from src.core.metrics import chat_rate_limited_total
@@ -316,6 +322,7 @@ async def get_ai_summary(
     conversation_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser = Depends(get_current_admin),
+    ctx: RequestContext = Depends(get_request_context),
     rate_limiter=Depends(get_rate_limiter),
 ) -> ConversationSummaryResponse:
     clinic_id: UUID = current_admin.clinic_id
@@ -330,7 +337,7 @@ async def get_ai_summary(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Слишком много запросов к AI. Попробуйте позже.",
         )
-    service = ChatAiService(session)
+    service = ChatAiService(session, ctx)
     try:
         return await service.summarize_conversation(clinic_id, conversation_id)
     except ChatAiServiceError as exc:
@@ -349,6 +356,7 @@ async def get_ai_suggest_reply(
     body: SuggestReplyRequest | None = None,
     session: AsyncSession = Depends(get_session),
     current_admin: AdminUser | None = Depends(get_current_admin_optional),
+    ctx: RequestContext = Depends(get_request_context),
     rate_limiter=Depends(get_rate_limiter),
 ) -> SuggestReplyResponse:
     clinic_id: UUID | None = current_admin.clinic_id if current_admin else None
@@ -364,7 +372,7 @@ async def get_ai_suggest_reply(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Слишком много запросов к AI. Попробуйте позже.",
             )
-    service = ChatAiService(session)
+    service = ChatAiService(session, ctx)
     intent = body.intent if body else None
     admin_id = current_admin.id if current_admin else None
     try:
