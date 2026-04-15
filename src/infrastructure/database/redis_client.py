@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 import threading
-from typing import Dict
+import weakref
 
 from redis.asyncio import Redis
 
@@ -14,9 +14,12 @@ from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# One pooled client per running asyncio loop (P1-5 / QA_ARCH: avoids attaching one global
-# client to a different loop in tests and matches uvicorn's single-loop workers).
-_redis_clients: Dict[int, Redis] = {}
+# One pooled client per running asyncio **loop object** (not id(loop): CPython may reuse ids
+# after a closed loop is GC'd, which would return a dead Redis pool — Windows pytest saw
+# "Event loop is closed" on the next test).
+_redis_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Redis] = (
+    weakref.WeakKeyDictionary()
+)
 _redis_init_lock = threading.Lock()
 
 
@@ -27,14 +30,15 @@ def _testing() -> bool:
 async def get_redis() -> Redis:
     """Return a shared Redis client for the current asyncio event loop."""
     loop = asyncio.get_running_loop()
-    loop_id = id(loop)
 
-    if loop_id in _redis_clients:
-        return _redis_clients[loop_id]
+    cached = _redis_clients.get(loop)
+    if cached is not None:
+        return cached
 
     with _redis_init_lock:
-        if loop_id in _redis_clients:
-            return _redis_clients[loop_id]
+        cached = _redis_clients.get(loop)
+        if cached is not None:
+            return cached
 
         max_connections = 2 if _testing() else settings.redis_pool_size
         client = Redis.from_url(
@@ -42,13 +46,13 @@ async def get_redis() -> Redis:
             max_connections=max_connections,
             decode_responses=True,
         )
-        _redis_clients[loop_id] = client
+        _redis_clients[loop] = client
         logger.info(
             "[dental-booking] Redis client initialized",
             extra={
                 "component": "redis",
                 "pool_size": max_connections,
-                "event_loop_id": loop_id,
+                "event_loop": repr(loop),
             },
         )
         return client
@@ -58,7 +62,7 @@ async def close_redis() -> None:
     """Close all pooled Redis clients (app shutdown)."""
     global _redis_clients
 
-    for loop_id, client in list(_redis_clients.items()):
+    for loop, client in list(_redis_clients.items()):
         try:
             aclose = getattr(client, "aclose", None)
             if aclose is not None:
@@ -68,7 +72,7 @@ async def close_redis() -> None:
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "[dental-booking] Redis client close error",
-                extra={"component": "redis", "event_loop_id": loop_id, "error": str(exc)},
+                extra={"component": "redis", "event_loop": repr(loop), "error": str(exc)},
             )
     _redis_clients.clear()
     logger.info("[dental-booking] Redis clients closed", extra={"component": "redis"})

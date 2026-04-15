@@ -422,6 +422,10 @@ class Settings(BaseSettings):
             object.__setattr__(self, "rate_platform_owner_invite_accept_ip_limit", 0)
             object.__setattr__(self, "rate_platform_billing_webhook_ip_limit", 0)
             object.__setattr__(self, "rate_patient_payment_webhook_ip_limit", 0)
+            # Patient POST /auth/send-code — full suite exceeds default IP/phone windows without this.
+            object.__setattr__(self, "rate_auth_send_code_ip_limit", 0)
+            object.__setattr__(self, "rate_auth_send_code_phone_limit", 0)
+            object.__setattr__(self, "rate_auth_send_code_captcha_soft_ip_limit", 0)
             object.__setattr__(self, "rate_public_platform_checkout_ip_limit", 0)
             object.__setattr__(self, "rate_public_platform_checkout_email_limit", 0)
             object.__setattr__(self, "rate_public_platform_checkout_captcha_soft_ip_limit", 0)
