@@ -122,7 +122,29 @@ def ensure_vite_preview_for_smoke(*, ci_strict: bool = False) -> None:
 
     frontend = repo_root() / "frontend"
     dist_index = frontend / "dist" / "index.html"
-    if not dist_index.is_file():
+    emoji_sheet = (
+        frontend
+        / "node_modules"
+        / "emoji-datasource-apple"
+        / "img"
+        / "apple"
+        / "sheets-256"
+        / "64.png"
+    )
+    if not dist_index.is_file() or not emoji_sheet.is_file():
+        # prebuild copies emoji spritesheet from node_modules; CI jobs that only
+        # `poetry install` must not run `npm run build` without `npm ci` first.
+        if not emoji_sheet.is_file():
+            try:
+                subprocess.run(
+                    ["npm", "ci"],
+                    cwd=frontend,
+                    check=True,
+                    timeout=900,
+                    env={**os.environ, "CI": os.environ.get("CI", "true")},
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
+                _fail_or_exit(f"frontend npm ci failed: {e}", ci_strict=ci_strict)
         try:
             subprocess.run(
                 ["npm", "run", "build"],
