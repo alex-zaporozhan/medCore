@@ -22,7 +22,7 @@ aioredis = "^2.0.1"
 celery = {extras = ["redis"], version = "^5.3.4"}
 cryptography = "^46.0.7"
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
-python-multipart = "^0.0.22"
+python-multipart = "^0.0.26"
 httpx = "^0.26.0"
 requests = "^2.33.0"
 prometheus-client = "^0.21.0"
