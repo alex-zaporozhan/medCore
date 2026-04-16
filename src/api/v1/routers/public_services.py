@@ -1,5 +1,6 @@
 """Public API: services by clinic for patient flow."""
 
+import logging
 from datetime import date
 from uuid import UUID
 
@@ -11,6 +12,8 @@ from src.api.v1.dependencies import get_session
 from src.application.services.pricing_service import PricingService
 from src.domain.entities.service import Service
 from src.domain.entities.service_doctor import ServiceDoctor
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/public/clinics", tags=["public"])
 
@@ -48,14 +51,33 @@ async def get_public_clinic_services(
 
     response: list[dict] = []
     for s in services:
-        pricing = await pricing_svc.compute_effective_price(
-            clinic_id=s.clinic_id,
-            service_id=s.id,
-            doctor_id=None,
-            patient_id=None,
-            on_date=date.today(),
-            base_price=s.price,
-        )
+        try:
+            pricing = await pricing_svc.compute_effective_price(
+                clinic_id=s.clinic_id,
+                service_id=s.id,
+                doctor_id=None,
+                patient_id=None,
+                on_date=date.today(),
+                base_price=s.price,
+            )
+            base_p = str(pricing.base_price)
+            eff_p = str(pricing.effective_price)
+            has_disc = pricing.discount_amount > 0
+            disc_id = str(pricing.discount_id) if pricing.discount_id else None
+            disc_type = pricing.discount_type
+            disc_label = pricing.discount_name
+        except Exception as exc:  # noqa: BLE001
+            # One corrupt discount row must not 500 the whole vitrine (PWA /app).
+            logger.warning(
+                "public_clinic_services_pricing_fallback",
+                extra={"clinic_id": str(clinic_id), "service_id": str(s.id), "error": str(exc)},
+            )
+            base_p = str(s.price)
+            eff_p = str(s.price)
+            has_disc = False
+            disc_id = None
+            disc_type = None
+            disc_label = None
         response.append(
             {
                 "id": str(s.id),
@@ -67,12 +89,12 @@ async def get_public_clinic_services(
                 "duration_minutes": s.duration_minutes,
                 "is_active": s.is_active,
                 "doctor_ids": [str(d) for d in by_service.get(s.id, [])],
-                "base_price": str(pricing.base_price),
-                "effective_price": str(pricing.effective_price),
-                "has_active_discount": pricing.discount_amount > 0,
-                "discount_id": str(pricing.discount_id) if pricing.discount_id else None,
-                "discount_type": pricing.discount_type,
-                "discount_label": pricing.discount_name,
+                "base_price": base_p,
+                "effective_price": eff_p,
+                "has_active_discount": has_disc,
+                "discount_id": disc_id,
+                "discount_type": disc_type,
+                "discount_label": disc_label,
             }
         )
 

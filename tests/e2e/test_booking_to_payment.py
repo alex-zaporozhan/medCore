@@ -8,6 +8,20 @@ import pytest
 from httpx import AsyncClient
 
 
+def _booking_error_code_from_response(r) -> str | None:
+    """Parse FastAPI HTTPException body for ``slot_unavailable`` etc. (same shape as API tests)."""
+    try:
+        body = r.json()
+    except Exception:
+        return None
+    if not isinstance(body, dict):
+        return None
+    detail = body.get("detail")
+    if isinstance(detail, dict):
+        return detail.get("code")
+    return body.get("code")
+
+
 @pytest.mark.regression_payments
 @pytest.mark.asyncio
 async def test_booking_to_payment_flow(
@@ -58,50 +72,53 @@ async def test_booking_to_payment_flow(
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # 4–6. Use seed doctor/service only (same rows as DoctorWorkingHours + ServiceDoctor).
-    # Full suite can exhaust slots on seed_data["date"]; scan the same weekday for several weeks.
+    # 4–7. Use seed doctor/service only. Full suite shares one doctor: schedule can show a slot as
+    # free while another test books it before POST (TOCTOU). Retry POST across slots/weeks like
+    # ``test_money_flows`` / ``test_marketing_attribution_flow`` (slot_unavailable).
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     base_day = seed_data["date"]
-    day = None
-    slot = None
+    booking = None
+    last_booking_response = None
     for week in range(12):
         cand = base_day + timedelta(weeks=week)
-        r = await client.get(
+        r_sched = await client.get(
             f"/api/v1/doctors/{doctor_id}/schedule",
             params={"date": cand.isoformat(), "clinic_id": str(clinic_id)},
             headers=headers,
         )
-        assert r.status_code == 200
-        schedule = r.json()
-        slots = [
-            s
-            for s in schedule.get("slots", [])
-            if s.get("is_available", True)
-        ]
-        if slots:
-            day = cand
-            slot = slots[1] if len(slots) > 1 else slots[0]
+        assert r_sched.status_code == 200, r_sched.text
+        schedule = r_sched.json()
+        slots = [s for s in schedule.get("slots", []) if s.get("is_available", True)]
+        # Later slots collide less often with other tests that pick morning grid.
+        for slot in reversed(slots):
+            start_time = slot.get("start_time", "10:00:00")
+            if isinstance(start_time, str) and len(start_time) == 5:
+                start_time = start_time + ":00"
+            r = await client.post(
+                f"/api/v1/patient/bookings?patient_id={patient_id}",
+                json={
+                    "clinic_id": str(seed_data["clinic_id"]),
+                    "doctor_id": str(doctor_id),
+                    "service_id": str(service_id),
+                    "appointment_date": cand.isoformat(),
+                    "appointment_time": start_time,
+                },
+                headers=headers,
+            )
+            last_booking_response = r
+            if r.status_code == 201:
+                booking = r.json()
+                break
+            if r.status_code == 400 and _booking_error_code_from_response(r) == "slot_unavailable":
+                continue
+            pytest.fail(f"unexpected booking response {r.status_code}: {r.text}")
+        if booking:
             break
-    assert day is not None and slot is not None, "no available slot for seed doctor in 12 weeks"
-    start_time = slot.get("start_time", "10:00:00")
-    if isinstance(start_time, str) and len(start_time) == 5:
-        start_time = start_time + ":00"
-
-    # 7. Create booking
-    r = await client.post(
-        f"/api/v1/patient/bookings?patient_id={patient_id}",
-        json={
-            "clinic_id": str(seed_data["clinic_id"]),
-            "doctor_id": str(doctor_id),
-            "service_id": str(service_id),
-            "appointment_date": day.isoformat(),
-            "appointment_time": start_time,
-        },
-        headers=headers,
+    assert booking is not None, (
+        "no successful patient booking in 12 weeks of seed weekday; "
+        f"last={getattr(last_booking_response, 'status_code', None)} {getattr(last_booking_response, 'text', '')}"
     )
-    assert r.status_code == 201
-    booking = r.json()
     booking_id = booking["id"]
     assert booking.get("status") == "pending"
 
