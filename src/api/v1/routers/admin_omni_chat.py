@@ -569,6 +569,7 @@ async def list_omni_chats(
 @router.post("/{chat_id}/claim", response_model=OmniChatClaimResponse)
 async def claim_omni_chat(
     chat_id: UUID,
+    force: bool = Query(False, description="Owner-only: reassign chat currently owned by another operator"),
     session: AsyncSession = Depends(get_session),
     admin_ctx: AdminContext = Depends(require_permissions("omni.inbox.manage")),
 ) -> OmniChatClaimResponse:
@@ -583,7 +584,8 @@ async def claim_omni_chat(
     if chat is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
-    if chat.assignee_admin_id and chat.assignee_admin_id != admin_id:
+    assignee_conflict = bool(chat.assignee_admin_id and chat.assignee_admin_id != admin_id)
+    if assignee_conflict and not (force and "owner" in (admin_ctx.roles or set())):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "omni_chat_already_claimed", "message": "Chat already claimed by another admin"},
@@ -594,6 +596,9 @@ async def claim_omni_chat(
         chat.assignee_admin_id = admin_id
         if getattr(chat, "claimed_at", None) is None:
             chat.claimed_at = now
+    elif assignee_conflict and force:
+        chat.assignee_admin_id = admin_id
+        chat.claimed_at = now
 
     if chat.status in {"OPEN", "WAITING_FOR_OPERATOR"}:
         chat.status = "IN_PROGRESS"

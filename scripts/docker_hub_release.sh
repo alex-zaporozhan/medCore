@@ -24,7 +24,7 @@ echo "Building backend -> ${BACKEND}"
 docker build -t "${BACKEND}" -f Dockerfile .
 
 echo "Building frontend -> ${FRONTEND}"
-docker build -t "${FRONTEND}" -f Dockerfile ./frontend
+docker build -t "${FRONTEND}" -f frontend/Dockerfile ./frontend
 
 echo "Build OK. Docker Hub login (password at prompt)..."
 docker login docker.io -u "${USER_NAME}"

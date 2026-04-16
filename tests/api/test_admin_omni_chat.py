@@ -902,3 +902,77 @@ async def test_admin_omni_upload_rejects_svg(
     r = await client.post(f"/api/v1/admin/omni-chats/{chat_id}/messages/upload", headers=headers, data=data, files=files)
     assert r.status_code == 400, r.text
 
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_omni_owner_force_claim_reassigns_from_other_admin(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict
+):
+    """Clinic owner may POST /claim?force=true to take a chat assigned to another admin user."""
+    business_account_id = seed_data["clinic_id"]
+    doctor_id = seed_data["doctor_admin_id"]
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="Force claim omni",
+            primary_phone="+79990001005",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=channel_id,
+        )
+        chat.assignee_admin_id = doctor_id
+        await session.flush()
+        await session.commit()
+        chat_id = chat.id
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    r = await client.post(f"/api/v1/admin/omni-chats/{chat_id}/claim?force=true", json={}, headers=headers)
+    assert r.status_code == 200, r.text
+    body = r.json()["chat"]
+    assert body["assignee_admin_id"] == admin_auth["admin_id"]
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_omni_send_resolves_reply_channel_for_contact_actor_inbound(
+    init_db, seed_data, client: AsyncClient, admin_auth: dict
+):
+    """Inbound actor CONTACT must still resolve default reply channel (parity with list UI)."""
+    business_account_id = seed_data["clinic_id"]
+    async with db_base.AsyncSessionLocal() as session:
+        service = OmnichannelChatService(session)
+        channel_id = await _add_outbound_capable_channel(session, business_account_id)
+        contact = await service.create_contact(
+            business_account_id=business_account_id,
+            full_name="CONTACT actor omni",
+            primary_phone="+79990001006",
+        )
+        chat = await service.get_or_create_chat(
+            business_account_id=business_account_id,
+            contact=contact,
+            channel_id=channel_id,
+        )
+        inbound = await service.create_inbound_message(
+            chat=chat,
+            contact=contact,
+            content="hello from contact-typed inbound",
+            channel_id=channel_id,
+        )
+        inbound.actor_type = "CONTACT"
+        await session.flush()
+        await session.commit()
+        chat_id = chat.id
+
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    r = await client.post(
+        f"/api/v1/admin/omni-chats/{chat_id}/messages",
+        json={"content": "admin reply after CONTACT inbound"},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json().get("direction") == "OUTBOUND"
+
