@@ -1,6 +1,7 @@
 """E2E: booking flow from auth to payment URL."""
 
 import random
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -57,42 +58,32 @@ async def test_booking_to_payment_flow(
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # 4. Doctors (scope to seed clinic — full suite may add other clinics; schedule enforces doctor.clinic_id)
-    r = await client.get(
-        "/api/v1/doctors",
-        headers=headers,
-        params={"clinic_id": str(clinic_id)},
-    )
-    assert r.status_code == 200
-    doctors = r.json()
-    assert len(doctors) >= 1
-    doctor_id = doctors[0]["id"]
-
-    # 5. Services
-    r = await client.get(
-        "/api/v1/services",
-        headers=headers,
-        params={"clinic_id": str(clinic_id)},
-    )
-    assert r.status_code == 200
-    services = r.json()
-    assert len(services) >= 1
-    service_id = services[0]["id"]
-
-    # 6. Schedule
-    day = seed_data["date"]
-    r = await client.get(
-        f"/api/v1/doctors/{doctor_id}/schedule",
-        params={"date": day.isoformat(), "clinic_id": str(seed_data["clinic_id"])},
-        headers=headers,
-    )
-    assert r.status_code == 200
-    schedule = r.json()
-    slots = schedule.get("slots", [])
-    assert len(slots) >= 1
-    # Use a slot that is less likely to be taken by other tests (e.g. second slot),
-    # falling back to the first if only one is available.
-    slot = slots[1] if len(slots) > 1 else slots[0]
+    # 4–6. Use seed doctor/service only (same rows as DoctorWorkingHours + ServiceDoctor).
+    # Full suite can exhaust slots on seed_data["date"]; scan the same weekday for several weeks.
+    doctor_id = seed_data["doctor_id"]
+    service_id = seed_data["service_id"]
+    base_day = seed_data["date"]
+    day = None
+    slot = None
+    for week in range(12):
+        cand = base_day + timedelta(weeks=week)
+        r = await client.get(
+            f"/api/v1/doctors/{doctor_id}/schedule",
+            params={"date": cand.isoformat(), "clinic_id": str(clinic_id)},
+            headers=headers,
+        )
+        assert r.status_code == 200
+        schedule = r.json()
+        slots = [
+            s
+            for s in schedule.get("slots", [])
+            if s.get("is_available", True)
+        ]
+        if slots:
+            day = cand
+            slot = slots[1] if len(slots) > 1 else slots[0]
+            break
+    assert day is not None and slot is not None, "no available slot for seed doctor in 12 weeks"
     start_time = slot.get("start_time", "10:00:00")
     if isinstance(start_time, str) and len(start_time) == 5:
         start_time = start_time + ":00"

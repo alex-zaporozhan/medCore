@@ -134,10 +134,18 @@ class ClinicService:
             selected = [c for c in clinics if (getattr(c, "clinic_slug", None) or "").strip()]
         result: list[ClinicRead] = []
         for clinic in selected:
-            dto = ClinicRead.model_validate(clinic)
-            dto.business_lexicon = build_business_lexicon(clinic)
-            dto.payment_options = _build_payment_options(clinic)
-            result.append(clinic_read_scrub_public_pii(dto))
+            try:
+                dto = ClinicRead.model_validate(clinic)
+                dto.business_lexicon = build_business_lexicon(clinic)
+                dto.payment_options = _build_payment_options(clinic)
+                result.append(clinic_read_scrub_public_pii(dto))
+            except Exception as exc:  # noqa: BLE001
+                # One bad row (e.g. test DB drift) must not 500 the whole public list (PWA /app).
+                logger.warning(
+                    "clinic_public_discovery_skip_row",
+                    extra={"clinic_id": str(getattr(clinic, "id", "")), "error": str(exc)},
+                )
+                continue
         return result
 
     async def update_clinic(self, clinic_id: UUID, data: ClinicUpdate) -> ClinicRead | None:
