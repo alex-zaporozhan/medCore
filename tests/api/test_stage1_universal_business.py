@@ -7,7 +7,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from src.domain.entities.clinic import Clinic
+from src.infrastructure.rate_limiter import get_rate_limiter
 from src.infrastructure.database import base as db_base
+from src.main import app
 
 
 @pytest.mark.asyncio
@@ -108,6 +110,26 @@ async def test_clinics_response_includes_business_type_and_lexicon(client: Async
         assert "person_label_plural" in lex
         assert "staff_label_plural" in lex
         assert isinstance(lex.get("role_display"), dict)
+
+
+@pytest.mark.asyncio
+async def test_u011_anonymous_clinics_list_fail_open_when_rate_limiter_unavailable(client: AsyncClient):
+    """Public GET /clinics must stay 200 if rate limiter backend is temporarily unavailable."""
+
+    class _BrokenRl:
+        async def check_or_raise(self, key: str, limit: int, window: int) -> None:
+            raise RuntimeError("redis unavailable")
+
+    async def _fake_dep():
+        return _BrokenRl()
+
+    app.dependency_overrides[get_rate_limiter] = _fake_dep
+    try:
+        r = await client.get("/api/v1/clinics")
+        assert r.status_code == 200, r.text
+        assert isinstance(r.json(), list)
+    finally:
+        app.dependency_overrides.pop(get_rate_limiter, None)
 
 
 @pytest.mark.asyncio

@@ -47,6 +47,12 @@ async def get_clinics(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Слишком много запросов. Попробуйте позже.",
         )
+    except Exception as exc:  # noqa: BLE001
+        # Public discovery must not become 500 because Redis/rate-limiter is temporarily unavailable.
+        logger.warning(
+            "public_clinics_rate_limit_unavailable",
+            extra={"client_ip": client_ip, "error": str(exc)},
+        )
     return await service.get_clinics_for_unauthenticated_discovery()
 
 
