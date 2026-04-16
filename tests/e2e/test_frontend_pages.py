@@ -69,12 +69,25 @@ class TestFrontendPages:
     def test_page_no_console_errors(self, page, frontend_base_url, path):
         """Capture console errors on load; fail if any (helps debug white screen)."""
         errors = []
+        server_errors = []
 
         def on_console(msg):
             if msg.type == "error":
                 errors.append(msg.text)
 
+        def on_response(resp):
+            if resp.status >= 500:
+                snippet = ""
+                try:
+                    # best-effort body capture for API 500 diagnostics in CI logs
+                    txt = resp.text()
+                    snippet = txt[:200].replace("\n", " ").strip()
+                except Exception:
+                    snippet = "<body unavailable>"
+                server_errors.append(f"{resp.status} {resp.url} :: {snippet}")
+
         page.on("console", on_console)
+        page.on("response", on_response)
         url = f"{frontend_base_url}{path}"
         try:
             page.goto(url, wait_until="networkidle", timeout=15000)
@@ -89,5 +102,7 @@ class TestFrontendPages:
             or "SyntaxError" in e
             or ("Failed to load" in e and "404" not in e and "status of 404" not in e)
         ]
+        if server_errors:
+            pytest.fail(f"{path}: HTTP 5xx requests: {'; '.join(server_errors[:3])}")
         if fatal:
             pytest.fail(f"{path}: console errors: {'; '.join(fatal[:3])}")
