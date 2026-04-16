@@ -55,6 +55,7 @@ os.environ.setdefault(
     "PLATFORM_BILLING_WEBHOOK_SECRET",
     "test-platform-billing-webhook-secret",
 )
+os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-telegram-token-ci")
 os.environ.setdefault("PATIENT_PAYMENT_WEBHOOK_SECRET", "")
 os.environ["TESTING"] = "1"
 os.environ.setdefault("RUN_REDIS_INTEGRATION_TESTS", "1")

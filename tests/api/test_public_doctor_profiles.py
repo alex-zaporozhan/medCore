@@ -75,22 +75,30 @@ async def test_public_profile_hidden_when_unpublished(client, admin_auth, seed_d
         await session.commit()
     doctor_id = str(new_doctor_id)
 
-    upd = await client.put(
-        f"/api/v1/clinics/{clinic_id}",
-        headers=headers,
-        json={"clinic_slug": "hidden-clinic"},
-    )
-    assert upd.status_code == 200, upd.text
+    try:
+        upd = await client.put(
+            f"/api/v1/clinics/{clinic_id}",
+            headers=headers,
+            json={"clinic_slug": "hidden-clinic"},
+        )
+        assert upd.status_code == 200, upd.text
 
-    create = await client.post(
-        f"/api/v1/admin/clinics/{clinic_id}/public-doctor-profiles",
-        headers=headers,
-        json={"doctor_id": doctor_id, "doctor_slug": "hidden-doc", "is_published": False},
-    )
-    assert create.status_code == 201, create.text
+        create = await client.post(
+            f"/api/v1/admin/clinics/{clinic_id}/public-doctor-profiles",
+            headers=headers,
+            json={"doctor_id": doctor_id, "doctor_slug": "hidden-doc", "is_published": False},
+        )
+        assert create.status_code == 201, create.text
 
-    r = await client.get("/api/v1/public/clinics/by-slug/hidden-clinic/doctors/hidden-doc")
-    assert r.status_code == 404, r.text
+        r = await client.get("/api/v1/public/clinics/by-slug/hidden-clinic/doctors/hidden-doc")
+        assert r.status_code == 404, r.text
+    finally:
+        # Other suites use ``seed_data["clinic_slug"]``; restore canonical seed slug on shared clinic.
+        await client.put(
+            f"/api/v1/clinics/{clinic_id}",
+            headers=headers,
+            json={"clinic_slug": seed_data["clinic_slug"]},
+        )
 
 
 @pytest.mark.asyncio

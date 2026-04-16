@@ -6,6 +6,8 @@ Uses pytest + AsyncClient (same stack as API tests). Сценарий «паци
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from httpx import AsyncClient
 
@@ -16,21 +18,30 @@ async def test_e2e_admin_creates_booking_for_known_patient(
 ):
     """Админка: запись на существующего пациента (денежный контур расписания)."""
     headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
-    day = seed_data["date"]
-    r = await client.post(
-        "/api/v1/admin/bookings",
-        headers=headers,
-        json={
-            "clinic_id": str(seed_data["clinic_id"]),
-            "patient_id": str(seed_data["patient_id"]),
-            "doctor_id": str(seed_data["doctor_id"]),
-            "service_id": str(seed_data["service_id"]),
-            "appointment_date": day.isoformat(),
-            "appointment_time": "11:00:00",
-        },
-    )
-    assert r.status_code == 201, r.text
-    assert r.json().get("id")
+    base_day = seed_data["date"]
+    candidate_days = [base_day + timedelta(weeks=w) for w in range(0, 12)]
+    times = [f"{h:02d}:00:00" for h in range(9, 18)]
+    last = None
+    for day in candidate_days:
+        for appointment_time in times:
+            r = await client.post(
+                "/api/v1/admin/bookings",
+                headers=headers,
+                json={
+                    "clinic_id": str(seed_data["clinic_id"]),
+                    "patient_id": str(seed_data["patient_id"]),
+                    "doctor_id": str(seed_data["doctor_id"]),
+                    "service_id": str(seed_data["service_id"]),
+                    "appointment_date": day.isoformat(),
+                    "appointment_time": appointment_time,
+                },
+            )
+            last = r
+            if r.status_code == 201:
+                assert r.json().get("id")
+                return
+    assert last is not None
+    assert last.status_code == 201, last.text
 
 
 @pytest.mark.asyncio

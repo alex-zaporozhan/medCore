@@ -25,7 +25,6 @@ async def test_marketing_attribution_full_flow(
     seed_data,
     client: AsyncClient,
     admin_auth: dict,
-    redis_client,
     db_session,
 ) -> None:
     """Landing lead with UTM + patient auth + booking/payment should appear in admin attribution summary."""
@@ -93,20 +92,36 @@ async def test_marketing_attribution_full_flow(
     assert landing_data["visit_attribution_id"]
     lead_id_str = str(landing_data["lead_id"])
 
-    # 2. Simulate patient auth with same session_id (links VisitAttribution to Patient)
+    # 2. Simulate patient auth with same session_id (links VisitAttribution to Patient).
+    # Other tests change ``clinic_slug`` on the shared seed clinic (e.g. marketing URLs).
+    # Force canonical seed slug in DB so ``send-code`` always resolves (CI full suite order).
+    r_slug_fix = await client.put(
+        f"/api/v1/clinics/{clinic_id}",
+        headers=headers,
+        json={"clinic_slug": seed_data["clinic_slug"]},
+    )
+    assert r_slug_fix.status_code == 200, r_slug_fix.text
+    auth_clinic_slug = seed_data["clinic_slug"]
+
     r_send = await client.post(
         "/api/v1/auth/send-code",
-        json={"phone": landing_phone, "clinic_slug": seed_data["clinic_slug"]},
+        json={"phone": landing_phone, "clinic_slug": auth_clinic_slug},
     )
     assert r_send.status_code == 204, r_send.text
+    # Long suites + session-scoped asyncio: the ``redis_client`` fixture can point at a pool
+    # tied to a torn loop (Windows). Reset pool then read the code like ``patient_auth`` does.
+    from src.infrastructure.database.redis_client import close_redis, get_redis
+
+    await close_redis()
+    redis = await get_redis()
     code_key = f"auth:code:{clinic_id}:{landing_phone}"
-    raw_code = await redis_client.get(code_key)
+    raw_code = await redis.get(code_key)
     assert raw_code, f"Auth code not in Redis for key {code_key}"
     code = raw_code.decode() if isinstance(raw_code, bytes) else raw_code
     auth_payload = {
         "phone": landing_phone,
         "code": code,
-        "clinic_slug": seed_data["clinic_slug"],
+        "clinic_slug": auth_clinic_slug,
         "consent_pd": True,
         "consent_mailing": False,
         "session_id": session_id,

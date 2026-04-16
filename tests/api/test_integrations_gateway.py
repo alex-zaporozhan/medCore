@@ -5,6 +5,7 @@ import json
 import pytest
 from httpx import AsyncClient
 
+from src.core.config import settings
 from src.infrastructure.database import base as db_base
 from src.domain.entities.omnichannel_message import Message as OmniMessage
 
@@ -88,7 +89,7 @@ async def test_webchat_inbound_persists_message(init_db, seed_data, client: Asyn
 @pytest.mark.asyncio
 async def test_duplicate_webhook_same_external_message_id_no_duplicate(init_db, seed_data, client: AsyncClient, monkeypatch):
     """Two identical webhooks (same external_message_id for same chat) must not create duplicate message."""
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-telegram-token")
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-telegram-token")
 
     payload = {
         "update_id": 999,

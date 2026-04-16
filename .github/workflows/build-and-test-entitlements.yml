@@ -31,6 +31,7 @@ env:
   VK_REDIRECT_URI: https://localhost:5173/api/v1/auth/oauth/vk/callback
   YANDEX_CLIENT_ID: ci-oauth-yandex-client-id
   YANDEX_REDIRECT_URI: https://localhost:5173/api/v1/auth/oauth/yandex/callback
+  TELEGRAM_BOT_TOKEN: ci-test-telegram-bot-token
 
 jobs:
   verify:
@@ -180,11 +181,5 @@ jobs:
       - name: pytest tests/
         env:
           FRONTEND_E2E_URL: http://127.0.0.1:4173
-        run: |
-          cd frontend
-          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/vite-preview.log 2>&1 &
-          echo $! > /tmp/vite-preview.pid
-          cd ..
-          sleep 6
-          poetry run pytest tests/ -q --tb=short
+        run: bash scripts/ci/run_pytest_with_e2e_preview.sh poetry run pytest tests/ -q --tb=short
         timeout-minutes: 30

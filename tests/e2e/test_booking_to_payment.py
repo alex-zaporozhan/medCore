@@ -1,5 +1,6 @@
 """E2E: booking flow from auth to payment URL."""
 
+import random
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,13 +12,12 @@ from httpx import AsyncClient
 async def test_booking_to_payment_flow(
     client: AsyncClient,
     seed_data: dict,
-    redis_client,
 ):
     """
     Full flow: health -> send-code -> verify-code -> doctors -> services ->
     schedule -> create booking -> create payment (mocked) -> assert payment_url.
     """
-    phone = "+79001234567"
+    phone = "+7900" + "".join(random.choices("0123456789", k=7))
     clinic_id = seed_data["clinic_id"]
     key = f"auth:code:{clinic_id}:{phone}"
 
@@ -26,16 +26,28 @@ async def test_booking_to_payment_flow(
     assert r.status_code == 200
     assert r.json().get("status") == "ok"
 
-    # 2. Send code -> stores code in Redis
-    r = await client.post("/api/v1/auth/send-code", json={"phone": phone})
+    # 2. Send code -> stores code in Redis (reset pool: ``redis_client`` fixture can bind another loop).
+    from src.infrastructure.database.redis_client import close_redis, get_redis
+
+    await close_redis()
+    r = await client.post(
+        "/api/v1/auth/send-code",
+        json={"phone": phone, "clinic_slug": seed_data["clinic_slug"]},
+    )
     assert r.status_code == 204
-    code = await redis_client.get(key)
-    assert code, "send_code must store code in Redis"
+    redis = await get_redis()
+    raw_code = await redis.get(key)
+    assert raw_code, "send_code must store code in Redis"
+    code = raw_code.decode() if isinstance(raw_code, bytes) else raw_code
 
     # 3. Verify code -> token and patient_id
     r = await client.post(
         "/api/v1/auth/verify-code",
-        json={"phone": phone, "code": code},
+        json={
+            "phone": phone,
+            "code": code,
+            "clinic_slug": seed_data["clinic_slug"],
+        },
     )
     assert r.status_code == 200
     data = r.json()
