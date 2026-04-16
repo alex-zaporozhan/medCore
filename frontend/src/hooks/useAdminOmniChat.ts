@@ -131,8 +131,11 @@ export interface OmniChatClaimResponse {
 export function useClaimAdminOmniChat() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ chatId }: { chatId: string }) =>
-      api.post<OmniChatClaimResponse>(`/v1/admin/omni-chats/${chatId}/claim`, {}),
+    mutationFn: ({ chatId, force }: { chatId: string; force?: boolean }) =>
+      api.post<OmniChatClaimResponse>(
+        `/v1/admin/omni-chats/${chatId}/claim${force ? "?force=true" : ""}`,
+        {},
+      ),
     onSuccess: (data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["admin-omni-chats"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-omni-chat-detail", variables.chatId] });

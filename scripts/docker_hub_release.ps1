@@ -43,7 +43,7 @@ docker build -t $backend -f Dockerfile .
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Building frontend -> $frontend"
-docker build -t $frontend -f Dockerfile ./frontend
+docker build -t $frontend -f frontend/Dockerfile ./frontend
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Build OK. Docker Hub login (password/token at prompt; input is hidden)..."

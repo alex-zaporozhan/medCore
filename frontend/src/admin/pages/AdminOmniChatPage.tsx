@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon,
+  Alert,
   Badge,
   Box,
   Button,
@@ -64,7 +65,7 @@ import {
 } from "@/shared/adminChatChrome";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAdminSession } from "@/hooks/useAdminSession";
-import { getAdminId } from "@/api/client";
+import { ApiErrorWithCode, getAdminId } from "@/api/client";
 
 function ChannelIcon({ type }: { type: string }) {
   const t = (type || "").toUpperCase();
@@ -131,6 +132,12 @@ function isClosedStatus(status: unknown): boolean {
 function isContactActor(lastActorType: unknown): boolean {
   const t = String(lastActorType || "").toUpperCase();
   return t === "CONTACT" || t === "CLIENT" || t === "PATIENT";
+}
+
+function adminIdsEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = (a || "").trim().toLowerCase();
+  const y = (b || "").trim().toLowerCase();
+  return Boolean(x && y && x === y);
 }
 
 function parseReplyLine(content: string): { messageId: string | null; rest: string } | null {
@@ -334,6 +341,7 @@ export default function AdminOmniChatPage() {
     messageText: string;
   }>({ opened: false, x: 0, y: 0, messageId: null, messageText: "" });
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // Deep-link support: /admin/omni-chat?chat_id=...&message_id=...
   useEffect(() => {
@@ -452,6 +460,7 @@ export default function AdminOmniChatPage() {
     setMessageText("");
     setPendingFile(null);
     setAttachError(null);
+    setSendError(null);
     setReplyingTo(null);
   }, [selectedChatId]);
 
@@ -541,9 +550,21 @@ export default function AdminOmniChatPage() {
     !chatDetail.assignee_admin_id &&
     String(chatDetail.status || "").toUpperCase() !== "CLOSED";
 
+  const blockedByOtherAssignee = Boolean(
+    chatDetail &&
+      chatDetail.assignee_admin_id &&
+      adminId &&
+      !adminIdsEqual(chatDetail.assignee_admin_id, adminId) &&
+      String(chatDetail.status || "").toUpperCase() !== "CLOSED",
+  );
+
+  const composerLocked = Boolean(blockedByOtherAssignee && !isOwner);
+
   const handleSend = useCallback(() => {
     if (!selectedChatId) return;
+    if (composerLocked) return;
     setAttachError(null);
+    setSendError(null);
     if (pendingFile) {
       const bodyRaw = messageText.trim();
       const body = replyingTo ? `reply_to: ${replyingTo.messageId}\n${bodyRaw}` : bodyRaw;
@@ -559,7 +580,21 @@ export default function AdminOmniChatPage() {
             qc.invalidateQueries({ queryKey: ["admin-omni-chats"] });
             queueMicrotask(() => composerRef.current?.focus());
           },
-          onError: () => setAttachError("Не удалось отправить файл"),
+          onError: (err) => {
+            if (err instanceof ApiErrorWithCode && err.code === "omni_chat_already_claimed") {
+              setSendError(
+                isOwner
+                  ? "Чат закреплён за другим оператором. Нажмите «Перехватить заявку» в шапке."
+                  : "Ответ может отправить только оператор, у которого заявка в работе.",
+              );
+              return;
+            }
+            if (err instanceof ApiErrorWithCode && err.code === "omni_reply_channel_unresolved") {
+              setSendError("Не удалось определить канал для ответа. Проверьте настройки канала.");
+              return;
+            }
+            setAttachError("Не удалось отправить файл");
+          },
         },
       );
       return;
@@ -578,15 +613,30 @@ export default function AdminOmniChatPage() {
           qc.invalidateQueries({ queryKey: ["admin-omni-chats"] });
           queueMicrotask(() => composerRef.current?.focus());
         },
+        onError: (err) => {
+          if (err instanceof ApiErrorWithCode && err.code === "omni_chat_already_claimed") {
+            setSendError(
+              isOwner
+                ? "Чат закреплён за другим оператором. Нажмите «Перехватить заявку» в шапке."
+                : "Ответ может отправить только оператор, у которого заявка в работе.",
+            );
+            return;
+          }
+          if (err instanceof ApiErrorWithCode && err.code === "omni_reply_channel_unresolved") {
+            setSendError("Не удалось определить канал для ответа. Проверьте настройки канала.");
+            return;
+          }
+          setSendError(err instanceof Error ? err.message : "Не удалось отправить сообщение");
+        },
       },
     );
-  }, [messageText, pendingFile, qc, replyingTo, selectedChatId, sendMessage, sendWithFile]);
+  }, [composerLocked, isOwner, messageText, pendingFile, qc, replyingTo, selectedChatId, sendMessage, sendWithFile]);
 
   const canResolveSelected = Boolean(
     selectedChatId &&
       chatDetail &&
       String(chatDetail.status || "").toUpperCase() !== "CLOSED" &&
-      (isOwner || (!!adminId && chatDetail.assignee_admin_id === adminId)),
+      (isOwner || (!!adminId && adminIdsEqual(chatDetail.assignee_admin_id, adminId))),
   );
 
   const getClinicChatBlob = useCallback((conversationId: string, attachmentId: string) => {
@@ -747,7 +797,7 @@ export default function AdminOmniChatPage() {
                     const myNeedsReply =
                       !closed &&
                       !!adminId &&
-                      c.assignee_admin_id === adminId &&
+                      adminIdsEqual(c.assignee_admin_id, adminId) &&
                       isContactActor(c.last_actor_type);
 
                     const needsAttention = Boolean(c.needs_attention) || unassignedWaiting || myNeedsReply;
@@ -913,6 +963,27 @@ export default function AdminOmniChatPage() {
                         />
                       </Box>
                     </Tooltip>
+                    {blockedByOtherAssignee && isOwner ? (
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="orange"
+                        loading={claimChat.isPending}
+                        onClick={() => {
+                          if (!selectedChatId) return;
+                          setSendError(null);
+                          claimChat.mutate(
+                            { chatId: selectedChatId, force: true },
+                            {
+                              onError: (e) =>
+                                setSendError(e instanceof Error ? e.message : "Не удалось перехватить заявку"),
+                            },
+                          );
+                        }}
+                      >
+                        Перехватить заявку
+                      </Button>
+                    ) : null}
                     {canResolveSelected ? (
                       <Button
                         size="xs"
@@ -1219,6 +1290,11 @@ export default function AdminOmniChatPage() {
                       {attachError}
                     </Text>
                   ) : null}
+                  {sendError ? (
+                    <Alert color="red" variant="light" title="Отправка недоступна" onClose={() => setSendError(null)} withCloseButton>
+                      {sendError}
+                    </Alert>
+                  ) : null}
                   {resolveError ? (
                     <Text size="xs" c="red">
                       {resolveError}
@@ -1231,12 +1307,19 @@ export default function AdminOmniChatPage() {
                       поле ввода CLOSE не отправляется сразу.
                     </Text>
                   ) : null}
+                  {composerLocked ? (
+                    <Text size="xs" c="dimmed">
+                      Этот диалог в работе у другого оператора — ответ может отправить только он (или владелец клиники
+                      может перехватить заявку).
+                    </Text>
+                  ) : null}
                   <Group align="flex-end" wrap="nowrap" gap="sm">
                     <Box style={{ flex: 1, minWidth: 260 }}>
                       <AppleEmojiOverlayTextarea
                         ref={composerRef}
                         value={messageText}
                         onChange={(e: any) => setMessageText(String(e?.target?.value ?? ""))}
+                        readOnly={composerLocked}
                         autosize
                         minRows={4}
                         maxRows={composerMaxRows}
@@ -1253,6 +1336,7 @@ export default function AdminOmniChatPage() {
                       variant="filled"
                       color="indigo"
                       onClick={handleSend}
+                      disabled={composerLocked}
                       loading={sendMessage.isPending || sendWithFile.isPending}
                       aria-label="Отправить"
                     >

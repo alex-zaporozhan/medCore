@@ -114,7 +114,7 @@ jobs:
 
       - name: Build frontend image (no push)
         if: steps.changes.outputs.frontend == 'true'
-        run: docker build -t dental-booking-frontend:ci -f Dockerfile ./frontend
+        run: docker build -t dental-booking-frontend:ci -f frontend/Dockerfile ./frontend
 
       - name: Tag and push backend
         if: steps.changes.outputs.backend == 'true'
