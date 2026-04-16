@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from src.application.services.erp_aggregate_service import ErpAggregateService
 from src.application.services.erp_reports_repository import ErpReportsRepository
@@ -383,6 +383,40 @@ def _attr_sort_key(r):
     return (r.visit_date, ts, cid, r.total_revenue)
 
 
+async def _pick_free_booking_time(
+    session,
+    *,
+    clinic_id,
+    doctor_id,
+    day: date,
+) -> time:
+    """
+    Pick a free HH:MM slot for (clinic, doctor, day) without deleting existing rows.
+
+    Full-suite CI reuses seeded doctor/day across many tests; deleting rows can break due to
+    FK references from financial tables. We instead choose a non-occupied time deterministically.
+    """
+    occupied = {
+        t
+        for t in (
+            await session.execute(
+                select(Booking.appointment_time).where(
+                    Booking.clinic_id == clinic_id,
+                    Booking.doctor_id == doctor_id,
+                    Booking.appointment_date == day,
+                )
+            )
+        ).scalars()
+    }
+    # 06:00..23:30, step 30 min — wide enough to avoid collisions in shared seeded data.
+    for hour in range(6, 24):
+        for minute in (0, 30):
+            candidate = time(hour, minute)
+            if candidate not in occupied:
+                return candidate
+    raise AssertionError("No free booking slot for parity test")
+
+
 @pytest.mark.asyncio
 async def test_payroll_aggregate_matches_raw_repository(init_db, seed_data) -> None:
     clinic_id = seed_data["clinic_id"]
@@ -395,13 +429,8 @@ async def test_payroll_aggregate_matches_raw_repository(init_db, seed_data) -> N
 
     async with db_base.AsyncSessionLocal() as session:
         async with session.begin():
-            # Avoid ux_bookings_doctor_slot_active collisions with other tests on shared seed doctor/day.
-            await session.execute(
-                delete(Booking).where(
-                    Booking.clinic_id == clinic_id,
-                    Booking.doctor_id == doctor_id,
-                    Booking.appointment_date == day,
-                )
+            booking_time = await _pick_free_booking_time(
+                session, clinic_id=clinic_id, doctor_id=doctor_id, day=day
             )
             bid = uuid.uuid4()
             session.add(
@@ -412,7 +441,7 @@ async def test_payroll_aggregate_matches_raw_repository(init_db, seed_data) -> N
                     doctor_id=doctor_id,
                     service_id=service_id,
                     appointment_date=day,
-                    appointment_time=time(10, 0),
+                    appointment_time=booking_time,
                     status=BookingStatus.CONFIRMED,
                     prepayment_amount=Decimal("0.00"),
                 )
@@ -469,12 +498,8 @@ async def test_payroll_aggregate_preserves_extreme_calendar_dates(init_db, seed_
 
     async with db_base.AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(
-                delete(Booking).where(
-                    Booking.clinic_id == clinic_id,
-                    Booking.doctor_id == doctor_id,
-                    Booking.appointment_date == day,
-                )
+            booking_time = await _pick_free_booking_time(
+                session, clinic_id=clinic_id, doctor_id=doctor_id, day=day
             )
             bid = uuid.uuid4()
             session.add(
@@ -485,7 +510,7 @@ async def test_payroll_aggregate_preserves_extreme_calendar_dates(init_db, seed_
                     doctor_id=doctor_id,
                     service_id=service_id,
                     appointment_date=day,
-                    appointment_time=time(10, 0),
+                    appointment_time=booking_time,
                     status=BookingStatus.CONFIRMED,
                     prepayment_amount=Decimal("0.00"),
                 )
@@ -720,12 +745,8 @@ async def test_payroll_by_period_stale_range_triggers_fallback_metadata(
 
     async with db_base.AsyncSessionLocal() as session:
         async with session.begin():
-            await session.execute(
-                delete(Booking).where(
-                    Booking.clinic_id == clinic_id,
-                    Booking.doctor_id == doctor_id,
-                    Booking.appointment_date == day,
-                )
+            booking_time = await _pick_free_booking_time(
+                session, clinic_id=clinic_id, doctor_id=doctor_id, day=day
             )
             bid = uuid.uuid4()
             session.add(
@@ -736,7 +757,7 @@ async def test_payroll_by_period_stale_range_triggers_fallback_metadata(
                     doctor_id=doctor_id,
                     service_id=service_id,
                     appointment_date=day,
-                    appointment_time=time(10, 0),
+                    appointment_time=booking_time,
                     status=BookingStatus.CONFIRMED,
                     prepayment_amount=Decimal("0.00"),
                 )
