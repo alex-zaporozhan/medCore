@@ -395,6 +395,14 @@ async def test_payroll_aggregate_matches_raw_repository(init_db, seed_data) -> N
 
     async with db_base.AsyncSessionLocal() as session:
         async with session.begin():
+            # Avoid ux_bookings_doctor_slot_active collisions with other tests on shared seed doctor/day.
+            await session.execute(
+                delete(Booking).where(
+                    Booking.clinic_id == clinic_id,
+                    Booking.doctor_id == doctor_id,
+                    Booking.appointment_date == day,
+                )
+            )
             bid = uuid.uuid4()
             session.add(
                 Booking(
@@ -461,6 +469,13 @@ async def test_payroll_aggregate_preserves_extreme_calendar_dates(init_db, seed_
 
     async with db_base.AsyncSessionLocal() as session:
         async with session.begin():
+            await session.execute(
+                delete(Booking).where(
+                    Booking.clinic_id == clinic_id,
+                    Booking.doctor_id == doctor_id,
+                    Booking.appointment_date == day,
+                )
+            )
             bid = uuid.uuid4()
             session.add(
                 Booking(
@@ -705,6 +720,13 @@ async def test_payroll_by_period_stale_range_triggers_fallback_metadata(
 
     async with db_base.AsyncSessionLocal() as session:
         async with session.begin():
+            await session.execute(
+                delete(Booking).where(
+                    Booking.clinic_id == clinic_id,
+                    Booking.doctor_id == doctor_id,
+                    Booking.appointment_date == day,
+                )
+            )
             bid = uuid.uuid4()
             session.add(
                 Booking(
