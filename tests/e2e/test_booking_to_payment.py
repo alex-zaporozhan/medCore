@@ -57,15 +57,23 @@ async def test_booking_to_payment_flow(
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # 4. Doctors
-    r = await client.get("/api/v1/doctors", headers=headers)
+    # 4. Doctors (scope to seed clinic — full suite may add other clinics; schedule enforces doctor.clinic_id)
+    r = await client.get(
+        "/api/v1/doctors",
+        headers=headers,
+        params={"clinic_id": str(clinic_id)},
+    )
     assert r.status_code == 200
     doctors = r.json()
     assert len(doctors) >= 1
     doctor_id = doctors[0]["id"]
 
     # 5. Services
-    r = await client.get("/api/v1/services", headers=headers)
+    r = await client.get(
+        "/api/v1/services",
+        headers=headers,
+        params={"clinic_id": str(clinic_id)},
+    )
     assert r.status_code == 200
     services = r.json()
     assert len(services) >= 1

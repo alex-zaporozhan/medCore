@@ -152,12 +152,13 @@ export default defineConfig({
     host: true,
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        // 127.0.0.1: CI/Linux often resolve localhost -> ::1 while uvicorn binds IPv4 only.
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
         secure: false,
       },
       "/health": {
-        target: "http://localhost:8000",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
         secure: false,
       },
@@ -169,12 +170,12 @@ export default defineConfig({
     // Same as dev: без прокси запросы идут на 4173 и /api не доходит до API — форма входа «молчит» или 404.
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
         secure: false,
       },
       "/health": {
-        target: "http://localhost:8000",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
         secure: false,
       },
