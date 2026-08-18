@@ -271,6 +271,11 @@ else:
 
         this_conftest.app = _app
         yield
+        try:
+            if db_base.engine is not None:
+                await db_base.engine.dispose()
+        except Exception:
+            logger.debug("test engine dispose skipped", exc_info=True)
 
     def _test_db_name_ok():
         """Ensure we do not TRUNCATE production. Only allow DB name containing 'test'."""

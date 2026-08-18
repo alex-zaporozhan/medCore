@@ -23,7 +23,7 @@ import { useCreateAdminClinicService, useUpdateAdminClinicService } from "@/hook
 import { useDoctors } from "@/hooks/useDoctors";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useState, useEffect } from "react";
-import i18n from "@/i18n";
+import { tNs } from "@/i18n";
 
 const SERVICE_CATEGORY_VALUES = ["therapy", "surgery", "orthodontics", "hygiene", "other"] as const;
 
@@ -32,7 +32,7 @@ export function serviceCategoryLabel(category: string | null | undefined): strin
   const slug = String(category).trim().toLowerCase();
   if (!slug) return "";
   const key = `serviceDrawer.categories.${slug}`;
-  const translated = i18n.t(key, { ns: "directory" });
+  const translated = tNs("directory", key);
   return translated === key ? slug : translated;
 }
 

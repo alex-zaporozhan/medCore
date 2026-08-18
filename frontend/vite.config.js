@@ -94,8 +94,8 @@ export default defineConfig({
                 ],
             },
             workbox: {
-                /** Главный чанк держим < 2 MiB (lazy `/platform/*` с графиками в отдельном чанке). */
-                maximumFileSizeToCacheInBytes: 2 * 1024 * 1024,
+                /** Main SPA chunk is ~2.35 MiB with i18n dictionaries; keep SW precache above that. */
+                maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
                 navigateFallback: "/index.html",
                 navigateFallbackDenylist: [/\/api\//, /\/health(?:\/|$)/],
                 runtimeCaching: [

@@ -60,6 +60,7 @@ target-version = "py311"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 # QA_ARCH: fail fast on hung tests (infinite SSE, deadlocks, blocked I/O) instead of waiting indefinitely.
 # Fixtures are excluded so session init_db/seed_data/truncate are not cut mid-run.

@@ -14,7 +14,7 @@ export function QueryErrorAlert({ error, title }: QueryErrorAlertProps) {
   const { t } = useTranslation("common");
   const pathname = typeof window === "undefined" ? "" : window.location.pathname;
   const mappedKey = isAdminChromePath(pathname) ? adminQueryErrorI18nKey(error) : null;
-  const body = mappedKey ? t(mappedKey) : formatQueryError(error);
+  const body = mappedKey ? t(mappedKey as never) : formatQueryError(error);
   return (
     <Alert color="red" title={title ?? t("errors.loadFailed")} variant="light">
       {body}

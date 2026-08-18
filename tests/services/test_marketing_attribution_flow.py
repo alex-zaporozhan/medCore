@@ -185,7 +185,7 @@ async def test_marketing_attribution_full_flow(
 
     # 4. Attribution chain must persist (LeadCard ↔ VisitAttribution, UTM on visit).
     # Rollback clears any stale transaction/identity state so SELECTs see rows committed by the API
-    # without opening a second NullPool session (avoids SAWarning / GC connection leaks on Windows).
+    # without opening a second session (avoids SAWarning / GC connection leaks on Windows).
     lead_uuid = UUID(lead_id_str)
     await db_session.rollback()
     lc_row = await db_session.execute(

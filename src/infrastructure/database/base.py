@@ -1,5 +1,6 @@
 """Database base configuration with async SQLAlchemy."""
 
+import asyncio
 import logging
 import os
 from typing import Any, AsyncGenerator
@@ -21,13 +22,37 @@ _TESTING = os.environ.get("TESTING", "").lower() in ("1", "true", "yes")
 
 _LOCAL_PG_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "db", "postgres"})
 
+_TEST_POOL_SIZE = 12
+_TEST_POOL_MAX_OVERFLOW = 8
+_TEST_POOL_RECYCLE_SEC = 90
+_TEST_CONNECT_ATTEMPTS = 4
+
+
+def _is_transient_connect_error(exc: BaseException) -> bool:
+    """Windows Docker Desktop NAT frequently RST's host→published-port Postgres (WinError 10054)."""
+    if isinstance(
+        exc,
+        (ConnectionResetError, ConnectionRefusedError, ConnectionAbortedError, TimeoutError),
+    ):
+        return True
+    if isinstance(exc, OSError) and getattr(exc, "winerror", None) == 10054:
+        return True
+    msg = str(exc).lower()
+    return "10054" in msg or "connection reset" in msg or "connection was closed" in msg
+
 
 def _asyncpg_connect_args(dsn: str) -> dict[str, Any]:
     """asyncpg defaults to an SSL upgrade probe; Docker/Windows Postgres often RST that handshake (WinError 10054).
 
     Honor explicit sslmode in the DSN. Otherwise skip SSL for tests and for typical compose/local hosts.
     """
-    args: dict[str, Any] = {}
+    args: dict[str, Any] = {
+        "timeout": 30,
+        "command_timeout": 120,
+    }
+    if _TESTING:
+        # Reconnects after RST must not reuse prepared-statement names from a dead backend.
+        args["statement_cache_size"] = 0
     url = make_url(dsn)
     query = {str(k).lower(): str(v).lower() for k, v in url.query.items()}
     sslmode = query.get("sslmode") or query.get("ssl") or ""
@@ -44,18 +69,63 @@ def _asyncpg_connect_args(dsn: str) -> dict[str, Any]:
     return args
 
 
+async def _asyncpg_connect(dsn: str):
+    """Open one asyncpg connection; retry transient Windows/Docker RST on connect."""
+    import asyncpg
+
+    url = make_url(dsn)
+    kwargs: dict[str, Any] = {
+        "host": url.host,
+        "port": url.port or 5432,
+        "user": url.username,
+        "password": url.password,
+        "database": url.database,
+        **_asyncpg_connect_args(dsn),
+    }
+    last: BaseException | None = None
+    delay = 0.2
+    for attempt in range(1, _TEST_CONNECT_ATTEMPTS + 1):
+        try:
+            return await asyncpg.connect(**kwargs)
+        except Exception as exc:
+            last = exc
+            if attempt >= _TEST_CONNECT_ATTEMPTS or not _is_transient_connect_error(exc):
+                raise
+            logger.warning(
+                "asyncpg connect retry %s/%s after transient error: %s",
+                attempt,
+                _TEST_CONNECT_ATTEMPTS,
+                exc,
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 2.0)
+    assert last is not None
+    raise last
+
+
 def _make_engine(*, url: str | None = None):
-    """Build async engine. In TESTING use NullPool to avoid asyncpg event-loop issues."""
+    """Build async engine.
+
+    TESTING shares one pytest session loop, so a small recycled pool is safe and avoids
+    NullPool's per-checkout TCP handshake through Docker Desktop NAT (WinError 10054 after
+    a long suite). Production keeps a sized pool from settings.
+    """
     dsn = url or settings.database_url
     kwargs: dict[str, Any] = {
         "pool_pre_ping": True,  # avoid "connection is closed" when pool returns a stale connection
         "echo": settings.debug,
-        "connect_args": _asyncpg_connect_args(dsn),
     }
     if _TESTING:
-        from sqlalchemy.pool import NullPool
-        kwargs["poolclass"] = NullPool
+        async def _creator():
+            return await _asyncpg_connect(dsn)
+
+        kwargs["async_creator"] = _creator
+        kwargs["pool_size"] = _TEST_POOL_SIZE
+        kwargs["max_overflow"] = _TEST_POOL_MAX_OVERFLOW
+        kwargs["pool_recycle"] = _TEST_POOL_RECYCLE_SEC
+        kwargs["pool_timeout"] = 30
     else:
+        kwargs["connect_args"] = _asyncpg_connect_args(dsn)
         kwargs["pool_size"] = settings.db_pool_size
         kwargs["max_overflow"] = settings.db_max_overflow
     return create_async_engine(dsn, **kwargs)
@@ -90,7 +160,7 @@ if _TESTING:
         # Tests use single DB; replica routing is disabled unless DATABASE_REPLICA_URL is set in env.
         engine_reporting = engine
         AsyncSessionLocalReporting = AsyncSessionLocal
-        logger.info("[dental-booking] Test database engine initialized (NullPool)")
+        logger.info("[dental-booking] Test database engine initialized (recycled pool)")
 else:
     engine = _make_engine()
     AsyncSessionLocal = async_sessionmaker(

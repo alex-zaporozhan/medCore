@@ -33,6 +33,13 @@ if [[ -z "${DATABASE_URL_TEST:-}" ]]; then
 fi
 export DATABASE_URL="${DATABASE_URL_TEST}"
 
+# Host pytest talks to published Postgres through Docker Desktop NAT. Backend/celery
+# pools on the same engine amplify WinError 10054 flakes on long Windows suites.
+if command -v docker >/dev/null 2>&1; then
+  echo "==> Stopping compose app processes that share Postgres" | tee -a "${LOG_FILE}"
+  docker compose -f "${ROOT_DIR}/docker-compose.yml" stop backend celery celery-beat >/dev/null 2>&1 || true
+fi
+
 run_step "Backend lint (ruff)" poetry run ruff check src tests
 run_step "Backend tenant audit" poetry run python scripts/audit_tenant_columns.py
 run_step "Backend type-check (mypy JWT module)" poetry run mypy src/core/security.py --ignore-missing-imports --follow-imports=skip

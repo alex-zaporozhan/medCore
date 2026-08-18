@@ -5,7 +5,7 @@ import { Anchor, Badge, Box, Group, Table, Text, UnstyledButton } from "@mantine
 import { IconMessageCircle } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
-import i18n from "@/i18n";
+import { tNs } from "@/i18n";
 import {
   DndContext,
   PointerSensor,
@@ -144,9 +144,9 @@ const BOOKING_BADGE_STATUSES = new Set([
 function bookingBadgeLabel(status: string): string {
   const s = status.toLowerCase();
   if (BOOKING_BADGE_STATUSES.has(s)) {
-    return i18n.t(`status.${s}`, { ns: "bookings" });
+    return tNs("bookings", `status.${s}`);
   }
-  return i18n.t("status.occupied", { ns: "bookings" });
+  return tNs("bookings", "status.occupied");
 }
 
 function statusBadge(status: string): CalendarBadgeConfig {

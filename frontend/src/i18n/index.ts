@@ -138,4 +138,11 @@ i18n.on("languageChanged", (lng) => {
   applyDayjsFromI18n(lng);
 });
 
+export type I18nNamespace = (typeof I18N_NAMESPACES)[number];
+
+/** Dynamic key (suffix from API/status) — typed ParseKeys overloads treat options as defaultValue. */
+export function tNs(ns: I18nNamespace, key: string): string {
+  return String(i18n.t(key as never, { ns }));
+}
+
 export default i18n;

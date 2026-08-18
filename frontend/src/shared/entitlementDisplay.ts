@@ -3,7 +3,7 @@
  * Используются в админке: карточка «Подписка и возможности».
  */
 
-import i18n from "@/i18n";
+import i18n, { tNs } from "@/i18n";
 
 export type EntitlementDisplay = {
   title: string;
@@ -36,11 +36,11 @@ export function labelForEntitlementKey(key: string): EntitlementDisplay {
   if (!i18n.exists(titleKey, { ns: "settings" })) {
     return {
       title: key,
-      hint: i18n.t("entitlements.fallbackHint", { ns: "settings" }),
+      hint: tNs("settings", "entitlements.fallbackHint"),
     };
   }
   return {
-    title: i18n.t(titleKey, { ns: "settings" }),
-    hint: i18n.t(`entitlements.${slug}.hint`, { ns: "settings" }),
+    title: tNs("settings", titleKey),
+    hint: tNs("settings", `entitlements.${slug}.hint`),
   };
 }

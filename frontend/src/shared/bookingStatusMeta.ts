@@ -2,7 +2,7 @@
  * Mirror of BookingStatusService. Admin chrome labels come from bookings.status.*.
  */
 
-import i18n from "@/i18n";
+import { tNs } from "@/i18n";
 
 /** Порядок отображения в селекте (если статус доступен). */
 export const BOOKING_STATUS_OPTION_ORDER = [
@@ -53,7 +53,7 @@ const STATUS_I18N_KEYS = new Set<string>(BOOKING_STATUS_OPTION_ORDER);
 
 export function bookingStatusLabel(status: string): string {
   if (!STATUS_I18N_KEYS.has(status)) return status;
-  return i18n.t(`status.${status}`, { ns: "bookings" });
+  return tNs("bookings", `status.${status}`);
 }
 
 export function bookingStatusSelectOptions(current: string): { value: string; label: string }[] {

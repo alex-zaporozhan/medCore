@@ -11,6 +11,7 @@ from src.application.services.task_service import TaskService
 from src.application.dto.attention_feed_dto import AttentionItemRead
 from src.domain.entities.chat_message import ChatMessage
 from src.domain.entities.booking import Booking
+from src.domain.entities.patient import Patient
 from src.domain.interfaces.repositories.task_repository import TaskRepository
 from src.infrastructure.database.task_repo_impl import TaskRepositoryImpl
 from src.core.datetime_utils import utc_now, utc_now_naive
@@ -134,9 +135,21 @@ async def test_attention_retention_and_conflict_status_aggregation(
 ) -> None:
     """Scenario 2: retention_gap/conflict Attention with multiple tasks and mixed statuses."""
     clinic_id: uuid.UUID = seed_data["clinic_id"]
-    patient_id: uuid.UUID = seed_data["patient_id"]
     doctor_id: uuid.UUID = seed_data["doctor_id"]
     service_id: uuid.UUID = seed_data["service_id"]
+
+    # Dedicated patient: seed patient often has recent bookings from other tests in the session,
+    # which would make max(appointment_date) too new for a retention_gap item.
+    patient_id = uuid.uuid4()
+    db_session.add(
+        Patient(
+            id=patient_id,
+            clinic_id=clinic_id,
+            phone=f"+7900{uuid.uuid4().hex[:7]}",
+            full_name="Retention Gap Patient",
+        )
+    )
+    await db_session.flush()
 
     # Seed a booking to appear in retention_gap (simplified: directly create a Booking old enough)
     old_date = (utc_now() - timedelta(days=365)).date()

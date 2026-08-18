@@ -25,7 +25,16 @@ services:
     image: postgres:16-alpine
     container_name: dental_booking_postgres
     # Full pytest + uvicorn (or several pools) on the same Postgres instance can hit default max_connections (~100).
-    command: ["postgres", "-c", "max_connections=200"]
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - tcp_keepalives_idle=30
+      - -c
+      - tcp_keepalives_interval=10
+      - -c
+      - tcp_keepalives_count=3
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
