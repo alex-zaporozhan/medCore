@@ -134,7 +134,7 @@ void i18n
 
 applyDayjsFromI18n(i18n.language || readStoredUiLocale());
 
-i18n.on("languageChanged", (lng) => {
+i18n.on("languageChanged", (lng: string) => {
   applyDayjsFromI18n(lng);
 });
 
