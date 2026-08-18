@@ -9,6 +9,7 @@ from uuid import UUID
 
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -74,6 +75,34 @@ class AuthService:
         """Build Redis key for auth code."""
         return f"auth:code:{clinic_id}:{phone}"
 
+    async def _get_or_create_patient_by_phone(self, clinic_id: UUID, phone: str) -> Patient:
+        """Reuse the clinic+phone row, including soft-deleted (unique constraint is not partial)."""
+        result = await self.session.execute(
+            select(Patient).where(Patient.clinic_id == clinic_id, Patient.phone == phone)
+        )
+        patient = result.scalar_one_or_none()
+        if patient is not None:
+            if patient.deleted_at is not None:
+                patient.deleted_at = None
+                await self.session.flush()
+            return patient
+        patient = Patient(clinic_id=clinic_id, phone=phone)
+        try:
+            async with self.session.begin_nested():
+                self.session.add(patient)
+                await self.session.flush()
+        except IntegrityError:
+            result = await self.session.execute(
+                select(Patient).where(Patient.clinic_id == clinic_id, Patient.phone == phone)
+            )
+            existing = result.scalar_one()
+            if existing.deleted_at is not None:
+                existing.deleted_at = None
+                await self.session.flush()
+            return existing
+        await self.session.refresh(patient)
+        return patient
+
     async def send_code(self, phone: str, clinic_slug: str | None = None) -> None:
         """Generate and store SMS code, ensure patient exists."""
         clinic = await resolve_clinic_for_patient_entry(self.session, clinic_slug)
@@ -83,20 +112,7 @@ class AuthService:
         code = f"{random.randint(0, 999_999):06d}"
         key = self._code_key(clinic.id, normalized_phone)
 
-        # Ensure patient exists (MVP: minimal record with phone only)
-        result = await self.session.execute(
-            select(Patient).where(
-                Patient.clinic_id == clinic.id,
-                Patient.phone == normalized_phone,
-                Patient.deleted_at.is_(None),
-            )
-        )
-        patient = result.scalar_one_or_none()
-        if patient is None:
-            patient = Patient(clinic_id=clinic.id, phone=normalized_phone)
-            self.session.add(patient)
-            await self.session.flush()
-            await self.session.refresh(patient)
+        patient = await self._get_or_create_patient_by_phone(clinic.id, normalized_phone)
 
         # Store code for 5 minutes only after we know the patient entity exists.
         await redis.setex(key, 300, code)
@@ -192,15 +208,17 @@ class AuthService:
         # One-time code: delete after successful verification
         await redis.delete(key)
 
-        # Load patient (should exist after send_code; create as safety)
-        result = await self.session.execute(
+        # Load patient (should exist after send_code; create as safety). Include soft-deleted:
+        # ux_patients_clinic_phone is not partial, so a second insert would 500.
+        prior = await self.session.execute(
             select(Patient).where(
                 Patient.clinic_id == clinic.id,
                 Patient.phone == normalized_phone,
-                Patient.deleted_at.is_(None),
             )
         )
-        patient = result.scalar_one_or_none()
+        existing_row = prior.scalar_one_or_none()
+        is_new_patient = existing_row is None
+        patient = await self._get_or_create_patient_by_phone(clinic.id, normalized_phone)
         now_utc = utc_now_naive()
         birth_date_parsed: date | None = None
         if birth_date:
@@ -208,28 +226,16 @@ class AuthService:
                 birth_date_parsed = date.fromisoformat(birth_date.strip())
             except ValueError:
                 pass
-        is_new_patient = patient is None
+        if full_name and full_name.strip():
+            patient.full_name = full_name.strip()
+        if birth_date_parsed is not None:
+            patient.birth_date = birth_date_parsed
         if is_new_patient:
-            patient = Patient(
-                clinic_id=clinic.id,
-                phone=normalized_phone,
-                full_name=full_name.strip() if full_name and full_name.strip() else None,
-                birth_date=birth_date_parsed,
-                consent_pd_at=now_utc if consent_pd else None,
-                consent_mailing=consent_mailing,
-            )
-            self.session.add(patient)
-            await self.session.flush()
-            await self.session.refresh(patient)
-        else:
-            if full_name and full_name.strip():
-                patient.full_name = full_name.strip()
-            if birth_date_parsed is not None:
-                patient.birth_date = birth_date_parsed
-            if consent_pd and patient.consent_pd_at is None:
-                patient.consent_pd_at = now_utc
-            patient.consent_mailing = consent_mailing
-            await self.session.flush()
+            patient.consent_pd_at = now_utc if consent_pd else None
+        elif consent_pd and patient.consent_pd_at is None:
+            patient.consent_pd_at = now_utc
+        patient.consent_mailing = consent_mailing
+        await self.session.flush()
 
         # Try to link existing VisitAttribution (from landing/PWA) to this patient on first successful auth.
         if is_new_patient and session_id:

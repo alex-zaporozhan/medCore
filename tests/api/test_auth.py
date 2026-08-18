@@ -35,6 +35,21 @@ async def test_auth_send_code(client: AsyncClient, seed_data: dict, redis_client
 
 
 @pytest.mark.asyncio
+async def test_auth_send_code_after_soft_delete_returns_204(
+    client: AsyncClient, seed_data: dict, admin_auth: dict
+):
+    """Soft-deleted seed phone still occupies ux_patients_clinic_phone; send-code must reuse, not 500."""
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    deleted = await client.delete(f"/api/v1/patients/{seed_data['patient_id']}", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+    sent = await client.post(
+        "/api/v1/auth/send-code",
+        json={"phone": "+79001234567", "clinic_slug": seed_data["clinic_slug"]},
+    )
+    assert sent.status_code == 204, sent.text
+
+
+@pytest.mark.asyncio
 async def test_auth_verify_code(client: AsyncClient, seed_data: dict):
     """POST /api/v1/auth/verify-code returns 200 with access_token, token_type, patient_id."""
     clinic_id = seed_data["clinic_id"]
