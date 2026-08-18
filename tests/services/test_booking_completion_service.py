@@ -582,7 +582,7 @@ async def test_complete_visit_blocked_when_required_form_missing(init_db, seed_d
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day = seed_data["date"]
+    day = _unique_day(seed_data["date"])
 
     loyalty_called = {"n": 0}
 

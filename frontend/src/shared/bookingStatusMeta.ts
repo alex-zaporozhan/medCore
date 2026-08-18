@@ -1,7 +1,8 @@
 /**
- * Зеркало `BookingStatusService` + RU-лейблы (LEAD_BOOKING_STATUS_LIFECYCLE_RU).
- * Допустимые переходы должны совпадать с бэкендом.
+ * Mirror of BookingStatusService. Admin chrome labels come from bookings.status.*.
  */
+
+import i18n from "@/i18n";
 
 /** Порядок отображения в селекте (если статус доступен). */
 export const BOOKING_STATUS_OPTION_ORDER = [
@@ -14,17 +15,6 @@ export const BOOKING_STATUS_OPTION_ORDER = [
   "cancelled",
   "awaiting_payment",
 ] as const;
-
-export const BOOKING_STATUS_LABEL_RU: Record<string, string> = {
-  registered: "Зарегистрирован",
-  confirmed: "Подтверждён",
-  pending: "Ожидает",
-  in_progress: "На приёме",
-  completed: "Завершён",
-  no_show: "Неявка",
-  cancelled: "Отмена",
-  awaiting_payment: "Ожидает оплату",
-};
 
 /** Допустимые цели перехода (включая текущий статус). */
 export const BOOKING_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -59,6 +49,13 @@ export const BOOKING_STATUS_TRANSITIONS: Record<string, string[]> = {
   cancelled: ["cancelled"],
 };
 
+const STATUS_I18N_KEYS = new Set<string>(BOOKING_STATUS_OPTION_ORDER);
+
+export function bookingStatusLabel(status: string): string {
+  if (!STATUS_I18N_KEYS.has(status)) return status;
+  return i18n.t(`status.${status}`, { ns: "bookings" });
+}
+
 export function bookingStatusSelectOptions(current: string): { value: string; label: string }[] {
   const allowed = BOOKING_STATUS_TRANSITIONS[current];
   const values = allowed ?? [current];
@@ -69,6 +66,6 @@ export function bookingStatusSelectOptions(current: string): { value: string; la
   const sorted = [...values].sort((a, b) => orderIndex(a) - orderIndex(b) || a.localeCompare(b));
   return sorted.map((v) => ({
     value: v,
-    label: BOOKING_STATUS_LABEL_RU[v] ?? v,
+    label: bookingStatusLabel(v),
   }));
 }

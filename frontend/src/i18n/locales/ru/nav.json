@@ -1,0 +1,43 @@
+{
+  "app": "Админка",
+  "groups": {
+    "staff": "Сотрудники",
+    "clients": "Клиенты",
+    "business": "Бизнес",
+    "system": "Система"
+  },
+  "items": {
+    "feed": "Лента",
+    "staffChat": "Чат команды",
+    "staffCalendar": "Календарь",
+    "tasks": "Задачи (Kanban)",
+    "knowledge": "База знаний",
+    "leadsLog": "Лиды (лог)",
+    "schedule": "Расписание",
+    "omniChat": "Чат с клиентом",
+    "sales": "CRM & Sales",
+    "finance": "Finance",
+    "commerce": "Магазин (Commerce)",
+    "loyalty": "Loyalty",
+    "reports": "Analytics / Reports",
+    "bookings": "Записи",
+    "prepayment": "Предоплата",
+    "waitlist": "Очередь",
+    "recall": "Recall",
+    "marketing": "Маркетинг",
+    "retention": "Retention",
+    "settings": "Настройки",
+    "subscription": "Подписка платформы",
+    "embed": "Встраивание (embed)",
+    "ragKb": "RAG (организация)",
+    "dataExport": "Экспорт данных",
+    "me": "Личный кабинет",
+    "doctors": "Врачи",
+    "doctorSchedule": "Расписание врачей",
+    "patients": "Пациенты",
+    "services": "Услуги",
+    "clinics": "Клиники",
+    "administrators": "Персонал",
+    "rightsPolicies": "Права и политики"
+  }
+}

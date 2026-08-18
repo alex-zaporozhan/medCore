@@ -2,9 +2,10 @@
 
 import logging
 import os
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from sqlalchemy import text
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -18,13 +19,38 @@ logger = logging.getLogger(__name__)
 
 _TESTING = os.environ.get("TESTING", "").lower() in ("1", "true", "yes")
 
+_LOCAL_PG_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "db", "postgres"})
+
+
+def _asyncpg_connect_args(dsn: str) -> dict[str, Any]:
+    """asyncpg defaults to an SSL upgrade probe; Docker/Windows Postgres often RST that handshake (WinError 10054).
+
+    Honor explicit sslmode in the DSN. Otherwise skip SSL for tests and for typical compose/local hosts.
+    """
+    args: dict[str, Any] = {}
+    url = make_url(dsn)
+    query = {str(k).lower(): str(v).lower() for k, v in url.query.items()}
+    sslmode = query.get("sslmode") or query.get("ssl") or ""
+    if sslmode in ("require", "verify-full", "verify-ca", "true", "1"):
+        args["ssl"] = True
+        return args
+    if sslmode in ("disable", "allow", "prefer", "false", "0"):
+        # prefer/allow still skip the SSLRequest probe: local Docker Postgres on Windows RST it (WinError 10054).
+        args["ssl"] = False
+        return args
+    host = (url.host or "").lower()
+    if _TESTING or host in _LOCAL_PG_HOSTS:
+        args["ssl"] = False
+    return args
+
 
 def _make_engine(*, url: str | None = None):
     """Build async engine. In TESTING use NullPool to avoid asyncpg event-loop issues."""
     dsn = url or settings.database_url
-    kwargs = {
+    kwargs: dict[str, Any] = {
         "pool_pre_ping": True,  # avoid "connection is closed" when pool returns a stale connection
         "echo": settings.debug,
+        "connect_args": _asyncpg_connect_args(dsn),
     }
     if _TESTING:
         from sqlalchemy.pool import NullPool

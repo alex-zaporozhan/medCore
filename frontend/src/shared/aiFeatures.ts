@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import i18n from "@/i18n";
 
 /** Техдолг: `useAiFeatures` — хук TanStack Query; целевое место — `hooks/`, реэкспорт из `@/hooks` (отдельная задача, без смены контракта). */
 
@@ -18,39 +19,37 @@ type AiStatusResponse = {
   features: Record<string, boolean>;
 };
 
-const DEFAULT_FEATURES: Record<string, AiFeatureConfig> = {
-  "omni.spotlight.agent": {
-    id: "omni.spotlight.agent",
-    label: "Spotlight AI‑агент",
-    status: "stub",
-    description:
-      "Быстрый вопрос ассистенту из Spotlight. В режиме stub отвечает демо‑сообщением без вызовов backend/tools.",
-  },
-  "omni.tools.suggest_slots": {
-    id: "omni.tools.suggest_slots",
-    label: "Подбор слотов записи",
-    status: "stub",
-    description:
-      "Подсказка доступных слотов/окон. Пока скрыто/отключено до готовности backend‑интеграций.",
-  },
-  "omni.tools.crm_suggest_next_stage": {
-    id: "omni.tools.crm_suggest_next_stage",
-    label: "CRM: следующая стадия лида",
-    status: "beta",
-    description:
-      "AI‑рекомендации по стадии лида. Может требовать внешнего AI‑провайдера и быть недоступно локально.",
-  },
-  "omni.tools.create_task": {
-    id: "omni.tools.create_task",
-    label: "Создание задачи (AI/Omni контекст)",
-    status: "beta",
-    description:
-      "Создание задачи из AI‑рекомендации/контекста. В stub‑режиме реальные мутации отключены.",
-  },
-};
+function defaultAiFeaturesById(): Record<string, AiFeatureConfig> {
+  return {
+    "omni.spotlight.agent": {
+      id: "omni.spotlight.agent",
+      label: i18n.t("ai.features.spotlightAgent.label"),
+      status: "stub",
+      description: i18n.t("ai.features.spotlightAgent.description"),
+    },
+    "omni.tools.suggest_slots": {
+      id: "omni.tools.suggest_slots",
+      label: i18n.t("ai.features.suggestSlots.label"),
+      status: "stub",
+      description: i18n.t("ai.features.suggestSlots.description"),
+    },
+    "omni.tools.crm_suggest_next_stage": {
+      id: "omni.tools.crm_suggest_next_stage",
+      label: i18n.t("ai.features.crmNextStage.label"),
+      status: "beta",
+      description: i18n.t("ai.features.crmNextStage.description"),
+    },
+    "omni.tools.create_task": {
+      id: "omni.tools.create_task",
+      label: i18n.t("ai.features.createTask.label"),
+      status: "beta",
+      description: i18n.t("ai.features.createTask.description"),
+    },
+  };
+}
 
 export function getDefaultAiFeatures(): AiFeatureConfig[] {
-  return Object.values(DEFAULT_FEATURES);
+  return Object.values(defaultAiFeaturesById());
 }
 
 export function getAiFeatureStatusText(status: AiFeatureStatus): string {
@@ -67,10 +66,7 @@ export function getAiFeatureBadgeColor(status: AiFeatureStatus): string {
 }
 
 export function getAiFeatureTooltip(status: AiFeatureStatus): string {
-  if (status === "prod") return "Функция активна в production‑режиме.";
-  if (status === "beta")
-    return "Beta: функция активна, но могут быть ошибки и ограничения. При сбоях используйте ручной сценарий.";
-  return "Stub/демо: функция в разработке. Реальные вызовы backend/tools отключены.";
+  return i18n.t(`ai.tooltip.${status}`);
 }
 
 function mergeWithAiStatus(
@@ -120,10 +116,10 @@ export function useAiFeatures(clinicId: string | null) {
   });
 
   const featuresById = useMemo(() => {
-    const defaults = DEFAULT_FEATURES;
+    const defaults = defaultAiFeaturesById();
     const status = aiStatusQuery.data ?? null;
     return mergeWithAiStatus(defaults, status);
-  }, [aiStatusQuery.data]);
+  }, [aiStatusQuery.data, i18n.language]);
 
   const list = useMemo(() => Object.values(featuresById), [featuresById]);
 

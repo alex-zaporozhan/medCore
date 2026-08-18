@@ -1,16 +1,18 @@
 import { SignInShell } from "@/auth/SignInShell";
 import { ClinicStaffSignInPanel } from "@/auth/panels/ClinicStaffSignInPanel";
 import { Stack, Text, Title } from "@mantine/core";
+import { useTranslation } from "react-i18next";
 
-/** Вход сотрудников и владельца клиники. Отдельно от пациента и основателя. */
+/** Staff and clinic-owner sign-in. Separate from patient and founder. */
 export default function ClinicSignInPage() {
+  const { t } = useTranslation("auth");
   return (
     <SignInShell>
       <Stack gap="lg">
         <div>
-          <Title order={2}>Вход для сотрудников клиники</Title>
+          <Title order={2}>{t("clinic.pageTitle")}</Title>
           <Text size="sm" c="dimmed" mt={6}>
-            Рабочий email и пароль клиники. После входа доступ к разделам определяется ролями.
+            {t("clinic.pageSubtitle")}
           </Text>
         </div>
         <ClinicStaffSignInPanel />

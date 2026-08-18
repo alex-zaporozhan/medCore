@@ -1,4 +1,5 @@
 import { Select, Text } from "@mantine/core";
+import { useTranslation } from "react-i18next";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 
 type ClinicSelectorProps = {
@@ -10,6 +11,7 @@ type ClinicSelectorProps = {
  * Единый выбор клиники для админки: при привязке к JWT показывается только доступная клиника.
  */
 export function ClinicSelector({ variant = "field" }: ClinicSelectorProps) {
+  const { t } = useTranslation("common");
   const {
     selectableClinics,
     currentClinicId,
@@ -26,7 +28,7 @@ export function ClinicSelector({ variant = "field" }: ClinicSelectorProps) {
   if (isLoading) {
     return (
       <Text size="sm" c="dimmed">
-        Загрузка клиник…
+        {t("clinics.loading")}
       </Text>
     );
   }
@@ -38,13 +40,9 @@ export function ClinicSelector({ variant = "field" }: ClinicSelectorProps) {
         data={options}
         value={currentClinicId}
         onChange={setCurrentClinicId}
-        placeholder={options.length ? undefined : "Нет клиник"}
+        placeholder={options.length ? undefined : t("clinics.empty")}
         disabled={isClinicScopeLocked && options.length <= 1}
-        title={
-          isClinicScopeLocked
-            ? "Клиника совпадает с учётной записью (JWT)"
-            : undefined
-        }
+        title={isClinicScopeLocked ? t("clinics.jwtLockedTitleShort") : undefined}
         w={220}
         comboboxProps={{ withinPortal: true }}
       />
@@ -53,16 +51,12 @@ export function ClinicSelector({ variant = "field" }: ClinicSelectorProps) {
 
   return (
     <Select
-      label="Клиника"
+      label={t("clinics.label")}
       data={options}
       value={currentClinicId}
       onChange={setCurrentClinicId}
       disabled={isClinicScopeLocked && options.length <= 1}
-      description={
-        isClinicScopeLocked
-          ? "Совпадает с вашей учётной записью. Смена филиала — отдельный вход/роль."
-          : undefined
-      }
+      description={isClinicScopeLocked ? t("clinics.jwtLockedDescription") : undefined}
     />
   );
 }

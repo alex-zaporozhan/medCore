@@ -1,9 +1,11 @@
 import type { Booking, DoctorSlot } from "@/api/types";
 import type { CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import { Anchor, Badge, Box, Group, Table, Text, UnstyledButton } from "@mantine/core";
 import { IconMessageCircle } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
+import i18n from "@/i18n";
 import {
   DndContext,
   PointerSensor,
@@ -128,11 +130,30 @@ function textColorsForStatus(status: string): { primary: string; secondary: stri
 
 type CalendarBadgeConfig = { label: string; styles: { root: CSSProperties } };
 
+const BOOKING_BADGE_STATUSES = new Set([
+  "completed",
+  "in_progress",
+  "cancelled",
+  "no_show",
+  "pending",
+  "registered",
+  "confirmed",
+  "awaiting_payment",
+]);
+
+function bookingBadgeLabel(status: string): string {
+  const s = status.toLowerCase();
+  if (BOOKING_BADGE_STATUSES.has(s)) {
+    return i18n.t(`status.${s}`, { ns: "bookings" });
+  }
+  return i18n.t("status.occupied", { ns: "bookings" });
+}
+
 function statusBadge(status: string): CalendarBadgeConfig {
   const s = status.toLowerCase();
   if (s === "completed") {
     return {
-      label: "Завершён",
+      label: bookingBadgeLabel(s),
       styles: {
         root: {
           backgroundColor: "var(--calendar-completed-badge-bg)",
@@ -143,7 +164,7 @@ function statusBadge(status: string): CalendarBadgeConfig {
   }
   if (s === "in_progress") {
     return {
-      label: "На приёме",
+      label: bookingBadgeLabel(s),
       styles: {
         root: {
           backgroundColor: "var(--calendar-in-progress-badge-bg)",
@@ -155,7 +176,7 @@ function statusBadge(status: string): CalendarBadgeConfig {
   }
   if (s === "cancelled") {
     return {
-      label: "Отмена",
+      label: bookingBadgeLabel(s),
       styles: {
         root: {
           backgroundColor: "var(--calendar-negative-badge-bg)",
@@ -166,7 +187,7 @@ function statusBadge(status: string): CalendarBadgeConfig {
   }
   if (s === "no_show") {
     return {
-      label: "Неявка",
+      label: bookingBadgeLabel(s),
       styles: {
         root: {
           backgroundColor: "var(--calendar-negative-badge-bg)",
@@ -177,7 +198,7 @@ function statusBadge(status: string): CalendarBadgeConfig {
   }
   if (s === "pending") {
     return {
-      label: "Ожидает",
+      label: bookingBadgeLabel(s),
       styles: {
         root: {
           backgroundColor: "var(--calendar-scheduled-badge-bg)",
@@ -188,7 +209,7 @@ function statusBadge(status: string): CalendarBadgeConfig {
   }
   if (s === "registered") {
     return {
-      label: "Зарегистрирован",
+      label: bookingBadgeLabel(s),
       styles: {
         root: {
           backgroundColor: "var(--calendar-scheduled-badge-bg)",
@@ -200,7 +221,7 @@ function statusBadge(status: string): CalendarBadgeConfig {
   }
   if (s === "confirmed") {
     return {
-      label: "Подтверждён",
+      label: bookingBadgeLabel(s),
       styles: {
         root: {
           backgroundColor: "var(--calendar-attention-denim-badge-bg)",
@@ -209,8 +230,19 @@ function statusBadge(status: string): CalendarBadgeConfig {
       },
     };
   }
+  if (s === "awaiting_payment") {
+    return {
+      label: bookingBadgeLabel(s),
+      styles: {
+        root: {
+          backgroundColor: "var(--calendar-scheduled-badge-bg)",
+          color: "var(--calendar-scheduled-badge-text)",
+        },
+      },
+    };
+  }
   return {
-    label: "Занято",
+    label: bookingBadgeLabel(s),
     styles: {
       root: {
         backgroundColor: "var(--calendar-scheduled-badge-bg)",
@@ -220,21 +252,27 @@ function statusBadge(status: string): CalendarBadgeConfig {
   };
 }
 
-function findBooking(
+export function findBooking(
   slot: DoctorSlot,
   doctorId: string,
   date: string,
   bookings: Booking[] | undefined
 ): Booking | undefined {
-  if (!slot.booking_id || !bookings?.length) return undefined;
-  const b = bookings.find(
+  if (!bookings?.length) return undefined;
+  if (slot.booking_id) {
+    const byId = bookings.find((x) => x.id === slot.booking_id);
+    if (byId) return byId;
+  }
+  return bookings.find(
     (x) =>
-      x.id === slot.booking_id ||
-      (x.doctor_id === doctorId &&
-        x.appointment_date === date &&
-        timeStr(x.appointment_time) === timeStr(slot.start_time))
+      x.doctor_id === doctorId &&
+      x.appointment_date === date &&
+      timeStr(x.appointment_time) === timeStr(slot.start_time)
   );
-  return b;
+}
+
+export function isScheduleCellOpenForCreate(booking: Booking | undefined): boolean {
+  return booking == null;
 }
 
 function DroppableCell({
@@ -310,17 +348,18 @@ export function ScheduleCalendarGrid({
   onPatientProfileClick,
   onDoctorHeaderClick,
 }: ScheduleCalendarGridProps) {
+  const { t } = useTranslation("schedule");
   const getPatientLabel = (booking: Booking) => {
     const raw =
       (booking.patient_name && booking.patient_name.trim()) ||
       patientNameMap?.[booking.patient_id] ||
       booking.patient_id;
-    if (typeof raw === "string" && looksLikeUuid(raw)) return "Имя неизвестно";
+    if (typeof raw === "string" && looksLikeUuid(raw)) return t("grid.unknownName");
     return raw;
   };
   const getServiceLabel = (serviceId: string) => {
     const name = serviceNameMap?.[serviceId] ?? serviceId;
-    if (looksLikeUuid(String(name))) return "Услуга";
+    if (looksLikeUuid(String(name))) return t("service");
     return name;
   };
   const sensors = useSensors(
@@ -356,7 +395,7 @@ export function ScheduleCalendarGrid({
                 }}
               >
                 <Text size="xs" c="dimmed" fw={500} ta="right" pr={4}>
-                  Время
+                  {t("grid.time")}
                 </Text>
               </Table.Th>
               {doctors.map((d) => (
@@ -390,8 +429,8 @@ export function ScheduleCalendarGrid({
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {times.map((t) => {
-              const timeKey = timeStr(t);
+            {times.map((timeRow) => {
+              const timeKey = timeStr(timeRow);
               return (
                 <Table.Tr key={timeKey}>
                   <Table.Td
@@ -422,8 +461,8 @@ export function ScheduleCalendarGrid({
                         time={timeKey}
                         slot={
                           slot ?? {
-                            start_time: t,
-                            end_time: t,
+                            start_time: timeRow,
+                            end_time: timeRow,
                             is_available: false,
                             booking_id: null,
                             status: null,
@@ -432,7 +471,7 @@ export function ScheduleCalendarGrid({
                         booking={booking}
                         date={date}
                         onEmptyClick={
-                          onEmptySlotClick && slot?.is_available
+                          onEmptySlotClick && isScheduleCellOpenForCreate(booking)
                             ? () => onEmptySlotClick({ doctorId: doc.id, time: timeKey })
                             : undefined
                         }
@@ -508,7 +547,7 @@ export function ScheduleCalendarGrid({
                                     size={14}
                                     stroke={1.5}
                                     color="var(--text-muted)"
-                                    aria-label="Есть комментарий к записи"
+                                    aria-label={t("grid.hasComment")}
                                   />
                                 ) : null}
                               </Group>
@@ -519,7 +558,7 @@ export function ScheduleCalendarGrid({
                           </DraggableBookingCard>
                         ) : (
                           <Text size="sm" c="dimmed" p={4}>
-                            {slot?.is_available ? "Свободен" : "—"}
+                            {t("grid.free")}
                           </Text>
                         )}
                       </DroppableCell>

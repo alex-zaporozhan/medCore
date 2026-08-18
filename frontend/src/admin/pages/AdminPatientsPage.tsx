@@ -18,8 +18,10 @@ import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { PatientEntityDrawer } from "@/admin/components/entity/PatientEntityDrawer";
 import type { Patient } from "@/api/types";
 import { ADMIN_PERM_PATIENTS_PII_READ } from "@/shared/adminPermissions";
+import { useTranslation } from "react-i18next";
 
 export default function AdminPatientsPage() {
+  const { t } = useTranslation("directory");
   const { data: adminSession, isLoading: sessionLoading } = useAdminSession();
   const { currentClinicId } = useAdminClinic();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -72,10 +74,9 @@ export default function AdminPatientsPage() {
   if (adminSession && !adminSession.permissions?.includes(ADMIN_PERM_PATIENTS_PII_READ)) {
     return (
       <Stack>
-        <ContextBar title="Пациенты" />
-        <Alert color="yellow" title="Нет доступа">
-          Раздел с персональными данными пациентов доступен только администраторам и ролям с соответствующим правом
-          (не врачам и линейному персоналу без явного разрешения).
+        <ContextBar title={t("patients.title")} />
+        <Alert color="yellow" title={t("patients.noAccessTitle")}>
+          {t("patients.noAccessBody")}
         </Alert>
       </Stack>
     );
@@ -85,7 +86,7 @@ export default function AdminPatientsPage() {
   if (isError) {
     return (
       <Stack>
-        <ContextBar title="Пациенты" />
+        <ContextBar title={t("patients.title")} />
         <QueryErrorAlert error={error} />
       </Stack>
     );
@@ -93,20 +94,20 @@ export default function AdminPatientsPage() {
 
   return (
     <Stack>
-      <ContextBar title="Пациенты" actions={<Button onClick={openCreate}>Добавить пациента</Button>} />
+      <ContextBar title={t("patients.title")} actions={<Button onClick={openCreate}>{t("patients.add")}</Button>} />
       <AdminDataTableToolbar>
         <Stack gap="sm">
-          <TextInput label="Телефон" placeholder="+7..." value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <TextInput label="ФИО" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          <TextInput label={t("phone")} placeholder="+7..." value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <TextInput label={t("fullName")} value={fullName} onChange={(e) => setFullName(e.target.value)} />
           <Group grow align="flex-end">
             <TextInput
-              label="Визит с (дата)"
+              label={t("patients.visitFrom")}
               type="date"
               value={visitFrom}
               onChange={(e) => setVisitFrom(e.currentTarget.value)}
             />
             <TextInput
-              label="Визит по (дата)"
+              label={t("patients.visitTo")}
               type="date"
               value={visitTo}
               onChange={(e) => setVisitTo(e.currentTarget.value)}
@@ -116,24 +117,23 @@ export default function AdminPatientsPage() {
       </AdminDataTableToolbar>
       {(visitFrom || visitTo) && !currentClinicId ? (
         <Text size="sm" c="orange">
-          Для фильтра по датам визита выберите клинику в шапке.
+          {t("patients.pickClinicForVisitFilter")}
         </Text>
       ) : null}
       {patientIdFocus &&
       patients &&
       !patients.some((x) => x.id === patientIdFocus) ? (
-        <Alert color="yellow" title="Пациент не в текущем списке">
-          В адресе указан ID пациента, но при активных фильтрах его нет в таблице. Сбросьте фильтры или откройте карточку из
-          расписания.
+        <Alert color="yellow" title={t("patients.notInListTitle")}>
+          {t("patients.notInListBody")}
         </Alert>
       ) : null}
 
       {patients?.length === 0 && (
         <EmptyState
-          title="Нет пациентов"
-          description="Добавьте первого пациента или измените фильтры."
+          title={t("patients.emptyTitle")}
+          description={t("patients.emptyHint")}
           icon={<IconUserPlus size={64} stroke={1} color="var(--mantine-color-gray-4)" />}
-          action={{ label: "Добавить пациента", onClick: openCreate }}
+          action={{ label: t("patients.add"), onClick: openCreate }}
         />
       )}
 
@@ -142,10 +142,10 @@ export default function AdminPatientsPage() {
           <Table {...ADMIN_TABLE_PROPS}>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Телефон</Table.Th>
-                <Table.Th>ФИО</Table.Th>
-                <Table.Th>Email</Table.Th>
-                <Table.Th>Действия</Table.Th>
+                <Table.Th>{t("phone")}</Table.Th>
+                <Table.Th>{t("fullName")}</Table.Th>
+                <Table.Th>{t("email")}</Table.Th>
+                <Table.Th>{t("actions")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -166,9 +166,9 @@ export default function AdminPatientsPage() {
                     <HoverCard.Dropdown>
                       <Stack gap={4}>
                         <Text size="sm" fw={500}>{p.full_name ?? p.phone}</Text>
-                        <Text size="xs" c="dimmed">Телефон: {p.phone}</Text>
+                        <Text size="xs" c="dimmed">{t("patients.hoverPhone", { phone: p.phone })}</Text>
                         {p.email && <Text size="xs" c="dimmed">Email: {p.email}</Text>}
-                        <Text size="xs" c="dimmed">Клик — открыть карточку</Text>
+                        <Text size="xs" c="dimmed">{t("patients.hoverOpen")}</Text>
                       </Stack>
                     </HoverCard.Dropdown>
                   </HoverCard>
@@ -177,16 +177,16 @@ export default function AdminPatientsPage() {
                 <Table.Td onClick={(e) => e.stopPropagation()}>
                   <Menu position="bottom-end" shadow="sm">
                     <Menu.Target>
-                      <ActionIcon variant="subtle" size="sm" aria-label="Действия">
+                      <ActionIcon variant="subtle" size="sm" aria-label={t("actions")}>
                         <IconDotsVertical size={16} />
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
                       <Menu.Item leftSection={<IconEdit size={14} />} onClick={() => openEdit(p)}>
-                        Редактировать
+                        {t("edit")}
                       </Menu.Item>
                       <Menu.Item leftSection={<IconUserPlus size={14} />} onClick={() => openView(p)}>
-                        Открыть карточку
+                        {t("openCard")}
                       </Menu.Item>
                       <Menu.Item
                         leftSection={<IconSend size={14} />}
@@ -196,14 +196,14 @@ export default function AdminPatientsPage() {
                           setFormSendVia("copy_only");
                         }}
                       >
-                        Отправить форму
+                        {t("patients.sendForm")}
                       </Menu.Item>
                       <Menu.Item
                         leftSection={<IconTrash size={14} />}
                         color="red"
                         onClick={() => setPatientToDelete(p)}
                       >
-                        Удалить
+                        {t("delete")}
                       </Menu.Item>
                     </Menu.Dropdown>
                   </Menu>
@@ -236,22 +236,22 @@ export default function AdminPatientsPage() {
         onClose={() => { setSendFormPatientId(null); setFormTemplateId(null); }}
         position="right"
         size="sm"
-        title="Отправить форму"
+        title={t("patients.sendFormTitle")}
       >
         {sendFormPatientId && (
           <Stack gap="md">
             <Select
-              label="Шаблон формы"
-              placeholder="Выберите шаблон"
-              data={(formTemplates ?? []).map((t) => ({ value: t.id, label: t.name }))}
+              label={t("patients.formTemplate")}
+              placeholder={t("patients.formTemplatePlaceholder")}
+              data={(formTemplates ?? []).map((tpl) => ({ value: tpl.id, label: tpl.name }))}
               value={formTemplateId}
               onChange={(v) => setFormTemplateId(v)}
               searchable
             />
             <Select
-              label="Куда отправить"
+              label={t("patients.sendVia")}
               data={[
-                { value: "copy_only", label: "Скопировать ссылку" },
+                { value: "copy_only", label: t("patients.copyLink") },
                 { value: "whatsapp", label: "WhatsApp" },
                 { value: "sms", label: "SMS" },
               ]}
@@ -260,7 +260,7 @@ export default function AdminPatientsPage() {
             />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setSendFormPatientId(null)}>
-                Отмена
+                {t("cancel")}
               </Button>
               <Button
                 onClick={() => {
@@ -279,7 +279,7 @@ export default function AdminPatientsPage() {
                 loading={sendFormLink.isPending}
                 disabled={!formTemplateId}
               >
-                Отправить ссылку
+                {t("patients.sendLink")}
               </Button>
             </Group>
           </Stack>
@@ -289,19 +289,19 @@ export default function AdminPatientsPage() {
       <Modal
         opened={patientToDelete !== null}
         onClose={() => setPatientToDelete(null)}
-        title="Удалить пациента?"
+        title={t("patients.deleteTitle")}
         centered
         size="sm"
       >
         <Stack gap="md">
           <Text size="sm">
             {patientToDelete
-              ? `Вы уверены, что хотите удалить пациента ${patientToDelete.full_name ?? patientToDelete.phone}? Это действие нельзя отменить.`
+              ? t("patients.deleteConfirm", { name: patientToDelete.full_name ?? patientToDelete.phone })
               : ""}
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="subtle" onClick={() => setPatientToDelete(null)}>
-              Отмена
+              {t("cancel")}
             </Button>
             <Button
               color="red"
@@ -317,7 +317,7 @@ export default function AdminPatientsPage() {
                 });
               }}
             >
-              Удалить
+              {t("delete")}
             </Button>
           </Group>
         </Stack>

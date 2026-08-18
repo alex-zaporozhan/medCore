@@ -1,6 +1,7 @@
 import { Alert } from "@mantine/core";
 import type { ReactNode } from "react";
-import { formatQueryError } from "@/shared/errors";
+import { useTranslation } from "react-i18next";
+import { adminQueryErrorI18nKey, formatQueryError, isAdminChromePath } from "@/shared/errors";
 import { PageSkeleton, type PageSkeletonProps } from "./PageSkeleton";
 
 export interface QueryErrorAlertProps {
@@ -9,10 +10,14 @@ export interface QueryErrorAlertProps {
 }
 
 /** Error state for list/detail queries — §11 NFR (не «красная строка» без контекста). */
-export function QueryErrorAlert({ error, title = "Не удалось загрузить данные" }: QueryErrorAlertProps) {
+export function QueryErrorAlert({ error, title }: QueryErrorAlertProps) {
+  const { t } = useTranslation("common");
+  const pathname = typeof window === "undefined" ? "" : window.location.pathname;
+  const mappedKey = isAdminChromePath(pathname) ? adminQueryErrorI18nKey(error) : null;
+  const body = mappedKey ? t(mappedKey) : formatQueryError(error);
   return (
-    <Alert color="red" title={title} variant="light">
-      {formatQueryError(error)}
+    <Alert color="red" title={title ?? t("errors.loadFailed")} variant="light">
+      {body}
     </Alert>
   );
 }

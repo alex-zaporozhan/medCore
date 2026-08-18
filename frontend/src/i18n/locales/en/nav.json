@@ -1,0 +1,43 @@
+{
+  "app": "Admin",
+  "groups": {
+    "staff": "Staff",
+    "clients": "Clients",
+    "business": "Business",
+    "system": "System"
+  },
+  "items": {
+    "feed": "Feed",
+    "staffChat": "Team chat",
+    "staffCalendar": "Calendar",
+    "tasks": "Tasks (Kanban)",
+    "knowledge": "Knowledge base",
+    "leadsLog": "Leads (log)",
+    "schedule": "Schedule",
+    "omniChat": "Client chat",
+    "sales": "CRM & Sales",
+    "finance": "Finance",
+    "commerce": "Commerce",
+    "loyalty": "Loyalty",
+    "reports": "Analytics / Reports",
+    "bookings": "Bookings",
+    "prepayment": "Prepayment",
+    "waitlist": "Waitlist",
+    "recall": "Recall",
+    "marketing": "Marketing",
+    "retention": "Retention",
+    "settings": "Settings",
+    "subscription": "Platform subscription",
+    "embed": "Embed",
+    "ragKb": "RAG",
+    "dataExport": "Data export",
+    "me": "My cabinet",
+    "doctors": "Doctors",
+    "doctorSchedule": "Doctor schedule",
+    "patients": "Patients",
+    "services": "Services",
+    "clinics": "Clinics",
+    "administrators": "Staff",
+    "rightsPolicies": "Rights and policies"
+  }
+}

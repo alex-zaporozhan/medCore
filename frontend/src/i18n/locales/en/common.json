@@ -1,0 +1,106 @@
+{
+  "save": "Save",
+  "cancel": "Cancel",
+  "loading": "Loading",
+  "language": "Language",
+  "languageEn": "EN",
+  "languageRu": "RU",
+  "home": "Home",
+  "logout": "Sign out",
+  "send": "Send",
+  "expandMenu": "Expand menu",
+  "collapseMenu": "Collapse menu",
+  "unknownName": "Unknown name",
+  "drawerClose": "Close panel",
+  "dialogClose": "Close",
+  "emoji": "Emoji",
+  "errors": {
+    "loadFailed": "Failed to load data",
+    "generic": "Something went wrong",
+    "crashTitle": "Something went wrong",
+    "crashBody": "The application failed to load. Try again. If this keeps happening, sign in again or contact support.",
+    "crashError": "Error",
+    "crashRetry": "Try again",
+    "entitlement_required": "This organization’s plan does not include this option.",
+    "box_forbidden": "This module is not available in the Box edition.",
+    "forbidden": "You do not have permission to do this.",
+    "unauthorized": "Sign in to continue.",
+    "not_found": "The requested item was not found.",
+    "conflict": "This change conflicts with the current state. Refresh and try again.",
+    "validation_error": "Check the form and try again.",
+    "rate_limited": "Too many requests. Wait a moment and try again.",
+    "internal_server_error": "A server error occurred. Try again later.",
+    "bad_request": "The request could not be processed.",
+    "method_not_allowed": "This request method is not allowed. Refresh and try again.",
+    "empty_db_no_clinic": "No clinics in the database yet. Add a clinic in settings.",
+    "clinic_forbidden": "This clinic is outside your account scope."
+  },
+  "calendar": {
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "weekdays": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    }
+  },
+  "clinics": {
+    "loading": "Loading clinics…",
+    "empty": "No clinics",
+    "label": "Clinic",
+    "jwtLockedTitle": "Clinic matches your account (JWT). Switch branch via a separate role or sign-in.",
+    "jwtLockedTitleShort": "Clinic matches your account (JWT)",
+    "jwtLockedDescription": "Matches your account. Switch branch with a separate sign-in or role.",
+    "loadErrorTitle": "Failed to load data",
+    "loadErrorBody": "Could not load the clinic list. Make sure the backend is running (port 8000). See the repository README.",
+    "currentFallback": "Current clinic"
+  },
+  "subscription": {
+    "unlimited": "Platform: no SKU limits",
+    "tariffOptions_one": "Plan: {{count}} option in the subscription",
+    "tariffOptions_few": "Plan: {{count}} options in the subscription",
+    "tariffOptions_many": "Plan: {{count}} options in the subscription",
+    "tariffOptions_other": "Plan: {{count}} options in the subscription",
+    "cta": "Subscription →"
+  },
+  "spotlight": {
+    "askAi": "Ask AI",
+    "askAiDescription": "Ask the AI assistant ({{status}})",
+    "nothingFound": "Nothing found",
+    "placeholder": "Search sections, patients, bookings… (⌘K)",
+    "searchButton": "Search… (⌘K)",
+    "patient": "Patient",
+    "booking": "Booking",
+    "questionPlaceholder": "Enter a question for the assistant…"
+  },
+  "ai": {
+    "toolsUnavailable": "Not enough permissions, or the backend tool is unavailable.",
+    "tooltip": {
+      "prod": "Feature is active in production.",
+      "beta": "Beta: the feature is on, but errors and limits may apply. Use the manual path if it fails.",
+      "stub": "Stub/demo: the feature is in development. Real backend/tool calls are disabled."
+    },
+    "features": {
+      "spotlightAgent": {
+        "label": "Spotlight AI agent",
+        "description": "Quick question to the assistant from Spotlight. In stub mode it replies with a demo message and does not call backend/tools."
+      },
+      "suggestSlots": {
+        "label": "Appointment slot suggestions",
+        "description": "Suggests available slots/windows. Hidden or disabled until backend integrations are ready."
+      },
+      "crmNextStage": {
+        "label": "CRM: next lead stage",
+        "description": "AI recommendations for the lead stage. May require an external AI provider and be unavailable locally."
+      },
+      "createTask": {
+        "label": "Create task (AI/Omni context)",
+        "description": "Create a task from an AI recommendation/context. Real mutations are off in stub mode."
+      }
+    }
+  }
+}

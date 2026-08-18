@@ -35,9 +35,6 @@ import { useAdminTaskDetails } from "@/hooks/useAdminTaskDetails";
 import { useAdminTasksList, useAdminTasksMyFocus, useAdminTasksOpen } from "@/hooks/useAdminTasks";
 import { getAdminId } from "@/api/client";
 import dayjs from "dayjs";
-import "dayjs/locale/ru";
-
-dayjs.locale("ru");
 
 /** Разбить плоский список дней месяца на строки по 7 (Пн–Вс). Недостающие ячейки — null. */
 function chunkCalendarWeeks(days: CalendarDayCell[]): (CalendarDayCell | null)[][] {

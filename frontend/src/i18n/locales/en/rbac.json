@@ -1,0 +1,372 @@
+{
+  "pageTitle": "Access rights & policies",
+  "intro": "Configure who can do what in your organization: by role, by individual staff member, via system-wide policies, with a full audit trail.",
+  "domainHelpTitle": "What a “domain” is",
+  "domainHelpP1": "A domain is not a department in your clinic. It is a way to group a long permission list: the system takes the first segment of the permission code (before “.” or “_”) and groups rows together so the catalog is easier to scan.",
+  "domainHelpP2": "What access you grant is defined by each permission row and its description—not by the domain label alone. Domains help you filter the list; the exact meaning is always in the row text.",
+  "domainHelpP3": "If you see labels like “View (code prefix)”, that is expected: it means permissions share a common code prefix (e.g. view_). Business areas inside may differ—read each row.",
+  "safeTitle": "How to use this page safely",
+  "safeStep1": "Pick one role or one employee at a time and change settings in small steps.",
+  "safeStep2": "Review the “Changes before save” block—it lists exactly what will change.",
+  "safeStep3": "After saving, open the “Audit” tab and confirm the change was recorded.",
+  "glossaryTitle": "Short glossary",
+  "glossaryRole": "Role — a template of permissions for a job title (e.g. administrator, manager).",
+  "glossaryPermission": "Permission — one concrete action (e.g. view finance, edit schedule).",
+  "glossaryGrant": "Grant — add an extra permission on top of the user’s roles.",
+  "glossaryDeny": "Deny — explicitly block a permission even if a role would allow it.",
+  "glossaryDomain": "Domain — a grouping by similar code prefix. Helps filter the list; each item’s meaning is in its description.",
+  "tabRoles": "Roles & job profiles",
+  "tabUsers": "Staff",
+  "tabPolicies": "System policies",
+  "tabAudit": "Audit",
+  "rolesPanelTitle": "Tab: Roles & job profiles",
+  "rolesPanelBody": "You define the standard capability set for a job title. Everyone with that role receives these permissions automatically.",
+  "rolesPanelCreateBlockTitle": "Need a custom job title for your clinic?",
+  "rolesPanelCreateBlockHint": "Create a clinic role once: set code, display name, and permissions — then assign it to staff and use it in the Personnel catalog.",
+  "labelRole": "Role",
+  "phRole": "Select a role",
+  "labelDomain": "Permission domain",
+  "labelSearch": "Quick search",
+  "phSearchRoles": "e.g. tasks, finance, rbac.manage",
+  "phSearchUsers": "Filter for grant/deny",
+  "tipDomainFilter": "Tip: choose a domain to narrow the list to one group, then read each row’s description—it states what access you grant. Search matches text. In the list, meaning comes first and the technical code is on the right; hover for details.",
+  "labelRolePermissions": "Role permissions",
+  "ownerRoleProtectedTitle": "Owner role is protected",
+  "ownerRoleProtectedBody": "Owner role permissions are fixed at system level and always remain full.",
+  "diffRole": "Changes before save (role)",
+  "noChanges": "No changes",
+  "saveRolePermissions": "Save role permissions",
+  "usersPanelTitle": "Tab: Staff",
+  "usersPanelBody": "Assign roles to a specific person and, if needed, set personal overrides with grant and deny.",
+  "labelEmployee": "Employee",
+  "phEmployee": "Select an employee",
+  "labelUserRoles": "Staff roles",
+  "ownerUserProtectedTitle": "Owner user is protected",
+  "ownerUserProtectedBody": "This user’s roles cannot be changed, to avoid removing owner access.",
+  "diffUserRoles": "Changes before save (staff roles)",
+  "saveUserRoles": "Save roles",
+  "labelGrant": "Personal grants",
+  "labelDeny": "Personal denials",
+  "ownerOverridesTitle": "Personal overrides for owner",
+  "ownerOverridesBody": "Personal grant/deny is disabled for an owner user—owner permissions cannot be reduced.",
+  "grantDenyGuideTitle": "Using grant and deny",
+  "grantDenyGuide1": "Grant — when someone temporarily needs more access than their role provides.",
+  "grantDenyGuide2": "Deny — when you need to restrict a specific workflow (e.g. finance).",
+  "grantDenyGuide3": "If unsure, start with roles; use personal overrides only as exceptions.",
+  "diffGrant": "Changes before save (grant)",
+  "diffDeny": "Changes before save (deny)",
+  "saveUserPermissions": "Save personal permissions",
+  "effectivePermissions": "Effective permissions",
+  "policiesPanelTitle": "Tab: System policies",
+  "policiesPanelBody": "Clinic-wide rules that affect overall system behaviour, not a single employee.",
+  "swDiscount": "Patient can turn off discount notifications",
+  "swReminders": "Patient can turn off reminders",
+  "swAllNotif": "Patient can turn off all notifications",
+  "swMorningBrief": "Enable owner morning brief",
+  "labelMorningBriefTime": "Morning brief time (UTC, HH:MM)",
+  "labelOwnerTg": "Owner Telegram chat ID",
+  "swAiSupervisor": "Enable AI Supervisor",
+  "labelAiSupervisorTime": "AI Supervisor time (UTC, HH:MM)",
+  "labelAiSupervisorRecipients": "AI Supervisor recipients (comma-separated)",
+  "diffPolicies": "Changes before save (policies)",
+  "savePolicies": "Save policies",
+  "auditPanelTitle": "Tab: Audit",
+  "auditPanelBody": "History of permission and policy changes: who changed what and when.",
+  "auditWhen": "When",
+  "auditWho": "Who",
+  "auditAction": "Action",
+  "auditEntity": "Entity",
+  "auditNote": "Note",
+  "auditUnknownActor": "Staff member",
+  "glossarySectionTitle": "Domain reference",
+  "glossarySectionSubtitle": "Full catalog of permission groups for your clinic: explanations and every code in each group. Open the table when needed. CSV works in Excel and for archiving.",
+  "csvDomains": "Download CSV — domains",
+  "csvPermissions": "Download CSV — all permissions",
+  "glossaryToggleShow": "Show reference table",
+  "glossaryToggleHide": "Hide reference table",
+  "glossaryEmpty": "Domains are not loaded yet.",
+  "thReadName": "How to read the name",
+  "thExplanation": "Explanation",
+  "thAllCodes": "All permission codes in group",
+  "thSystemKey": "System key",
+  "modalConfirm": "Confirmation",
+  "modalCriticalLabel": "I confirm this critical change",
+  "cancel": "Cancel",
+  "apply": "Apply",
+  "error": "Error",
+  "sessionFailed": "Could not load your session",
+  "needClinicTitle": "Select a clinic",
+  "needClinicBody": "Choose a clinic in the header to manage roles and policies.",
+  "saveFailed": "Could not save changes",
+  "deleteFailed": "Could not delete the clinic role",
+  "auditEmpty": "No audit events yet.",
+  "auditLoadFailed": "Could not load the audit log.",
+  "valueYes": "Yes",
+  "valueNo": "No",
+  "noAccessTitle": "Access denied",
+  "noAccessBody": "Managing roles and policies requires the rbac.manage permission.",
+  "badgeNoDescription": "No description in catalog—see product documentation.",
+  "permDescCatalogRu": "Catalog description (Russian, as shipped in the product).",
+  "catalogDescriptionLanguageNote": "Catalog permission descriptions are in Russian (product default).",
+  "roleCodeTooltip": "Role code",
+  "criticalOwnerRole": "Confirm changing owner role permissions",
+  "criticalOwnerRoleMsg": "You are changing the base owner role permissions. This may affect the owner’s access to all critical areas.",
+  "criticalSelfRole": "Confirm removing a critical role from yourself",
+  "criticalSelfRoleMsg": "You are removing role(s) from yourself: {{roles}}. You may lose rbac.manage and access to this screen.",
+  "criticalSelfRbac": "Confirm removing rbac.manage from yourself",
+  "criticalSelfRbacMsg": "You are denying yourself rbac.manage. After saving you may lose access to this screen.",
+  "tableField": "Field",
+  "tableBefore": "Before",
+  "tableAfter": "After",
+  "btnCreateClinicRole": "Create clinic role",
+  "modalCreateRoleTitle": "New clinic role",
+  "labelNewRoleCode": "Role code (latin, unique within clinic)",
+  "phNewRoleCode": "e.g. reception_lead",
+  "labelNewRoleName": "Display name",
+  "phNewRoleName": "e.g. Reception (lead)",
+  "labelPermissionPreset": "Permission preset (fill list)",
+  "optPresetNone": "No preset — pick permissions manually",
+  "presetLabelManager": "Like system role “Manager”",
+  "presetLabelAdmin": "Like system role “Administrator”",
+  "presetLabelDoctor": "Like system role “Doctor”",
+  "labelFillFromRole": "Or copy permissions from role",
+  "optFillFromRoleNone": "Do not copy",
+  "hintCreateRolePermissions": "Select at least one permission. Presets and copy only fill the list — review and edit before saving.",
+  "labelCreateRoleNote": "Audit note (optional)",
+  "phCreateRoleNote": "Why this role is created",
+  "btnSubmitNewRole": "Create role",
+  "errCreateRoleCode": "Role code: lowercase latin letters, digits, underscores; must start with a letter. System role codes are reserved.",
+  "errCreateRoleName": "Enter a display name for the role.",
+  "errCreateRolePerms": "Select at least one permission.",
+  "btnDeleteClinicRole": "Delete clinic role",
+  "modalDeleteRoleTitle": "Delete clinic role?",
+  "modalDeleteRoleBody": "Only clinic-specific roles can be removed (not global system roles). If staff are still assigned this role, remove assignments under Staff first.",
+  "confirmDeleteRole": "Delete",
+  "announcements": {
+    "title": "Announcement publish rights",
+    "hint": "By default every staff member can publish. You can deny by role or for specific people.",
+    "refresh": "Refresh",
+    "denyRoles": "Deny by roles",
+    "denyUsers": "Deny specific staff",
+    "placeholder": "Empty = no denials",
+    "save": "Save policy",
+    "saveFailed": "Could not save the policy",
+    "loadingPolicy": "Loading publish policy…",
+    "loadPolicyFailed": "Could not load the publish policy.",
+    "auditTitle": "Announcement publish-denial log",
+    "auditHint": "History of denial-policy changes (who changed what). Owner-only by default.",
+    "downloadCsv": "Download CSV",
+    "downloadJson": "Download JSON",
+    "loading": "Loading…",
+    "loadFailed": "Could not load the log.",
+    "empty": "No entries yet.",
+    "colWhen": "When",
+    "colWho": "Who",
+    "colDenyRoles": "Denied roles",
+    "colDenyUsers": "Denied staff"
+  },
+  "csv": {
+    "domainKey": "Domain key",
+    "shortRu": "Short name (RU)",
+    "shortEn": "Short name (EN)",
+    "explanationRu": "Explanation (RU)",
+    "insideRu": "What’s inside (RU)",
+    "explanationEn": "Explanation (EN)",
+    "insideEn": "What’s inside (EN)",
+    "permissionCodes": "Permission codes",
+    "permissionCount": "Permission count",
+    "permissionCode": "Permission code",
+    "domain": "Domain",
+    "description": "Description",
+    "createdAt": "Created at",
+    "actor": "Actor",
+    "denyRoles": "Denied roles",
+    "denyUsers": "Denied staff"
+  },
+  "policy": {
+    "allow_patient_disable_discount_notifications": "Patient can disable discount notifications",
+    "allow_patient_disable_reminders": "Patient can disable reminders",
+    "allow_patient_disable_all_notifications": "Patient can disable all notifications",
+    "owner_morning_brief_enabled": "Owner morning brief enabled",
+    "morning_brief_send_at_utc": "Morning brief time (UTC)",
+    "owner_telegram_chat_id": "Owner Telegram chat ID",
+    "ai_supervisor_enabled": "AI Supervisor enabled",
+    "ai_supervisor_send_at_utc": "AI Supervisor send time (UTC)",
+    "ai_supervisor_recipient_chat_ids": "AI Supervisor recipients"
+  },
+  "domains": {
+    "unknown": {
+      "short": "Group “{{domain}}”"
+    },
+    "fallback": {
+      "short": "Technical group",
+      "gentle": "The system groups permissions by the first segment of the code. The label is not your org chart—read each permission’s description.",
+      "inside": "Depends on the permissions in the catalog—open the list and read each item’s description."
+    },
+    "all": {
+      "short": "All domains",
+      "gentle": "Show all permissions without filtering by group.",
+      "inside": "Every permission in the catalog."
+    },
+    "general": {
+      "short": "General",
+      "gentle": "Permissions whose codes have no dot or underscore. There are few; meaning is always in the row description.",
+      "inside": "Rare global flags—read the label next to each code."
+    },
+    "view": {
+      "short": "View (code prefix)",
+      "gentle": "Not a department—permissions whose codes start with view_. They span different business areas; read each permission’s description.",
+      "inside": "Typically: dashboard, reports, finance, payroll, inventory, CRM, tasks, loyalty, forms, marketing, AI settings, staff collab, etc.—anything with the view_ prefix."
+    },
+    "manage": {
+      "short": "Manage (code prefix)",
+      "gentle": "Permissions with the manage_ prefix—usually create/update, not just read. The domain name does not replace the per-row description.",
+      "inside": "Finance, payroll, inventory, CRM, tasks, loyalty, forms, marketing, AI settings, collab—whatever manage_* codes exist in your catalog."
+    },
+    "run": {
+      "short": "Run / execute (code prefix)",
+      "gentle": "Permissions whose codes start with run_—typically an active “execute” action (e.g. launch a campaign), not viewing a report.",
+      "inside": "E.g. run_loyalty_campaigns."
+    },
+    "assign": {
+      "short": "Task assignment",
+      "gentle": "Permissions to assign work to others, separate from view/edit alone.",
+      "inside": "E.g. assigning tasks to teammates."
+    },
+    "invite": {
+      "short": "Calendar invites",
+      "gentle": "Who can invite participants to shared calendar events vs personal-only.",
+      "inside": "Invites for staff calendar events."
+    },
+    "export": {
+      "short": "Export",
+      "gentle": "Exporting data (e.g. forms/signatures) to files or external tools.",
+      "inside": "Export of forms/patient signatures and similar."
+    },
+    "patients": {
+      "short": "Patients & personal data",
+      "gentle": "Access to patient personal data—cards, contacts, lists. Sensitive—grant only where legally and operationally required.",
+      "inside": "PII-related permissions such as patients.pii.read—see exact wording in the list."
+    },
+    "tasks": {
+      "short": "Tasks (detailed)",
+      "gentle": "Codes like tasks.*—status changes, unblock, bulk, priority. Operational detail beyond merely viewing the list.",
+      "inside": "Status, unblock, bulk updates, reprioritize, etc."
+    },
+    "erp": {
+      "short": "ERP & owner reports",
+      "gentle": "Owner-level ERP-style reports—revenue, payroll, inventory, rollups.",
+      "inside": "E.g. erp.owner_reports.read—see the catalog description."
+    },
+    "attribution": {
+      "short": "Attribution & ROI",
+      "gentle": "Lead source and marketing ROI reporting.",
+      "inside": "Reading attribution reports (e.g. attribution.reports.read)."
+    },
+    "booking": {
+      "short": "Booking & AI tools",
+      "gentle": "Online booking helpers and AI for slots, moves, cancellations.",
+      "inside": "E.g. booking.ai_tools.use."
+    },
+    "ai": {
+      "short": "Artificial intelligence",
+      "gentle": "AI settings and background AI flows (e.g. attention analysis, task generation).",
+      "inside": "E.g. ai.tasks.run and related codes."
+    },
+    "omni": {
+      "short": "Omnichannel inbox",
+      "gentle": "Unified patient conversations—ownership, statuses, quick replies.",
+      "inside": "E.g. omni.inbox.manage."
+    },
+    "leads": {
+      "short": "Leads (log)",
+      "gentle": "Permissions for the omni-chat lead log page: who can view resolved conversation history and outcomes.",
+      "inside": "E.g. leads.log.view."
+    },
+    "rbac": {
+      "short": "Access control",
+      "gentle": "Who can change roles, overrides, and policies—this screen and related security.",
+      "inside": "E.g. rbac.manage."
+    },
+    "staff": {
+      "short": "Staff (HR)",
+      "gentle": "HR-style staff data if such codes exist in your catalog.",
+      "inside": "Depends on actual staff.* permissions."
+    },
+    "appointments": {
+      "short": "Appointments",
+      "gentle": "Appointments and visits if your catalog uses this domain.",
+      "inside": "See each row in the list."
+    },
+    "schedule": {
+      "short": "Schedule & slots",
+      "gentle": "Working hours, slots, chair/room resources.",
+      "inside": "Permissions with the schedule domain in your catalog."
+    },
+    "patient": {
+      "short": "Patients",
+      "gentle": "Variant grouping related to patients—read the row description.",
+      "inside": "Cross-check with the patients domain."
+    },
+    "finance": {
+      "short": "Finance",
+      "gentle": "Revenue, billing, payments—if your codes use this domain.",
+      "inside": "Catalog-dependent."
+    },
+    "billing": {
+      "short": "Billing",
+      "gentle": "Invoicing and related operations.",
+      "inside": "Read each permission description."
+    },
+    "payments": {
+      "short": "Payments",
+      "gentle": "Payment capture and accounting.",
+      "inside": "Read each permission description."
+    },
+    "crm": {
+      "short": "CRM & leads",
+      "gentle": "Pipeline, leads, stages, pre-appointment comms.",
+      "inside": "view_crm, manage_crm, etc.—see catalog."
+    },
+    "notifications": {
+      "short": "Notifications",
+      "gentle": "SMS, push, email to patients and staff.",
+      "inside": "As codes appear in the catalog."
+    },
+    "reports": {
+      "short": "Reports",
+      "gentle": "Operational and management reports.",
+      "inside": "E.g. view_reports and others."
+    },
+    "analytics": {
+      "short": "Analytics",
+      "gentle": "Metrics and dashboards.",
+      "inside": "See specific codes."
+    },
+    "loyalty": {
+      "short": "Loyalty",
+      "gentle": "Loyalty programs, bonuses, retention campaigns.",
+      "inside": "View/manage programs and campaigns."
+    },
+    "inventory": {
+      "short": "Inventory",
+      "gentle": "Supplies and stock levels.",
+      "inside": "view_inventory, manage_inventory, etc."
+    },
+    "marketing": {
+      "short": "Marketing",
+      "gentle": "Campaigns and marketing analytics.",
+      "inside": "view_marketing_analytics, manage_marketing_campaigns, etc."
+    },
+    "integrations": {
+      "short": "Integrations",
+      "gentle": "External services—telephony, messengers, data exchange.",
+      "inside": "As present in the catalog."
+    },
+    "admin": {
+      "short": "Administration",
+      "gentle": "Clinic-wide settings not tied to a single patient.",
+      "inside": "Catalog-dependent."
+    }
+  }
+}

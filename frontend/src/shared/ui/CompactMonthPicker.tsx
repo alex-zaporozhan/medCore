@@ -2,10 +2,8 @@ import { useMemo } from "react";
 import type { CSSProperties } from "react";
 import { ActionIcon, Box, Button, Group, SimpleGrid, Text } from "@mantine/core";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
-import "dayjs/locale/ru";
-
-dayjs.locale("ru");
 
 export type CompactMonthPickerSize = "compact" | "comfortable";
 
@@ -28,6 +26,8 @@ function buildMonthCells(monthAnchor: dayjs.Dayjs) {
   return Array.from({ length: 42 }, (_, i) => gridStart.add(i, "day"));
 }
 
+const WEEKDAY_MON_FIRST = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+
 /**
  * Компактный месячный календарь (Пн–Вс), тот же паттерн, что на /admin/calendar → «Новое событие».
  */
@@ -41,6 +41,7 @@ export function CompactMonthPicker({
   className,
   style,
 }: CompactMonthPickerProps) {
+  const { t } = useTranslation("common");
   const cells = useMemo(() => buildMonthCells(monthAnchor), [monthAnchor]);
   const isCompact = size === "compact";
   const btnSize = "xs" as const;
@@ -57,7 +58,7 @@ export function CompactMonthPicker({
           size={isCompact ? "md" : "lg"}
           radius="md"
           onClick={() => onMonthAnchorChange(monthAnchor.subtract(1, "month"))}
-          aria-label="Предыдущий месяц"
+          aria-label={t("calendar.prevMonth")}
           style={{ background: "var(--bg-card)", boxShadow: "var(--shadow-soft-sm)", flexShrink: 0 }}
         >
           <IconChevronLeft size={iconSz} stroke={1.5} />
@@ -74,7 +75,7 @@ export function CompactMonthPicker({
           size={isCompact ? "md" : "lg"}
           radius="md"
           onClick={() => onMonthAnchorChange(monthAnchor.add(1, "month"))}
-          aria-label="Следующий месяц"
+          aria-label={t("calendar.nextMonth")}
           style={{ background: "var(--bg-card)", boxShadow: "var(--shadow-soft-sm)", flexShrink: 0 }}
         >
           <IconChevronRight size={iconSz} stroke={1.5} />
@@ -82,9 +83,9 @@ export function CompactMonthPicker({
       </Group>
 
       <SimpleGrid cols={7} spacing={gap} mt={isCompact ? 6 : 8}>
-        {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((w) => (
-          <Text key={w} size={headSize} fw={800} c="dimmed" style={{ textAlign: "center" }}>
-            {w}
+        {WEEKDAY_MON_FIRST.map((key) => (
+          <Text key={key} size={headSize} fw={800} c="dimmed" style={{ textAlign: "center" }}>
+            {t(`calendar.weekdays.${key}`)}
           </Text>
         ))}
       </SimpleGrid>

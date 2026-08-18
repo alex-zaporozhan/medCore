@@ -1,6 +1,7 @@
 import { Anchor, Group, Paper, Text } from "@mantine/core";
 import { IconCoin } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ROUTE_PATHS } from "@/routePaths";
 import { useAdminSession } from "@/hooks/useAdminSession";
 
@@ -8,6 +9,7 @@ import { useAdminSession } from "@/hooks/useAdminSession";
  * Компактная строка под шапкой контента для владельца: быстрый переход к экрану подписки.
  */
 export function AdminOwnerSubscriptionStrip() {
+  const { t } = useTranslation("common");
   const { data: session } = useAdminSession();
   const orgId = session?.organization_id;
   const isOwner = session?.roles?.includes("owner") ?? false;
@@ -16,8 +18,8 @@ export function AdminOwnerSubscriptionStrip() {
   const enforced = session?.entitlement_enforced ?? false;
   const keys = session?.entitlement_keys ?? [];
   const summary = enforced
-    ? `Тариф: ${keys.length} опций в подписке`
-    : "Платформа: режим без ограничений по SKU";
+    ? t("subscription.tariffOptions", { count: keys.length })
+    : t("subscription.unlimited");
 
   return (
     <Anchor
@@ -45,7 +47,7 @@ export function AdminOwnerSubscriptionStrip() {
             </Text>
           </Group>
           <Text size="xs" fw={600} c="brand" style={{ flexShrink: 0 }}>
-            Подписка →
+            {t("subscription.cta")}
           </Text>
         </Group>
       </Paper>

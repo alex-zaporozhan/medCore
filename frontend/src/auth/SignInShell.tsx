@@ -1,6 +1,8 @@
-import { Box, Container, Grid, List, Paper, Stack, Text, ThemeIcon, Title } from "@mantine/core";
+import { Box, Container, Grid, Group, List, Paper, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import { IconCalendarEvent, IconMessages, IconShieldLock } from "@tabler/icons-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { UiLocaleSwitch } from "@/i18n/UiLocaleSwitch";
 
 type SignInShellProps = {
   children: ReactNode;
@@ -30,6 +32,7 @@ const panelIcon = (Icon: typeof IconShieldLock) => (
  * Оболочка экранов входа: по умолчанию тёмный маркетинговый блок слева и форма справа; для пациента — только форма.
  */
 export function SignInShell({ children, variant = "split" }: SignInShellProps) {
+  const { t } = useTranslation("auth");
   if (variant === "patient") {
     return (
       <Box style={{ minHeight: "100vh" }} className="marketing-gradient-bg">
@@ -74,43 +77,42 @@ export function SignInShell({ children, variant = "split" }: SignInShellProps) {
             <Stack gap="lg" py={{ base: "sm", md: 0 }}>
               <div>
                 <Text size="xs" fw={700} tt="uppercase" c="rgba(255,255,255,0.55)" mb={6} lts={1}>
-                  Единая система управления
+                  {t("shell.brand")}
                 </Text>
                 <Title order={1} size="h2" c="#ffffff" style={{ lineHeight: 1.2 }}>
-                  Операционная платформа для бизнеса с сервисной моделью
+                  {t("shell.title")}
                 </Title>
                 <Text mt="md" size="md" c="rgba(255,255,255,0.78)" maw={440} style={{ lineHeight: 1.55 }}>
-                  Пациенты, персонал и команда платформы работают в разных контурах с разными токенами. Форма справа —
-                  только для входа.
+                  {t("shell.body")}
                 </Text>
               </div>
               <List spacing="sm" size="sm" icon={panelIcon(IconShieldLock)} styles={{ itemLabel: { color: "#ffffff" } }}>
                 <List.Item>
                   <Text fw={600} c="#ffffff">
-                    Безопасность
+                    {t("shell.securityTitle")}
                   </Text>
                   <Text size="sm" c="rgba(255,255,255,0.72)">
-                    Раздельные токены и соединение по HTTPS.
+                    {t("shell.securityBody")}
                   </Text>
                 </List.Item>
               </List>
               <List spacing="sm" size="sm" icon={panelIcon(IconCalendarEvent)} styles={{ itemLabel: { color: "#ffffff" } }}>
                 <List.Item>
                   <Text fw={600} c="#ffffff">
-                    Запись и расписание
+                    {t("shell.scheduleTitle")}
                   </Text>
                   <Text size="sm" c="rgba(255,255,255,0.72)">
-                    Онлайн-запись, очереди и напоминания в одной системе.
+                    {t("shell.scheduleBody")}
                   </Text>
                 </List.Item>
               </List>
               <List spacing="sm" size="sm" icon={panelIcon(IconMessages)} styles={{ itemLabel: { color: "#ffffff" } }}>
                 <List.Item>
                   <Text fw={600} c="#ffffff">
-                    Омниканал и задачи
+                    {t("shell.omniTitle")}
                   </Text>
                   <Text size="sm" c="rgba(255,255,255,0.72)">
-                    Диалоги с клиентами, внутренние чаты и операционные задачи.
+                    {t("shell.omniBody")}
                   </Text>
                 </List.Item>
               </List>
@@ -133,6 +135,9 @@ export function SignInShell({ children, variant = "split" }: SignInShellProps) {
                 boxShadow: "var(--mantine-shadow-xl)",
               }}
             >
+              <Group justify="flex-end" mb="md">
+                <UiLocaleSwitch />
+              </Group>
               {children}
             </Paper>
           </Grid.Col>

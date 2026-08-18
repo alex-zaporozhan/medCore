@@ -23,14 +23,18 @@ import { useCreateAdminClinicService, useUpdateAdminClinicService } from "@/hook
 import { useDoctors } from "@/hooks/useDoctors";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useState, useEffect } from "react";
+import i18n from "@/i18n";
 
-const CATEGORIES = [
-  { value: "therapy", label: "Терапия" },
-  { value: "surgery", label: "Хирургия" },
-  { value: "orthodontics", label: "Ортодонтия" },
-  { value: "hygiene", label: "Профгигиена" },
-  { value: "other", label: "Другое" },
-];
+const SERVICE_CATEGORY_VALUES = ["therapy", "surgery", "orthodontics", "hygiene", "other"] as const;
+
+export function serviceCategoryLabel(category: string | null | undefined): string {
+  if (category == null) return "";
+  const slug = String(category).trim().toLowerCase();
+  if (!slug) return "";
+  const key = `serviceDrawer.categories.${slug}`;
+  const translated = i18n.t(key, { ns: "directory" });
+  return translated === key ? slug : translated;
+}
 
 export interface ServiceEntityDrawerProps {
   opened: boolean;
@@ -200,7 +204,10 @@ export function ServiceEntityDrawer({
                 />
                 <Select
                   label="Категория"
-                  data={CATEGORIES}
+                  data={SERVICE_CATEGORY_VALUES.map((value) => ({
+                    value,
+                    label: serviceCategoryLabel(value),
+                  }))}
                   value={category}
                   onChange={setCategory}
                   searchable

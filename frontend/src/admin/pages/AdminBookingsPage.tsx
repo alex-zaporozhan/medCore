@@ -43,24 +43,19 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { ROUTE_PATHS } from "@/routePaths";
-import { BOOKING_STATUS_LABEL_RU } from "@/shared/bookingStatusMeta";
-
-const EMPTY_DB_HINT =
-  "Если ошибка из-за отсутствия данных в базе — добавьте клинику, врачей или пациентов в соответствующих разделах.";
-
-const STATUS_OPTIONS = [
-  { value: "", label: "Любой" },
-  { value: "registered", label: BOOKING_STATUS_LABEL_RU.registered },
-  { value: "confirmed", label: BOOKING_STATUS_LABEL_RU.confirmed },
-  { value: "pending", label: BOOKING_STATUS_LABEL_RU.pending },
-  { value: "in_progress", label: BOOKING_STATUS_LABEL_RU.in_progress },
-  { value: "completed", label: BOOKING_STATUS_LABEL_RU.completed },
-  { value: "cancelled", label: BOOKING_STATUS_LABEL_RU.cancelled },
-  { value: "no_show", label: BOOKING_STATUS_LABEL_RU.no_show },
-  { value: "awaiting_payment", label: BOOKING_STATUS_LABEL_RU.awaiting_payment },
-];
+import { BOOKING_STATUS_OPTION_ORDER, bookingStatusLabel } from "@/shared/bookingStatusMeta";
+import { isEmptyClinicDatabaseError } from "@/shared/errors";
+import { useTranslation } from "react-i18next";
 
 export default function AdminBookingsPage() {
+  const { t } = useTranslation("schedule");
+  const statusOptions = [
+    { value: "", label: t("bookings.any") },
+    ...BOOKING_STATUS_OPTION_ORDER.map((value) => ({
+      value,
+      label: bookingStatusLabel(value),
+    })),
+  ];
   const [doctorId, setDoctorId] = useState<string | null>(null);
   const [date, setDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [status, setStatus] = useState<string | null>(null);
@@ -100,8 +95,7 @@ export default function AdminBookingsPage() {
   const cancelMutation = useCancelBookingAdmin();
   const completeMutation = useCompleteBookingAdmin();
 
-  const errMessage = isError && error instanceof Error ? error.message : "";
-  const isEmptyDb = errMessage.includes("клиник") || errMessage.includes("клиники");
+  const isEmptyDb = isError && isEmptyClinicDatabaseError(error);
 
   return (
     <Stack>
@@ -135,7 +129,7 @@ export default function AdminBookingsPage() {
           />
           <Select
             label="Статус"
-            data={STATUS_OPTIONS}
+            data={statusOptions}
             value={status ?? ""}
             onChange={(v) => setStatus(v || null)}
           />
@@ -154,7 +148,7 @@ export default function AdminBookingsPage() {
           <QueryErrorAlert error={error} />
           {isEmptyDb && (
             <Text size="sm" c="dimmed">
-              {EMPTY_DB_HINT}
+              {t("bookings.emptyDbHint")}
             </Text>
           )}
         </>

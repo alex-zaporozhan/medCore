@@ -876,6 +876,10 @@ else:
             yield session
         finally:
             try:
+                await session.rollback()
+            except Exception:
+                pass
+            try:
                 await session.close()
             except (RuntimeError, AttributeError):
                 # Windows + pytest teardown can close the loop/proactor before asyncpg cleanup.

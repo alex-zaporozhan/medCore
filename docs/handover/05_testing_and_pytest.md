@@ -1,0 +1,89 @@
+# Тестирование: стратегия, слои и инфраструктура pytest
+
+Документ описывает **фактическую** картину тестов в репозитории: каталоги, фикстуры, маркеры, CI и связь с архитектурой приложения. Планы волн **QA_ARCH** и чертежи **ARCH_*** в архиве — см. [`docs/archive/erp-vnext-2026-wave-planning/README.md`](../archive/erp-vnext-2026-wave-planning/README.md) и [`ADR-016`](../adr/ADR-016-historical-erp-vnext-documentation-corpus.md); они не дублируют этот документ и при расхождении с кодом и pytest вторичны.
+
+## Инструменты и глобальные настройки
+
+- **pytest** + **pytest-asyncio** (`asyncio_mode = auto`, session loop по умолчанию в `pyproject.toml`).
+- **httpx** `AsyncClient` + `ASGITransport` — большинство API-тестов бьёт в приложение **в процессе**, без отдельного uvicorn (см. фикстура `client` в `tests/conftest.py`).
+- **pytest-playwright** — браузерные сценарии в `tests/e2e/`; для CI обычно задаётся `FRONTEND_E2E_URL` и поднимается `vite preview` (и при полном browser E2E — отдельный uvicorn, см. ниже).
+- **pytest-timeout** — лимит **240 с** на тестовую функцию (`timeout_func_only = true`), чтобы зависшие SSE/БД не валили весь job бесконечно; session-фикстуры (`init_db`, `seed_data`) не обрезаются этим лимитом по замыслу конфигурации.
+
+Канон настроек маркеров и таймаута: `pyproject.toml` → `[tool.pytest.ini_options]`.
+
+## Слои тестов (как они ложатся на код)
+
+Тесты **не копируют** строго пакетную структуру `src/`, но по смыслу группируются так:
+
+| Слой / каталог | Порядок объёма | Что проверяется |
+|----------------|----------------|-----------------|
+| `tests/api/` | порядка **80** модулей `test_*.py` | HTTP-контракт FastAPI: статусы, RBAC, изоляция тенантов, пагинация, вебхуки через ASGI-клиент. Основной «интеграционный периметр» без отдельного сервера. |
+| `tests/services/` | порядка **30** файлов | Сервисы `src/application/services/` и смежная оркестрация: сценарии с реальной (тестовой) БД через `db_session` / доменные вызовы. |
+| `tests/application/` | порядка **15** файлов | Прикладные инварианты: outbox, платежные гейты, семантика уведомлений, **инвентарь RBAC эндпоинтов** (`test_sec_rbac_router_permissions_inventory.py`) и др. |
+| `tests/core/` | порядка **30** файлов | «Чистая» логика и конфиг: маскирование PII, политики слотов, обёртки ошибок, метрики, governance вебхуков, валидность JSON дашбордов/алертов без полного HTTP-флоу. |
+| `tests/security/` | несколько файлов | Сценарии под маркером `security` (касса, ПДн, чаты, AI-агент). |
+| `tests/unit/` | несколько файлов | Узкие юниты (state machine стадий лида, дедуп событий и т.п.) без поднятия всего API. |
+| `tests/e2e/` | несколько файлов | Playwright: реальный браузер против `FRONTEND_E2E_URL` (часто `http://127.0.0.1:4173`). |
+| `tests/deploy/` | минимум | Статические проверки артефактов деплоя (например YAML правил Prometheus). |
+| `tests/smoke/` | точечно | Облегчённые смоук-сценарии. |
+| Корень `tests/test_*.py` | несколько файлов | Инварианты **production-дефолтов** настроек (outbox, patient auth и т.д.) без привязки к подкаталогу. |
+
+Связь с архитектурой из [`02_architecture_and_decisions.md`](./02_architecture_and_decisions.md): `tests/api/` соответствует HTTP-слою и зависимостям; `tests/services/` и `tests/application/` — прикладному слою и сквозным процессам; `tests/core/` — политикам `src/core/` и утилитам без полного доменного графа.
+
+## Жизненный цикл БД в pytest (`tests/conftest.py`)
+
+1. **`TESTING=1`** выставляется при импорте conftest: движок БД в приложении не инициализируется «на импорте», а поднимается через `init_engine_for_testing()` в session-фикстуре (избегание гонок с uvicorn и единый режим для ASGI-тестов).
+2. **`DATABASE_URL_TEST`** или переписывание имени БД на `dental_booking_test` из `DATABASE_URL` — см. `_resolve_database_url_test()`. Без URL коллекция падает с явной ошибкой.
+3. **`init_db` (session)** — `alembic upgrade head` подпроцессом из корня репозитория, затем импорт `src.main:app` в глобальный `app` для ASGI-транспорта.
+4. **`truncate_tables` (session)** — `TRUNCATE … CASCADE` по всем таблицам метаданных SQLAlchemy **только если** в имени БД есть подстрока `test` (защита от случайного продакшн-DSN). Перед очисткой по умолчанию завершаются чужие `client backend` сессии на этой БД (отключение: `PYTEST_DISABLE_TEST_DB_SESSION_KILL=1`).
+5. **`seed_data` (session)** — одна клиника, врач, услуга, пациент, дефолты ERP (касса, склад, payroll), два админ-пользователя (owner со всеми правами из `rbac_matrix.py` и doctor с ролью из `ROLE_PERMISSIONS`), платформенный founder, восстановление SaaS-каталога после TRUNCATE. Возвращает словарь UUID и email для логинов.
+6. **`client`** — `httpx.AsyncClient` на `app` с `raise_app_exceptions=False` (ошибки приложения можно проверять как HTTP-ответы).
+
+Вспомогательные фикстуры: `admin_auth`, `doctor_auth`, `patient_auth` (код из Redis), `platform_founder_auth`, `redis_client`, `db_session` для сервисных тестов.
+
+## Маркеры pytest (реестр в коде)
+
+Объявлены в `pyproject.toml` (`markers = [...]`):
+
+| Маркер | Назначение |
+|--------|------------|
+| `critical_path` | Минимальный контур для merge-gate (LEAD A3): часть backend + Playwright smoke; в CI с `CRITICAL_PATH_CI=1` отсутствие инфраструктуры **не** маскируется skip’ом. |
+| `regression_payments` | Регрессия платежей и биллинга платформы. |
+| `regression_pd` | Регрессия изоляции персональных данных. |
+| `regression_chats` | Регрессия чатов / omnichannel. |
+| `security` | Явно помеченные security-сценарии. |
+| `redis_integration` | Нужен живой Redis; при `RUN_REDIS_INTEGRATION_TESTS=0` или недоступном Redis — skip из `pytest_runtest_setup`. |
+
+Дополнительно в файлах встречается `@pytest.mark.asyncio` там, где явно нужна метка (часть окружений без плагина).
+
+## E2E и фронт
+
+- Базовый URL для Playwright: фикстура `base_url` в `tests/e2e/conftest.py` читает **`FRONTEND_E2E_URL`**. Если не задан — большинство e2e **skip**, кроме сценариев с автоподъёмом preview при коллекции.
+- **`pytest_collection_modifyitems`** в корневом `conftest.py`: при выборе `tests/e2e/test_critical_path_smoke.py` без `FRONTEND_E2E_URL` вызывается `tests/e2e/vite_preview_server.py` (`ensure_vite_preview_for_smoke`); на Windows порядок тестов переупорядочивается так, чтобы Playwright шёл после backend-тестов (меньше конфликтов event loop).
+- **`PYTEST_DISABLE_VITE_AUTOSTART=1`** — отключить автозапуск Vite для smoke.
+- Скрипт **`scripts/ci/run_pytest_with_e2e_preview.sh`**: для workflow с полным browser suite поднимает **uvicorn с `TESTING=0`** на `:8000` (чтобы живой API отвечал за прокси preview), затем `npm run preview` на `:4173`, затем выполняет переданную команду pytest. Alembic в скрипте отдельно — `upgrade head` до старта серверов.
+
+## CI и «ворота»
+
+Репозиторий использует несколько workflow (см. `.github/workflows/`):
+
+- **`backend-ci.yml`**, **`build-and-test-entitlements.yml`**, **`release-gate.yml`** — полный или широкий `pytest tests/` с сервисами Postgres/Redis в job; e2e через `run_pytest_with_e2e_preview.sh` при `FRONTEND_E2E_URL=http://127.0.0.1:4173`.
+- **`critical-path-gate.yml`** — `pytest -m critical_path --strict-markers` + junit + **`scripts/ci/assert_pytest_junit_xml_gate.py`**: требование **0 skips, 0 errors, 0 failures** и хотя бы один passed.
+- Образы Docker (**`docker-hub-publish.yml`**) pytest **не** запускают — см. `CI_CD.md`.
+
+Переменные, которые часто нужны в CI для стабильной коллекции (OAuth-старт, Telegram и т.д.), задаются в env соответствующих workflow; локально часть значений подтягивается из `.env` при отсутствии в окружении (логика в начале `conftest.py`).
+
+## RBAC и статические артефакты
+
+- Канон прав: `src/application/rbac_matrix.py`.
+- Сверка «роутер ↔ права»: скрипт `scripts/audit_rbac_endpoints.py`, снимок `documentation/rbac_router_permissions.txt`, тест `tests/application/test_sec_rbac_router_permissions_inventory.py` — при изменении матрицы или роутеров инвентарь нужно обновлять согласованно (как в [`02_architecture_and_decisions.md`](./02_architecture_and_decisions.md)).
+
+## Типичные сбои локально
+
+- **`too many clients`** — параллельно запущены uvicorn/worker и pytest на одном Postgres; остановить сервисы или поднять лимит соединений (в `docker-compose.yml` для `db` задано `max_connections=200`).
+- **`lock timeout` на TRUNCATE** — другой процесс держит соединение к тестовой БД; см. сообщение conftest и переменную `PYTEST_DISABLE_TEST_DB_SESSION_KILL`.
+- **Windows + asyncio** — по умолчанию Selector loop; для Proactor (Playwright/subprocess) — `PYTEST_WIN32_USE_PROACTOR=1`.
+
+## Запуск
+
+Из корня: `poetry run pytest tests/` (или выбор пути/маркера). Подробнее по окружению: `documentation/DEVELOPMENT.md`, быстрый старт сервисов: `docs/RUN_SERVICES.md`.

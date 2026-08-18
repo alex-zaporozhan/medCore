@@ -33,16 +33,15 @@ import {
 import { SPECIALIST_ROLE_OPTIONS } from "@/api/types";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import i18n from "@/i18n";
 
-const WEEKDAY_LABELS: Record<number, string> = {
-  0: "Вс",
-  1: "Пн",
-  2: "Вт",
-  3: "Ср",
-  4: "Чт",
-  5: "Пт",
-  6: "Сб",
-};
+const WEEKDAY_MON_FIRST_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+
+export function weekdayLabelMonFirst(weekday: number): string {
+  const key = WEEKDAY_MON_FIRST_KEYS[weekday];
+  if (!key) return String(weekday);
+  return i18n.t(`calendar.weekdays.${key}`, { ns: "common" });
+}
 
 export interface DoctorEntityDrawerProps {
   opened: boolean;
@@ -415,7 +414,7 @@ export function DoctorEntityDrawer({
                   <Table.Tbody>
                     {workingHours.map((wh) => (
                       <Table.Tr key={wh.id}>
-                        <Table.Td>{WEEKDAY_LABELS[wh.weekday] ?? wh.weekday}</Table.Td>
+                        <Table.Td>{weekdayLabelMonFirst(wh.weekday)}</Table.Td>
                         <Table.Td>{String(wh.start_time).slice(0, 5)}</Table.Td>
                         <Table.Td>{String(wh.end_time).slice(0, 5)}</Table.Td>
                       </Table.Tr>

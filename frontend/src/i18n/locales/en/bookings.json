@@ -1,0 +1,23 @@
+{
+  "status": {
+    "registered": "Registered",
+    "confirmed": "Confirmed",
+    "pending": "Pending",
+    "in_progress": "In appointment",
+    "completed": "Completed",
+    "no_show": "No-show",
+    "cancelled": "Cancelled",
+    "awaiting_payment": "Awaiting payment",
+    "occupied": "Busy"
+  },
+  "errors": {
+    "slotUnavailable": "This slot is already taken. Please choose another time.",
+    "statusInvalid": "This booking status is not allowed.",
+    "clinicMismatch": "Clinic does not match the service or profile. Select the clinic again.",
+    "createFailed": "Could not create the booking. Try again.",
+    "paymentNotAllowed": "Payment is not available for this booking.",
+    "paymentFailed": "Payment did not go through. Try again or choose another payment method.",
+    "bookingNotFound": "Booking not found. Refresh the page or create the booking again.",
+    "paymentInitFailed": "Could not start payment. Try again later."
+  }
+}

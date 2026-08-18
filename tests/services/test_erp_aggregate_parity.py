@@ -271,8 +271,8 @@ async def test_visit_revenue_aggregate_stale_range_triggers_fallback_metadata(
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    # Own day so totals are isolated from test_visit_revenue_aggregate_matches_raw_repository.
-    day: date = seed_data["date"] + timedelta(days=2)
+    # Unique day so totals and ux_bookings_doctor_slot_active stay isolated from other ERP tests.
+    day: date = seed_data["date"] + timedelta(days=(uuid.uuid4().int % 300) + 3)
 
     async with db_base.AsyncSessionLocal() as session:
         async with session.begin():
@@ -286,6 +286,15 @@ async def test_visit_revenue_aggregate_stale_range_triggers_fallback_metadata(
             )
             session.add(cashbox)
             await session.flush()
+            slot_time = time(15, 30)
+            await session.execute(
+                delete(Booking).where(
+                    Booking.clinic_id == clinic_id,
+                    Booking.doctor_id == doctor_id,
+                    Booking.appointment_date == day,
+                    Booking.appointment_time == slot_time,
+                )
+            )
             bid = uuid.uuid4()
             session.add(
                 Booking(
@@ -295,7 +304,7 @@ async def test_visit_revenue_aggregate_stale_range_triggers_fallback_metadata(
                     doctor_id=doctor_id,
                     service_id=service_id,
                     appointment_date=day,
-                    appointment_time=time(15, 30),
+                    appointment_time=slot_time,
                     status=BookingStatus.CONFIRMED,
                     prepayment_amount=Decimal("0.00"),
                 )
