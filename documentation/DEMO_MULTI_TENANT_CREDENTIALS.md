@@ -12,7 +12,7 @@
    Если скрипт пишет `already applied`, а вы чистили БД вручную — сделайте полный сброс тестовой БД и снова `upgrade head` + оба сида.
 2. **Куда заходить:** админка клиники — страница **входа сотрудников** (`/admin/login`), запрос `POST /api/v1/admin/auth/login`. Это **не** вход пациента по телефону и **не** кабинет Основателя платформы (`/platform/...`).
 3. **Пароль не короче 8 символов** (у демо пароль длиннее — копируйте целиком, без пробела в конце строки).
-4. **Фронт и API:** в разработке запускайте API (например `uvicorn` на порту **8000**) и фронт **`npm run dev`** (в `vite.config.ts` прокси `/api` → `localhost:8000`). Для **`npm run preview`** прокси на API тоже настроен — API всё равно должен быть запущен на `localhost:8000`, иначе вход не дойдёт до бэкенда.
+4. **Фронт и API:** в разработке запускайте API (`uvicorn` на **8000** или Compose на **8010**) и фронт **`npm run dev`** (порт **5175**). Vite проксирует `/api` на живой API: сначала host **8000**, если он отвечает `/health`, иначе Compose **8010**. Override: `VITE_API_PROXY_TARGET`. Для **`npm run preview`** (порт **4173**) тот же прокси. Не оставляйте `frontend/vite.config.js` — Vite на Windows возьмёт его вместо `.ts`.
 5. **Проверка без браузера** (подставьте хост/порт своего API; PowerShell — кавычки как ниже):
 
 ```bash
@@ -63,7 +63,7 @@ poetry run python -m src.scripts.seed_multi_tenant_showcase
 - Отдельно задаётся **`organization_id`** (SaaS: сеть клиник, entitlements, экран Commerce). Сообщение «Нет организации» означало отсутствие **`organization_id`** в сессии/API, а не отсутствие привязки к клинике.
 - Если showcase накатывали старым сидом:  
   `poetry run python -m src.scripts.backfill_showcase_saas_extras`  
-  (подтянет org у админов, Commerce, **календарь записей пациентов** на 3 месяца ~65% слотов, **Kanban (задачи по колонкам)**, **календарь сотрудников** с участниками, **ленту** — два поста и комментарии, общий чат, витрину). После этого **перелогиньтесь** и при необходимости обновите экраны расписания / Kanban.
+  (подтянет org у админов, Commerce, **календарь записей пациентов** на 3 месяца ~65% слотов, **уплотнение ±14 дней** на английском, **Kanban** включая поток Sales и due dates в окне, **календарь сотрудников** + встречи окна, **ленту**, чаты, витрину, логин роли `doctor`). После этого **перелогиньтесь**.
 
 ### Уже залитая БД без демо-слоя
 
@@ -87,7 +87,7 @@ DELETE FROM bookings WHERE notes = 'showcase_calendar_v1';
 poetry run python -m src.scripts.backfill_showcase_saas_extras
 ```
 
-Идемпотентные префиксы для ручной чистки других демо-слоёв: задачи `title LIKE 'Демо Kanban:%'`, события персонала `title LIKE 'Демо календарь:%'` (каскады и FK смотрите в схеме БД).
+Идемпотентные маркеры для ручной чистки (каскады и FK — в схеме БД). **Новые** строки сида **без** слова Demo в title: Kanban/календарь/лента/huddle — канонические английские заголовки. Legacy (старые БД): `title LIKE 'Демо Kanban:%'` / `'Demo Kanban:%'` / `'Demo window:%'`; события `'Демо календарь:%'` / `'Demo calendar:%'` / `'Demo window cal:%'`; huddle `'Demo huddle:%'` или title `Two-week ops`. Bookings: `notes IN ('showcase_calendar_v1', 'en_demo_window_v1')`.
 
 Канон для QA: **`docs/artifacts/QA_ARCH_SHOWCASE_DEMO_LAYER.md`**.
 
@@ -101,13 +101,13 @@ poetry run python -m src.scripts.backfill_showcase_saas_extras
 
 ## Владельцы (owner)
 
-| Город / юрлицо | Email |
-|----------------|-------|
-| Казань, ООО «Улыбка Плюс» | owner.kazan@showcase-mt.demo |
-| Нижний Новгород, «Дентал-Про НН» | owner.nizhny@showcase-mt.demo |
-| Самара, «Семейная стоматология Самара» | owner.samara@showcase-mt.demo |
-| Краснодар, «Имплант-Эксперт Юг» | owner.krasnodar@showcase-mt.demo |
-| Ростов, «Премьер Дент Юг» | owner.rostov@showcase-mt.demo |
+| Город / юрлицо (ключ email) | Отображаемая клиника | Email |
+|-----------------------------|----------------------|-------|
+| Austin, TX (`kazan`) | Brightside Dental — Austin | owner.kazan@showcase-mt.demo |
+| Boston, MA (`nizhny`) | Harbor Smile — Boston | owner.nizhny@showcase-mt.demo |
+| Lyon (`samara`) | Clinique Dentaire Lumière — Lyon | owner.samara@showcase-mt.demo |
+| Milan (`krasnodar`) | Studio Dentale Aurora — Milan | owner.krasnodar@showcase-mt.demo |
+| Chicago, IL (`rostov`) | Lakeshore Family Dental — Chicago | owner.rostov@showcase-mt.demo |
 
 ## Администраторы (admin)
 
@@ -138,6 +138,18 @@ poetry run python -m src.scripts.backfill_showcase_saas_extras
 | marketing2.krasnodar@showcase-mt.demo |
 | marketing1.rostov@showcase-mt.demo |
 | marketing2.rostov@showcase-mt.demo |
+
+## Врач (роль `doctor`, не карточка врача в расписании)
+
+Узкий RBAC: задачи, медкарта, staff chat. Нет payroll / CRM / Omni inbox. Отображаемое имя **Hannah Cole, DDS** — отдельно от chair-врачей (Paul Brennan / Mary Ellis / Ben Carter).
+
+| Email |
+|-------|
+| doctor1.kazan@showcase-mt.demo |
+| doctor1.nizhny@showcase-mt.demo |
+| doctor1.samara@showcase-mt.demo |
+| doctor1.krasnodar@showcase-mt.demo |
+| doctor1.rostov@showcase-mt.demo |
 
 ## Пароль (все строки выше)
 

@@ -2,7 +2,8 @@
 
 Заполняет данные для «живой» презентации: organization_id у админов, Commerce (точка + SKU + остатки),
 календарь записей пациентов (3 месяца, ~65% слотов), **поток задач + Kanban-доска**, **календарь сотрудников**,
-лента (два поста и комментарии), общий чат, витрина. Идемпотентно по маркерам (префиксы заголовков, ``notes``).
+лента (два поста и комментарии), общий чат, витрина. Идемпотентно по маркерам: канонические EN titles,
+legacy RU / ``Demo …`` префиксы (после ``showcase_en_video_layer``), ``notes``.
 
 Для БД, где showcase уже накатан старой версией сида (без organization_id у admins):
 
@@ -18,7 +19,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.dto.task_dto import TASK_STATUSES
@@ -53,6 +54,19 @@ from src.domain.entities.task_board import TaskBoard
 from src.domain.entities.task_board_column import TaskBoardColumn
 from src.domain.entities.task_comment import TaskComment
 from src.domain.entities.task_stream import TaskStream
+from src.scripts.showcase_en_video_layer import (
+    CAL_TITLES_CANONICAL,
+    PROMO_BODY_CANONICAL,
+    PROMO_TITLE_CANONICAL,
+    PROMO_TITLE_PREFIX as PROMO_TITLE_PREFIX_EN,
+    SHOWCASE_STAFF_CAL_PREFIX as SHOWCASE_STAFF_CAL_PREFIX_EN,
+    SHOWCASE_TASK_PREFIX as SHOWCASE_TASK_PREFIX_EN,
+    STAFF_FEED_TITLE_NPS,
+    STAFF_FEED_TITLE_PREFIX as STAFF_FEED_TITLE_PREFIX_EN,
+    STAFF_FEED_TITLE_WEEK,
+    STAFF_GENERAL_OPENERS,
+    TASK_TITLES_CANONICAL,
+)
 
 # Совпадает с seed_multi_tenant_showcase.SEED_MARKER — клиники из этого сида.
 SHOWCASE_INTENT_NOTES = "seed:multi_tenant_showcase_v1"
@@ -60,13 +74,27 @@ DEMO_STOCK_CODE = "SHOWCASE_DEMO_MAIN"
 GENERAL_ROOM_KIND = "GENERAL"
 MEMBERSHIP_GENERAL = "general"
 STAFF_FEED_TITLE_PREFIX = "Демо CRM:"
-STAFF_FEED_POST2_TITLE = f"{STAFF_FEED_TITLE_PREFIX} Сводка NPS и отзывы"
 STAFF_FEED_COMMENT2_BODY = (
-    "Чеклист для стойки выложу в KB до пятницы, ссылку пришлю в общий чат."
+    "I’ll publish the front-desk checklist in the knowledge base by Friday and drop the link in team chat."
 )
 PROMO_TITLE_PREFIX = "Демо витрина:"
 SHOWCASE_TASK_PREFIX = "Демо Kanban:"
 SHOWCASE_STAFF_CAL_PREFIX = "Демо календарь:"
+# Lookup: RU seed + legacy "Demo …" prefixes + canonical workplace titles.
+STAFF_FEED_POST1_TITLES = (
+    STAFF_FEED_TITLE_WEEK,
+    f"{STAFF_FEED_TITLE_PREFIX} План на неделю",
+    f"{STAFF_FEED_TITLE_PREFIX_EN} Week plan",
+)
+STAFF_FEED_POST2_TITLES = (
+    STAFF_FEED_TITLE_NPS,
+    f"{STAFF_FEED_TITLE_PREFIX} Сводка NPS и отзывы",
+    f"{STAFF_FEED_TITLE_PREFIX_EN} NPS and reviews digest",
+)
+STAFF_FEED_COMMENT2_BODIES = (
+    STAFF_FEED_COMMENT2_BODY,
+    "Чеклист для стойки выложу в KB до пятницы, ссылку пришлю в общий чат.",
+)
 # Единый маркер строки в bookings.notes — слой календаря идемпотентен по факту наличия таких записей.
 BOOKING_CALENDAR_NOTE = "showcase_calendar_v1"
 # Доля занятых слотов 09:00–17:30 (шаг 30 мин) в пределах 60–70%.
@@ -402,15 +430,18 @@ async def _ensure_showcase_kanban_tasks(
     owner_admin_id: uuid.UUID,
 ) -> uuid.UUID | None:
     """Задачи по колонкам Kanban + комментарии; первая задача — для связи с календарём сотрудника."""
+    task_prefix_filter = or_(
+        Task.title.like(f"{SHOWCASE_TASK_PREFIX}%"),
+        Task.title.like(f"{SHOWCASE_TASK_PREFIX_EN}%"),
+        Task.title.in_(TASK_TITLES_CANONICAL),
+    )
     marker = await session.scalar(
-        select(func.count())
-        .select_from(Task)
-        .where(Task.clinic_id == clinic_id, Task.title.like(f"{SHOWCASE_TASK_PREFIX}%"))
+        select(func.count()).select_from(Task).where(Task.clinic_id == clinic_id, task_prefix_filter)
     )
     if marker and int(marker) > 0:
         first = await session.scalar(
             select(Task.id)
-            .where(Task.clinic_id == clinic_id, Task.title.like(f"{SHOWCASE_TASK_PREFIX}%"))
+            .where(Task.clinic_id == clinic_id, task_prefix_filter)
             .order_by(Task.created_at.asc())
             .limit(1)
         )
@@ -436,26 +467,25 @@ async def _ensure_showcase_kanban_tasks(
     now = _utc_aware()
 
     defs: list[tuple[str, str, str, int, uuid.UUID | None, bool, datetime | None]] = [
-        ("Сверка прайса с сайтом", "open", "high", 0, None, False, None),
-        ("Позвонить по no-show за вчера", "open", "urgent", 1, None, False, now + timedelta(days=1)),
-        ("Подготовить отчёт для руководителя", "open", "medium", 2, None, False, now + timedelta(days=3)),
-        ("Согласовать скидку по абонементу", "in_progress", "high", 0, pid, False, now + timedelta(days=2)),
-        ("Внедрить чеклист на стойке", "in_progress", "medium", 1, None, False, None),
-        ("Обучение нового администратора", "in_progress", "low", 2, None, False, now + timedelta(days=5)),
-        ("Ждём ответ стоматолога-ортодонта", "on_hold", "medium", 0, None, False, None),
-        ("Проверка витрины перед акцией", "review", "high", 1, None, False, now + timedelta(days=1)),
-        ("Согласование макетов с маркетингом", "review", "medium", 2, None, False, None),
-        ("Закрыть модуль гигиены за месяц", "done", "medium", 0, pid, True, None),
-        ("Актуализировать FAQ на сайте", "done", "low", 1, None, True, None),
-        ("Ежемесячная сверка кассы", "done", "high", 2, None, True, None),
-        ("Перенос старого договора (отменено)", "cancelled", "low", 0, None, False, None),
+        (TASK_TITLES_CANONICAL[0], "open", "high", 0, None, False, None),
+        (TASK_TITLES_CANONICAL[1], "open", "urgent", 1, None, False, now + timedelta(days=1)),
+        (TASK_TITLES_CANONICAL[2], "open", "medium", 2, None, False, now + timedelta(days=3)),
+        (TASK_TITLES_CANONICAL[3], "in_progress", "high", 0, pid, False, now + timedelta(days=2)),
+        (TASK_TITLES_CANONICAL[4], "in_progress", "medium", 1, None, False, None),
+        (TASK_TITLES_CANONICAL[5], "in_progress", "low", 2, None, False, now + timedelta(days=5)),
+        (TASK_TITLES_CANONICAL[6], "on_hold", "medium", 0, None, False, None),
+        (TASK_TITLES_CANONICAL[7], "review", "high", 1, None, False, now + timedelta(days=1)),
+        (TASK_TITLES_CANONICAL[8], "review", "medium", 2, None, False, None),
+        (TASK_TITLES_CANONICAL[9], "done", "medium", 0, pid, True, None),
+        (TASK_TITLES_CANONICAL[10], "done", "low", 1, None, True, None),
+        (TASK_TITLES_CANONICAL[11], "done", "high", 2, None, True, None),
+        (TASK_TITLES_CANONICAL[12], "cancelled", "low", 0, None, False, None),
     ]
 
     first_id: uuid.UUID | None = None
     created_ids: list[uuid.UUID] = []
-    for rank, (suffix, status, priority, aidx, patient_id, done_chk, due) in enumerate(defs, start=1):
+    for rank, (title, status, priority, aidx, patient_id, done_chk, due) in enumerate(defs, start=1):
         aid = admin_ids[aidx % len(admin_ids)]
-        title = f"{SHOWCASE_TASK_PREFIX} {suffix}"
         completed_at = (now - timedelta(days=rank % 4 + 1)) if status == "done" else None
         tid = uuid.uuid4()
         if first_id is None:
@@ -465,7 +495,7 @@ async def _ensure_showcase_kanban_tasks(
             clinic_id=clinic_id,
             stream_id=stream_id,
             title=title,
-            description="Автозаполнение showcase: задача связана с реальными admin_id / при необходимости patient_id.",
+            description="Linked to a real staff member (and a patient when relevant).",
             status=status,
             priority=priority,
             creator_id=owner_admin_id,
@@ -488,10 +518,10 @@ async def _ensure_showcase_kanban_tasks(
     await session.flush()
 
     comment_pairs = [
-        (created_ids[0], admin_ids[1 % len(admin_ids)], "Забрала в работу, до конца дня пришлю статус."),
-        (created_ids[1], owner_admin_id, "Список no-show приложу в комментарии к отчёту."),
-        (created_ids[3], admin_ids[2 % len(admin_ids)], "Нужен скан договёна с пациентом — без него не закрываю."),
-        (created_ids[7], owner_admin_id, "Маркетинг прислал макеты v2, жду финального ОК."),
+        (created_ids[0], admin_ids[1 % len(admin_ids)], "Picked this up — status by end of day."),
+        (created_ids[1], owner_admin_id, "I’ll attach the no-show list to the report."),
+        (created_ids[3], admin_ids[2 % len(admin_ids)], "Need the signed scan from the patient before I can close this."),
+        (created_ids[7], owner_admin_id, "Marketing sent v2 creatives — waiting on final OK."),
     ]
     for task_id, author_id, text in comment_pairs:
         session.add(TaskComment(id=uuid.uuid4(), task_id=task_id, author_id=author_id, text=text))
@@ -531,7 +561,11 @@ async def _ensure_showcase_staff_calendar_events(
         .select_from(StaffCalendarEvent)
         .where(
             StaffCalendarEvent.clinic_id == clinic_id,
-            StaffCalendarEvent.title.like(f"{SHOWCASE_STAFF_CAL_PREFIX}%"),
+            or_(
+                StaffCalendarEvent.title.like(f"{SHOWCASE_STAFF_CAL_PREFIX}%"),
+                StaffCalendarEvent.title.like(f"{SHOWCASE_STAFF_CAL_PREFIX_EN}%"),
+                StaffCalendarEvent.title.in_(CAL_TITLES_CANONICAL),
+            ),
         )
     )
     if existing and int(existing) > 0:
@@ -553,22 +587,7 @@ async def _ensure_showcase_staff_calendar_events(
             weekdays.append(d)
         d += timedelta(days=1)
 
-    titles = [
-        "Планёрка филиала",
-        "Разбор NPS и отзывов",
-        "Синк с маркетингом",
-        "Обучение: новый регламент стерилизации",
-        "Сверка склад/витрина",
-        "Подготовка к акции выходного дня",
-        "Разбор загрузки расписания",
-        "Внутренний аудит документов",
-        "Собрание по качеству сервиса",
-        "IT: обновление ПО на стойке",
-        "Финансовая сверка за период",
-        "HR: график отпусков",
-        "Закупка расходников",
-        "Ретроспектива недели",
-    ]
+    titles = list(CAL_TITLES_CANONICAL)
 
     ack_now = _utc_naive_wall()
     hour_slots = [9, 11, 14, 16]
@@ -588,8 +607,8 @@ async def _ensure_showcase_staff_calendar_events(
             ev = StaffCalendarEvent(
                 id=ev_id,
                 clinic_id=clinic_id,
-                title=f"{SHOWCASE_STAFF_CAL_PREFIX} {titles[idx]}",
-                description="Демо-событие showcase (совещание персонала).",
+                title=titles[idx],
+                description="Staff meeting.",
                 starts_at=starts_at,
                 ends_at=ends_at,
                 all_day=False,
@@ -636,7 +655,7 @@ async def _ensure_staff_general_chat(
             id=uuid.uuid4(),
             clinic_id=clinic_id,
             kind=GENERAL_ROOM_KIND,
-            title="Общий чат",
+            title="Team chat",
             created_by_admin_id=owner_id,
         )
         session.add(room)
@@ -671,11 +690,8 @@ async def _ensure_staff_general_chat(
 
     now = _utc_naive_wall()
     lines = [
-        (owner_id, "Коллеги, доброе утро! Сегодня держим фокус на NPS после приёма — короткий опрос у администратора."),
-        (
-            second_speaker_id,
-            "Принято. На стойке уже стоят планшеты с формой, вечером снимем сводку в отчётах.",
-        ),
+        (owner_id, STAFF_GENERAL_OPENERS[0]),
+        (second_speaker_id, STAFF_GENERAL_OPENERS[1]),
     ]
     for i, (author, body) in enumerate(lines):
         session.add(
@@ -696,12 +712,12 @@ async def _ensure_staff_feed(
     owner_id: uuid.UUID,
     comment_author_id: uuid.UUID,
 ) -> None:
-    post1_title = f"{STAFF_FEED_TITLE_PREFIX} План на неделю"
+    post1_title = STAFF_FEED_POST1_TITLES[0]
     p1 = (
         await session.execute(
             select(StaffFeedPost).where(
                 StaffFeedPost.clinic_id == clinic_id,
-                StaffFeedPost.title == post1_title,
+                StaffFeedPost.title.in_(STAFF_FEED_POST1_TITLES),
                 StaffFeedPost.deleted_at.is_(None),
             )
         )
@@ -714,8 +730,7 @@ async def _ensure_staff_feed(
             author_admin_id=owner_id,
             title=post1_title,
             body=(
-                "Напоминаю: обновили скрипт согласования скидок по абонементам. "
-                "Все согласования только через CRM-карточку, без устных договорённостей."
+                "Reminder: membership discounts go through the CRM card only — no verbal deals at the desk."
             ),
             is_announcement=False,
             priority_level="normal",
@@ -731,7 +746,7 @@ async def _ensure_staff_feed(
                 post_id=p1.id,
                 parent_comment_id=None,
                 author_admin_id=comment_author_id,
-                body="Зафиксировали на собрании. Маркетинг подготовит короткий гайд для стойки регистрации.",
+                body="Logged in the huddle. Marketing will ship a one-pager for the front desk.",
             )
         )
         await session.flush()
@@ -739,7 +754,7 @@ async def _ensure_staff_feed(
     c2_exists = await session.scalar(
         select(func.count())
         .select_from(StaffFeedComment)
-        .where(StaffFeedComment.post_id == p1.id, StaffFeedComment.body == STAFF_FEED_COMMENT2_BODY)
+        .where(StaffFeedComment.post_id == p1.id, StaffFeedComment.body.in_(STAFF_FEED_COMMENT2_BODIES))
     )
     if not c2_exists:
         session.add(
@@ -757,7 +772,7 @@ async def _ensure_staff_feed(
         await session.execute(
             select(StaffFeedPost).where(
                 StaffFeedPost.clinic_id == clinic_id,
-                StaffFeedPost.title == STAFF_FEED_POST2_TITLE,
+                StaffFeedPost.title.in_(STAFF_FEED_POST2_TITLES),
                 StaffFeedPost.deleted_at.is_(None),
             )
         )
@@ -767,10 +782,9 @@ async def _ensure_staff_feed(
             id=uuid.uuid4(),
             clinic_id=clinic_id,
             author_admin_id=comment_author_id,
-            title=STAFF_FEED_POST2_TITLE,
+            title=STAFF_FEED_POST2_TITLES[0],
             body=(
-                "За прошлую неделю NPS стабильный; негатив в основном по ожиданию у кресла. "
-                "Просьба: администраторам фиксировать фактическое время приёмов в CRM."
+                "NPS held last week; complaints are mostly chair wait time. Please log actual chair time in CRM."
             ),
             is_announcement=False,
             priority_level="normal",
@@ -786,7 +800,7 @@ async def _ensure_staff_feed(
                 post_id=p2.id,
                 parent_comment_id=None,
                 author_admin_id=owner_id,
-                body="Супер, в пятницу выложу сводку в KB и отметлю в общем чате.",
+                body="Great — I’ll post the digest in the knowledge base on Friday and ping team chat.",
             )
         )
         await session.flush()
@@ -794,10 +808,16 @@ async def _ensure_staff_feed(
 
 async def _ensure_promo_and_story(session: AsyncSession, clinic_id: uuid.UUID) -> None:
     res = await session.execute(
-        select(PromoPost.id).where(
+        select(PromoPost.id)
+        .where(
             PromoPost.clinic_id == clinic_id,
-            PromoPost.title.like(f"{PROMO_TITLE_PREFIX}%"),
+            or_(
+                PromoPost.title.like(f"{PROMO_TITLE_PREFIX}%"),
+                PromoPost.title.like(f"{PROMO_TITLE_PREFIX_EN}%"),
+                PromoPost.title == PROMO_TITLE_CANONICAL,
+            ),
         )
+        .limit(1)
     )
     if res.scalar_one_or_none() is None:
         now = _utc_naive_wall()
@@ -805,11 +825,8 @@ async def _ensure_promo_and_story(session: AsyncSession, clinic_id: uuid.UUID) -
             PromoPost(
                 id=uuid.uuid4(),
                 clinic_id=clinic_id,
-                title=f"{PROMO_TITLE_PREFIX} Бесплатная консультация по имплантации",
-                body=(
-                    "Запишитесь до конца месяца — первичный осмотр и КТ-план бесплатно при последующем лечении. "
-                    "Акция для новых пациентов клиники."
-                ),
+                title=PROMO_TITLE_CANONICAL,
+                body=PROMO_BODY_CANONICAL,
                 is_published=True,
                 published_at=now - timedelta(days=2),
             )
@@ -822,8 +839,8 @@ async def _ensure_promo_and_story(session: AsyncSession, clinic_id: uuid.UUID) -
                 id=uuid.uuid4(),
                 clinic_id=clinic_id,
                 media_type="image",
-                media_url="https://placehold.co/360x640/e2e8f0/1e293b?text=Demo+Story",
-                caption="Новая зона отдыха для пациентов — загляните на ремонт до открытия!",
+                media_url="https://placehold.co/360x640/e2e8f0/1e293b?text=Smile",
+                caption="New lounge for patients — peek at the renovation before we open.",
                 order_index=0,
                 expires_at=_utc_naive_wall() + timedelta(days=14),
             )

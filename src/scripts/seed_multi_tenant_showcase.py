@@ -3,18 +3,20 @@
 Fills the **platform founder** dashboard (`compute_platform_founder_dashboard_summary`):
 active organizations with non-revoked ``platform_signup_intents`` and catalog-backed MRR.
 
-Also seeds per clinic: owner (RBAC owner), 2× admin, 2× manager (маркетолог / широкий доступ),
-doctors, patients, dense calendar bookings (3 months via ``showcase_saas_extras``), one omnichannel inbound thread.
+Also seeds per clinic: owner (RBAC owner), 2× admin, 2× manager, 1× doctor-role staff,
+doctors, patients, dense calendar (3 months via extras), a denser English ±14-day window,
+and English names / staff / omni via ``showcase_en_video_layer`` + ``showcase_en_demo_window``.
 
 **Not** an Alembic migration: schema stays in Alembic only; run ``alembic upgrade head`` first.
 
-Idempotent: if any ``platform_signup_intents.notes == SEED_MARKER``, the script exits.
+Idempotent: if any ``platform_signup_intents.notes == SEED_MARKER``, the script still applies
+SaaS extras (safe after EN titles) and the English video layer, then exits.
 
 Usage:
   poetry run python -m src.scripts.seed_multi_tenant_showcase
   poetry run python -m src.scripts.seed_multi_tenant_showcase --list-credentials
 
-Credentials (local demo only): see ``documentation/DEMO_MULTI_TENANT_CREDENTIALS.md``.
+Credentials (local demo only): see ``documentation/DEMO_CREDENTIALS.md``.
 """
 
 from __future__ import annotations
@@ -23,8 +25,6 @@ import argparse
 import asyncio
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
-from decimal import Decimal
-
 from passlib.hash import pbkdf2_sha256
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,126 +48,23 @@ from src.scripts.seed_rbac_baseline import (
     ensure_user_owner_role,
     ensure_user_role_by_code,
 )
-from src.scripts.showcase_saas_extras import apply_showcase_saas_extras, clear_schedule_cache_best_effort
+from src.scripts.showcase_en_catalog import (
+    DOCTORS_TEMPLATE,
+    ORG_SPECS,
+    PATIENT_NAMES,
+    SERVICES_TEMPLATE,
+    SHOWCASE_PASSWORD,
+    patient_phone,
+)
+from src.scripts.showcase_en_demo_window import apply_showcase_en_demo_window
+from src.scripts.showcase_en_video_layer import apply_showcase_en_video_layer, relabel_platform_catalog_en
+from src.scripts.showcase_saas_extras import (
+    apply_showcase_saas_extras,
+    clear_schedule_cache_best_effort,
+    list_showcase_clinic_ids,
+)
 
 SEED_MARKER = "seed:multi_tenant_showcase_v1"
-SHOWCASE_PASSWORD = "ShowcaseMT2026!"
-
-ORG_SPECS: list[dict[str, object]] = [
-    {
-        "key": "kazan",
-        "org_name": "ООО «Улыбка Плюс»",
-        "clinic_name": "Стоматология «Улыбка Плюс» — Казань",
-        "slug": "showcase-kazan",
-        "plan_slug": "start",
-        "owner_email": "owner.kazan@showcase-mt.demo",
-        "owner_name": "Рафаэль Ильдарович Мухаметзянов",
-        "admins": [
-            ("admin1.kazan@showcase-mt.demo", "Светлана Олеговна Кириллова"),
-            ("admin2.kazan@showcase-mt.demo", "Дмитрий Павлович Ершов"),
-        ],
-        "marketers": [
-            ("marketing1.kazan@showcase-mt.demo", "Алина Сергеевна Волкова"),
-            ("marketing2.kazan@showcase-mt.demo", "Кирилл Андреевич Назаров"),
-        ],
-    },
-    {
-        "key": "nizhny",
-        "org_name": "ООО «Дентал-Про НН»",
-        "clinic_name": "Клиника «Дентал-Про» — Нижний Новгород",
-        "slug": "showcase-nizhny",
-        "plan_slug": "growth",
-        "owner_email": "owner.nizhny@showcase-mt.demo",
-        "owner_name": "Елена Викторовна Смирнова",
-        "admins": [
-            ("admin1.nizhny@showcase-mt.demo", "Игорь Николаевич Зайцев"),
-            ("admin2.nizhny@showcase-mt.demo", "Марина Олеговна Фролова"),
-        ],
-        "marketers": [
-            ("marketing1.nizhny@showcase-mt.demo", "Ольга Игоревна Лебедева"),
-            ("marketing2.nizhny@showcase-mt.demo", "Павел Сергеевич Орлов"),
-        ],
-    },
-    {
-        "key": "samara",
-        "org_name": "ООО «Семейная стоматология Самара»",
-        "clinic_name": "«Семейная стоматология» — Самара",
-        "slug": "showcase-samara",
-        "plan_slug": "business_os",
-        "owner_email": "owner.samara@showcase-mt.demo",
-        "owner_name": "Андрей Олегович Белов",
-        "admins": [
-            ("admin1.samara@showcase-mt.demo", "Наталья Евгеньевна Павлова"),
-            ("admin2.samara@showcase-mt.demo", "Сергей Владимирович Тихонов"),
-        ],
-        "marketers": [
-            ("marketing1.samara@showcase-mt.demo", "Юлия Викторовна Егорова"),
-            ("marketing2.samara@showcase-mt.demo", "Максим Андреевич Зайцев"),
-        ],
-    },
-    {
-        "key": "krasnodar",
-        "org_name": "ООО «Имплант-Эксперт Юг»",
-        "clinic_name": "«Имплант-Эксперт» — Краснодар",
-        "slug": "showcase-krasnodar",
-        "plan_slug": "growth",
-        "owner_email": "owner.krasnodar@showcase-mt.demo",
-        "owner_name": "Оксана Валерьевна Волкова",
-        "admins": [
-            ("admin1.krasnodar@showcase-mt.demo", "Роман Сергеевич Никитин"),
-            ("admin2.krasnodar@showcase-mt.demo", "Ирина Викторовна Лебедева"),
-        ],
-        "marketers": [
-            ("marketing1.krasnodar@showcase-mt.demo", "Дарья Викторовна Орлова"),
-            ("marketing2.krasnodar@showcase-mt.demo", "Константин Юрьевич Тарасов"),
-        ],
-    },
-    {
-        "key": "rostov",
-        "org_name": "ООО «Премьер Дент Юг»",
-        "clinic_name": "«Премьер Дент» — Ростов-на-Дону",
-        "slug": "showcase-rostov",
-        "plan_slug": "start",
-        "owner_email": "owner.rostov@showcase-mt.demo",
-        "owner_name": "Виктор Николаевич Крылов",
-        "admins": [
-            ("admin1.rostov@showcase-mt.demo", "Алёна Сергеевна Михайлова"),
-            ("admin2.rostov@showcase-mt.demo", "Владислав Игоревич Тимофеев"),
-        ],
-        "marketers": [
-            ("marketing1.rostov@showcase-mt.demo", "Полина Викторовна Гусева"),
-            ("marketing2.rostov@showcase-mt.demo", "Алексей Игоревич Семёнов"),
-        ],
-    },
-]
-
-DOCTORS_TEMPLATE: list[dict[str, object]] = [
-    {"full_name": "Волкова Марина Евгеньевна", "specialization": "Врач-стоматолог-терапевт", "experience_years": 12},
-    {"full_name": "Семёнов Виктор Павлович", "specialization": "Хирург-имплантолог", "experience_years": 10},
-    {"full_name": "Ларина Ольга Сергеевна", "specialization": "Ортодонт", "experience_years": 8},
-]
-
-SERVICES_TEMPLATE: list[tuple[str, str, str, Decimal, int]] = [
-    ("Первичная консультация", "therapy", "Осмотр и план лечения", Decimal("1800"), 30),
-    ("Профессиональная гигиена", "hygiene", "Удаление отложений, полировка", Decimal("7200"), 60),
-    ("Лечение кариеса (одна поверхность)", "therapy", "Пломба", Decimal("6500"), 60),
-    ("Удаление зуба простое", "surgery", "Амбулаторно", Decimal("4200"), 45),
-]
-
-PATIENT_NAMES: list[str] = [
-    "Козлов Иван Сергеевич",
-    "Соколова Мария Андреевна",
-    "Нестеров Павел Дмитриевич",
-    "Филиппова Ольга Игоревна",
-    "Громов Артём Владимирович",
-    "Вишневская Татьяна Сергеевна",
-    "Морозов Денис Николаевич",
-    "Кузнецова Екатерина Павловна",
-    "Романов Илья Олегович",
-    "Смирнова Анна Викторовна",
-    "Белова Светлана Михайловна",
-    "Тарасов Константин Юрьевич",
-]
 
 
 def _tariff_snapshot(plan_slug: str) -> dict[str, object]:
@@ -219,7 +116,7 @@ async def _seed_one_org(
         name=str(spec["clinic_name"]),
         phone=f"+7495{1000000 + org_index * 11111:07d}",
         email=f"info.{spec['key']}@showcase-mt.demo",
-        address=f"Демо-адрес, филиал «{spec['key']}»",
+        address=str(spec.get("address") or f"Demo address, {spec['key']} branch"),
         business_type="stomatology",
         clinic_slug=str(spec["slug"]),
     )
@@ -343,13 +240,11 @@ async def _seed_one_org(
 
     patients: list[Patient] = []
     for i, pn in enumerate(PATIENT_NAMES):
-        tail = 9000000000 + org_index * 10000 + i
-        phone = f"+7{tail}"
         local = f"p{org_index}.{i}@showcase-mt.demo"
         patient = Patient(
             id=uuid.uuid4(),
             clinic_id=clinic.id,
-            phone=phone,
+            phone=patient_phone(str(spec["key"]), i),
             full_name=pn,
             email=local,
             birth_date=date(1978 + (i % 25), 1 + (i % 11), 1 + (i % 20)),
@@ -366,12 +261,14 @@ async def _seed_one_org(
             external_message_id=f"tg-{clinic.id}-showcase",
             from_id=ext,
             chat_external_id=ext,
-            text="Здравствуйте, хочу уточнить интервал между приёмами после имплантации.",
+            text="Hi — I’d like to confirm the interval between visits after implant surgery.",
             timestamp=datetime.now(timezone.utc) - timedelta(hours=2),
         )
     )
 
     await apply_showcase_saas_extras(session, clinic=clinic, owner_admin_id=owner.id)
+    await apply_showcase_en_video_layer(session, clinic=clinic, owner_admin_id=owner.id)
+    await apply_showcase_en_demo_window(session, clinic=clinic, owner_admin_id=owner.id)
 
 
 async def seed_main() -> None:
@@ -380,11 +277,20 @@ async def seed_main() -> None:
             select(PlatformSignupIntent).where(PlatformSignupIntent.notes == SEED_MARKER).limit(1)
         )
         if res.scalar_one_or_none() is not None:
+            triples = await list_showcase_clinic_ids(session)
+            for _org_id, clinic_id, owner_id in triples:
+                clinic = await session.get(Clinic, clinic_id)
+                if clinic is None:
+                    continue
+                await apply_showcase_saas_extras(session, clinic=clinic, owner_admin_id=owner_id)
+                await apply_showcase_en_video_layer(session, clinic=clinic, owner_admin_id=owner_id)
+                await apply_showcase_en_demo_window(session, clinic=clinic, owner_admin_id=owner_id)
+            await relabel_platform_catalog_en(session)
+            await session.commit()
+            await clear_schedule_cache_best_effort()
             print(
-                "Multi-tenant showcase already applied (notes marker on platform_signup_intents). "
-                "To re-run: reset DB, then alembic upgrade head.\n"
-                "To add Commerce, patient calendar, Kanban tasks, staff calendar, feed/chat on existing DB: "
-                "poetry run python -m src.scripts.backfill_showcase_saas_extras"
+                "Multi-tenant showcase already applied (notes marker). "
+                f"SaaS extras + English video layer + ±14-day demo window refreshed for {len(triples)} clinic(s)."
             )
             return
 
@@ -393,30 +299,35 @@ async def seed_main() -> None:
         for i, spec in enumerate(ORG_SPECS):
             await _seed_one_org(session, spec, i)
 
+        await relabel_platform_catalog_en(session)
         await session.commit()
         await clear_schedule_cache_best_effort()
-        print("Multi-tenant showcase seed OK (5 orgs, founder KPIs + per-clinic staff).")
+        print("Multi-tenant showcase seed OK (5 orgs, EN directory + staff/omni dialogues).")
         print(f"  Shared password: {SHOWCASE_PASSWORD}")
-        print("  Human-readable list: documentation/DEMO_MULTI_TENANT_CREDENTIALS.md")
+        print("  Human-readable list: documentation/DEMO_CREDENTIALS.md")
 
 
 def list_credentials() -> None:
     # ASCII-only lines so `python -m ... --list-credentials` works on Windows cp1252 consoles.
     print("# Demo credentials (multi-tenant showcase)\n")
     print(f"Single password for all accounts below: `{SHOWCASE_PASSWORD}`\n")
-    print("| Role / site | Email |")
-    print("|---|---|")
+    print("| Role / site | Email | Display name |")
+    print("|---|---|---|")
     for spec in ORG_SPECS:
         key = spec["key"]
-        print(f"| Owner ({key}) | {spec['owner_email']} |")
+        print(f"| Owner — {spec['clinic_name']} (`{key}`) | {spec['owner_email']} | {spec['owner_name']} |")
         admins = spec["admins"]
         assert isinstance(admins, list)
-        for email, _ in admins:
-            print(f"| Admin ({key}) | {email} |")
+        for email, name in admins:
+            print(f"| Admin (`{key}`) | {email} | {name} |")
         marketers = spec["marketers"]
         assert isinstance(marketers, list)
-        for email, _ in marketers:
-            print(f"| Marketer / manager ({key}) | {email} |")
+        for email, name in marketers:
+            print(f"| Marketer / manager (`{key}`) | {email} | {name} |")
+        clinicians = spec.get("clinicians")
+        if isinstance(clinicians, list):
+            for email, name in clinicians:
+                print(f"| Doctor-role staff (`{key}`) | {email} | {name} |")
     print(
         "\nPlatform founder user is not created here; use "
         "`python -m src.scripts.create_platform_founder_user`."

@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 
 from src.infrastructure.database.base import AsyncSessionLocal
+from src.scripts.showcase_en_demo_window import apply_showcase_en_demo_window
+from src.scripts.showcase_en_video_layer import apply_showcase_en_video_layer, relabel_platform_catalog_en
 from src.scripts.showcase_saas_extras import (
     apply_showcase_saas_extras,
     clear_schedule_cache_best_effort,
@@ -30,9 +32,15 @@ async def main() -> None:
             if clinic is None:
                 continue
             await apply_showcase_saas_extras(session, clinic=clinic, owner_admin_id=owner_id)
+            await apply_showcase_en_video_layer(session, clinic=clinic, owner_admin_id=owner_id)
+            await apply_showcase_en_demo_window(session, clinic=clinic, owner_admin_id=owner_id)
+        await relabel_platform_catalog_en(session)
         await session.commit()
         await clear_schedule_cache_best_effort()
-        print(f"Showcase SaaS extras applied for {len(triples)} clinic(s). Re-login admin to refresh session.")
+        print(
+            f"Showcase SaaS extras + English video layer + ±14-day demo window applied for {len(triples)} clinic(s). "
+            "Re-login admin to refresh session."
+        )
 
 
 if __name__ == "__main__":
