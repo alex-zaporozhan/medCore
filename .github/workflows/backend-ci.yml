@@ -102,7 +102,7 @@ jobs:
 
       - name: pip-audit
         run: |
-          poetry run pip install pip-audit
+          poetry run pip install -U "pip>=26.2" "setuptools>=83" "msgpack>=1.2.1" pip-audit
           poetry run pip-audit
 
       - uses: actions/setup-node@v4
