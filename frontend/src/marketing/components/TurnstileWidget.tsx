@@ -1,5 +1,6 @@
 import { Box, Text } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const TURNSTILE_SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js";
 
@@ -59,6 +60,7 @@ function ensureTurnstileScript(): Promise<void> {
  * Виджет Cloudflare Turnstile для публичного checkout (адаптивный порог на backend).
  */
 export function TurnstileWidget({ siteKey, onToken, onExpire }: TurnstileWidgetProps) {
+  const { t } = useTranslation("marketing");
   const hostRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -81,7 +83,7 @@ export function TurnstileWidget({ siteKey, onToken, onExpire }: TurnstileWidgetP
         widgetIdRef.current = id;
       })
       .catch(() => {
-        if (!cancelled) setLoadErr("Не удалось загрузить Turnstile");
+        if (!cancelled) setLoadErr(t("checkout.turnstileLoad"));
       });
     return () => {
       cancelled = true;
@@ -90,7 +92,7 @@ export function TurnstileWidget({ siteKey, onToken, onExpire }: TurnstileWidgetP
         widgetIdRef.current = null;
       }
     };
-  }, [siteKey, onToken, onExpire]);
+  }, [siteKey, onToken, onExpire, t]);
 
   return (
     <Box>

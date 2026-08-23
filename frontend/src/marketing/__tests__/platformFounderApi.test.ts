@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { formatPlatformFounderApiError, parseJsonArray } from "../platformFounderApi";
+import { FounderQueryError, formatPlatformFounderApiError, founderFailMessage, parseJsonArray } from "../platformFounderApi";
 
 describe("parseJsonArray", () => {
   it("возвращает массив как есть", () => {
@@ -39,5 +39,23 @@ describe("formatPlatformFounderApiError", () => {
       json: vi.fn().mockRejectedValue(new Error("not json")),
     } as unknown as Response;
     expect(await formatPlatformFounderApiError(r, "fallback")).toBe("fallback");
+  });
+});
+
+describe("founderFailMessage", () => {
+  const t = ((key: string, opts?: { status?: number }) => {
+    if (key === "errors.status") return `HTTP ${opts?.status ?? 0}`;
+    return key;
+  }) as import("i18next").TFunction<"founder">;
+
+  it("translates kind at render time without using Error.message", () => {
+    expect(founderFailMessage(new FounderQueryError("session"), t)).toBe("errors.sessionInvalid");
+    expect(founderFailMessage(new FounderQueryError("http", { httpStatus: 502 }), t)).toBe("HTTP 502");
+  });
+
+  it("prefers API detail when present", () => {
+    expect(
+      founderFailMessage(new FounderQueryError("unavailable", { apiDetail: "platform_disabled" }), t),
+    ).toBe("platform_disabled");
   });
 });

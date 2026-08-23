@@ -1,6 +1,6 @@
 import { API_BASE } from "@/api/client";
 import { usePlatformFounderSession } from "@/marketing/contexts/PlatformFounderSessionContext";
-import { formatPlatformFounderApiError } from "@/marketing/platformFounderApi";
+import { FounderQueryError, formatPlatformFounderApiError, founderFailMessage } from "@/marketing/platformFounderApi";
 import {
   ActionIcon,
   Accordion,
@@ -21,8 +21,10 @@ import {
 import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 function ShortUuidCell({ id, label }: { id: string | null; label: string }) {
+  const { t } = useTranslation("founder");
   if (!id) {
     return <Text size="xs">—</Text>;
   }
@@ -35,8 +37,8 @@ function ShortUuidCell({ id, label }: { id: string | null; label: string }) {
       </Tooltip>
       <CopyButton value={id} timeout={2000}>
         {({ copied, copy }) => (
-          <Tooltip label={copied ? "Скопировано" : `Копировать ${label}`}>
-            <ActionIcon size="sm" variant="subtle" onClick={copy} aria-label={`Копировать ${label}`}>
+          <Tooltip label={copied ? t("queue.copied") : t("queue.copy", { label })}>
+            <ActionIcon size="sm" variant="subtle" onClick={copy} aria-label={t("queue.copy", { label })}>
               {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
             </ActionIcon>
           </Tooltip>
@@ -63,6 +65,7 @@ type QueueItem = {
  * Очередь signup / провижининг (FE-E2). Токен — из сессии входа; опционально ручная подмена для ops.
  */
 export default function PlatformFounderProvisionQueuePage() {
+  const { t } = useTranslation("founder");
   const { token, setToken } = usePlatformFounderSession();
   const queryClient = useQueryClient();
   const [manualToken, setManualToken] = useState("");
@@ -75,18 +78,15 @@ export default function PlatformFounderProvisionQueuePage() {
         headers: { Authorization: `Bearer ${token.trim()}` },
       });
       if (r.status === 401 || r.status === 403) {
-        throw new Error("Недействительный или чужой токен (нужен JWT Основателя).");
+        throw new FounderQueryError("wrongToken");
       }
       if (r.status === 503) {
-        throw new Error(
-          await formatPlatformFounderApiError(
-            r,
-            "Сервис основателя отключён (нет PLATFORM_FOUNDER_JWT_SECRET в production).",
-          ),
-        );
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("serviceDisabled", { apiDetail: apiDetail || undefined });
       }
       if (!r.ok) {
-        throw new Error(await formatPlatformFounderApiError(r, `Ошибка ${r.status}`));
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("http", { httpStatus: r.status, apiDetail: apiDetail || undefined });
       }
       const data = (await r.json()) as QueueItem[];
       return Array.isArray(data) ? data : [];
@@ -104,14 +104,11 @@ export default function PlatformFounderProvisionQueuePage() {
         },
       );
       if (!r.ok) {
-        throw new Error(
-          await formatPlatformFounderApiError(
-            r,
-            r.status === 409
-              ? "Retry невозможен (статус intent или платёж не succeeded)."
-              : `Retry: ошибка ${r.status}`,
-          ),
-        );
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        if (r.status === 409) {
+          throw new FounderQueryError("retryConflict", { apiDetail: apiDetail || undefined });
+        }
+        throw new FounderQueryError("http", { httpStatus: r.status, apiDetail: apiDetail || undefined });
       }
     },
     onSuccess: () => {
@@ -137,14 +134,11 @@ export default function PlatformFounderProvisionQueuePage() {
         },
       );
       if (!r.ok) {
-        throw new Error(
-          await formatPlatformFounderApiError(
-            r,
-            r.status === 409
-              ? "Закрытие невозможно для этого статуса intent."
-              : `Закрытие: ошибка ${r.status}`,
-          ),
-        );
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        if (r.status === 409) {
+          throw new FounderQueryError("closeConflict", { apiDetail: apiDetail || undefined });
+        }
+        throw new FounderQueryError("http", { httpStatus: r.status, apiDetail: apiDetail || undefined });
       }
     },
     onSuccess: () => {
@@ -160,22 +154,20 @@ export default function PlatformFounderProvisionQueuePage() {
   }, [manualToken, setToken]);
 
   const rows = queueQ.data ?? [];
-  const errorMsg =
-    queueQ.error instanceof Error
-      ? queueQ.error.message
-      : retryMut.error instanceof Error
-        ? retryMut.error.message
-        : manualCloseMut.error instanceof Error
-          ? manualCloseMut.error.message
-          : null;
+  const errorMsg = founderFailMessage(
+    queueQ.error ?? retryMut.error ?? manualCloseMut.error ?? null,
+    t,
+  );
+  const errorShown =
+    queueQ.error || retryMut.error || manualCloseMut.error ? errorMsg : null;
 
   return (
     <Container size="xl" py="xl">
       <Stack gap="lg">
         <div>
-          <Title order={2}>Очередь провижининга</Title>
+          <Title order={2}>{t("queue.title")}</Title>
           <Text size="sm" c="dimmed" mt={4}>
-            Запросы идут с JWT сессии входа Основателя. Для подмены токена (dev/ops) — блок ниже.
+            {t("queue.lead")}
           </Text>
         </div>
 
@@ -183,21 +175,21 @@ export default function PlatformFounderProvisionQueuePage() {
           <Stack gap="sm">
             <Group>
               <Button variant="light" loading={queueQ.isFetching} onClick={() => void queueQ.refetch()}>
-                Обновить очередь
+                {t("queue.refresh")}
               </Button>
             </Group>
-            {errorMsg ? (
+            {errorShown ? (
               <Text size="sm" c="red">
-                {errorMsg}
+                {errorShown}
               </Text>
             ) : null}
             <Accordion variant="contained">
               <Accordion.Item value="manual-token">
-                <Accordion.Control>Расширенно: заменить Bearer-токен вручную</Accordion.Control>
+                <Accordion.Control>{t("queue.manualToken")}</Accordion.Control>
                 <Accordion.Panel>
                   <Stack gap="sm">
                     <PasswordInput
-                      label="Вставить JWT Основателя"
+                      label={t("queue.pasteJwt")}
                       value={manualToken}
                       onChange={(e) => setManualToken(e.currentTarget.value)}
                       visible={tokenVisible}
@@ -205,7 +197,7 @@ export default function PlatformFounderProvisionQueuePage() {
                       autoComplete="off"
                     />
                     <Button variant="outline" onClick={applyManualToken}>
-                      Применить и обновить сессию
+                      {t("queue.applySession")}
                     </Button>
                   </Stack>
                 </Accordion.Panel>
@@ -222,17 +214,16 @@ export default function PlatformFounderProvisionQueuePage() {
               setManualCloseNote("");
             }
           }}
-          title="Закрыть reconcile вручную"
+          title={t("queue.closeModalTitle")}
           size="md"
         >
           <Stack gap="sm">
             <Text size="sm" c="dimmed">
-              Терминальный статус после внешнего разбора (YooKassa, дубликат email и т.д.). Не отменяет
-              refund/chargeback — см. runbook.
+              {t("queue.closeModalLead")}
             </Text>
             <Textarea
-              label="Заметка для аудита (опционально)"
-              placeholder="Например: возврат подтверждён вручную в кабинете провайдера"
+              label={t("queue.auditNote")}
+              placeholder={t("queue.auditPlaceholder")}
               value={manualCloseNote}
               onChange={(e) => setManualCloseNote(e.currentTarget.value)}
               minRows={2}
@@ -240,7 +231,7 @@ export default function PlatformFounderProvisionQueuePage() {
             />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setManualCloseIntentId(null)} disabled={manualCloseMut.isPending}>
-                Отмена
+                {t("queue.cancel")}
               </Button>
               <Button
                 color="orange"
@@ -252,7 +243,7 @@ export default function PlatformFounderProvisionQueuePage() {
                   }
                 }}
               >
-                Закрыть intent
+                {t("queue.closeIntent")}
               </Button>
             </Group>
           </Stack>
@@ -262,16 +253,16 @@ export default function PlatformFounderProvisionQueuePage() {
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Intent</Table.Th>
-                <Table.Th>Статус</Table.Th>
-                <Table.Th>Email</Table.Th>
-                <Table.Th>Org</Table.Th>
-                <Table.Th>Ошибка</Table.Th>
-                <Table.Th>Оплачен</Table.Th>
-                <Table.Th>Revoke</Table.Th>
-                <Table.Th>Попытки</Table.Th>
-                <Table.Th>DLQ</Table.Th>
-                <Table.Th>Действия</Table.Th>
+                <Table.Th>{t("queue.colIntent")}</Table.Th>
+                <Table.Th>{t("queue.colStatus")}</Table.Th>
+                <Table.Th>{t("queue.colEmail")}</Table.Th>
+                <Table.Th>{t("queue.colOrg")}</Table.Th>
+                <Table.Th>{t("queue.colError")}</Table.Th>
+                <Table.Th>{t("queue.colPaid")}</Table.Th>
+                <Table.Th>{t("queue.colRevoke")}</Table.Th>
+                <Table.Th>{t("queue.colAttempts")}</Table.Th>
+                <Table.Th>{t("queue.colDlq")}</Table.Th>
+                <Table.Th>{t("queue.colActions")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -279,7 +270,7 @@ export default function PlatformFounderProvisionQueuePage() {
                 <Table.Tr>
                   <Table.Td colSpan={10}>
                     <Text size="sm" c="dimmed" py="md" ta="center">
-                      {queueQ.isFetching ? "Загрузка…" : "Нет данных в очереди."}
+                      {queueQ.isFetching ? t("dashboard.loading") : t("queue.empty")}
                     </Text>
                   </Table.Td>
                 </Table.Tr>
@@ -306,7 +297,7 @@ export default function PlatformFounderProvisionQueuePage() {
                       <Text size="xs">{row.billing_revoked_at ?? "—"}</Text>
                     </Table.Td>
                     <Table.Td>{row.provision_retry_count}</Table.Td>
-                    <Table.Td>{row.provision_dead_letter ? "да" : "нет"}</Table.Td>
+                    <Table.Td>{row.provision_dead_letter ? t("queue.yes") : t("queue.no")}</Table.Td>
                     <Table.Td>
                       <Group gap={6} wrap="nowrap">
                         <Button
@@ -332,7 +323,7 @@ export default function PlatformFounderProvisionQueuePage() {
                             setManualCloseNote("");
                           }}
                         >
-                          Закрыть
+                          {t("queue.close")}
                         </Button>
                       </Group>
                     </Table.Td>

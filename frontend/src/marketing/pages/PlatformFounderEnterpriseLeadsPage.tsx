@@ -1,6 +1,6 @@
 import { API_BASE } from "@/api/client";
 import { usePlatformFounderSession } from "@/marketing/contexts/PlatformFounderSessionContext";
-import { formatPlatformFounderApiError, parseJsonArray } from "@/marketing/platformFounderApi";
+import { FounderQueryError, formatPlatformFounderApiError, founderFailMessage, parseJsonArray } from "@/marketing/platformFounderApi";
 import { ROUTE_PATHS } from "@/routePaths";
 import {
   ActionIcon,
@@ -19,6 +19,7 @@ import {
 import { IconDotsVertical } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 type LeadRow = {
@@ -31,18 +32,8 @@ type LeadRow = {
   created_at: string;
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  NEW: "Новая",
-  IN_PROGRESS: "В работе",
-  CLOSED: "Закрыта",
-};
-
-const SOURCE_LABEL: Record<string, string> = {
-  corporate: "Корпоратив",
-  sandbox_demo: "Демо",
-};
-
 export default function PlatformFounderEnterpriseLeadsPage() {
+  const { t, i18n } = useTranslation("founder");
   const { token, setToken } = usePlatformFounderSession();
   const queryClient = useQueryClient();
   const [manualToken, setManualToken] = useState("");
@@ -55,8 +46,11 @@ export default function PlatformFounderEnterpriseLeadsPage() {
       const r = await fetch(`${API_BASE}/v1/platform/internal/enterprise-leads`, {
         headers: { Authorization: `Bearer ${token.trim()}` },
       });
-      if (r.status === 401) throw new Error("Сессия истекла. Выйдите и войдите снова.");
-      if (!r.ok) throw new Error(await formatPlatformFounderApiError(r, `Ошибка ${r.status}`));
+      if (r.status === 401) throw new FounderQueryError("session");
+      if (!r.ok) {
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("http", { httpStatus: r.status, apiDetail: apiDetail || undefined });
+      }
       const raw: unknown = await r.json();
       return parseJsonArray<LeadRow>(raw);
     },
@@ -73,7 +67,10 @@ export default function PlatformFounderEnterpriseLeadsPage() {
         },
         body: JSON.stringify({ status }),
       });
-      if (!r.ok) throw new Error(await formatPlatformFounderApiError(r, `Ошибка ${r.status}`));
+      if (!r.ok) {
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("http", { httpStatus: r.status, apiDetail: apiDetail || undefined });
+      }
       return r.json() as Promise<LeadRow>;
     },
     onSuccess: () => {
@@ -87,7 +84,10 @@ export default function PlatformFounderEnterpriseLeadsPage() {
       const r = await fetch(`${API_BASE}/v1/platform/internal/enterprise-leads/export`, {
         headers: { Authorization: `Bearer ${token.trim()}` },
       });
-      if (!r.ok) throw new Error(await formatPlatformFounderApiError(r, `Ошибка ${r.status}`));
+      if (!r.ok) {
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("http", { httpStatus: r.status, apiDetail: apiDetail || undefined });
+      }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -105,11 +105,11 @@ export default function PlatformFounderEnterpriseLeadsPage() {
       <Box px="md" py="sm" style={{ flex: "0 0 auto", borderBottom: "1px solid var(--divider)" }}>
         <Container size="xl" px={0}>
           <Stack gap="xs">
-            <Title order={3}>Заявки на корпоративное внедрение</Title>
+            <Title order={3}>{t("leads.title")}</Title>
             <Group align="flex-end" wrap="wrap" gap="sm">
               <TextInput
-                label="Токен (ручная подмена)"
-                placeholder="Bearer из входа"
+                label={t("leads.tokenLabel")}
+                placeholder={t("leads.tokenPlaceholder")}
                 type={tokenVisible ? "text" : "password"}
                 value={manualToken}
                 onChange={(e) => setManualToken(e.currentTarget.value)}
@@ -120,7 +120,7 @@ export default function PlatformFounderEnterpriseLeadsPage() {
                 variant="default"
                 onClick={() => setTokenVisible((v) => !v)}
               >
-                {tokenVisible ? "Скрыть" : "Показать"}
+                {tokenVisible ? t("leads.hide") : t("leads.show")}
               </Button>
               <Button
                 size="xs"
@@ -129,10 +129,10 @@ export default function PlatformFounderEnterpriseLeadsPage() {
                   if (v) setToken(v);
                 }}
               >
-                Применить токен
+                {t("leads.applyToken")}
               </Button>
               <Button size="xs" variant="light" component={Link} to={ROUTE_PATHS.platform.dashboard}>
-                К обзору
+                {t("leads.toOverview")}
               </Button>
               <Button
                 size="xs"
@@ -141,7 +141,7 @@ export default function PlatformFounderEnterpriseLeadsPage() {
                 disabled={!token.trim()}
                 onClick={() => void downloadCsv()}
               >
-                Скачать CSV
+                {t("leads.downloadCsv")}
               </Button>
             </Group>
           </Stack>
@@ -152,34 +152,34 @@ export default function PlatformFounderEnterpriseLeadsPage() {
         <Container size="xl" py="md" px="md">
           {listQ.isLoading ? (
             <Text size="sm" c="dimmed">
-              Загрузка…
+              {t("leads.loading")}
             </Text>
           ) : null}
           {listQ.error ? (
             <Text size="sm" c="red">
-              {listQ.error instanceof Error ? listQ.error.message : "Ошибка загрузки"}
+              {founderFailMessage(listQ.error, t)}
             </Text>
           ) : null}
           {listQ.data && listQ.data.length === 0 ? (
             <Text size="sm" c="dimmed">
-              Заявок пока нет.
+              {t("leads.empty")}
             </Text>
           ) : null}
           {patchM.isError ? (
             <Text size="sm" c="red">
-              {patchM.error instanceof Error ? patchM.error.message : "Не удалось обновить статус"}
+              {founderFailMessage(patchM.error, t)}
             </Text>
           ) : null}
           {listQ.data && listQ.data.length > 0 ? (
             <Table striped highlightOnHover withTableBorder withColumnBorders>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Создана</Table.Th>
-                  <Table.Th>Источник</Table.Th>
-                  <Table.Th>Имя</Table.Th>
-                  <Table.Th>Компания</Table.Th>
-                  <Table.Th>Контакт</Table.Th>
-                  <Table.Th>Статус</Table.Th>
+                  <Table.Th>{t("leads.colCreated")}</Table.Th>
+                  <Table.Th>{t("leads.colSource")}</Table.Th>
+                  <Table.Th>{t("leads.colName")}</Table.Th>
+                  <Table.Th>{t("leads.colCompany")}</Table.Th>
+                  <Table.Th>{t("leads.colContact")}</Table.Th>
+                  <Table.Th>{t("leads.colStatus")}</Table.Th>
                   <Table.Th w={56} />
                 </Table.Tr>
               </Table.Thead>
@@ -187,10 +187,10 @@ export default function PlatformFounderEnterpriseLeadsPage() {
                 {listQ.data.map((row) => (
                   <Table.Tr key={row.id}>
                     <Table.Td>
-                      <Text size="xs">{new Date(row.created_at).toLocaleString("ru-RU")}</Text>
+                      <Text size="xs">{new Date(row.created_at).toLocaleString(i18n.language.startsWith("ru") ? "ru-RU" : "en-US")}</Text>
                     </Table.Td>
                     <Table.Td>
-                      <Text size="sm">{SOURCE_LABEL[row.lead_source] ?? row.lead_source}</Text>
+                      <Text size="sm">{row.lead_source === "corporate" ? t("leads.sourceCorporate") : row.lead_source === "sandbox_demo" ? t("leads.sourceSandbox") : row.lead_source}</Text>
                     </Table.Td>
                     <Table.Td>
                       <Text size="sm">{row.name}</Text>
@@ -202,12 +202,12 @@ export default function PlatformFounderEnterpriseLeadsPage() {
                       <Text size="sm">{row.phone_or_email}</Text>
                     </Table.Td>
                     <Table.Td>
-                      <Text size="sm">{STATUS_LABEL[row.status] ?? row.status}</Text>
+                      <Text size="sm">{row.status === "NEW" ? t("leads.statusNew") : row.status === "IN_PROGRESS" ? t("leads.statusInProgress") : row.status === "CLOSED" ? t("leads.statusClosed") : row.status}</Text>
                     </Table.Td>
                     <Table.Td>
                       <Menu shadow="md" width={200} position="bottom-end">
                         <Menu.Target>
-                          <ActionIcon variant="subtle" aria-label="Действия">
+                          <ActionIcon variant="subtle" aria-label={t("leads.actions")}>
                             <IconDotsVertical size={18} />
                           </ActionIcon>
                         </Menu.Target>
@@ -216,19 +216,19 @@ export default function PlatformFounderEnterpriseLeadsPage() {
                             disabled={row.status === "NEW" || patchM.isPending}
                             onClick={() => patchM.mutate({ id: row.id, status: "NEW" })}
                           >
-                            Новая
+                            {t("leads.statusNew")}
                           </Menu.Item>
                           <Menu.Item
                             disabled={row.status === "IN_PROGRESS" || patchM.isPending}
                             onClick={() => patchM.mutate({ id: row.id, status: "IN_PROGRESS" })}
                           >
-                            В работе
+                            {t("leads.statusInProgress")}
                           </Menu.Item>
                           <Menu.Item
                             disabled={row.status === "CLOSED" || patchM.isPending}
                             onClick={() => patchM.mutate({ id: row.id, status: "CLOSED" })}
                           >
-                            Закрыта
+                            {t("leads.statusClosed")}
                           </Menu.Item>
                         </Menu.Dropdown>
                       </Menu>

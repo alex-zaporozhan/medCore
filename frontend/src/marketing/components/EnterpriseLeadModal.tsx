@@ -3,6 +3,7 @@ import { TurnstileWidget } from "@/marketing/components/TurnstileWidget";
 import { parseEnterpriseLeadSubmitFailure } from "@/marketing/enterpriseLeadPublic";
 import { Button, Modal, Stack, Text, TextInput } from "@mantine/core";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 type EnterpriseLeadModalProps = {
   opened: boolean;
@@ -12,6 +13,7 @@ type EnterpriseLeadModalProps = {
 };
 
 export function EnterpriseLeadModal({ opened, onClose, leadSource = "corporate" }: EnterpriseLeadModalProps) {
+  const { t } = useTranslation("marketing");
   const [name, setName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [contact, setContact] = useState("");
@@ -44,12 +46,12 @@ export function EnterpriseLeadModal({ opened, onClose, leadSource = "corporate" 
       const c = companyName.trim();
       const p = contact.trim();
       if (!n || !c || !p) {
-        setError("Заполните все поля.");
+        setError(t("lead.fillAll"));
         return;
       }
-      const t = tokenOverride?.trim();
-      if (turnstileSiteKey && !t) {
-        setError("Сначала пройдите проверку Turnstile, затем снова нажмите «Отправить».");
+      const captchaToken = tokenOverride?.trim();
+      if (turnstileSiteKey && !captchaToken) {
+        setError(t("lead.turnstile"));
         return;
       }
       setBusy(true);
@@ -60,7 +62,7 @@ export function EnterpriseLeadModal({ opened, onClose, leadSource = "corporate" 
           phone_or_email: p,
           lead_source: leadSource,
         };
-        if (t) body.turnstile_token = t;
+        if (captchaToken) body.turnstile_token = captchaToken;
         const r = await fetch(`${API_BASE}/v1/platform-leads/`, {
           method: "POST",
           headers: {
@@ -72,27 +74,28 @@ export function EnterpriseLeadModal({ opened, onClose, leadSource = "corporate" 
         const text = await r.text().catch(() => "");
         if (!r.ok) {
           const parsed = parseEnterpriseLeadSubmitFailure(r.status, text || "{}");
+          const shown = parsed.code === "captcha_required" ? t("lead.turnstile") : parsed.message;
           if (parsed.code === "captcha_required" && parsed.siteKey) {
             setTurnstileSiteKey(parsed.siteKey);
             setTurnstileToken(null);
-            setError(parsed.message);
+            setError(shown);
             return;
           }
           setTurnstileSiteKey(null);
           setTurnstileToken(null);
-          setError(parsed.message);
+          setError(shown);
           return;
         }
         setTurnstileSiteKey(null);
         setTurnstileToken(null);
         setDone(true);
       } catch {
-        setError("Не удалось отправить заявку. Повторите попытку позже.");
+        setError(t("lead.sendFailed"));
       } finally {
         setBusy(false);
       }
     },
-    [name, companyName, contact, leadSource, turnstileSiteKey],
+    [name, companyName, contact, leadSource, turnstileSiteKey, t],
   );
 
   const submit = useCallback(() => {
@@ -104,28 +107,28 @@ export function EnterpriseLeadModal({ opened, onClose, leadSource = "corporate" 
     <Modal
       opened={opened}
       onClose={handleClose}
-      title="Заявка на корпоративное внедрение"
+      title={t("lead.title")}
       radius="md"
       centered
     >
       {done ? (
         <Stack gap="md">
-          <Text size="sm">Заявка принята, мы свяжемся с вами.</Text>
+          <Text size="sm">{t("lead.success")}</Text>
           <Button onClick={handleClose} variant="light">
-            Закрыть
+            {t("lead.close")}
           </Button>
         </Stack>
       ) : (
         <Stack gap="md">
-          <TextInput label="Имя" value={name} onChange={(e) => setName(e.currentTarget.value)} required />
+          <TextInput label={t("lead.name")} value={name} onChange={(e) => setName(e.currentTarget.value)} required />
           <TextInput
-            label="Название компании"
+            label={t("lead.company")}
             value={companyName}
             onChange={(e) => setCompanyName(e.currentTarget.value)}
             required
           />
           <TextInput
-            label="Телефон или email"
+            label={t("lead.contact")}
             value={contact}
             onChange={(e) => setContact(e.currentTarget.value)}
             required
@@ -133,10 +136,10 @@ export function EnterpriseLeadModal({ opened, onClose, leadSource = "corporate" 
           {turnstileSiteKey ? (
             <Stack gap="xs">
               <Text size="sm" fw={500}>
-                Проверка антиспама
+                {t("lead.captchaTitle")}
               </Text>
               <Text size="xs" c="dimmed">
-                После успешной проверки снова нажмите «Отправить».
+                {t("lead.captchaHint")}
               </Text>
               <TurnstileWidget
                 siteKey={turnstileSiteKey}
@@ -151,7 +154,7 @@ export function EnterpriseLeadModal({ opened, onClose, leadSource = "corporate" 
             </Text>
           ) : null}
           <Button onClick={() => void submit()} loading={busy}>
-            Отправить
+            {t("lead.submit")}
           </Button>
         </Stack>
       )}

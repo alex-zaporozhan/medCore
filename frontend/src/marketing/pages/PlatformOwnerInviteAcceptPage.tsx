@@ -1,13 +1,16 @@
-import { API_BASE, newOutboundRequestId } from "@/api/client";
+import { API_BASE, newOutboundRequestId, parseFastApiErrorBody } from "@/api/client";
+import { UiLocaleSwitch } from "@/i18n/UiLocaleSwitch";
 import { ROUTE_PATHS } from "@/routePaths";
-import { Alert, Box, Button, Container, PasswordInput, Stack, Text, Title } from "@mantine/core";
+import { Alert, Box, Button, Container, Group, PasswordInput, Stack, Text, Title } from "@mantine/core";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 /**
- * Страница из письма (LEAD A1): token в query → POST /public/platform/owner-invite/accept.
+ * Email landing after provision: token in query → POST /public/platform/owner-invite/accept.
  */
 export default function PlatformOwnerInviteAcceptPage() {
+  const { t } = useTranslation("marketing");
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token")?.trim() ?? "";
   const [password, setPassword] = useState("");
@@ -15,14 +18,24 @@ export default function PlatformOwnerInviteAcceptPage() {
   const [err, setErr] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  const messageForInviteFailure = (status: number, raw: string): string => {
+    const parsed = parseFastApiErrorBody(raw || "{}");
+    const code = (parsed.code ?? "").trim();
+    if (code === "password_too_short") return t("invite.passwordTooShort");
+    if (code === "invalid_or_expired_token") return t("invite.invalidOrExpired");
+    if (code === "invite_accept_failed") return t("invite.failed");
+    if (code === "rate_limited" || status === 429) return t("invite.rateLimited");
+    return parsed.rawMessage?.trim() || t("invite.failed");
+  };
+
   const submit = async () => {
     setErr(null);
     if (password.length < 8) {
-      setErr("Пароль не короче 8 символов.");
+      setErr(t("invite.passwordTooShort"));
       return;
     }
     if (!token) {
-      setErr("Нет токена в ссылке.");
+      setErr(t("invite.noToken"));
       return;
     }
     setBusy(true);
@@ -35,17 +48,15 @@ export default function PlatformOwnerInviteAcceptPage() {
         },
         body: JSON.stringify({ token, password }),
       });
-      const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+      const text = await r.text().catch(() => "");
       if (!r.ok) {
-        const detail = data.detail as Record<string, unknown> | string | undefined;
-        const msg =
-          typeof detail === "object" && detail && typeof detail.message === "string"
-            ? detail.message
-            : "Не удалось установить пароль.";
-        setErr(msg);
+        setErr(messageForInviteFailure(r.status, text));
         return;
       }
       navigate(ROUTE_PATHS.admin.login);
+    } catch (error: unknown) {
+      console.error("owner invite accept failed", error);
+      setErr(t("invite.network"));
     } finally {
       setBusy(false);
     }
@@ -55,34 +66,36 @@ export default function PlatformOwnerInviteAcceptPage() {
     <Box className="marketing-gradient-bg" style={{ minHeight: "100vh", padding: "40px 16px" }}>
       <Container size="sm">
         <Stack gap="md">
-          <Title order={2}>Приглашение владельца</Title>
+          <Group justify="space-between" wrap="wrap" gap="sm" align="flex-start">
+            <Title order={2}>{t("invite.title")}</Title>
+            <UiLocaleSwitch />
+          </Group>
           {!token ? (
-            <Alert color="red">
-              Ссылка неполная (нет token). Откройте письмо или запросите новое приглашение у поддержки платформы.
-            </Alert>
+            <Alert color="red">{t("invite.missingToken")}</Alert>
           ) : (
             <>
               <Text size="sm" c="dimmed">
-                Задайте пароль для входа в админку клиники.
+                {t("invite.lead")}
               </Text>
               <PasswordInput
-                label="Пароль"
+                label={t("invite.password")}
                 value={password}
                 onChange={(e) => setPassword(e.currentTarget.value)}
                 autoComplete="new-password"
+                disabled={busy}
               />
               {err ? (
-                <Alert color="red" title="Ошибка">
+                <Alert color="red" title={t("invite.errorTitle")}>
                   {err}
                 </Alert>
               ) : null}
-              <Button onClick={() => void submit()} loading={busy}>
-                Сохранить и перейти ко входу
+              <Button onClick={() => void submit()} loading={busy} disabled={busy}>
+                {t("invite.submit")}
               </Button>
             </>
           )}
           <Text size="sm">
-            <Link to={ROUTE_PATHS.marketing.landing}>← На главную</Link>
+            <Link to={ROUTE_PATHS.marketing.landing}>← {t("signup.backHome")}</Link>
           </Text>
         </Stack>
       </Container>

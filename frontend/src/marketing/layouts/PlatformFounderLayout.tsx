@@ -1,14 +1,16 @@
+import { UiLocaleSwitch } from "@/i18n/UiLocaleSwitch";
 import { PlatformFounderSessionProvider } from "@/marketing/contexts/PlatformFounderSessionContext";
 import { clearFounderToken, getFounderToken, setFounderToken as persistFounderToken } from "@/marketing/platformFounderSession";
 import { ROUTE_PATHS } from "@/routePaths";
 import { Box, Button, Group, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, Navigate, Outlet, useLocation, useNavigate, createSearchParams } from "react-router-dom";
 
-/**
- * Оболочка кабинета Основателя (FE-E2): навигация между дашбордом и операционными экранами.
- */
+/** Founder cabinet shell: dashboard vs operational screens. */
 export default function PlatformFounderLayout() {
+  const { t } = useTranslation("auth");
+  const { t: tc } = useTranslation("common");
   const navigate = useNavigate();
   const location = useLocation();
   const [token, setTokenState] = useState(() => getFounderToken()?.trim() ?? "");
@@ -73,15 +75,18 @@ export default function PlatformFounderLayout() {
           <Group justify="space-between" wrap="wrap">
             <Group gap="xs">
               <Text size="sm" fw={600}>
-                Основатель платформы
+                {t("founder.pageTitle")}
               </Text>
-              {navBtn(ROUTE_PATHS.platform.dashboard, "Обзор")}
-              {navBtn(ROUTE_PATHS.platform.provisionQueue, "Очередь внедрения")}
-              {navBtn(ROUTE_PATHS.platform.leads, "Заявки")}
+              {navBtn(ROUTE_PATHS.platform.dashboard, t("founder.navOverview"))}
+              {navBtn(ROUTE_PATHS.platform.provisionQueue, t("founder.navProvision"))}
+              {navBtn(ROUTE_PATHS.platform.leads, t("founder.navLeads"))}
             </Group>
-            <Button variant="default" size="xs" onClick={logout}>
-              Выйти
-            </Button>
+            <Group gap="xs" wrap="nowrap">
+              <UiLocaleSwitch />
+              <Button variant="default" size="xs" onClick={logout}>
+                {tc("logout")}
+              </Button>
+            </Group>
           </Group>
         </Box>
         <Outlet />
