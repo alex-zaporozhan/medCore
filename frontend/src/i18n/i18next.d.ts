@@ -13,6 +13,9 @@ import type enReports from "./locales/en/reports.json";
 import type enRbac from "./locales/en/rbac.json";
 import type enSettings from "./locales/en/settings.json";
 import type enTasks from "./locales/en/tasks.json";
+import type enMarketing from "./locales/en/marketing.json";
+import type enPatient from "./locales/en/patient.json";
+import type enFounder from "./locales/en/founder.json";
 
 declare module "i18next" {
   interface CustomTypeOptions {
@@ -32,6 +35,9 @@ declare module "i18next" {
       feed: typeof enFeed;
       settings: typeof enSettings;
       rbac: typeof enRbac;
+      marketing: typeof enMarketing;
+      patient: typeof enPatient;
+      founder: typeof enFounder;
     };
   }
 }

@@ -12,6 +12,8 @@
   "newBooking": "New booking",
   "pickDoctorsTitle": "Select doctors",
   "pickDoctorsHint": "Select one or more doctors to show the schedule grid.",
+  "noBookingsTitle": "No bookings on this date",
+  "noBookingsHint": "Create a booking with the button below or add a patient from the waitlist.",
   "noSlotsTitle": "No slots on this date",
   "noSlotsHint": "There are no available schedule slots on the selected date.",
   "cancelConfirmTitle": "Confirm cancellation",

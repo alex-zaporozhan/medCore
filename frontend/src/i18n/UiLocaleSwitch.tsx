@@ -4,7 +4,8 @@ import { useUiLocale, type UiLocale } from "./useUiLocale";
 
 /**
  * Single locale control (instrument): EN/RU, size sm, equal segment min-width.
- * Place on staff login form column and admin header (A1). Do not fork.
+ * Place on sign-in shells, founder header, landing/signup header, admin sidebar
+ * (expanded) or admin Main (collapsed 80px rail). No AppShell.Header. Do not fork.
  */
 export function UiLocaleSwitch() {
   const { t } = useTranslation("common");

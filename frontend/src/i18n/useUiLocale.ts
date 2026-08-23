@@ -8,8 +8,13 @@ import i18n, {
   type UiLocale,
 } from "./index";
 
-/** Matches `index.html` this wave. Marketing/PWA are not on `ui.locale` yet. */
+/** Fallback html lang for public paths that are not locale-clocked. Patient PWA and marketing locale paths follow `ui.locale`. */
 export const PUBLIC_HTML_LANG = "ru";
+
+function normalizePathname(pathname: string): string {
+  const trimmed = pathname.replace(/\/+$/, "");
+  return trimmed.length > 0 ? trimmed : "/";
+}
 
 export function isAdminPath(pathname?: string): boolean {
   return isAdminChromePath(
@@ -17,9 +22,52 @@ export function isAdminPath(pathname?: string): boolean {
   );
 }
 
+/** Routes whose visible chrome follows `ui.locale` (html lang must match). */
+export function isDocumentLocalePath(pathname?: string): boolean {
+  const raw = pathname ?? (typeof window === "undefined" ? "" : window.location.pathname);
+  if (isAdminChromePath(raw)) return true;
+  const p = normalizePathname(raw);
+  return (
+    p === "/login" ||
+    p === "/" ||
+    p === "/signup" ||
+    p === "/signup/owner-invite" ||
+    p === "/pricing" ||
+    p === "/sandbox" ||
+    p === "/legal/privacy" ||
+    p === "/legal/terms" ||
+    p === "/platform" ||
+    p.startsWith("/platform/") ||
+    p === "/app" ||
+    p.startsWith("/app/") ||
+    p.startsWith("/c/") ||
+    /\/doctors\//.test(p)
+  );
+}
+
+function applyMarketingDocumentTitle(pathname?: string): void {
+  if (typeof document === "undefined") return;
+  const raw = pathname ?? window.location.pathname;
+  const p = normalizePathname(raw);
+  if (
+    p === "/" ||
+    p === "/signup" ||
+    p === "/signup/owner-invite" ||
+    p === "/pricing" ||
+    p === "/sandbox" ||
+    p === "/legal/privacy" ||
+    p === "/legal/terms"
+  ) {
+    document.title = String(i18n.t("htmlTitle", { ns: "marketing" }));
+    return;
+  }
+  document.title = "MedCore";
+}
+
 export function applyDocumentLang(locale: UiLocale, pathname?: string): void {
   if (typeof document === "undefined") return;
-  document.documentElement.lang = isAdminPath(pathname) ? locale : PUBLIC_HTML_LANG;
+  document.documentElement.lang = isDocumentLocalePath(pathname) ? locale : PUBLIC_HTML_LANG;
+  applyMarketingDocumentTitle(pathname);
 }
 
 type HistoryStateFn = typeof history.pushState;

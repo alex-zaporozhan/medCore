@@ -1,0 +1,248 @@
+{
+  "brand": "MedCore",
+  "htmlTitle": "MedCore — clinic operating system",
+  "header": {
+    "plans": "Plans",
+    "patientApp": "Patient app",
+    "signIn": "Sign in",
+    "connectOrg": "Connect your organization"
+  },
+  "hero": {
+    "kicker": "Clinic operating system · Cloud software for practices",
+    "title": "The operating system for growing your business",
+    "lead": "AI messaging, scheduling, CRM, and books in one window. Take routine off the team and grow revenue.",
+    "demo": "View demo",
+    "plans": "Plans",
+    "shotAlt": "Product interface: navigation, conversations, CRM, and team context"
+  },
+  "audience": {
+    "title": "Who it is for",
+    "lead": "Built for companies where dense booking, money control, and returning clients matter.",
+    "medical": {
+      "title": "Healthcare and beauty",
+      "body": "Dental practices, clinics, salon networks. Complex schedules and materials tracking."
+    },
+    "practice": {
+      "title": "Private practice and consulting",
+      "body": "Psychologists, lawyers, tutors. Deposits and booking without a front desk."
+    },
+    "sport": {
+      "title": "Sport and wellness",
+      "body": "Fitness studios, yoga, massage. Memberships and group classes."
+    }
+  },
+  "features": {
+    "title": "Capabilities",
+    "ai": {
+      "title": "AI assistant",
+      "body": "Reply drafts and conversation routing."
+    },
+    "crm": {
+      "title": "Sales (CRM)",
+      "body": "A funnel from first contact to payment."
+    },
+    "finance": {
+      "title": "Books and finance",
+      "body": "Cash registers, deposits, payroll, and inventory."
+    },
+    "loyalty": {
+      "title": "Loyalty",
+      "body": "Discounts, memberships, and targeted campaigns."
+    },
+    "tasks": {
+      "title": "Tasks and assignments",
+      "body": "Deadlines and a single work surface."
+    },
+    "analytics": {
+      "title": "Analytics and reports",
+      "body": "An owner dashboard: from staff load to marketing return, in real time, without Excel exports."
+    }
+  },
+  "why": {
+    "title": "Why the platform",
+    "retention": {
+      "title": "Keep every inquiry",
+      "body": "One inbox for channels. AI answers quickly and offers open slots while the administrator is with a patient."
+    },
+    "routine": {
+      "title": "Less routine",
+      "body": "Tasks, schedule, and payroll are automated. Work that used to take several people can run in one contour."
+    },
+    "revenue": {
+      "title": "Revenue from every client",
+      "body": "Visit reminders, membership write-offs, and bringing inactive clients back with targeted campaigns."
+    },
+    "security": {
+      "title": "Data security",
+      "body": "Organization data is isolated. AI uses context through a de-identification layer aligned with personal-data rules."
+    }
+  },
+  "pricing": {
+    "title": "Plans",
+    "lead": "Choose a fit for the scale of your business.",
+    "recommended": "Recommended",
+    "choose": "Choose",
+    "period": "/ mo",
+    "discuss": "Talk about a rollout"
+  },
+  "plans": {
+    "start": {
+      "headline": "Start",
+      "badge": "Base for a single location",
+      "bullets": {
+        "0": "1 location, up to 5 staff",
+        "1": "CRM (kanban), online booking, basic schedule",
+        "2": "Patient PWA",
+        "3": "Unified chat (no AI)"
+      }
+    },
+    "growth": {
+      "headline": "Growth",
+      "badge": "Best seller for active practices",
+      "bullets": {
+        "0": "Up to 3 locations, up to 20 staff",
+        "1": "AI assistant in chats: drafts and routing",
+        "2": "Books and finance: cash, deposits, payments",
+        "3": "Discounts, memberships, campaigns"
+      }
+    },
+    "business_os": {
+      "headline": "Business OS",
+      "badge": "Extended capabilities",
+      "bullets": {
+        "0": "Network of up to 10 locations",
+        "1": "Team chat and an AI-assisted knowledge base",
+        "2": "Tasks: deadlines, owners, and AI-backed flows",
+        "3": "Inventory, marketing analytics, payroll"
+      }
+    }
+  },
+  "enterprise": {
+    "headline": "Enterprise",
+    "priceHint": "custom",
+    "priceLabel": "contact us",
+    "bullets": {
+      "0": "No hard cap on locations or scenarios",
+      "1": "Your brand in the patient app",
+      "2": "Dedicated server or on-premises deploy"
+    }
+  },
+  "footer": {
+    "catalog": "On-site catalog",
+    "privacy": "Privacy",
+    "terms": "Terms of use",
+    "provision": "Provision queue"
+  },
+  "lead": {
+    "title": "Request a custom rollout",
+    "name": "Name",
+    "company": "Company name",
+    "contact": "Phone or email",
+    "submit": "Send",
+    "fillAll": "Fill in all fields.",
+    "turnstile": "Complete the Turnstile check, then press Send again.",
+    "captchaTitle": "Anti-spam check",
+    "captchaHint": "After a successful check, press Send again.",
+    "sendFailed": "Could not send the request. Try again later.",
+    "rateLimited": "Too many attempts. Wait a moment and try again.",
+    "success": "Request received. We will contact you.",
+    "close": "Close"
+  },
+  "signup": {
+    "title": "Register your organization",
+    "lead": "Pick a plan from the catalog and pay. After a successful payment the platform creates the organization and emails the owner an admin invite.",
+    "consentPd": "I agree to processing of the owner’s personal data (email) for this checkout. Policy: <privacyLink>Privacy</privacyLink>.",
+    "consentTerms": "I have read and agree to the <termsLink>terms of use</termsLink>.",
+    "needConsents": "Check both consents to enable payment. You can browse plans below immediately.",
+    "pricingTitle": "Choose a plan and pay",
+    "backHome": "Back to home"
+  },
+  "checkout": {
+    "titleFull": "Choose a plan and check out",
+    "titleCatalog": "Plan catalog (reference)",
+    "lead": "Pick a plan and optional add-ons — the total updates automatically. List prices are in USD. Payment is via YooKassa.",
+    "upgradeHintTitle": "How to change plan",
+    "upgradeHint": "Public checkout creates a new organization signup. For an existing customer, use Subscription in admin or contact the platform operator.",
+    "loading": "Loading catalog…",
+    "catalogUnavailableTitle": "Catalog unavailable",
+    "catalogLoadFailed": "Could not load the plan catalog. Check the server connection and refresh the page.",
+    "catalogParseFailed": "Invalid plan catalog response",
+    "httpError": "Error {{status}}",
+    "emptyTitle": "No plans",
+    "emptyBody": "No plans are available in the catalog yet. Contact the platform operator.",
+    "planAria": "Plan {{name}}",
+    "composition": "Included in {{name}}",
+    "compositionUnknown": "Module list is confirmed with the platform operator.",
+    "addonsTitle": "Add-on modules",
+    "addonsHint": "Add-on prices are monthly USD: on an annual subscription they are multiplied by 12 and added to the annual plan price.",
+    "addonPrice": "+{{price}} / mo",
+    "perMonth": "/ mo",
+    "perYear": "/ yr",
+    "checkoutDisabledTitle": "Payment locked",
+    "checkoutDisabledBody": "Check both consents on the registration page to enable payment.",
+    "dueTitle": "Due today",
+    "total": "Total",
+    "annualAlternative": "Annual option: {{amount}} / yr",
+    "monthlyAlternative": "Monthly: {{amount}} / mo",
+    "periodMonthly": "Monthly",
+    "periodAnnual": "Yearly",
+    "emailLabel": "Owner email (admin login)",
+    "captchaHintPay": "After the check, press Subscribe again.",
+    "subscribe": "Subscribe",
+    "needConsents": "Check both consents above to continue to payment.",
+    "needEmail": "Enter the owner email — the admin invite is sent there after payment.",
+    "turnstilePay": "Complete the Turnstile check, then press Subscribe again.",
+    "turnstileLoad": "Could not load Turnstile.",
+    "missingPaymentUrl": "Payment was created, but the provider return URL is missing. Try again or contact support.",
+    "network": "Could not reach the payment service. Try again.",
+    "errors": {
+      "captcha_required": "Turnstile confirmation is required. Complete the check below, then press Subscribe again.",
+      "rate_limited": "Too many requests. Wait a moment and try again.",
+      "invalid_email": "Invalid email.",
+      "unknown_plan_slug": "This plan is unavailable or disabled.",
+      "invalid_billing_period": "Invalid billing period.",
+      "plan_price_missing": "This plan has no price for the selected period.",
+      "extra_entitlement_overlaps_plan": "This module is already included in the selected plan.",
+      "extra_entitlement_unknown": "Unknown or disabled add-on.",
+      "extra_entitlement_no_price": "This add-on has no catalog price.",
+      "yookassa_not_configured": "The payment provider is not configured on the server.",
+      "yookassa_create_failed": "Could not create a payment with the provider. Try again later.",
+      "platform_checkout_return_url_missing": "The post-payment return URL is not set on the server."
+    }
+  },
+  "invite": {
+    "title": "Owner invitation",
+    "lead": "Set a password for clinic admin sign-in.",
+    "password": "Password",
+    "submit": "Save and continue to sign-in",
+    "errorTitle": "Error",
+    "missingToken": "This link is incomplete (no token). Open the email again or ask the platform operator for a new invite.",
+    "passwordTooShort": "Password must be at least 8 characters.",
+    "noToken": "No token in the link.",
+    "failed": "Could not set the password.",
+    "network": "Could not reach the server. Try again.",
+    "invalidOrExpired": "This invite is invalid or has expired.",
+    "rateLimited": "Too many attempts. Wait a moment and try again."
+  },
+  "sandbox": {
+    "title": "The demo environment is being prepared",
+    "lead": "We are updating the public sandbox so you can see the AI modules and finance tools. Leave a contact and we will send personal access first.",
+    "success": "Request received. We will contact you.",
+    "contact": "Email or Telegram",
+    "contactPlaceholder": "you@company.com or @username",
+    "captcha": "Anti-spam check",
+    "submit": "Get early access",
+    "backHome": "Back to home",
+    "needCaptcha": "Complete the Turnstile check, then press the button again.",
+    "network": "Could not send the request. Check the connection and try again.",
+    "leadName": "Early demo access",
+    "leadCompany": "Public page"
+  },
+  "legal": {
+    "privacyTitle": "Privacy policy",
+    "privacyBody": "The published personal-data and storage policy will appear here. Until the final version is published, contact the platform operator.",
+    "termsTitle": "Terms of use",
+    "termsBody": "The public offer / SaaS terms of use will appear here. Legal copy is agreed before production self-service signup.",
+    "home": "Home"
+  }
+}
