@@ -4,10 +4,14 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const useExternalServer =
+  Boolean(process.env.E2E_EXTERNAL_BASE_URL) ||
+  (process.env.README_SCREENSHOTS === "1" && Boolean(process.env.BASE_URL));
+
 /**
- * Локально: `npm run build`, затем `npm run test:e2e` (поднимет preview).
- * CI: см. `.github/workflows/e2e.yml` — build перед тестом.
- * Полный контур с API/логином — см. workflow e2e в .github/workflows и docker-compose.
+ * Local: `npm run build`, then `npm run test:e2e` (starts Vite preview).
+ * Compose UI: set BASE_URL + E2E_EXTERNAL_BASE_URL (or README_SCREENSHOTS=1 + BASE_URL)
+ * so Playwright does not also spawn preview on 4173.
  */
 export default defineConfig({
   testDir: path.join(__dirname, "e2e"),
@@ -22,7 +26,7 @@ export default defineConfig({
     serviceWorkers: "block",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: process.env.E2E_EXTERNAL_BASE_URL
+  webServer: useExternalServer
     ? undefined
     : {
         command: "npm run preview -- --host 127.0.0.1 --port 4173",

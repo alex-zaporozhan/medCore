@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     staff_directory_cache_ttl_seconds: int = 120
 
     # CORS
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:5175,http://127.0.0.1:5175,http://localhost:4173,http://127.0.0.1:4173,http://localhost:3010,http://127.0.0.1:3010"
 
     # Form send-link: base URL for form fill page (token appended as ?token=...)
     form_link_base_url: str = ""

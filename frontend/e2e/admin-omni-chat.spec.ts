@@ -113,6 +113,11 @@ function mockAdminOmniApi(page: import("@playwright/test").Page) {
     });
   });
 
+  // Claim (auto on open + header retry).
+  page.route("**/api/v1/admin/omni-chats/*/claim", async (route) => {
+    await route.fulfill({ status: 204, body: "" });
+  });
+
   // Chat detail.
   page.route("**/api/v1/admin/omni-chats/*", async (route) => {
     const url = route.request().url();
@@ -271,6 +276,7 @@ test.describe("admin omni-chat (mocked API)", () => {
       localStorage.setItem("dental_booking_admin_token", "test-token");
       localStorage.setItem("dental_booking_admin_id", "00000000-0000-0000-0000-000000000001");
       localStorage.setItem("dental_booking_admin_clinic_id", "00000000-0000-0000-0000-000000000010");
+      localStorage.setItem("ui.locale", "en");
     });
     mockAdminOmniApi(page);
   });
@@ -280,39 +286,39 @@ test.describe("admin omni-chat (mocked API)", () => {
     await expect(page).toHaveURL(/\/admin\/omni-chat/);
 
     // Context bar (page shell).
-    await expect(page.getByText(/Omni‑чат — только работа/i)).toBeVisible();
+    await expect(page.getByText(/Omni-chat — work only/i)).toBeVisible();
 
     // Inbox: both scenarios render attention dots (waiting + my needs-reply).
     await expect(page.getByLabel("needs-attention")).toHaveCount(2);
 
-    // Open chat (click inbox item).
+    // Open chat (click inbox item). Mock detail stays unassigned → Claim remains as retry.
     await page.getByText("Иван Иванов").first().click();
-    await expect(page.getByText("Взять в работу")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Claim" })).toBeVisible();
 
     // Messages rendered.
     await expect(page.getByText("Здравствуйте").first()).toBeVisible();
     await expect(page.getByText("Есть свободное окно?")).toBeVisible();
     // Attachment preview (image) renders as <img> (filename may be hidden).
-    await expect(page.getByLabel("Сообщения переписки").locator("img").first()).toBeVisible();
+    await expect(page.getByLabel("Conversation messages").locator("img").first()).toBeVisible();
 
     // Composer exists and is reasonably tall (minRows=2).
     await expect(page.locator("textarea").first()).toBeVisible();
 
     // Telegram-style composer actions restored.
-    await expect(page.getByLabel("Эмодзи")).toBeVisible();
-    await expect(page.getByLabel("Файл")).toBeVisible();
-    await expect(page.getByLabel("Фото")).toBeVisible();
-    await expect(page.getByLabel(/Записать голос|Остановить запись/)).toBeVisible();
+    await expect(page.getByLabel("Emoji")).toBeVisible();
+    await expect(page.getByLabel("File")).toBeVisible();
+    await expect(page.getByLabel("Photo")).toBeVisible();
+    await expect(page.getByLabel(/Record voice|Stop recording/)).toBeVisible();
 
     // AI toggle exists.
-    await expect(page.getByPlaceholder("ИИ")).toBeVisible();
+    await expect(page.getByPlaceholder("Mode")).toBeVisible();
 
     // Meta-rail actions exist (Reply button on a message).
-    await expect(page.getByLabel("Ответить").first()).toBeVisible();
+    await expect(page.getByLabel("Reply").first()).toBeVisible();
 
     // Reply via context menu sets telegram-style quote (no links).
     await page.locator("#omni-msg-m-1").click({ button: "right" });
-    await page.getByText("Ответить").click();
+    await page.getByRole("menuitem", { name: "Reply" }).click();
     await expect(page.getByText("Здравствуйте").first()).toBeVisible();
     await expect(page.locator("textarea").first()).not.toContainText("reply_to:");
 
@@ -328,7 +334,7 @@ test.describe("admin omni-chat (mocked API)", () => {
     expect(h2).toBeGreaterThan(h1);
 
     // Channel filter: select VK, Telegram chat should disappear.
-    await page.getByPlaceholder("Каналы: все").click();
+    await page.getByPlaceholder("Channels: all").click();
     await page.getByRole("option", { name: "VK_BOT" }).click();
     await page.keyboard.press("Escape");
     await expect(page.getByText("Мария Петрова").first()).toBeVisible();

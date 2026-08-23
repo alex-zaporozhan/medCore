@@ -1,16 +1,118 @@
 import react from "@vitejs/plugin-react";
 // @ts-ignore - types for vite-plugin-pwa are provided at runtime
 import { VitePWA } from "vite-plugin-pwa";
+import http from "node:http";
+import net from "node:net";
 import path from "path";
 import { fileURLToPath } from "url";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 // __dirname is not available in ESM by default, emulate it via import.meta.url
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export default defineConfig({
+/** Host uvicorn publishes :8000; docker compose publishes API as :8010. */
+const API_PROXY_CANDIDATES: ReadonlyArray<{ origin: string; port: number }> = [
+  { origin: "http://127.0.0.1:8000", port: 8000 },
+  { origin: "http://127.0.0.1:8010", port: 8010 },
+];
+
+/**
+ * Vite uses node-http-proxy, not http-proxy-middleware. A `router` callback is ignored.
+ * Mutate this object in place: each proxied request shallow-copies `target` from here.
+ */
+const apiProxy = {
+  target: "http://127.0.0.1:8010",
+  changeOrigin: true,
+  secure: false,
+};
+
+function portOpen(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: "127.0.0.1", port, timeout: 800 }, () => {
+      socket.end();
+      resolve(true);
+    });
+    socket.on("error", () => resolve(false));
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+
+function originHealthOk(origin: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const url = new URL("/health", origin);
+    const req = http.get(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        timeout: 800,
+      },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode === 200);
+      },
+    );
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function resolveApiProxyTarget(): Promise<string> {
+  const override = (process.env.VITE_API_PROXY_TARGET || "").trim().replace(/\/$/, "");
+  if (override) return override;
+  for (const candidate of API_PROXY_CANDIDATES) {
+    if (await originHealthOk(candidate.origin)) return candidate.origin;
+  }
+  for (const candidate of API_PROXY_CANDIDATES) {
+    if (await portOpen(candidate.port)) return candidate.origin;
+  }
+  return "http://127.0.0.1:8010";
+}
+
+async function refreshLiveProxyTarget(): Promise<string> {
+  const next = await resolveApiProxyTarget();
+  if (apiProxy.target !== next) {
+    apiProxy.target = next;
+    console.info(`[vite] /api proxy → ${next}`);
+  }
+  return next;
+}
+
+function liveApiProxyPlugin(): Plugin {
+  let pollStarted = false;
+  const startPoll = () => {
+    if (pollStarted) return;
+    if ((process.env.VITE_API_PROXY_TARGET || "").trim()) return;
+    pollStarted = true;
+    const timer = setInterval(() => {
+      void refreshLiveProxyTarget();
+    }, 4000);
+    timer.unref?.();
+  };
+  return {
+    name: "live-api-proxy-target",
+    configureServer() {
+      startPoll();
+    },
+    configurePreviewServer() {
+      startPoll();
+    },
+  };
+}
+
+export default defineConfig(async () => {
+  await refreshLiveProxyTarget();
+  console.info(`[vite] /api proxy → ${apiProxy.target}`);
+  return {
   plugins: [
+    liveApiProxyPlugin(),
     react(),
     VitePWA({
       registerType: "autoUpdate",
@@ -151,17 +253,9 @@ export default defineConfig({
     port: 5175,
     host: true,
     proxy: {
-      "/api": {
-        // 127.0.0.1: CI/Linux often resolve localhost -> ::1 while uvicorn binds IPv4 only.
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/health": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
+      // Pass the same object (do not spread): Vite/http-proxy reads `target` per request.
+      "/api": apiProxy,
+      "/health": apiProxy,
     },
   },
   preview: {
@@ -169,16 +263,9 @@ export default defineConfig({
     host: true,
     // Same as dev: без прокси запросы идут на 4173 и /api не доходит до API — форма входа «молчит» или 404.
     proxy: {
-      "/api": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/health": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
+      "/api": apiProxy,
+      "/health": apiProxy,
     },
   },
+};
 });
