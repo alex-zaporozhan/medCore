@@ -20,11 +20,7 @@ export function adminChatOutgoingBubbleStyle(extra?: CSSProperties): CSSProperti
   };
 }
 
-/** Регион списка сообщений — landmark для скринридеров (DGN-P0-05 минимум). */
-export const ADMIN_CHAT_MESSAGES_REGION = {
-  component: "section" as const,
-  "aria-label": "Сообщения переписки",
-};
+/** Message-list landmark: call `adminChatMessagesRegion()` from `@/shared/chatI18n` at render so the aria-label follows `ui.locale`. */
 
 /**
  * Omni-чат: входящие от клиента (карточка на нити). Исходящие — насыщенный indigo для контраста с PWA-пузырями.

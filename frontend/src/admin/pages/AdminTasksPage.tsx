@@ -52,6 +52,7 @@ import {
   CompactMonthPicker,
 } from "@/shared/ui";
 import { ContextBar } from "@/shared/ui/ContextBar";
+import { useTranslation } from "react-i18next";
 import { SEMANTIC } from "@/shared/semanticUi";
 import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { EmptyState } from "@/shared/ui/EmptyState";
@@ -61,6 +62,7 @@ import {
   taskStatusCardSurface,
   taskStatusTextColors,
 } from "@/shared/taskStatusSemantic";
+import { leadOutcomeLabel, taskPriorityLabel, taskStatusLabel } from "@/shared/taskStatusI18n";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { usePatients } from "@/hooks/usePatients";
@@ -90,7 +92,7 @@ import {
   useReplaceAdminLeadLogRoutingRulesMutation,
 } from "@/hooks";
 import type { AdminTaskRow, AdminUserRow, TaskStreamRow, TaskStreamMantineColor, TaskStreamPageTint } from "@/hooks";
-import { getAdminId } from "@/api/client";
+import { ApiErrorWithCode, getAdminId } from "@/api/client";
 import {
   DndContext,
   PointerSensor,
@@ -104,27 +106,12 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useDebouncedValue } from "@mantine/hooks";
 
-const STATUS_META: Record<string, string> = {
-  open: "Открыто",
-  in_progress: "В работе",
-  on_hold: "На паузе",
-  review: "На проверке",
-  done: "Выполнено",
-  cancelled: "Отменено",
-};
 const STATUS_ORDER = ["open", "in_progress", "on_hold", "review", "done", "cancelled"] as const;
 
-const PRIORITY_META: Record<string, string> = {
-  low: "Низкий",
-  medium: "Средний",
-  high: "Высокий",
-  urgent: "Срочно",
-};
-
-const LEAD_OUTCOME_META: Record<string, { label: string; color: string }> = {
-  BOOKED: { label: "Записался", color: "teal" },
-  NOT_BOOKED: { label: "Не записался", color: "orange" },
-  UNKNOWN: { label: "Не определено", color: "gray" },
+const LEAD_OUTCOME_COLOR: Record<"BOOKED" | "NOT_BOOKED" | "UNKNOWN", string> = {
+  BOOKED: "teal",
+  NOT_BOOKED: "orange",
+  UNKNOWN: "gray",
 };
 
 function leadOutcomeKey(v: unknown): "BOOKED" | "NOT_BOOKED" | "UNKNOWN" {
@@ -236,6 +223,7 @@ function TaskKanbanCard({
   const assignee = firstAssigneeForAvatar(task, admins);
   const displayName = assignee?.full_name || assignee?.email || null;
   const tc = taskStatusTextColors(task.status);
+  const { t } = useTranslation("tasks");
 
   const outerStyle = draggable
     ? {
@@ -275,13 +263,13 @@ function TaskKanbanCard({
       >
         <Group gap={0} wrap="nowrap" align="stretch">
           {draggable ? (
-            <Tooltip label="Перетащить" withArrow>
+            <Tooltip label={t("card.drag")} withArrow>
               <Box
                 {...listeners}
                 {...attributes}
                 onClick={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
-                aria-label="Перетащить задачу"
+                aria-label={t("card.dragTask")}
                 style={{
                   width: 28,
                   display: "flex",
@@ -308,17 +296,17 @@ function TaskKanbanCard({
                   checked={Boolean(selected)}
                   onChange={(e) => onSelect(task.id, e.currentTarget.checked)}
                   onClick={(e) => e.stopPropagation()}
-                  aria-label="Выбрать задачу"
+                  aria-label={t("card.selectTask")}
                 />
               ) : null}
 
               <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
                 <Group gap={6} wrap="wrap">
                   <Badge size="xs" variant="transparent" tt="uppercase" styles={taskStatusBadgeStyles(task.status)}>
-                    {STATUS_META[task.status] ?? task.status}
+                    {taskStatusLabel(task.status)}
                   </Badge>
                   <Badge size="xs" variant="light" color={priorityBadgeColor(task.priority)} tt="uppercase">
-                    {PRIORITY_META[task.priority] ?? task.priority}
+                    {taskPriorityLabel(task.priority)}
                   </Badge>
                   <Box style={{ marginLeft: "auto" }}>
                     <Menu shadow="md" width={260} withinPortal>
@@ -328,14 +316,14 @@ function TaskKanbanCard({
                           color="gray"
                           size="sm"
                           onClick={(e) => e.stopPropagation()}
-                          aria-label="Действия"
+                          aria-label={t("card.actions")}
                         >
                           <IconDotsVertical size={16} />
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
                         <Menu.Item onClick={(e) => { e.stopPropagation(); onOpenDetail(task.id); }}>
-                          Открыть
+                          {t("open")}
                         </Menu.Item>
                         <Menu.Item
                           component={Link}
@@ -344,12 +332,12 @@ function TaskKanbanCard({
                           onClick={(e) => e.stopPropagation()}
                           leftSection={<IconExternalLink size={14} />}
                         >
-                          Открыть в новой вкладке
+                          {t("openNewTab")}
                         </Menu.Item>
                         {canMoveStream && streamOptions && streamOptions.length > 0 && onMoveToStream ? (
                           <>
                             <Menu.Divider />
-                            <Menu.Label>Переместить в поток</Menu.Label>
+                            <Menu.Label>{t("card.moveToStream")}</Menu.Label>
                             {streamOptions.map((opt) => (
                               <Menu.Item
                                 key={opt.value}
@@ -370,7 +358,7 @@ function TaskKanbanCard({
 
                 <Group gap={6} wrap="nowrap" align="flex-start">
                   {isAi ? (
-                    <Tooltip label="AI" withArrow>
+                    <Tooltip label={t("card.ai")} withArrow>
                       <Box style={{ flexShrink: 0, marginTop: 2 }}>
                         <IconRobot size={16} color="var(--mantine-color-indigo-6)" />
                       </Box>
@@ -383,20 +371,24 @@ function TaskKanbanCard({
 
                 {blocked ? (
                   <Tooltip
-                    label={task.blocked_reason?.trim() ? `Причина: ${task.blocked_reason}` : "Причина блокировки не указана"}
+                    label={
+                      task.blocked_reason?.trim()
+                        ? t("card.blockedReason", { reason: task.blocked_reason })
+                        : t("card.blockedReasonMissing")
+                    }
                     withArrow
                     multiline
                     maw={300}
                   >
                     <Badge size="xs" color="red" variant="light" leftSection={<IconLock size={12} />}>
-                      Заблокировано
+                      {t("card.blocked")}
                     </Badge>
                   </Tooltip>
                 ) : null}
 
                 {patientName ? (
                   <Text size="xs" lineClamp={1} style={{ color: tc.meta }}>
-                    Привязка: {patientName}
+                    {t("card.linkedPatient", { name: patientName })}
                   </Text>
                 ) : null}
 
@@ -430,6 +422,7 @@ export default function AdminTasksPage({
   /** Override ContextBar title. */
   titleOverride?: string;
 }) {
+  const { t } = useTranslation("tasks");
   const { currentClinicId } = useAdminClinic();
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [taskChatId, setTaskChatId] = useState<string | null>(null);
@@ -562,6 +555,16 @@ export default function AdminTasksPage({
 
   const createTaskMutation = useCreateAdminTaskMutation();
   const claimMutation = useClaimAdminTaskMutation();
+  const claimTask = useCallback(
+    (id: string) => {
+      claimMutation.mutate(id, {
+        onError: (e: unknown) => {
+          setDragError(e instanceof ApiErrorWithCode ? e.message : t("errors.claimFailed"));
+        },
+      });
+    },
+    [claimMutation, t],
+  );
   const updateStatusMutation = useUpdateAdminTaskStatusMutation();
   const { data: taskBoards = [], isLoading: boardsLoading } = useTaskBoardsQuery();
   const replaceBoardColumnsMutation = useReplaceTaskBoardColumnsMutation();
@@ -652,7 +655,7 @@ export default function AdminTasksPage({
       label: string;
       streamId: string | null;
       stream?: TaskStreamRow;
-    }> = [{ key: "all", label: "Все потоки", streamId: null }];
+    }> = [{ key: "all", label: t("streams.all"), streamId: null }];
     taskStreams.forEach((s) => {
       pages.push({ key: s.id, label: s.name, streamId: s.id, stream: s });
     });
@@ -662,7 +665,7 @@ export default function AdminTasksPage({
       return [{ key: forced.id, label: forced.name, streamId: forced.id, stream: forced }];
     }
     return pages;
-  }, [taskStreams, forcedStreamSlug]);
+  }, [taskStreams, forcedStreamSlug, t]);
 
   const activePageIndex = useMemo(() => {
     if (!selectedStreamId) return 0;
@@ -856,6 +859,9 @@ export default function AdminTasksPage({
           setDueTimeStr(n.format("HH:mm"));
           setTaskDueMonth(n.startOf("month"));
         },
+        onError: (e: unknown) => {
+          setDragError(e instanceof ApiErrorWithCode ? e.message : t("errors.createFailed"));
+        },
       }
     );
   };
@@ -908,7 +914,7 @@ export default function AdminTasksPage({
   if (streamsLoading || tagsLoading || !streamFilterInitialized || boardsLoading || tasksLoading) {
     return (
       <Stack>
-        <ContextBar title={titleOverride ?? (mode === "leads-log" ? "Лиды (лог)" : "Задачи")} />
+        <ContextBar title={titleOverride ?? (mode === "leads-log" ? t("leadsTitle") : t("title"))} />
         <PageSkeleton variant="cards" rows={6} />
       </Stack>
     );
@@ -922,11 +928,11 @@ export default function AdminTasksPage({
     >
       <Stack>
       <ContextBar
-        title={titleOverride ?? (mode === "leads-log" ? "Лиды (лог)" : "Задачи")}
+        title={titleOverride ?? (mode === "leads-log" ? t("leadsTitle") : t("title"))}
         actions={
           mode === "leads-log" ? null : (
             <Button size="sm" onClick={() => setCreateOpened(true)}>
-              Новая задача
+              {t("newTask")}
             </Button>
           )
         }
@@ -971,11 +977,11 @@ export default function AdminTasksPage({
               <Menu shadow="md" width={280} withinPortal>
                 <Menu.Target>
                   <Button size="xs" variant="light">
-                    {activeStream?.name ?? "Все потоки"}
+                    {activeStream?.name ?? t("streams.all")}
                   </Button>
                 </Menu.Target>
                 <Menu.Dropdown>
-                  <Menu.Label>Потоки</Menu.Label>
+                  <Menu.Label>{t("streams.label")}</Menu.Label>
                   {streamPages.map((p) => (
                     <Menu.Item
                       key={p.key}
@@ -998,7 +1004,7 @@ export default function AdminTasksPage({
                           setNewStreamModalOpened(true);
                         }}
                       >
-                        Новый поток
+                        {t("streams.new")}
                       </Menu.Item>
                     </>
                   ) : null}
@@ -1010,7 +1016,7 @@ export default function AdminTasksPage({
               <ActionIcon
                 variant="light"
                 color="indigo"
-                aria-label="Цвет потока"
+                aria-label={t("streams.color")}
                 onClick={() => setStreamThemeModalOpened(true)}
               >
                 <IconPalette size={16} />
@@ -1018,11 +1024,11 @@ export default function AdminTasksPage({
             ) : null}
 
             {mode === "leads-log" && canLeadsLogManage ? (
-              <Tooltip label="Routing rules: куда складывать лиды" withArrow>
+              <Tooltip label={t("routing.tooltip")} withArrow>
                 <ActionIcon
                   variant="light"
                   color="indigo"
-                  aria-label="Routing rules"
+                  aria-label={t("routing.tooltip")}
                   onClick={() => setRoutingModalOpened(true)}
                 >
                   <IconSettings size={16} />
@@ -1032,7 +1038,7 @@ export default function AdminTasksPage({
 
             <TextInput
               size="xs"
-              placeholder="Поиск…"
+              placeholder={t("search")}
               leftSection={<IconSearch size={14} />}
               value={filterQuery}
               onChange={(e) => setFilterQuery(e.currentTarget.value)}
@@ -1043,7 +1049,7 @@ export default function AdminTasksPage({
               <TextInput
                 size="xs"
                 type="date"
-                label="День"
+                label={t("filtersBar.day")}
                 value={completedDayIso}
                 onChange={(e) => setCompletedDayIso(e.currentTarget.value)}
               />
@@ -1051,7 +1057,7 @@ export default function AdminTasksPage({
 
             <Select
               size="xs"
-              placeholder="Исполнитель"
+              placeholder={t("filtersBar.assignee")}
               data={adminOptions}
               value={filterAssignee}
               onChange={setFilterAssignee}
@@ -1061,11 +1067,11 @@ export default function AdminTasksPage({
 
             <Select
               size="xs"
-              placeholder="Срок"
+              placeholder={t("filtersBar.due")}
               data={[
-                { value: "all", label: "Все сроки" },
-                { value: "today", label: "Сегодня" },
-                { value: "overdue", label: "Просрочено" },
+                { value: "all", label: t("filtersBar.dueAll") },
+                { value: "today", label: t("filtersBar.dueToday") },
+                { value: "overdue", label: t("filtersBar.dueOverdue") },
               ]}
               value={filterDue}
               onChange={(v) => setFilterDue(v ?? "all")}
@@ -1075,15 +1081,15 @@ export default function AdminTasksPage({
             <Menu shadow="md" width={320} withinPortal>
               <Menu.Target>
                 <Button size="xs" variant="default" leftSection={<IconFilter size={14} />}>
-                  Фильтры
+                  {t("filters")}
                 </Button>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Label>Фильтры</Menu.Label>
+                <Menu.Label>{t("filters")}</Menu.Label>
                 {mode !== "leads-log" ? (
                   <>
                     <Menu.Item onClick={() => setOnlyNeedsMyApproval((v) => !v)}>
-                      {onlyNeedsMyApproval ? "Показывать все задачи" : `Ждут подтверждения (${activeNeedsApprovalCount})`}
+                      {onlyNeedsMyApproval ? t("filtersBar.showAll") : t("filtersBar.needsApproval", { count: activeNeedsApprovalCount })}
                     </Menu.Item>
                     <Menu.Divider />
                   </>
@@ -1092,12 +1098,12 @@ export default function AdminTasksPage({
                   <Group gap="xs" wrap="wrap">
                     <Select
                       size="xs"
-                      placeholder="Приоритет"
+                      placeholder={t("priority.label")}
                       data={[
-                        { value: "low", label: "Низкий" },
-                        { value: "medium", label: "Средний" },
-                        { value: "high", label: "Высокий" },
-                        { value: "urgent", label: "Срочно" },
+                        { value: "low", label: t("priority.low") },
+                        { value: "medium", label: t("priority.medium") },
+                        { value: "high", label: t("priority.high") },
+                        { value: "urgent", label: t("priority.urgent") },
                       ]}
                       value={filterPriority}
                       onChange={setFilterPriority}
@@ -1106,7 +1112,7 @@ export default function AdminTasksPage({
                     />
                     <MultiSelect
                       size="xs"
-                      placeholder="Теги"
+                      placeholder={t("filtersBar.tags")}
                       data={taskTags.map((t) => ({ value: t.id, label: t.name }))}
                       value={filterTagIds}
                       onChange={setFilterTagIds}
@@ -1123,18 +1129,18 @@ export default function AdminTasksPage({
           <Group gap="xs" wrap="wrap">
             {mode === "leads-log" ? null : (
               <Button size="xs" onClick={() => setCreateOpened(true)}>
-                Новая задача
+                {t("newTask")}
               </Button>
             )}
             {canManageBoards ? (
               <Menu shadow="md" width={320} withinPortal>
                 <Menu.Target>
-                  <ActionIcon variant="light" color="gray" aria-label="Настройки">
+                  <ActionIcon variant="light" color="gray" aria-label={t("settings")}>
                     <IconSettings size={16} />
                   </ActionIcon>
                 </Menu.Target>
                 <Menu.Dropdown>
-                  <Menu.Label>Настройки</Menu.Label>
+                  <Menu.Label>{t("settings")}</Menu.Label>
                   <Menu.Item
                     leftSection={<IconLayoutKanban size={14} />}
                     onClick={() => {
@@ -1151,13 +1157,13 @@ export default function AdminTasksPage({
                     }}
                     disabled={!canEditSelectedBoardColumns}
                   >
-                    Колонки (порядок/названия)
+                    {t("board.columns")}
                   </Menu.Item>
                   <Menu.Item
                     leftSection={<IconLayoutKanban size={14} />}
                     onClick={() => setBoardPickerOpened(true)}
                   >
-                    Доски Kanban
+                    {t("board.kanbanBoards")}
                   </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
@@ -1183,10 +1189,10 @@ export default function AdminTasksPage({
         <Alert color="blue" icon={<IconAlertTriangle size={16} />} variant="light">
           <Group justify="space-between" wrap="wrap" gap="xs">
             <Text size="sm">
-              Показаны только задачи, ожидающие вашего подтверждения. Остальные скрыты фильтром.
+              {t("filtersBar.approvalFilterHint")}
             </Text>
             <Button size="xs" variant="light" onClick={() => setOnlyNeedsMyApproval(false)}>
-              Показать все задачи
+              {t("filtersBar.showAll")}
             </Button>
           </Group>
         </Alert>
@@ -1210,7 +1216,7 @@ export default function AdminTasksPage({
           const shouldRender = Math.abs(i - activePageIndex) <= 1;
           const pageTint = streamPageTintKey(p.stream?.theme);
           const accent = streamMantineColorKey(p.stream?.theme);
-          const streamName = p.streamId ? p.label : "Все потоки";
+          const streamName = p.streamId ? p.label : t("streams.all");
           return (
             <Box
               key={p.key}
@@ -1248,7 +1254,7 @@ export default function AdminTasksPage({
                     setOnlyNeedsMyApproval={setOnlyNeedsMyApproval}
                     setDetailTaskId={setDetailTaskId}
                     setTaskChatId={setTaskChatId}
-                    claimMutation={claimMutation}
+                    claimMutation={{ mutate: claimTask }}
                     patchStreamTagsMutation={patchStreamTagsMutation}
                     updateStatusMutation={updateStatusMutation}
                     reorderTasksMutation={reorderTasksMutation}
@@ -1269,18 +1275,18 @@ export default function AdminTasksPage({
 
       <AdminDataTableSurface>
         <Text size="sm" fw={700} mb={6}>
-          Аудит перемещений
+          {t("audit.title")}
         </Text>
         {auditTrail.length === 0 ? (
           <Text size="xs" c="dimmed">
-            Пока нет перемещений в этой сессии.
+            {t("audit.empty")}
           </Text>
         ) : (
           <Stack gap={4}>
             {auditTrail.slice(0, 8).map((a) => (
               <Text key={a.id} size="xs" c="dimmed">
-                {dayjs(a.at).format("DD.MM HH:mm")} · {a.taskTitle} · {STATUS_META[a.from] ?? a.from} →{" "}
-                {STATUS_META[a.to] ?? a.to}
+                {dayjs(a.at).format("DD.MM HH:mm")} · {a.taskTitle} · {taskStatusLabel(a.from)} →{" "}
+                {taskStatusLabel(a.to)}
               </Text>
             ))}
           </Stack>
@@ -1304,8 +1310,8 @@ export default function AdminTasksPage({
         }}
         title={
           mode === "leads-log"
-            ? (leadLogDetailQ.data?.title ?? detailTask?.title ?? "Лид (лог)")
-            : (detailTask ? detailTask.title : "Задача")
+            ? (leadLogDetailQ.data?.title ?? detailTask?.title ?? t("detail.leadLog"))
+            : (detailTask ? detailTask.title : t("detail.task"))
         }
       >
         {detailTaskId ? (
@@ -1314,13 +1320,13 @@ export default function AdminTasksPage({
               {leadLogIdFromTrace ? (
                 <>
                   <Text size="sm" fw={600}>
-                    Лог диалога
+                    {t("detail.dialogLog")}
                   </Text>
                   {leadLogDetailQ.isLoading ? (
                     <Group gap="xs">
                       <Loader size="sm" />
                       <Text size="sm" c="dimmed">
-                        Загрузка…
+                        {t("loading")}
                       </Text>
                     </Group>
                   ) : leadLogDetailQ.data ? (
@@ -1328,22 +1334,22 @@ export default function AdminTasksPage({
                       <Group justify="space-between" align="flex-start" wrap="wrap" gap="xs">
                         <Stack gap={2} style={{ minWidth: 0 }}>
                           <Text fw={700} size="sm" truncate="end">
-                            {leadLogDetailQ.data.contact_name ?? "Без имени"}
+                            {leadLogDetailQ.data.contact_name ?? t("unknownName")}
                           </Text>
                           <Text size="xs" c="dimmed">
                             {leadLogDetailQ.data.contact_primary_phone ?? ""}
-                            {leadLogDetailQ.data.opened_by_admin_name ? ` · Оператор: ${leadLogDetailQ.data.opened_by_admin_name}` : ""}
+                            {leadLogDetailQ.data.opened_by_admin_name ? t("detail.operator", { name: leadLogDetailQ.data.opened_by_admin_name }) : ""}
                           </Text>
                           <Text size="xs" c="dimmed">
-                            Закрыт: {dayjs(leadLogDetailQ.data.closed_at).format("DD.MM.YYYY HH:mm")}
+                            {t("detail.closed", { date: dayjs(leadLogDetailQ.data.closed_at).format("DD.MM.YYYY HH:mm") })}
                           </Text>
                         </Stack>
                         <Group gap="xs" wrap="wrap">
                           <Badge
                             variant="light"
-                            color={LEAD_OUTCOME_META[leadOutcomeKey(leadLogDetailQ.data.outcome)].color}
+                            color={LEAD_OUTCOME_COLOR[leadOutcomeKey(leadLogDetailQ.data.outcome)]}
                           >
-                            {LEAD_OUTCOME_META[leadOutcomeKey(leadLogDetailQ.data.outcome)].label}
+                            {leadOutcomeLabel(leadOutcomeKey(leadLogDetailQ.data.outcome))}
                           </Badge>
                           {leadLogDetailQ.data.omni_chat_id ? (
                             <Button
@@ -1353,7 +1359,7 @@ export default function AdminTasksPage({
                               variant="default"
                               target="_blank"
                             >
-                              Открыть исходный чат
+                              {t("detail.openSourceChat")}
                             </Button>
                           ) : null}
                         </Group>
@@ -1400,20 +1406,20 @@ export default function AdminTasksPage({
                           <Text size="sm">
                             {leadLogDetailQ.data.transcript_text?.trim()
                               ? leadLogDetailQ.data.transcript_text
-                              : "Нет текста."}
+                              : t("detail.noText")}
                           </Text>
                         </Paper>
                       )}
                     </Stack>
                   ) : (
                     <Alert color="red" variant="light">
-                      Не удалось загрузить lead-log.
+                      {t("detail.loadFailed")}
                     </Alert>
                   )}
                 </>
               ) : (
                 <Alert color="orange" variant="light">
-                  У этой карточки нет ссылки на lead-log (trace_id).
+                  {t("detail.noTrace")}
                 </Alert>
               )}
             </Stack>
@@ -1421,622 +1427,6 @@ export default function AdminTasksPage({
             <TaskDetailsView taskId={detailTaskId} mode="modal" onClose={() => setDetailTaskId(null)} />
           )
         ) : null}
-
-        {/* legacy detail modal removed
-          <Stack gap="md">
-            {detailModalApiError ? (
-              <Alert color="red" variant="light" icon={<IconAlertTriangle size={16} />}>
-                {detailModalApiError}
-              </Alert>
-            ) : null}
-            <Box
-              p="md"
-              style={{
-                ...taskStatusCardSurface(detailTask.status),
-                borderRadius: "var(--calendar-slot-radius)",
-              }}
-            >
-              <Group gap="xs" wrap="wrap">
-                <Badge size="sm" variant="light" color={priorityBadgeColor(detailTask.priority)} tt="uppercase">
-                  {detailTask.priority}
-                </Badge>
-                <Badge size="sm" variant="transparent" tt="uppercase" styles={taskStatusBadgeStyles(detailTask.status)}>
-                  {STATUS_META[detailTask.status] ?? detailTask.status}
-                </Badge>
-              </Group>
-              {detailTask.description ? (
-                <Text size="sm" mt="sm" style={{ whiteSpace: "pre-wrap", color: taskStatusTextColors(detailTask.status).title }}>
-                  {detailTask.description}
-                </Text>
-              ) : (
-                <Text size="sm" mt="sm" c="dimmed">
-                  Без описания
-                </Text>
-              )}
-              <Text size="xs" mt="xs" style={{ color: taskStatusTextColors(detailTask.status).meta }}>
-                Срок: {detailTask.due_at ? dayjs(detailTask.due_at).format("DD.MM.YYYY HH:mm") : "—"}
-                {!canEditAssignees ? (
-                  <>
-                    {" "}
-                    · Исполнители:{" "}
-                    {(() => {
-                      const ids = taskAssigneeIdList(detailTask);
-                      if (!ids.length) return detailTask.role_assignee || "—";
-                      return ids.map((id, idx) => {
-                        const a = admins.find((x) => x.id === id);
-                        return (
-                          <span key={id}>
-                            <PersonNameLink kind="staff" id={id} label={a?.full_name || a?.email || null} size="xs" />
-                            {idx < ids.length - 1 ? ", " : ""}
-                          </span>
-                        );
-                      });
-                    })()}
-                  </>
-                ) : null}
-              </Text>
-            </Box>
-            {canEditAssignees ? (
-              <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
-                <Stack gap="xs">
-                  <Text size="sm" fw={600}>
-                    Исполнители
-                  </Text>
-                  <MultiSelect
-                    label="Назначение и делегирование"
-                    description="Первый в списке — основной исполнитель. Можно добавить или убрать любого сотрудника клиники."
-                    placeholder="Выберите одного или нескольких"
-                    data={adminOptions}
-                    value={detailAssigneeDraft}
-                    onChange={setDetailAssigneeDraft}
-                    searchable
-                    hidePickedOptions
-                    clearable
-                  />
-                  <Checkbox
-                    label="Добавить служебную запись в комментарии об изменении состава"
-                    checked={assigneeAuditComment}
-                    onChange={(e) => setAssigneeAuditComment(e.currentTarget.checked)}
-                  />
-                  <Group justify="flex-end">
-                    <Button
-                      size="xs"
-                      variant="light"
-                      onClick={() => detailTask && setDetailAssigneeDraft(taskAssigneeIdList(detailTask))}
-                      disabled={assigneeListUnchanged}
-                    >
-                      Сбросить
-                    </Button>
-                    <Button
-                      size="xs"
-                      onClick={() => {
-                        if (!detailTask || assigneeListUnchanged) return;
-                        setDetailModalApiError(null);
-                        patchAssigneesMutation.mutate(
-                          { taskId: detailTask.id, assignee_ids: detailAssigneeDraft },
-                          {
-                            onSuccess: () => {
-                              setDetailModalApiError(null);
-                              if (assigneeAuditComment) {
-                                postDetailComment.mutate("Системное событие: обновлён состав исполнителей.");
-                              }
-                            },
-                            onError: (e) => {
-                              setDetailModalApiError(
-                                e instanceof ApiErrorWithCode
-                                  ? e.message
-                                  : "Не удалось сохранить исполнителей"
-                              );
-                            },
-                          }
-                        );
-                      }}
-                      loading={patchAssigneesMutation.isPending}
-                      disabled={assigneeListUnchanged}
-                    >
-                      Сохранить исполнителей
-                    </Button>
-                  </Group>
-                </Stack>
-              </Card>
-            ) : null}
-            {canManageBoards ? (
-              <Card
-                withBorder
-                p="sm"
-                style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}
-              >
-                <Stack gap="xs">
-                  <Text size="sm" fw={600}>
-                    Поток и теги
-                  </Text>
-                  <Select
-                    label="Поток"
-                    placeholder="Выберите поток"
-                    data={taskStreams
-                      .filter((s) => !s.is_archived)
-                      .map((s) => ({ value: s.id, label: s.name }))}
-                    value={detailStreamDraft}
-                    onChange={(v) => setDetailStreamDraft(v)}
-                    searchable
-                  />
-                  <MultiSelect
-                    label="Теги"
-                    placeholder="Необязательно"
-                    data={taskTags.map((t) => ({ value: t.id, label: t.name }))}
-                    value={detailTagDraft}
-                    onChange={setDetailTagDraft}
-                    searchable
-                    clearable
-                  />
-                  <Group justify="flex-end">
-                    <Button
-                      size="xs"
-                      variant="light"
-                      onClick={() => {
-                        if (!detailTask) return;
-                        setDetailStreamDraft(detailTask.stream_id);
-                        setDetailTagDraft([...(detailTask.tag_ids ?? [])]);
-                      }}
-                      disabled={detailContextUnchanged}
-                    >
-                      Сбросить
-                    </Button>
-                    <Button
-                      size="xs"
-                      onClick={() => {
-                        if (!detailTask || detailStreamDraft === null || detailContextUnchanged) return;
-                        setDetailModalApiError(null);
-                        patchStreamTagsMutation.mutate(
-                          {
-                            taskId: detailTask.id,
-                            stream_id: detailStreamDraft,
-                            tag_ids: detailTagDraft,
-                          },
-                          {
-                            onSuccess: () => setDetailModalApiError(null),
-                            onError: (e) => {
-                              setDetailModalApiError(
-                                e instanceof ApiErrorWithCode
-                                  ? e.message
-                                  : "Не удалось сохранить поток и теги"
-                              );
-                            },
-                          }
-                        );
-                      }}
-                      loading={patchStreamTagsMutation.isPending}
-                      disabled={detailContextUnchanged || detailStreamDraft === null}
-                    >
-                      Сохранить поток и теги
-                    </Button>
-                  </Group>
-                </Stack>
-              </Card>
-            ) : null}
-            {canPatchTaskFields ? (
-              <Card
-                withBorder
-                p="sm"
-                style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}
-              >
-                <Stack gap="xs">
-                  <Text size="sm" fw={600}>
-                    Срок выполнения
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    Дата и время по локальному времени браузера; на сервере действует политика «не раньше сегодняшнего
-                    календарного дня (UTC)».
-                  </Text>
-                  <Group align="flex-end" gap="md" wrap="wrap">
-                    <TextInput
-                      label="Дата"
-                      type="date"
-                      value={detailDueDayIso}
-                      onChange={(e) => setDetailDueDayIso(e.currentTarget.value)}
-                      styles={{ root: { minWidth: 160 } }}
-                    />
-                    <TextInput
-                      label="Время"
-                      type="time"
-                      value={detailDueTimeStr}
-                      onChange={(e) => setDetailDueTimeStr(e.currentTarget.value)}
-                      styles={{ root: { minWidth: 120 } }}
-                    />
-                  </Group>
-                  {detailDueInPast ? (
-                    <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
-                      Выбранный срок в прошлом — сервер отклонит сохранение.
-                    </Alert>
-                  ) : null}
-                  <Group justify="flex-end" wrap="wrap">
-                    <Button
-                      size="xs"
-                      variant="light"
-                      onClick={() => {
-                        if (!detailTask) return;
-                        setDetailModalApiError(null);
-                        patchDueMutation.mutate(
-                          { taskId: detailTask.id, due_at: null },
-                          {
-                            onSuccess: () => setDetailModalApiError(null),
-                            onError: (e) => {
-                              setDetailModalApiError(
-                                e instanceof ApiErrorWithCode ? e.message : "Не удалось сбросить срок"
-                              );
-                            },
-                          }
-                        );
-                      }}
-                      loading={patchDueMutation.isPending}
-                      disabled={!detailTask.due_at}
-                    >
-                      Без срока
-                    </Button>
-                    <Button
-                      size="xs"
-                      onClick={() => {
-                        if (!detailTask || !detailDueComposite || detailDueUnchanged || detailDueInPast) return;
-                        setDetailModalApiError(null);
-                        patchDueMutation.mutate(
-                          {
-                            taskId: detailTask.id,
-                            due_at: new Date(detailDueComposite).toISOString(),
-                          },
-                          {
-                            onSuccess: () => setDetailModalApiError(null),
-                            onError: (e) => {
-                              setDetailModalApiError(
-                                e instanceof ApiErrorWithCode ? e.message : "Не удалось сохранить срок"
-                              );
-                            },
-                          }
-                        );
-                      }}
-                      loading={patchDueMutation.isPending}
-                      disabled={!detailDueComposite || detailDueUnchanged || detailDueInPast}
-                    >
-                      Сохранить срок
-                    </Button>
-                  </Group>
-                </Stack>
-              </Card>
-            ) : null}
-            <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
-              <Stack gap="xs">
-                <Group justify="space-between" wrap="wrap">
-                  <Text size="sm" fw={600}>
-                    Критерии перехода
-                  </Text>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    color={detailTask.blocked ? "red" : "indigo"}
-                    leftSection={detailTask.blocked ? <IconLockOpen size={12} /> : <IconLock size={12} />}
-                    onClick={() =>
-                      updateTaskMetaMutation.mutate({
-                        taskId: detailTask.id,
-                        blocked: !detailTask.blocked,
-                      })
-                    }
-                  >
-                    {detailTask.blocked ? "Разблокировать" : "Заблокировать"}
-                  </Button>
-                </Group>
-                {detailTask.blocked ? (
-                  <Stack gap="xs">
-                    <TextInput
-                      label="Причина блокировки"
-                      placeholder="Опишите, что мешает завершить задачу"
-                      value={blockedReasonDraft}
-                      onChange={(e) => setBlockedReasonDraft(e.currentTarget.value)}
-                    />
-                    <Group justify="flex-end">
-                      <Button
-                        size="xs"
-                        variant="light"
-                        onClick={() =>
-                          updateTaskMetaMutation.mutate({
-                            taskId: detailTask.id,
-                            blocked: true,
-                            blocked_reason: blockedReasonDraft.trim() || null,
-                          })
-                        }
-                        loading={updateTaskMetaMutation.isPending}
-                      >
-                        Сохранить причину
-                      </Button>
-                    </Group>
-                  </Stack>
-                ) : null}
-                <Checkbox
-                  label="Checklist завершения подтвержден"
-                  checked={Boolean(detailTask.checklist_done)}
-                  onChange={(e) =>
-                    updateTaskMetaMutation.mutate({
-                      taskId: detailTask.id,
-                      checklist_done: e.currentTarget.checked,
-                    })
-                  }
-                />
-              </Stack>
-            </Card>
-            <Group gap="xs" wrap="wrap">
-              {detailTask.patient_id && (
-                <Button
-                  component={Link}
-                  to={`/admin/omni-chat?patient_id=${detailTask.patient_id}`}
-                  variant="light"
-                  size="xs"
-                  leftSection={<IconMessageCircle size={14} />}
-                >
-                  Чат с клиентом
-                </Button>
-              )}
-              {detailTask.booking_id && (
-                <Button
-                  component={Link}
-                  to={`/admin/schedule?booking_id=${detailTask.booking_id}`}
-                  variant="light"
-                  size="xs"
-                  leftSection={<IconCalendarEvent size={14} />}
-                >
-                  Запись
-                </Button>
-              )}
-              <Button
-                component={Link}
-                to={`${ROUTE_PATHS.admin.staffCalendar}?task_id=${detailTask.id}&open_create=1`}
-                variant="outline"
-                color="indigo"
-                size="xs"
-                leftSection={<IconCalendarEvent size={14} />}
-              >
-                В календарь
-              </Button>
-              <Button
-                variant="outline"
-                color="indigo"
-                size="xs"
-                leftSection={<IconMessages size={14} />}
-                onClick={() => setTaskChatId(detailTask.id)}
-              >
-                Чат задачи
-              </Button>
-            </Group>
-            {detailTask.patient_id && patientIdToPhone.get(detailTask.patient_id) && (
-              <Group gap="xs">
-                <Button
-                  component="a"
-                  href={`tel:${patientIdToPhone.get(detailTask.patient_id)!.replace(/\s/g, "")}`}
-                  variant="subtle"
-                  size="xs"
-                  leftSection={<IconPhone size={14} />}
-                >
-                  Позвонить
-                </Button>
-                <Button
-                  component="a"
-                  href={`https://wa.me/${patientIdToPhone.get(detailTask.patient_id)!.replace(/\D/g, "").replace(/^8/, "7")}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  variant="subtle"
-                  size="xs"
-                  leftSection={<IconBrandWhatsapp size={14} />}
-                >
-                  WhatsApp
-                </Button>
-              </Group>
-            )}
-            <Menu shadow="md" width={260}>
-              <Menu.Target>
-                <Button variant="filled" color="indigo">
-                  Сменить статус
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item
-                  onClick={() => {
-                    moveTask(detailTask, "open");
-                  }}
-                >
-                  Открыто
-                </Menu.Item>
-                <Menu.Item
-                  onClick={() => {
-                    moveTask(detailTask, "in_progress");
-                  }}
-                >
-                  В работе
-                </Menu.Item>
-                <Menu.Item
-                  onClick={() => {
-                    moveTask(detailTask, "on_hold");
-                  }}
-                >
-                  На паузе
-                </Menu.Item>
-                <Menu.Item
-                  onClick={() => {
-                    moveTask(detailTask, "review");
-                  }}
-                >
-                  На проверке
-                </Menu.Item>
-                <Menu.Item
-                  onClick={() => {
-                    moveTask(detailTask, "done");
-                  }}
-                >
-                  Выполнено
-                </Menu.Item>
-                <Menu.Item
-                  color="red"
-                  onClick={() => {
-                    moveTask(detailTask, "cancelled");
-                  }}
-                >
-                  Отменить
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-            <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
-              <Text size="sm" fw={600} mb={6}>
-                История переходов
-              </Text>
-              {detailTransitions.length === 0 ? (
-                <Text size="xs" c="dimmed">
-                  Пока нет переходов статусов.
-                </Text>
-              ) : (
-                <Stack gap={4}>
-                  {detailTransitions.slice(0, 6).map((tr) => (
-                    <Text key={tr.id} size="xs" c="dimmed">
-                      {dayjs(tr.created_at).format("DD.MM HH:mm")} · {STATUS_META[tr.from_status] ?? tr.from_status} →{" "}
-                      {STATUS_META[tr.to_status] ?? tr.to_status}
-                      {tr.reason ? ` · ${tr.reason}` : ""}
-                      {tr.metadata && typeof tr.metadata === "object" && "event" in tr.metadata
-                        ? ` · ${String((tr.metadata as Record<string, unknown>).event)}`
-                        : ""}
-                    </Text>
-                  ))}
-                </Stack>
-              )}
-            </Card>
-            <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
-              <Text size="sm" fw={600} mb={6}>
-                Календарные слоты задачи
-              </Text>
-              {taskCalendarContext.length === 0 ? (
-                <Text size="xs" c="dimmed">
-                  Нет связанных слотов. Нажмите «В календарь», чтобы создать слот из этой задачи.
-                </Text>
-              ) : (
-                <Stack gap="xs">
-                  {taskCalendarContext.map((ev) => (
-                    <Paper key={ev.event_id} p="xs" withBorder>
-                      <Group justify="space-between" wrap="nowrap">
-                        <Text size="sm" fw={500} lineClamp={1}>
-                          {ev.title}
-                        </Text>
-                        <Badge size="xs" variant="light" color={ev.acknowledged_count < ev.participants_count ? "orange" : "teal"}>
-                          ACK {ev.acknowledged_count}/{ev.participants_count}
-                        </Badge>
-                      </Group>
-                      <Text size="xs" c="dimmed" mt={4}>
-                        {dayjs(ev.starts_at).format("DD.MM HH:mm")} - {dayjs(ev.ends_at).format("HH:mm")}
-                      </Text>
-                      <Text size="xs" c="dimmed" mt={4}>
-                        Участники:{" "}
-                        {ev.participants
-                          .map((p) => `${p.full_name || "Сотрудник"}${p.acknowledged_at ? " (ACK)" : ""}`)
-                          .join(", ") || "—"}
-                      </Text>
-                    </Paper>
-                  ))}
-                  <Group align="end" wrap="wrap">
-                    <Select
-                      size="xs"
-                      label="Слот"
-                      data={taskCalendarContext.map((ev) => ({
-                        value: ev.event_id,
-                        label: `${dayjs(ev.starts_at).format("DD.MM HH:mm")} · ${ev.title}`,
-                      }))}
-                      value={inviteEventId}
-                      onChange={setInviteEventId}
-                      w={280}
-                    />
-                    <MultiSelect
-                      size="xs"
-                      label="Пригласить в слот"
-                      data={adminOptions}
-                      value={inviteAdminIds}
-                      onChange={setInviteAdminIds}
-                      searchable
-                      w={340}
-                    />
-                    <Button
-                      size="xs"
-                      variant="light"
-                      onClick={() => {
-                        if (!inviteEventId || inviteAdminIds.length === 0) return;
-                        inviteParticipantsMutation.mutate(inviteAdminIds, {
-                          onSuccess: () => setInviteAdminIds([]),
-                        });
-                      }}
-                      loading={inviteParticipantsMutation.isPending}
-                      disabled={!inviteEventId || inviteAdminIds.length === 0}
-                    >
-                      Пригласить
-                    </Button>
-                  </Group>
-                </Stack>
-              )}
-            </Card>
-            <Text size="sm" fw={600}>
-              Комментарии
-            </Text>
-            {detailCommentsLoading ? (
-              <Loader size="sm" />
-            ) : (
-              <ScrollArea h={240} offsetScrollbars>
-                <Stack gap="xs">
-                  {detailComments.length === 0 ? (
-                    <Text size="sm" c="dimmed">
-                      Пока нет комментариев.
-                    </Text>
-                  ) : (
-                    detailComments.map((c) => (
-                      <Paper
-                        key={c.id}
-                        p="xs"
-                        withBorder
-                        style={{ borderColor: "var(--calendar-card-border)", background: "var(--mantine-color-body)" }}
-                      >
-                        <Text size="xs" c="dimmed" mb={4}>
-                          {c.author_full_name || "Сотрудник"} · {dayjs(c.created_at).format("DD.MM.YYYY HH:mm")}
-                        </Text>
-                        <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                          <AppleEmojiRichText text={c.text} />
-                        </Text>
-                      </Paper>
-                    ))
-                  )}
-                </Stack>
-              </ScrollArea>
-            )}
-            <Input.Wrapper label="Новый комментарий">
-              <AppleEmojiOverlayTextarea
-                ref={detailCommentTextareaRef}
-                placeholder="Текст для команды…"
-                minRows={2}
-                value={detailCommentDraft}
-                onChange={(e) => setDetailCommentDraft(e.currentTarget.value)}
-              />
-            </Input.Wrapper>
-            <Group justify="space-between" align="center" wrap="wrap">
-              <EmojiMartPopoverPicker
-                actionIconProps={{ variant: "light", color: "indigo", size: "md" }}
-                onPick={(native) => setDetailCommentDraft((prev) => prev + native)}
-                onInserted={() => detailCommentTextareaRef.current?.focus()}
-              />
-              <Button
-                color="indigo"
-                onClick={() => {
-                  const text = detailCommentDraft.trim();
-                  if (!text || !detailTaskId) return;
-                  postDetailComment.mutate(text, {
-                    onSuccess: () => setDetailCommentDraft(""),
-                  });
-                }}
-                loading={postDetailComment.isPending}
-                disabled={!detailCommentDraft.trim()}
-              >
-                Отправить
-              </Button>
-            </Group>
-          </Stack>
-        */}
       </GlassModal>
 
       <GlassModal
@@ -2044,7 +1434,7 @@ export default function AdminTasksPage({
         centered
         opened={createOpened}
         onClose={() => setCreateOpened(false)}
-        title="Новая задача"
+        title={t("newTask")}
         styles={{
           content: {
             maxHeight: "min(92vh, 900px)",
@@ -2059,30 +1449,30 @@ export default function AdminTasksPage({
       >
         <Stack gap="sm" p="md" pb="xl">
           {createDueInPast ? (
-            <Alert color="orange" title="Срок в прошлом">
-              Выберите сегодняшнюю дату или позже — иначе создание на сервере будет отклонено.
+            <Alert color="orange" title={t("createForm.dueInPastTitle")}>
+              {t("createForm.dueInPastBody")}
             </Alert>
           ) : null}
 
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
             <Stack gap="sm">
               <TextInput
-                label="Заголовок задачи"
-                placeholder="Например: Перезвонить пациенту по отменённой записи"
+                label={t("createForm.taskTitle")}
+                placeholder={t("createForm.taskTitlePlaceholder")}
                 value={title}
                 onChange={(e) => setTitle(e.currentTarget.value)}
                 required
               />
               <Textarea
-                label="Описание"
-                placeholder="Добавьте детали, ссылки, ID брони/лида и т.д."
+                label={t("createForm.description")}
+                placeholder={t("createForm.descriptionPlaceholder")}
                 minRows={8}
                 value={description}
                 onChange={(e) => setDescription(e.currentTarget.value)}
               />
               <MultiSelect
-                label="Исполнители"
-                placeholder="Выберите одного или нескольких"
+                label={t("createForm.assignees")}
+                placeholder={t("createForm.assigneesPlaceholder")}
                 data={adminOptions}
                 value={assigneeIds}
                 onChange={setAssigneeIds}
@@ -2095,19 +1485,19 @@ export default function AdminTasksPage({
 
             <Stack gap="sm">
               <Select
-                label="Приоритет"
+                label={t("priority.label")}
                 data={[
-                  { value: "low", label: "Низкий" },
-                  { value: "medium", label: "Средний" },
-                  { value: "high", label: "Высокий" },
-                  { value: "urgent", label: "Срочно" },
+                  { value: "low", label: t("priority.low") },
+                  { value: "medium", label: t("priority.medium") },
+                  { value: "high", label: t("priority.high") },
+                  { value: "urgent", label: t("priority.urgent") },
                 ]}
                 value={priority}
                 onChange={setPriority}
               />
               <Select
-                label="Поток"
-                placeholder="Обязательно"
+                label={t("streams.one")}
+                placeholder={t("view.pickStream")}
                 required
                 data={taskStreams
                   .filter((s) => !s.is_archived)
@@ -2120,8 +1510,8 @@ export default function AdminTasksPage({
               <Group gap="xs" wrap="nowrap" align="flex-end">
                 <MultiSelect
                   style={{ flex: 1, minWidth: 0 }}
-                  label="Теги"
-                  placeholder="Необязательно"
+                  label={t("filtersBar.tags")}
+                  placeholder={t("createForm.optional")}
                   data={taskTags.map((t) => ({ value: t.id, label: t.name }))}
                   value={createTagIds}
                   onChange={setCreateTagIds}
@@ -2140,14 +1530,14 @@ export default function AdminTasksPage({
                       setNewTagModalOpened(true);
                     }}
                   >
-                    Тег
+                    {t("createForm.tag")}
                   </Button>
                 ) : null}
               </Group>
 
               <Stack gap={6}>
                 <Text size="sm" fw={700}>
-                  Срок
+                  {t("createForm.due")}
                 </Text>
                 <Group align="flex-start" gap="md" wrap="wrap">
                   <CompactMonthPicker
@@ -2161,7 +1551,7 @@ export default function AdminTasksPage({
                     size="compact"
                   />
                   <TextInput
-                    label="Время"
+                    label={t("view.time")}
                     type="time"
                     value={dueTimeStr}
                     onChange={(e) => setDueTimeStr(e.currentTarget.value)}
@@ -2187,7 +1577,7 @@ export default function AdminTasksPage({
         >
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setCreateOpened(false)}>
-              Отмена
+              {t("cancel")}
             </Button>
             <Button
               onClick={handleCreate}
@@ -2200,7 +1590,7 @@ export default function AdminTasksPage({
                 createDueInPast
               }
             >
-              Создать
+              {t("create")}
             </Button>
           </Group>
         </Box>
@@ -2211,18 +1601,18 @@ export default function AdminTasksPage({
         centered
         opened={newStreamModalOpened}
         onClose={() => setNewStreamModalOpened(false)}
-        title="Новый поток"
+        title={t("streams.new")}
       >
         <Stack gap="sm">
           <TextInput
-            label="Название"
-            placeholder="Например: Дизайн"
+            label={t("streams.name")}
+            placeholder={t("streams.namePlaceholder")}
             value={newStreamName}
             onChange={(e) => setNewStreamName(e.currentTarget.value)}
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setNewStreamModalOpened(false)}>
-              Отмена
+              {t("cancel")}
             </Button>
             <Button
               loading={createStreamMutation.isPending}
@@ -2242,7 +1632,7 @@ export default function AdminTasksPage({
                 );
               }}
             >
-              Создать
+              {t("create")}
             </Button>
           </Group>
         </Stack>
@@ -2253,26 +1643,26 @@ export default function AdminTasksPage({
         centered
         opened={streamThemeModalOpened}
         onClose={() => setStreamThemeModalOpened(false)}
-        title={activeStream ? `Цвет потока: ${activeStream.name}` : "Цвет потока"}
+        title={activeStream ? t("streams.colorNamed", { name: activeStream.name }) : t("streams.color")}
       >
         <Stack gap="sm">
           <Select
-            label="Фоновый tint"
-            description="Мягкий градиент страницы потока (пресеты UI)."
+            label={t("streams.tint")}
+            description={t("streams.tintHint")}
             data={[
-              { value: "none", label: "Нет" },
-              { value: "subtle_gray", label: "Серый" },
-              { value: "subtle_violet", label: "Фиолетовый" },
-              { value: "subtle_blue", label: "Синий" },
-              { value: "subtle_green", label: "Зелёный" },
-              { value: "subtle_amber", label: "Янтарный" },
+              { value: "none", label: t("streams.tintNone") },
+              { value: "subtle_gray", label: t("streams.tintGray") },
+              { value: "subtle_violet", label: t("streams.tintViolet") },
+              { value: "subtle_blue", label: t("streams.tintBlue") },
+              { value: "subtle_green", label: t("streams.tintGreen") },
+              { value: "subtle_amber", label: t("streams.tintAmber") },
             ]}
             value={themeDraftTint}
             onChange={(v) => setThemeDraftTint((v as TaskStreamPageTint) ?? "none")}
           />
           <Select
-            label="Акцент"
-            description="Цвет для акцентов UI (Mantine preset)."
+            label={t("streams.accent")}
+            description={t("streams.accentHint")}
             data={[
               { value: "gray", label: "Gray" },
               { value: "red", label: "Red" },
@@ -2294,7 +1684,7 @@ export default function AdminTasksPage({
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setStreamThemeModalOpened(false)}>
-              Отмена
+              {t("cancel")}
             </Button>
             <Button
               disabled={!activeStream}
@@ -2310,7 +1700,7 @@ export default function AdminTasksPage({
                 );
               }}
             >
-              Сохранить
+              {t("save")}
             </Button>
           </Group>
         </Stack>
@@ -2321,12 +1711,11 @@ export default function AdminTasksPage({
         centered
         opened={routingModalOpened}
         onClose={() => setRoutingModalOpened(false)}
-        title="Routing rules: лиды (лог)"
+        title={t("routing.title")}
       >
         <Stack gap="sm">
           <Alert icon={<IconFilter size={16} />} color="blue" variant="light">
-            Правила применяются при resolve: первое совпавшее активное правило отправляет лид‑лог в выбранный поток.
-            Пустое поле означает “любой”.
+            {t("routing.intro")}
           </Alert>
 
           <Paper withBorder radius="md" p="sm">
@@ -2334,15 +1723,15 @@ export default function AdminTasksPage({
               <Group justify="space-between" align="flex-end" wrap="wrap">
                 <Group gap="xs" wrap="wrap" align="flex-end">
                   <TextInput
-                    label="Тест: channel_type"
+                    label={t("routing.testChannel")}
                     placeholder="TELEGRAM_BOT / WHATSAPP / VK / EMAIL"
                     value={simulateChannelType}
                     onChange={(e) => setSimulateChannelType(e.currentTarget.value)}
                     w={240}
                   />
                   <TextInput
-                    label="Тест: source_key"
-                    placeholder="(опционально)"
+                    label={t("routing.testSource")}
+                    placeholder={t("routing.optional")}
                     value={simulateSourceKey}
                     onChange={(e) => setSimulateSourceKey(e.currentTarget.value)}
                     w={200}
@@ -2359,7 +1748,7 @@ export default function AdminTasksPage({
                     });
                   }}
                 >
-                  Проверить
+                  {t("routing.check")}
                 </Button>
               </Group>
 
@@ -2367,12 +1756,12 @@ export default function AdminTasksPage({
                 <Alert color="gray" variant="light">
                   {(() => {
                     const sid = simulateRoutingMut.data.target_stream_id;
-                    if (!sid) return "Нет совпадения → будет fallback в leads-log.";
+                    if (!sid) return t("routing.noMatch");
                     const label =
                       streamPages.find((p) => p.streamId === sid)?.label ??
                       taskStreams.find((s) => s.id === sid)?.name ??
                       sid;
-                    return `Target stream: ${label}`;
+                    return t("routing.targetHit", { name: label });
                   })()}
                 </Alert>
               ) : null}
@@ -2399,7 +1788,7 @@ export default function AdminTasksPage({
                 ]);
               }}
             >
-              Добавить правило
+              {t("routing.addRule")}
             </Button>
 
             <Button
@@ -2419,7 +1808,7 @@ export default function AdminTasksPage({
                 });
               }}
             >
-              Сохранить
+              {t("save")}
             </Button>
           </Group>
 
@@ -2429,8 +1818,8 @@ export default function AdminTasksPage({
             <Stack gap="xs" pr="xs">
               {routingDraft.length === 0 ? (
                 <EmptyState
-                  title="Нет правил"
-                  description="Тогда все лиды будут падать в дефолтный поток leads-log."
+                  title={t("routing.emptyTitle")}
+                  description={t("routing.emptyHint")}
                 />
               ) : null}
 
@@ -2438,7 +1827,7 @@ export default function AdminTasksPage({
                 <Paper key={r.key} withBorder radius="md" p="sm">
                   <Group gap="xs" align="flex-end" wrap="wrap">
                     <TextInput
-                      label="channel_type"
+                      label={t("routing.fieldChannel")}
                       placeholder="TELEGRAM_BOT / WHATSAPP / VK / EMAIL"
                       value={r.channel_type}
                       onChange={(e) => {
@@ -2450,8 +1839,8 @@ export default function AdminTasksPage({
                       w={220}
                     />
                     <TextInput
-                      label="source_key"
-                      placeholder="(опционально)"
+                      label={t("routing.fieldSource")}
+                      placeholder={t("routing.optional")}
                       value={r.source_key}
                       onChange={(e) => {
                         const v = e.currentTarget.value;
@@ -2462,7 +1851,7 @@ export default function AdminTasksPage({
                       w={180}
                     />
                     <Select
-                      label="target stream"
+                      label={t("routing.fieldTarget")}
                       data={streamPages
                         .filter((p) => typeof p.streamId === "string" && p.streamId)
                         .map((p) => ({ value: p.streamId as string, label: p.label }))}
@@ -2477,7 +1866,7 @@ export default function AdminTasksPage({
                       searchable
                     />
                     <TextInput
-                      label="sort"
+                      label={t("routing.fieldSort")}
                       value={String(r.sort_order)}
                       onChange={(e) => {
                         const n = Number(e.currentTarget.value);
@@ -2490,7 +1879,7 @@ export default function AdminTasksPage({
                       w={80}
                     />
                     <Checkbox
-                      label="active"
+                      label={t("routing.fieldActive")}
                       checked={r.is_active}
                       onChange={(e) => {
                         const checked = e.currentTarget.checked;
@@ -2503,7 +1892,7 @@ export default function AdminTasksPage({
                     <ActionIcon
                       variant="subtle"
                       color="red"
-                      aria-label="Удалить правило"
+                      aria-label={t("routing.deleteRule")}
                       onClick={() => setRoutingDraft((prev) => prev.filter((x) => x.key !== r.key))}
                       mt={22}
                     >
@@ -2525,18 +1914,18 @@ export default function AdminTasksPage({
         centered
         opened={newTagModalOpened}
         onClose={() => setNewTagModalOpened(false)}
-        title="Новый тег"
+        title={t("tagModal.title")}
       >
         <Stack gap="sm">
           <TextInput
-            label="Название"
-            placeholder="Например: Филиал А"
+            label={t("tagModal.name")}
+            placeholder={t("tagModal.placeholder")}
             value={newTagName}
             onChange={(e) => setNewTagName(e.currentTarget.value)}
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setNewTagModalOpened(false)}>
-              Отмена
+              {t("cancel")}
             </Button>
             <Button
               loading={createTagMutation.isPending}
@@ -2560,7 +1949,7 @@ export default function AdminTasksPage({
                 );
               }}
             >
-              Создать
+              {t("create")}
             </Button>
           </Group>
         </Stack>
@@ -2571,11 +1960,11 @@ export default function AdminTasksPage({
         centered
         opened={boardColumnModalOpened}
         onClose={() => setBoardColumnModalOpened(false)}
-        title="Порядок колонок Kanban"
+        title={t("board.columnOrderTitle")}
       >
         <Stack gap="sm">
           <Text size="xs" c="dimmed">
-            Подпись пустая — стандартное имя статуса. Должны присутствовать все статусы (как на сервере).
+            {t("board.columnOrderHint")}
           </Text>
           {columnDraft.map((col, i) => (
             <Group key={`${col.mapped_status}-${i}`} justify="space-between" wrap="nowrap" align="flex-start">
@@ -2592,11 +1981,11 @@ export default function AdminTasksPage({
                     prev.map((c, idx) => (idx === i ? { ...c, visible: checked } : c))
                   );
                 }}
-                aria-label="Показывать колонку"
+                aria-label={t("board.showColumn")}
               />
               <TextInput
                 size="xs"
-                placeholder={STATUS_META[col.mapped_status] ?? col.mapped_status}
+                placeholder={taskStatusLabel(col.mapped_status)}
                 value={col.label ?? ""}
                 onChange={(e) => {
                   const v = e.currentTarget.value;
@@ -2611,7 +2000,7 @@ export default function AdminTasksPage({
               <ActionIcon
                 size="sm"
                 variant="light"
-                aria-label="Выше"
+                aria-label={t("board.moveUp")}
                 onClick={() => moveColumnDraft(i, -1)}
                 disabled={i === 0}
               >
@@ -2620,7 +2009,7 @@ export default function AdminTasksPage({
               <ActionIcon
                 size="sm"
                 variant="light"
-                aria-label="Ниже"
+                aria-label={t("board.moveDown")}
                 onClick={() => moveColumnDraft(i, 1)}
                 disabled={i === columnDraft.length - 1}
               >
@@ -2630,7 +2019,7 @@ export default function AdminTasksPage({
           ))}
           <Group justify="flex-end" mt="sm">
             <Button variant="default" onClick={() => setBoardColumnModalOpened(false)}>
-              Отмена
+              {t("cancel")}
             </Button>
             <Button
               loading={replaceBoardColumnsMutation.isPending}
@@ -2650,7 +2039,7 @@ export default function AdminTasksPage({
                 );
               }}
             >
-              Сохранить
+              {t("save")}
             </Button>
           </Group>
         </Stack>
@@ -2661,18 +2050,18 @@ export default function AdminTasksPage({
         centered
         opened={boardPickerOpened}
         onClose={() => setBoardPickerOpened(false)}
-        title="Доски Kanban"
+        title={t("board.kanbanBoards")}
       >
         <Stack gap="sm">
           <Text size="xs" c="dimmed">
-            Выберите раскладку колонок (доску). Это влияет только на порядок/названия колонок.
+            {t("board.pickBoardHint")}
           </Text>
           <Select
-            label="Доска"
-            placeholder="Выберите доску"
+            label={t("board.pickBoard")}
+            placeholder={t("board.pickBoardPlaceholder")}
             data={taskBoards.map((b) => ({
               value: b.id,
-              label: `${b.name}${b.kind === "clinic_wide" ? " (клиника)" : b.kind === "personal" ? " (личная)" : ""}`,
+              label: `${b.name}${b.kind === "clinic_wide" ? t("board.kindClinic") : b.kind === "personal" ? t("board.kindPersonal") : ""}`,
             }))}
             value={selectedBoardId}
             onChange={(v) => setSelectedBoardId(v ?? null)}
@@ -2680,7 +2069,7 @@ export default function AdminTasksPage({
           />
           <Group justify="flex-end" mt="sm">
             <Button variant="default" onClick={() => setBoardPickerOpened(false)}>
-              Закрыть
+              {t("close")}
             </Button>
           </Group>
         </Stack>
@@ -2695,7 +2084,7 @@ export default function AdminTasksPage({
           setTaskChatId(null);
           setTaskChatDraft("");
         }}
-        title={taskChatTitle ? `Чат задачи: ${taskChatTitle}` : "Чат задачи"}
+        title={taskChatTitle ? t("chat.titleNamed", { name: taskChatTitle }) : t("chat.title")}
       >
         <Stack gap="sm" style={{ minHeight: 280 }}>
           {taskCommentsLoading ? (
@@ -2705,13 +2094,13 @@ export default function AdminTasksPage({
               <Stack gap="xs">
                 {taskComments.length === 0 ? (
                   <Text size="sm" c="dimmed">
-                    Пока нет сообщений. Напишите коллегам в контексте этой задачи.
+                    {t("chat.empty")}
                   </Text>
                 ) : (
                   taskComments.map((c) => (
                     <Paper key={c.id} p="xs" withBorder>
                       <Text size="xs" c="dimmed" mb={4}>
-                        {c.author_full_name || "Сотрудник"} ·{" "}
+                        {c.author_full_name || t("employee")} ·{" "}
                         {dayjs(c.created_at).format("DD.MM.YYYY HH:mm")}
                       </Text>
                       <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
@@ -2730,13 +2119,13 @@ export default function AdminTasksPage({
               variant="light"
               size="xs"
             >
-              Открыть thread в мессенджере персонала
+              {t("chat.openStaffThread")}
             </Button>
           ) : null}
-          <Input.Wrapper label="Сообщение">
+          <Input.Wrapper label={t("chat.message")}>
             <AppleEmojiOverlayTextarea
               ref={taskChatTextareaRef}
-              placeholder="Текст для команды…"
+              placeholder={t("chat.placeholder")}
               minRows={3}
               value={taskChatDraft}
               onChange={(e) => setTaskChatDraft(e.currentTarget.value)}
@@ -2759,7 +2148,7 @@ export default function AdminTasksPage({
               loading={postTaskComment.isPending}
               disabled={!taskChatDraft.trim()}
             >
-              Отправить
+              {t("send")}
             </Button>
           </Group>
         </Stack>
@@ -2802,6 +2191,7 @@ function KanbanColumn({
   overdueCount: number;
   agingCount: number;
 }) {
+  const { t } = useTranslation("tasks");
   const { isOver, setNodeRef } = useDroppable({ id });
   const overWip = typeof wipLimit === "number" && tasks.length > wipLimit;
   return (
@@ -2827,14 +2217,14 @@ function KanbanColumn({
           <Group gap={4}>
             {typeof wipLimit === "number" ? (
               <Badge size="xs" variant="light" color={tasks.length > wipLimit ? "red" : "gray"}>
-                Лимит {tasks.length}/{wipLimit}
+                {t("wip.limit", { current: tasks.length, max: wipLimit })}
               </Badge>
             ) : null}
             <Badge size="xs" variant="light" color={overdueCount > 0 ? "red" : "gray"}>
-              SLA просрочено: {overdueCount}
+              {t("wip.slaOverdue", { count: overdueCount })}
             </Badge>
             <Badge size="xs" variant="light" color={agingCount > 0 ? "orange" : "gray"}>
-              В работе 48ч+: {agingCount}
+              {t("wip.aging", { count: agingCount })}
             </Badge>
           </Group>
         </Stack>
@@ -2934,6 +2324,7 @@ function StreamHeaderDropZone({
   disabled?: boolean;
   accentColor: TaskStreamMantineColor;
 }) {
+  const { t } = useTranslation("tasks");
   const { setNodeRef, isOver } = useDroppable({ id, disabled: Boolean(disabled) });
   return (
     <Box ref={setNodeRef}>
@@ -2951,11 +2342,11 @@ function StreamHeaderDropZone({
             {label}
           </Text>
           <Badge size="sm" variant="light" color={accentColor}>
-            Поток
+            {t("streams.one")}
           </Badge>
         </Group>
         <Text size="xs" c="dimmed" mt={4}>
-          Можно перетащить карточку задачи сюда, чтобы переместить её в этот поток.
+          {t("streams.dropHint")}
         </Text>
       </Paper>
     </Box>
@@ -2984,8 +2375,9 @@ function NavDropZone({ id, disabled }: { id: string; disabled?: boolean }) {
 }
 
 function PagerDots({ count, activeIndex }: { count: number; activeIndex: number }) {
+  const { t } = useTranslation("tasks");
   return (
-    <Group gap={6} wrap="nowrap" aria-label="Индикатор страниц">
+    <Group gap={6} wrap="nowrap" aria-label={t("board.pageDots")}>
       {Array.from({ length: count }, (_, i) => (
         <Box
           key={i}
@@ -3076,6 +2468,7 @@ function TasksKanbanPage({
   activePageIndex: number;
   streamPagesLength: number;
 }) {
+  const { t, i18n } = useTranslation("tasks");
   const [optimisticOrderByStatus, setOptimisticOrderByStatus] = useState<Record<string, string[]>>({});
   void taskStreams;
   const pageTasks = useMemo(() => {
@@ -3093,7 +2486,7 @@ function TasksKanbanPage({
           id: c.mapped_status,
           label:
             (c.label && c.label.trim()) ||
-            STATUS_META[c.mapped_status] ||
+            taskStatusLabel(c.mapped_status) ||
             c.mapped_status.replace(/_/g, " "),
         }))
         .filter((c) => !hidden.has(c.id));
@@ -3106,10 +2499,10 @@ function TasksKanbanPage({
     return [...ordered, ...extras]
       .map((id) => ({
         id,
-        label: STATUS_META[id] ?? id.replace(/_/g, " "),
+        label: taskStatusLabel(id) || id.replace(/_/g, " "),
       }))
       .filter((c) => !hidden.has(c.id));
-  }, [pageTasks, selectedBoard, hiddenStatuses]);
+  }, [pageTasks, selectedBoard, hiddenStatuses, i18n.language]);
 
   const tasksByStatus = useCallback(
     (list: AdminTaskRow[]) => {
@@ -3223,13 +2616,13 @@ function TasksKanbanPage({
         if (currentCount >= wipLimit)
           return {
             ok: false,
-            reason: `WIP-лимит колонки "${STATUS_META[toStatus] ?? toStatus}" исчерпан`,
+            reason: i18n.t("errors.wipExhausted", { ns: "tasks", column: taskStatusLabel(toStatus) }),
           };
       }
       if (toStatus === "done") {
         if (!task.checklist_done)
-          return { ok: false, reason: "Перед завершением отметьте checklist в карточке задачи" };
-        if (task.blocked) return { ok: false, reason: "Нельзя завершить заблокированную задачу" };
+          return { ok: false, reason: i18n.t("errors.needChecklist", { ns: "tasks" }) };
+        if (task.blocked) return { ok: false, reason: i18n.t("errors.blockedDone", { ns: "tasks" }) };
       }
       return { ok: true };
     },
@@ -3240,7 +2633,7 @@ function TasksKanbanPage({
     (task: AdminTaskRow, toStatus: string) => {
       const decision = canMoveToStatus(task, toStatus);
       if (!decision.ok) {
-        setDragError(decision.reason ?? "Переход запрещен");
+        setDragError(decision.reason ?? i18n.t("errors.transitionDenied", { ns: "tasks" }));
         return;
       }
       setDragError(null);
@@ -3282,7 +2675,7 @@ function TasksKanbanPage({
 
       if (overId.startsWith("task-slot-")) {
         if (hasActiveFilters) {
-          setDragError("Перестановка внутри колонки доступна только без активных фильтров.");
+          setDragError(t("errors.reorderNeedsClearFilters"));
           return;
         }
         const targetTaskId = overId.split("--")[1];
@@ -3368,7 +2761,7 @@ function TasksKanbanPage({
           </Text>
           {streamId ? (
             <Badge size="sm" variant="light" color={accentColor}>
-              Поток
+              {t("streams.one")}
             </Badge>
           ) : null}
         </Group>
@@ -3377,7 +2770,7 @@ function TasksKanbanPage({
       <AdminDataTableSurface>
         <Group justify="space-between" mb="xs">
           <Text size="sm" fw={700}>
-            Требуют подтверждения
+            {t("queue.title")}
           </Text>
           <Badge
             size="sm"
@@ -3389,7 +2782,7 @@ function TasksKanbanPage({
         </Group>
         {approvalQueueTasks.length === 0 ? (
           <Text size="xs" c="dimmed">
-            Очередь подтверждений пуста.
+            {t("queue.empty")}
           </Text>
         ) : (
           <Box style={{ overflowX: "auto" }}>
@@ -3467,11 +2860,13 @@ function TasksKanbanPage({
             <AdminDataTableSurface>
               <Group justify="space-between" align="center">
                 <Text size="sm" fw={700}>
-                  Список задач
+                  {t("list.title")}
                 </Text>
                 {currentAdminId ? (
                   <Text size="xs" c="dimmed">
-                    Назначено мне: {myFocusTasks.filter((t) => t.status !== "done" && t.status !== "cancelled").length}
+                    {t("list.assignedToMe", {
+                      count: myFocusTasks.filter((row) => row.status !== "done" && row.status !== "cancelled").length,
+                    })}
                   </Text>
                 ) : null}
               </Group>
@@ -3481,16 +2876,16 @@ function TasksKanbanPage({
           {filteredTasks.length === 0 ? (
             <AdminDataTableSurface>
               <EmptyState
-                title={onlyNeedsMyApproval ? "Нет задач в очереди подтверждений" : "Нет задач"}
+                title={onlyNeedsMyApproval ? t("empty.approvalNone") : t("empty.none")}
                 description={
                   onlyNeedsMyApproval
-                    ? "В этом режиме список пуст. Переключитесь на «Все задачи» или ослабьте фильтры исполнителя, приоритета и срока."
-                    : "Создайте первую задачу или примите задачу от AI в работу."
+                    ? t("empty.approvalHint")
+                    : t("empty.noneHint")
                 }
                 action={
                   onlyNeedsMyApproval
-                    ? { label: "Показать все задачи", onClick: () => setOnlyNeedsMyApproval(false) }
-                    : { label: "Создать задачу", onClick: () => {} }
+                    ? { label: t("empty.showAll"), onClick: () => setOnlyNeedsMyApproval(false) }
+                    : { label: t("empty.create"), onClick: () => {} }
                 }
               />
             </AdminDataTableSurface>

@@ -60,9 +60,11 @@ import {
 import { Link } from "react-router-dom";
 import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useMediaQuery } from "@mantine/hooks";
+import { useTranslation } from "react-i18next";
 import { ROUTE_PATHS } from "@/routePaths";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
+import { feedRevenuePeriodLabel } from "@/shared/feedI18n";
 import {
   IconUsers,
   IconX,
@@ -80,8 +82,9 @@ import {
   IconDots,
 } from "@tabler/icons-react";
 
-const BACKEND_HINT =
-  "Если данные не загружаются, проверьте, что бэкенд запущен на порту 8000 (см. корневой README репозитория).";
+function feedDateLocale(lng: string): string {
+  return lng.toLowerCase().startsWith("ru") ? "ru-RU" : "en-US";
+}
 
 function staffInitials(fullName: string | null | undefined): string {
   const t = (fullName ?? "").trim();
@@ -100,6 +103,7 @@ function parseHours(v: string | number | undefined): number {
 }
 
 function StaffFeedAttachmentPreview({ attachment }: { attachment: StaffAttachmentBrief }) {
+  const { t } = useTranslation("feed");
   const [url, setUrl] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -184,7 +188,7 @@ function StaffFeedAttachmentPreview({ attachment }: { attachment: StaffAttachmen
   if (loadFailed) {
     return (
       <Text size="xs" c="dimmed">
-        Вложение недоступно
+        {t("attachmentUnavailable")}
       </Text>
     );
   }
@@ -258,7 +262,10 @@ function StaffFeedPostComments({
     }
   }, [isOpen]);
 
-  const replyLabel = (c: StaffFeedCommentResponse) => c.author.full_name?.trim() || "Сотрудник";
+  const { t, i18n } = useTranslation("feed");
+  const listLocale = feedDateLocale(i18n.language);
+
+  const replyLabel = (c: StaffFeedCommentResponse) => c.author.full_name?.trim() || t("staffFallback");
 
   if (!isOpen) return null;
 
@@ -266,7 +273,7 @@ function StaffFeedPostComments({
     <Box
       id={regionId}
       role="region"
-      aria-label="Комментарии к записи в ленте"
+      aria-label={t("commentsRegion")}
       bg="gray.0"
       p="md"
       style={{ borderRadius: "var(--mantine-radius-md)" }}
@@ -274,7 +281,7 @@ function StaffFeedPostComments({
       <Stack gap="md" mt={0}>
         {isLoading ? (
           <Text size="xs" c="dimmed">
-            Загрузка...
+            {t("loading")}
           </Text>
         ) : comments && comments.length ? (
           <Stack gap="md">
@@ -295,7 +302,7 @@ function StaffFeedPostComments({
                       {replyLabel(c)}
                     </Text>
                     {" · "}
-                    {new Date(c.created_at).toLocaleString()}
+                    {new Date(c.created_at).toLocaleString(listLocale)}
                   </Text>
                   {c.in_reply_to ? (
                     <Text size="xs" c="dimmed" style={{ fontStyle: "italic" }}>
@@ -311,14 +318,14 @@ function StaffFeedPostComments({
                           el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
                         }}
                       >
-                        {c.in_reply_to.full_name?.trim() || "Сотрудник"}
+                        {c.in_reply_to.full_name?.trim() || t("staffFallback")}
                       </Anchor>
                       , —{" "}
                     </Text>
                   ) : null}
                   {c.deleted_at ? (
                     <Text size="sm" c="dimmed" style={{ textDecoration: "line-through", whiteSpace: "pre-wrap" }}>
-                      <AppleEmojiRichText text={c.body || "Удалено"} />
+                      <AppleEmojiRichText text={c.body || t("deleted")} />
                     </Text>
                   ) : editingCommentId === c.id ? (
                     <Stack gap="xs">
@@ -337,7 +344,7 @@ function StaffFeedPostComments({
                           }}
                           disabled={updateComment.isPending}
                         >
-                          Отмена
+                          {t("cancel")}
                         </Button>
                         <Button
                           {...STAFF_FEED_CHROME.primaryButton}
@@ -352,14 +359,14 @@ function StaffFeedPostComments({
                               setFileHint(
                                 e instanceof ApiErrorWithCode
                                   ? e.message
-                                  : "Не удалось сохранить комментарий. Попробуйте ещё раз."
+                                  : t("saveCommentFailed")
                               );
                             }
                           }}
                           loading={updateComment.isPending}
                           disabled={!editBody.trim() || updateComment.isPending}
                         >
-                          Сохранить
+                          {t("save")}
                         </Button>
                       </Group>
                     </Stack>
@@ -387,12 +394,12 @@ function StaffFeedPostComments({
                       textareaRef.current?.focus();
                     }}
                   >
-                    Ответить
+                    {t("reply")}
                   </Button>
                   {(!c.deleted_at && (c.author.id === myAdminId || canModerateComments)) ? (
                     <Menu position="bottom-end" withinPortal>
                       <Menu.Target>
-                        <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Действия">
+                        <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t("actions")}>
                           <IconDots size={16} stroke={1.5} />
                         </ActionIcon>
                       </Menu.Target>
@@ -405,14 +412,14 @@ function StaffFeedPostComments({
                               setEditBody(c.body ?? "");
                             }}
                           >
-                            Редактировать
+                            {t("edit")}
                           </Menu.Item>
                         ) : null}
                         <Menu.Item
                           color="red"
                           disabled={deleteComment.isPending}
                           onClick={async () => {
-                            const ok = window.confirm("Удалить комментарий?");
+                            const ok = window.confirm(t("deleteCommentConfirm"));
                             if (!ok) return;
                             setFileHint(null);
                             try {
@@ -421,12 +428,12 @@ function StaffFeedPostComments({
                               setFileHint(
                                 e instanceof ApiErrorWithCode
                                   ? e.message
-                                  : "Не удалось удалить комментарий. Попробуйте ещё раз."
+                                  : t("deleteCommentFailed")
                               );
                             }
                           }}
                         >
-                          Удалить
+                          {t("delete")}
                         </Menu.Item>
                       </Menu.Dropdown>
                     </Menu>
@@ -438,14 +445,14 @@ function StaffFeedPostComments({
           </Stack>
         ) : (
           <Text size="xs" c="dimmed">
-            Пока комментариев нет
+            {t("emptyComments")}
           </Text>
         )}
 
       {replyTo ? (
         <Group gap="xs" align="center">
           <Text size="xs" c="dimmed">
-            Ответ для{" "}
+            {t("replyingTo")}{" "}
             <Text span fw={600} c="gray.8">
               {replyLabel(replyTo)}
             </Text>
@@ -454,7 +461,7 @@ function StaffFeedPostComments({
             variant="subtle"
             color="gray"
             size="sm"
-            aria-label="Отменить ответ"
+            aria-label={t("cancelReply")}
             onClick={() => setReplyTo(null)}
           >
             <IconX size={16} stroke={1.5} />
@@ -467,7 +474,7 @@ function StaffFeedPostComments({
         value={body}
         onChange={(e) => setBody(e.currentTarget.value)}
         minRows={2}
-        placeholder="Ваш комментарий… (можно только вложения без текста)"
+        placeholder={t("commentPlaceholder")}
       />
       <input
         ref={commentFileRef}
@@ -479,7 +486,7 @@ function StaffFeedPostComments({
           setFileHint(null);
           if (!f) return;
           if (f.size > FEED_COMMENT_MAX_FILE_BYTES) {
-            setFileHint("Файл больше 5 МБ");
+            setFileHint(t("fileTooLarge"));
             return;
           }
           setPendingFiles((prev) => [...prev, f]);
@@ -492,7 +499,7 @@ function StaffFeedPostComments({
       ) : null}
       {pendingFiles.length > 0 ? (
         <Text size="xs" c="dimmed">
-          К комментарию:{" "}
+          {t("commentFiles")}{" "}
           {pendingFiles.map((f) => f.name).join(", ")}{" "}
           <Anchor
             component="button"
@@ -501,7 +508,7 @@ function StaffFeedPostComments({
             c="red.7"
             onClick={() => setPendingFiles([])}
           >
-            Убрать
+            {t("removeFiles")}
           </Anchor>
         </Text>
       ) : null}
@@ -513,14 +520,14 @@ function StaffFeedPostComments({
           />
           <ActionIcon
             {...STAFF_FEED_CHROME.actionIcon}
-            aria-label="Документ"
+            aria-label={t("ariaDoc")}
             onClick={() => triggerCommentAttachPick("doc")}
           >
             <IconPaperclip size={18} />
           </ActionIcon>
           <ActionIcon
             {...STAFF_FEED_CHROME.actionIcon}
-            aria-label="Изображение"
+            aria-label={t("ariaImage")}
             onClick={() => triggerCommentAttachPick("image")}
           >
             <IconPhoto size={18} />
@@ -534,7 +541,7 @@ function StaffFeedPostComments({
             if (!body.trim() && pendingFiles.length === 0) return;
             for (const f of pendingFiles) {
               if (f.size > FEED_COMMENT_MAX_FILE_BYTES) {
-                setFileHint("Файл больше 5 МБ");
+                setFileHint(t("fileTooLarge"));
                 return;
               }
             }
@@ -556,7 +563,7 @@ function StaffFeedPostComments({
               const msg =
                 e instanceof ApiErrorWithCode
                   ? e.message
-                  : "Не удалось отправить комментарий или вложение. Попробуйте ещё раз.";
+                  : t("sendFailed");
               setFileHint(msg);
             }
           }}
@@ -567,7 +574,7 @@ function StaffFeedPostComments({
           }
           loading={addComment.isPending || uploadCommentAtt.isPending}
         >
-          Отправить
+          {t("send")}
         </Button>
       </Group>
       </Stack>
@@ -576,6 +583,8 @@ function StaffFeedPostComments({
 }
 
 export default function AdminDashboardPage() {
+  const { t, i18n } = useTranslation("feed");
+  const listLocale = feedDateLocale(i18n.language);
   const { clinics, currentClinicId } = useAdminClinic();
   const composerDraftStorageKey = useMemo(() => staffFeedComposerDraftKey(currentClinicId), [currentClinicId]);
   const composerDraftPersistReady = useRef(false);
@@ -666,10 +675,10 @@ export default function AdminDashboardPage() {
   const composerDisplayName = useMemo(() => {
     const fromProfile = myStaffProfile?.full_name?.trim();
     if (fromProfile) return fromProfile;
-    if (!myAdminIdForComposer || !staffPosts?.length) return "Сотрудник";
+    if (!myAdminIdForComposer || !staffPosts?.length) return t("staffFallback");
     const post = staffPosts.find((x) => x.author.id === myAdminIdForComposer);
-    return post?.author.full_name?.trim() || "Сотрудник";
-  }, [myStaffProfile?.full_name, staffPosts, myAdminIdForComposer]);
+    return post?.author.full_name?.trim() || t("staffFallback");
+  }, [myStaffProfile?.full_name, staffPosts, myAdminIdForComposer, t]);
 
   const feedWallPosts = useMemo(() => {
     const list = staffPosts ?? [];
@@ -781,8 +790,8 @@ export default function AdminDashboardPage() {
           if (failedFileNames.length > 0) {
             setStaffFeedAttachmentWarning(
               failedFileNames.length === 1
-                ? `Пост опубликован, но файл «${failedFileNames[0]}» не удалось прикрепить. Добавьте вложение через «Редактировать» у поста.`
-                : `Пост опубликован, но не удалось прикрепить файлы: ${failedFileNames.join(", ")}. Добавьте вложения через «Редактировать» у поста.`
+                ? t("attachmentWarnOne", { name: failedFileNames[0] })
+                : t("attachmentWarnMany", { names: failedFileNames.join(", ") })
             );
           } else {
             setStaffFeedAttachmentWarning(null);
@@ -794,7 +803,7 @@ export default function AdminDashboardPage() {
           setFeedPublishError(
             err instanceof ApiErrorWithCode
               ? err.message
-              : "Не удалось опубликовать пост. Попробуйте ещё раз."
+              : t("publishFailed")
           );
         },
       }
@@ -804,12 +813,12 @@ export default function AdminDashboardPage() {
   if (isLoading) {
     return (
       <Stack gap="lg">
-        <ContextBar title="Лента" />
+        <ContextBar title={t("title")} />
         {clinics.length > 0 ? (
           <Box maw={750}>
             <MultiSelect
-              label="Клиники"
-              placeholder="Выберите одну или несколько клиник (пусто = все)"
+              label={t("clinics")}
+              placeholder={t("clinicsPlaceholder")}
               data={clinicOptions}
               value={selectedClinicIds}
               onChange={setSelectedClinicIds}
@@ -819,7 +828,7 @@ export default function AdminDashboardPage() {
           </Box>
         ) : null}
         <Text size="sm" c="dimmed">
-          {BACKEND_HINT}
+          {t("backendHint")}
         </Text>
         <Grid>
           <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
@@ -847,12 +856,12 @@ export default function AdminDashboardPage() {
   if (isError) {
     return (
       <Stack gap="lg">
-        <ContextBar title="Лента" />
+        <ContextBar title={t("title")} />
         {clinics.length > 0 ? (
           <Box maw={750}>
             <MultiSelect
-              label="Клиники"
-              placeholder="Выберите одну или несколько клиник (пусто = все)"
+              label={t("clinics")}
+              placeholder={t("clinicsPlaceholder")}
               data={clinicOptions}
               value={selectedClinicIds}
               onChange={setSelectedClinicIds}
@@ -863,7 +872,7 @@ export default function AdminDashboardPage() {
         ) : null}
         <QueryErrorAlert error={error} />
         <Text size="sm" c="dimmed">
-          {BACKEND_HINT}
+          {t("backendHint")}
         </Text>
       </Stack>
     );
@@ -876,13 +885,13 @@ export default function AdminDashboardPage() {
 
   return (
     <Stack gap="md">
-      <ContextBar title="Лента" />
+      <ContextBar title={t("title")} />
 
       {staffFeedAttachmentWarning ? (
         <Alert
           color="orange"
           variant="light"
-          title="Вложения не загружены"
+          title={t("attachmentWarningTitle")}
           withCloseButton
           onClose={() => setStaffFeedAttachmentWarning(null)}
         >
@@ -893,8 +902,8 @@ export default function AdminDashboardPage() {
       {clinics.length > 0 ? (
         <Box maw={750}>
           <MultiSelect
-            label="Клиники"
-            placeholder="Выберите одну или несколько клиник (пусто = все)"
+            label={t("clinics")}
+            placeholder={t("clinicsPlaceholder")}
             data={clinicOptions}
             value={selectedClinicIds}
             onChange={setSelectedClinicIds}
@@ -913,8 +922,9 @@ export default function AdminDashboardPage() {
           leftSection={<IconAlertTriangle size={18} />}
           className={hasUnreadAttention ? "admin-emergency-blink" : undefined}
         >
-          Приоритетные сообщения
-          {unreadAttentionCount > 0 ? ` (${unreadAttentionCount})` : ""}
+          {unreadAttentionCount > 0
+            ? t("priorityMessagesCount", { count: unreadAttentionCount })
+            : t("priorityMessages")}
         </Button>
       </Group>
 
@@ -952,7 +962,7 @@ export default function AdminDashboardPage() {
                       setIsComposerOpen(true);
                     }}
                     style={{ textAlign: "left", cursor: "pointer" }}
-                    aria-label="Создать пост в ленте клиники"
+                    aria-label={t("composeAria")}
                   >
                     <Group wrap="nowrap" gap="sm" align="center">
                       <Avatar
@@ -976,7 +986,7 @@ export default function AdminDashboardPage() {
                         }}
                       >
                         <Text size="sm" c="dimmed">
-                          Написать в ленту клиники…
+                          {t("composePlaceholder")}
                         </Text>
                       </Box>
                     </Group>
@@ -986,7 +996,7 @@ export default function AdminDashboardPage() {
 
               {!sessionLoading && !canPostToStaffFeed ? (
                 <Text size="xs" c="dimmed" maw={480}>
-                  Публикация в ленте доступна при праве на совместную работу персонала (доступ к ленте).
+                  {t("noPostPermission")}
                 </Text>
               ) : null}
 
@@ -994,8 +1004,8 @@ export default function AdminDashboardPage() {
                 <PageSkeleton variant="table" rows={2} />
               ) : feedWallPosts.length === 0 ? (
                 <EmptyState
-                  title="Пока нет постов"
-                  description="Делитесь новостями клиники — посты видят все сотрудники с доступом к ленте."
+                  title={t("emptyTitle")}
+                  description={t("emptyHint")}
                 />
               ) : (
                 <Stack gap="md">
@@ -1025,7 +1035,7 @@ export default function AdminDashboardPage() {
                                     />
                                   </Text>
                                   <Text size="xs" c="dimmed">
-                                    {new Date(p.created_at).toLocaleString()}
+                                    {new Date(p.created_at).toLocaleString(listLocale)}
                                   </Text>
                                   {p.title ? (
                                     <Text size="sm" fw={600} c="gray.9">
@@ -1040,7 +1050,7 @@ export default function AdminDashboardPage() {
                               {canPostToStaffFeed ? (
                                 <Menu position="bottom-end" withinPortal>
                                   <Menu.Target>
-                                    <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Действия с постом">
+                                    <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t("postActions")}>
                                       <IconDots size={18} stroke={1.5} />
                                     </ActionIcon>
                                   </Menu.Target>
@@ -1050,20 +1060,20 @@ export default function AdminDashboardPage() {
                                         setEditingPost(p);
                                       }}
                                     >
-                                      Редактировать
+                                      {t("edit")}
                                     </Menu.Item>
                                     <Menu.Item
                                       color="red"
                                       disabled={deletePost.isPending}
                                       onClick={() => {
-                                        const ok = window.confirm("Удалить пост?");
+                                        const ok = window.confirm(t("deletePostConfirm"));
                                         if (!ok) return;
                                         void deletePost.mutateAsync(p.id).then(() => {
                                           setEditingPost(null);
                                         });
                                       }}
                                     >
-                                      Удалить
+                                      {t("delete")}
                                     </Menu.Item>
                                   </Menu.Dropdown>
                                 </Menu>
@@ -1085,8 +1095,8 @@ export default function AdminDashboardPage() {
                               size="sm"
                               aria-label={
                                 p.liked_by_me
-                                  ? `Снять отметку «нравится», сейчас ${p.likes_count ?? 0}`
-                                  : `Отметить «нравится», сейчас ${p.likes_count ?? 0}`
+                                  ? t("likeOn", { count: p.likes_count ?? 0 })
+                                  : t("likeOff", { count: p.likes_count ?? 0 })
                               }
                               aria-pressed={Boolean(p.liked_by_me)}
                               leftSection={
@@ -1109,7 +1119,7 @@ export default function AdminDashboardPage() {
                               variant="subtle"
                               color="gray"
                               size="sm"
-                              aria-label={`Комментарии к записи, всего ${p.comments_count ?? 0}`}
+                              aria-label={t("commentsAria", { count: p.comments_count ?? 0 })}
                               aria-expanded={Boolean(openCommentsByPostId[p.id])}
                               aria-controls={`staff-feed-comments-${p.id}`}
                               leftSection={<IconMessageCircle size={18} stroke={1.5} />}
@@ -1127,8 +1137,9 @@ export default function AdminDashboardPage() {
                                 },
                               }}
                             >
-                              Комментарии
-                              {typeof p.comments_count === "number" ? ` (${p.comments_count})` : ""}
+                              {typeof p.comments_count === "number"
+                                ? t("commentsCount", { count: p.comments_count })
+                                : t("comments")}
                             </Button>
                           </Group>
 
@@ -1165,14 +1176,14 @@ export default function AdminDashboardPage() {
                   <IconCalendarStats size={16} />
                 </ThemeIcon>
                 <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
-                  Всего посещений
+                  {t("metricVisits")}
                 </Text>
               </Group>
               <Text fw={700} fz="md" c="gray.9">
                 {data?.bookings_completed ?? 0}
               </Text>
               <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
-                завершённые записи
+                {t("metricVisitsHint")}
               </Text>
             </Paper>
 
@@ -1182,14 +1193,14 @@ export default function AdminDashboardPage() {
                   <IconUsers size={16} />
                 </ThemeIcon>
                 <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
-                  Новые пациенты
+                  {t("metricNewPatients")}
                 </Text>
               </Group>
               <Text fw={700} fz="md" c="gray.9">
                 {data?.new_patients ?? 0}
               </Text>
               <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
-                за день
+                {t("metricNewPatientsHint")}
               </Text>
             </Paper>
 
@@ -1199,14 +1210,17 @@ export default function AdminDashboardPage() {
                   <IconX size={16} />
                 </ThemeIcon>
                 <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
-                  Отмены / неявки
+                  {t("metricCancels")}
                 </Text>
               </Group>
               <Text fw={700} fz="md" c="gray.9">
                 {(data?.bookings_cancelled ?? 0) + (data?.bookings_no_show ?? 0)}
               </Text>
               <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
-                отмены {data?.bookings_cancelled ?? 0} · неявки {data?.bookings_no_show ?? 0}
+                {t("metricCancelsHint", {
+                  cancelled: data?.bookings_cancelled ?? 0,
+                  noShow: data?.bookings_no_show ?? 0,
+                })}
               </Text>
             </Paper>
 
@@ -1217,14 +1231,14 @@ export default function AdminDashboardPage() {
                     <IconMail size={16} />
                   </ThemeIcon>
                   <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
-                    Количество обращений
+                    {t("metricRequests")}
                   </Text>
                 </Group>
                 <Text fw={700} fz="md" c="gray.9">
                   {requestsCount}
                 </Text>
                 <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
-                  уникальные пациенты в чате
+                  {t("metricRequestsHint")}
                 </Text>
               </Paper>
             ) : null}
@@ -1235,7 +1249,7 @@ export default function AdminDashboardPage() {
                   <IconStack2 size={16} />
                 </ThemeIcon>
                 <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
-                  Плотность записи
+                  {t("metricDensity")}
                 </Text>
               </Group>
               <Progress value={pulse} size="xs" radius="md" color="slate" mb={2} />
@@ -1243,7 +1257,7 @@ export default function AdminDashboardPage() {
                 {pulse} / 100
               </Text>
               <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
-                загрузка расписания (занято / свободно)
+                {t("metricDensityHint")}
               </Text>
             </Paper>
 
@@ -1253,14 +1267,14 @@ export default function AdminDashboardPage() {
                   <IconClock size={16} />
                 </ThemeIcon>
                 <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={2}>
-                  Пустые окна
+                  {t("metricEmptyWindows")}
                 </Text>
               </Group>
               <Text fw={700} fz="md" c="gray.9">
-                {emptyH.toFixed(1)} ч
+                {t("metricEmptyHours", { hours: emptyH.toFixed(1) })}
               </Text>
               <Text size="10px" c="dimmed" mt={0} lineClamp={2}>
-                свободные слоты
+                {t("metricEmptyHint")}
               </Text>
             </Paper>
 
@@ -1271,14 +1285,8 @@ export default function AdminDashboardPage() {
                     <IconRobot size={16} />
                   </ThemeIcon>
                   <Text size="10px" c="dimmed" tt="uppercase" fw={600} lineClamp={3}>
-                    Удержанная выручка{" "}
-                    {revenueHunter.period === "night"
-                      ? "за ночь"
-                      : revenueHunter.period === "day"
-                        ? "за день"
-                        : revenueHunter.period === "week"
-                          ? "за неделю"
-                          : "за ночь"}
+                    {t("revenueRetained")}{" "}
+                    {feedRevenuePeriodLabel(revenueHunter.period)}
                   </Text>
                 </Group>
                 <Text fw={700} fz="lg" c="slate.8">
@@ -1296,7 +1304,7 @@ export default function AdminDashboardPage() {
           setIsComposerOpen(false);
           setFeedPublishError(null);
         }}
-        title="Новый пост"
+        title={t("newPost")}
         size="xl"
         padding="md"
         styles={{
@@ -1313,19 +1321,19 @@ export default function AdminDashboardPage() {
       >
         <Stack gap="sm">
           {feedPublishError ? (
-            <Alert color="red" variant="light" title="Не удалось опубликовать" onClose={() => setFeedPublishError(null)} withCloseButton>
+            <Alert color="red" variant="light" title={t("publishFailedTitle")} onClose={() => setFeedPublishError(null)} withCloseButton>
               {feedPublishError}
             </Alert>
           ) : null}
           <TextInput
-            label="Тема"
-            placeholder="Например: С праздником 8 Марта!"
+            label={t("topic")}
+            placeholder={t("topicPlaceholder")}
             value={feedTitle}
             onChange={(e) => setFeedTitle(e.currentTarget.value)}
           />
-          <Input.Wrapper label="Текст">
+          <Input.Wrapper label={t("body")}>
             <AppleEmojiOverlayTextarea
-              placeholder="Текст новости для персонала…"
+              placeholder={t("bodyPlaceholder")}
               minRows={16}
               value={feedBody}
               onChange={(e) => setFeedBody(e.currentTarget.value)}
@@ -1346,7 +1354,7 @@ export default function AdminDashboardPage() {
             <ActionIcon
               variant="subtle"
               color="gray"
-              aria-label="Прикрепить файлы"
+              aria-label={t("attachFiles")}
               onClick={() => feedFileRef.current?.click()}
             >
               <IconPaperclip size={20} stroke={1.5} />
@@ -1354,7 +1362,7 @@ export default function AdminDashboardPage() {
             <ActionIcon
               variant="subtle"
               color="gray"
-              aria-label="Изображение"
+              aria-label={t("ariaImage")}
               onClick={() => feedFileRef.current?.click()}
             >
               <IconPhoto size={20} stroke={1.5} />
@@ -1362,8 +1370,8 @@ export default function AdminDashboardPage() {
             <ActionIcon
               variant="subtle"
               color="gray"
-              aria-label="Аудио (в разработке)"
-              title="Аудио: единый контур для админки и чатов — в плане"
+              aria-label={t("audioSoon")}
+              title={t("audioSoonTitle")}
               disabled
               styles={{ root: { opacity: 0.45 } }}
             >
@@ -1371,7 +1379,7 @@ export default function AdminDashboardPage() {
             </ActionIcon>
             {feedFiles.length > 0 ? (
               <Text size="xs" c="dimmed">
-                Файлов: {feedFiles.length} (загрузятся после публикации)
+                {t("filesQueued", { count: feedFiles.length })}
               </Text>
             ) : null}
           </Group>
@@ -1385,7 +1393,7 @@ export default function AdminDashboardPage() {
               }}
               disabled={createPost.isPending}
             >
-              Отмена
+              {t("cancel")}
             </Button>
             <Button
               color="slate"
@@ -1394,7 +1402,7 @@ export default function AdminDashboardPage() {
               loading={createPost.isPending}
               disabled={!feedBody.trim()}
             >
-              Опубликовать
+              {t("publish")}
             </Button>
           </Group>
         </Stack>
@@ -1403,7 +1411,7 @@ export default function AdminDashboardPage() {
       <GlassModal
         opened={!!editingPost}
         onClose={() => setEditingPost(null)}
-        title="Редактировать пост"
+        title={t("editPost")}
         size="xl"
         padding="md"
         styles={{
@@ -1421,12 +1429,12 @@ export default function AdminDashboardPage() {
         {editingPost ? (
           <Stack gap="md">
             <TextInput
-              label="Заголовок"
-              placeholder="Необязательно"
+              label={t("titleLabel")}
+              placeholder={t("titleOptional")}
               value={editTitle}
               onChange={(e) => setEditTitle(e.currentTarget.value)}
             />
-            <Input.Wrapper label="Текст">
+            <Input.Wrapper label={t("body")}>
               <AppleEmojiOverlayTextarea
                 value={editBody}
                 onChange={(e) => setEditBody(e.currentTarget.value)}
@@ -1435,7 +1443,7 @@ export default function AdminDashboardPage() {
             </Input.Wrapper>
 
             <Text size="sm" fw={700} c="gray.9">
-              Изображение / вложение
+              {t("attachmentSection")}
             </Text>
             {editingPost.attachments?.length ? (
               <Stack gap="xs">
@@ -1445,7 +1453,7 @@ export default function AdminDashboardPage() {
               </Stack>
             ) : (
               <Text size="xs" c="dimmed">
-                Пока вложений нет
+                {t("noAttachments")}
               </Text>
             )}
 
@@ -1466,7 +1474,7 @@ export default function AdminDashboardPage() {
                 onClick={() => editFileRef.current?.click()}
                 disabled={updatePost.isPending}
               >
-                Выбрать файл
+                {t("chooseFile")}
               </Button>
               {editFile ? (
                 <Text size="xs" c="dimmed">
@@ -1478,7 +1486,7 @@ export default function AdminDashboardPage() {
             {editFilePreviewUrl && (editFile?.type || "").toLowerCase().startsWith("image/") ? (
               <img
                 src={editFilePreviewUrl}
-                alt="preview"
+                alt={t("previewAlt")}
                 style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: "var(--radius-md)" }}
               />
             ) : null}
@@ -1495,7 +1503,7 @@ export default function AdminDashboardPage() {
 
             <Group justify="flex-end" mt="xs">
               <Button variant="default" onClick={() => setEditingPost(null)} disabled={updatePost.isPending}>
-                Отмена
+                {t("cancel")}
               </Button>
               <Button
                 {...STAFF_FEED_CHROME.primaryButton}
@@ -1513,7 +1521,7 @@ export default function AdminDashboardPage() {
                 }}
                 disabled={!editBody.trim()}
               >
-                Сохранить
+                {t("save")}
               </Button>
             </Group>
           </Stack>

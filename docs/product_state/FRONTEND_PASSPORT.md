@@ -223,10 +223,18 @@ sequenceDiagram
 
 ## 8b. Dev-сервер и прокси
 
-**Файл:** `frontend/vite.config.ts` — `server.port` **5175**, `host: true`. Прокси на backend:
+**Файл:** `frontend/vite.config.ts` (единственный конфиг Vite; `vite.config.js` удалён — на Windows Vite предпочитает `.js` и иначе игнорирует `.ts`). `server.port` **5175**, `preview.port` **4173**, `host: true`.
 
-- `/api` → `http://localhost:8000`
-- `/health` → `http://localhost:8000`
+Прокси `/api` и `/health` выбирает живой API:
+
+1. `VITE_API_PROXY_TARGET`, если задан;
+2. иначе `GET /health` → **200** на `127.0.0.1:8000` (host uvicorn), затем `:8010` (Compose);
+3. иначе TCP на тех же портах (процесс ещё поднимает `/health`);
+4. иначе fallback `:8010`.
+
+Цель прокси **мутируется** каждые 4 с в `dev`/`preview` (не на `vite build`): объект `apiProxy` передаётся в Vite **по ссылке** (без spread), потому что Vite/http-proxy читает `target` с этого объекта на каждый запрос. Опция `router` из http-proxy-middleware в Vite **не** работает.
+
+CORS для `:5175`, `:4173`, `:3010` (и `127.0.0.1`) — в `CORS_ORIGINS`.
 
 Прод-сборка: статика за nginx/образом фронта; префикс `/api` должен проксироваться на тот же хост API, что и в `API_BASE` клиента.
 

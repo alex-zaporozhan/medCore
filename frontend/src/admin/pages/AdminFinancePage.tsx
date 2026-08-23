@@ -30,13 +30,16 @@ import {
 } from "@mantine/core";
 import { IconDotsVertical, IconPlus, IconMinus, IconTransfer } from "@tabler/icons-react";
 import { AdminDrawer, EmptyState, ContextBar, PageSkeleton } from "@/shared/ui";
+import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
 import dayjs from "dayjs";
 import { useMemo, useState } from "react";
-import { ThreeColumnLayout } from "@/components/layout/ThreeColumnLayout";
+import { useTranslation } from "react-i18next";
+import { moneyCashboxTypeLabel, moneyFinanceTxSourceLabel, moneyFinanceTxTypeLabel, moneyInventoryTxTypeLabel, moneySalaryTxTypeLabel } from "@/shared/moneyI18n";
 
 type TxDrawerMode = "income" | "expense" | "transfer" | null;
 
 export default function AdminFinancePage() {
+  const { t, i18n } = useTranslation("money");
   const { currentClinicId } = useAdminClinic();
   const clinicId = currentClinicId ?? null;
 
@@ -114,7 +117,7 @@ export default function AdminFinancePage() {
   const cashboxOptions =
     cashboxes?.map((c) => ({
       value: c.id,
-      label: `${c.name} (${c.type})${c.is_default ? " · по умолчанию" : ""}`,
+      label: `${c.name} (${moneyCashboxTypeLabel(c.type)})${c.is_default ? t("finance.defaultSuffix") : ""}`,
     })) ?? [];
 
   const doctorNameById = useMemo(() => {
@@ -166,9 +169,9 @@ export default function AdminFinancePage() {
   if (!clinicId) {
     return (
       <Stack>
-        <ContextBar title="Финансы" />
+        <ContextBar title={t("finance.titleShort")} />
         <Text size="sm" c="dimmed">
-          Выберите клинику в шапке, чтобы работать с финансами и складом.
+          {t("finance.pickClinic")}
         </Text>
       </Stack>
     );
@@ -176,43 +179,39 @@ export default function AdminFinancePage() {
 
   return (
     <Stack>
-      <ContextBar title="Финансы и ERP" />
+      <ContextBar title={t("finance.title")} />
 
       {loading && <PageSkeleton variant="table" rows={6} />}
 
       <Tabs defaultValue="cashboxes" keepMounted={false}>
         <Tabs.List>
-          <Tabs.Tab value="cashboxes">Кассы</Tabs.Tab>
-          <Tabs.Tab value="transactions">Транзакции</Tabs.Tab>
-          <Tabs.Tab value="payroll">Зарплаты</Tabs.Tab>
-          <Tabs.Tab value="inventory">Склад</Tabs.Tab>
+          <Tabs.Tab value="cashboxes">{t("finance.tabCashboxes")}</Tabs.Tab>
+          <Tabs.Tab value="transactions">{t("finance.tabTransactions")}</Tabs.Tab>
+          <Tabs.Tab value="payroll">{t("finance.tabPayroll")}</Tabs.Tab>
+          <Tabs.Tab value="inventory">{t("finance.tabInventory")}</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="cashboxes" pt="md">
           <Card shadow="sm" padding="md" withBorder className="data-table-card">
             <Text size="sm" fw={500} mb="sm">
-              Кассы клиники
+              {t("finance.cashboxesTitle")}
             </Text>
             {cashboxes && cashboxes.length === 0 && (
               <EmptyState
-                title="Нет касс"
-                description="Добавьте первую кассу для учёта наличных и безнала."
-                action={{
-                  label: "Добавить кассу",
-                  onClick: () => {},
-                }}
+                title={t("finance.emptyCashboxesTitle")}
+                description={t("finance.emptyCashboxesHint")}
               />
             )}
             {cashboxes && cashboxes.length > 0 && (
               <Table withRowBorders highlightOnHover verticalSpacing="sm">
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Название</Table.Th>
-                    <Table.Th>Баланс</Table.Th>
-                    <Table.Th>Тип</Table.Th>
-                    <Table.Th>Валюта</Table.Th>
-                    <Table.Th>По умолчанию</Table.Th>
-                    <Table.Th>Активна</Table.Th>
+                    <Table.Th>{t("finance.colName")}</Table.Th>
+                    <Table.Th>{t("finance.colBalance")}</Table.Th>
+                    <Table.Th>{t("type")}</Table.Th>
+                    <Table.Th>{t("finance.colCurrency")}</Table.Th>
+                    <Table.Th>{t("finance.colDefault")}</Table.Th>
+                    <Table.Th>{t("finance.colActive")}</Table.Th>
                     <Table.Th w={50}></Table.Th>
                   </Table.Tr>
                 </Table.Thead>
@@ -222,17 +221,17 @@ export default function AdminFinancePage() {
                       <Table.Td>{c.name}</Table.Td>
                       <Table.Td>
                         {c.balance != null
-                          ? `${Number(c.balance).toLocaleString("ru-RU")} ${c.currency}`
+                          ? `${Number(c.balance).toLocaleString(i18n.language.startsWith("ru") ? "ru-RU" : "en-US")} ${c.currency}`
                           : "—"}
                       </Table.Td>
-                      <Table.Td>{c.type}</Table.Td>
+                      <Table.Td>{moneyCashboxTypeLabel(c.type)}</Table.Td>
                       <Table.Td>{c.currency}</Table.Td>
-                      <Table.Td>{c.is_default ? "Да" : "Нет"}</Table.Td>
-                      <Table.Td>{c.is_active ? "Да" : "Нет"}</Table.Td>
+                      <Table.Td>{c.is_default ? t("yes") : t("no")}</Table.Td>
+                      <Table.Td>{c.is_active ? t("yes") : t("no")}</Table.Td>
                       <Table.Td>
                         <Menu position="bottom-end">
                           <Menu.Target>
-                            <ActionIcon variant="subtle" size="sm" aria-label="Действия">
+                            <ActionIcon variant="subtle" size="sm" aria-label={t("actions")}>
                               <IconDotsVertical size={16} />
                             </ActionIcon>
                           </Menu.Target>
@@ -249,7 +248,7 @@ export default function AdminFinancePage() {
                                 setTxDrawerOpen(true);
                               }}
                             >
-                              Внести
+                              {t("finance.deposit")}
                             </Menu.Item>
                             <Menu.Item
                               leftSection={<IconMinus size={14} />}
@@ -263,7 +262,7 @@ export default function AdminFinancePage() {
                                 setTxDrawerOpen(true);
                               }}
                             >
-                              Изъять
+                              {t("finance.withdraw")}
                             </Menu.Item>
                             <Menu.Item
                               leftSection={<IconTransfer size={14} />}
@@ -273,11 +272,11 @@ export default function AdminFinancePage() {
                                 setTxFromCashboxId(c.id);
                                 setTxToCashboxId(null);
                                 setTxAmount("");
-                                setTxCategory("Перевод");
+                                setTxCategory(t("finance.categoryTransfer"));
                                 setTxDrawerOpen(true);
                               }}
                             >
-                              Перевод
+                              {t("finance.transfer")}
                             </Menu.Item>
                           </Menu.Dropdown>
                         </Menu>
@@ -291,13 +290,13 @@ export default function AdminFinancePage() {
           {liability && (
             <Card shadow="sm" padding="md" withBorder mt="md" className="data-toolbar-card">
               <Text size="sm" fw={500} c="dimmed" mb="xs">
-                Деньги в воздухе (Unearned Revenue)
+                {t("finance.unearnedTitle")}
               </Text>
               <Text size="lg" fw={600}>
                 {liability.unearned_revenue} ₽
               </Text>
               <Text size="xs" c="dimmed">
-                Активных абонементов: {liability.active_subscriptions_count}
+                {t("finance.activePasses", { count: liability.active_subscriptions_count })}
               </Text>
             </Card>
           )}
@@ -309,60 +308,60 @@ export default function AdminFinancePage() {
             left={
               <Stack gap="sm" p="xs">
                 <Text size="sm" fw={500}>
-                  Фильтры движения денег
+                  {t("finance.txFilters")}
                 </Text>
                 <Select
-                  label="Касса"
-                  placeholder="Все кассы"
+                  label={t("finance.cashbox")}
+                  placeholder={t("finance.allCashboxes")}
                   data={cashboxOptions}
                   value={selectedCashboxId}
                   onChange={setSelectedCashboxId}
                   clearable
                 />
                 <Text size="xs" c="dimmed">
-                  Период:{" "}
+                  {t("finance.period")}{" "}
                   {txDateFrom && txDateTo
                     ? `${dayjs(txDateFrom).format("DD.MM.YYYY")} — ${dayjs(txDateTo).format(
                         "DD.MM.YYYY",
                       )}`
-                    : "по умолчанию за последнюю неделю"}
+                    : t("finance.periodDefaultWeek")}
                 </Text>
               </Stack>
             }
             center={
               <Card shadow="sm" padding="md" withBorder className="data-table-card">
                 <Text size="sm" fw={500} mb="sm">
-                  Движение денег по кассам
+                  {t("finance.txTitle")}
                 </Text>
                 {txs && txs.length === 0 && (
                   <Text size="sm" c="dimmed">
-                    Нет финансовых транзакций за выбранный период.
+                    {t("finance.emptyTx")}
                   </Text>
                 )}
                 {txs && txs.length > 0 && (
                   <Table withRowBorders highlightOnHover verticalSpacing="sm">
                     <Table.Thead>
                       <Table.Tr>
-                        <Table.Th>Дата</Table.Th>
-                        <Table.Th>Тип</Table.Th>
-                        <Table.Th>Сумма</Table.Th>
-                        <Table.Th>Источник</Table.Th>
-                        <Table.Th>Бронь</Table.Th>
+                        <Table.Th>{t("date")}</Table.Th>
+                        <Table.Th>{t("type")}</Table.Th>
+                        <Table.Th>{t("amount")}</Table.Th>
+                        <Table.Th>{t("finance.colSource")}</Table.Th>
+                        <Table.Th>{t("finance.colBooking")}</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {txs.map((t) => (
-                        <Table.Tr key={t.id}>
-                          <Table.Td>{dayjs(t.happened_at).format("DD.MM.YYYY HH:mm")}</Table.Td>
-                          <Table.Td>{t.type}</Table.Td>
+                      {txs.map((tx) => (
+                        <Table.Tr key={tx.id}>
+                          <Table.Td>{dayjs(tx.happened_at).format("DD.MM.YYYY HH:mm")}</Table.Td>
+                          <Table.Td>{moneyFinanceTxTypeLabel(tx.type)}</Table.Td>
                           <Table.Td>
-                            {t.amount} {t.currency}
+                            {tx.amount} {tx.currency}
                           </Table.Td>
-                          <Table.Td>{t.source}</Table.Td>
+                          <Table.Td>{moneyFinanceTxSourceLabel(tx.source)}</Table.Td>
                           <Table.Td>
-                            {t.booking_id ? (
+                            {tx.booking_id ? (
                               <Anchor size="xs" c="blue">
-                                {t.booking_id.slice(0, 8)}…
+                                {tx.booking_id.slice(0, 8)}…
                               </Anchor>
                             ) : (
                               "-"
@@ -378,21 +377,20 @@ export default function AdminFinancePage() {
             right={
               <Card shadow="sm" padding="md" withBorder className="data-toolbar-card">
                 <Text size="sm" fw={500} mb="xs">
-                  Итого по транзакциям
+                  {t("finance.txTotals")}
                 </Text>
                 <Text size="xs" c="dimmed" mb="sm">
-                  Быстрый взгляд на оборот по выбранным фильтрам. Детальные отчёты доступны в
-                  разделе Analytics.
+                  {t("finance.txTotalsHint")}
                 </Text>
                 {txs && txs.length > 0 ? (
                   <Stack gap={4}>
                     <Text size="sm">
-                      Всего операций: <strong>{txs.length}</strong>
+                      {t("finance.txOpsCount", { count: txs.length })}
                     </Text>
                   </Stack>
                 ) : (
                   <Text size="xs" c="dimmed">
-                    Данных для расчёта итогов пока нет.
+                    {t("finance.txNoTotals")}
                   </Text>
                 )}
               </Card>
@@ -407,7 +405,7 @@ export default function AdminFinancePage() {
                 <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
                   <Card shadow="sm" padding="md" withBorder className="data-table-card">
                     <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                      Всего начислено
+                      {t("finance.accruedTotal")}
                     </Text>
                     <Text size="xl" fw={700} mt="xs">
                       {salarySummary.total.toFixed(2)} ₽
@@ -415,7 +413,7 @@ export default function AdminFinancePage() {
                   </Card>
                   <Card shadow="sm" padding="md" withBorder>
                     <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                      Операций
+                      {t("finance.ops")}
                     </Text>
                     <Text size="xl" fw={700} mt="xs">
                       {salarySummary.count}
@@ -423,7 +421,7 @@ export default function AdminFinancePage() {
                   </Card>
                   <Card shadow="sm" padding="md" withBorder>
                     <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                      Среднее начисление
+                      {t("finance.avgAccrual")}
                     </Text>
                     <Text size="xl" fw={700} mt="xs">
                       {salarySummary.avg.toFixed(2)} ₽
@@ -433,14 +431,14 @@ export default function AdminFinancePage() {
                 {payrollByDoctor.length > 0 && (
                   <Card shadow="sm" padding="md" withBorder>
                     <Text size="sm" fw={500} mb="sm">
-                      Начисления по врачам (агрегат)
+                      {t("finance.payrollByDoctor")}
                     </Text>
                     <Table withRowBorders highlightOnHover verticalSpacing="sm">
                       <Table.Thead>
                         <Table.Tr>
-                          <Table.Th>Врач</Table.Th>
-                          <Table.Th>Начислено</Table.Th>
-                          <Table.Th>Операций</Table.Th>
+                          <Table.Th>{t("finance.colDoctor")}</Table.Th>
+                          <Table.Th>{t("finance.colAccrued")}</Table.Th>
+                          <Table.Th>{t("finance.ops")}</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
@@ -461,28 +459,28 @@ export default function AdminFinancePage() {
             )}
             <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Text size="sm" fw={500} mb="sm">
-                Политики расчёта зарплаты
+                {t("finance.payrollPolicies")}
               </Text>
               {payrollPolicies && payrollPolicies.length === 0 && (
                 <Text size="sm" c="dimmed">
-                  Политики ЗП ещё не настроены.
+                  {t("finance.emptyPayrollPolicies")}
                 </Text>
               )}
               {payrollPolicies && payrollPolicies.length > 0 && (
                 <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th>Доктор</Table.Th>
-                      <Table.Th>Роль</Table.Th>
-                      <Table.Th>Фикс за смену</Table.Th>
-                      <Table.Th>% от услуг</Table.Th>
-                      <Table.Th>% от товаров</Table.Th>
+                      <Table.Th>{t("finance.colDoctor")}</Table.Th>
+                      <Table.Th>{t("finance.colRole")}</Table.Th>
+                      <Table.Th>{t("finance.colFixedShift")}</Table.Th>
+                      <Table.Th>{t("finance.colPctServices")}</Table.Th>
+                      <Table.Th>{t("finance.colPctGoods")}</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
                     {payrollPolicies.map((p) => (
                       <Table.Tr key={p.id}>
-                        <Table.Td>{p.doctor_id ?? "по роли"}</Table.Td>
+                        <Table.Td>{p.doctor_id ?? t("finance.byRole")}</Table.Td>
                         <Table.Td>{p.role ?? "-"}</Table.Td>
                         <Table.Td>{p.fixed_per_shift}</Table.Td>
                         <Table.Td>{p.percent_from_services}</Table.Td>
@@ -496,10 +494,10 @@ export default function AdminFinancePage() {
             <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Group justify="space-between" mb="sm">
                 <Text size="sm" fw={500}>
-                  Начисления по врачам
+                  {t("finance.salaryByDoctors")}
                 </Text>
                 <Select
-                  placeholder="Все врачи"
+                  placeholder={t("finance.allDoctors")}
                   data={doctorOptions}
                   value={selectedDoctorId}
                   onChange={setSelectedDoctorId}
@@ -507,16 +505,16 @@ export default function AdminFinancePage() {
                   searchable
                   nothingFoundMessage={
                     doctors && doctors.length === 0
-                      ? "Нет активных врачей в клинике"
-                      : "Не найдено"
+                      ? t("finance.noActiveDoctors")
+                      : t("finance.notFound")
                   }
                 />
               </Group>
               {salaryTxs && salaryTxs.length === 0 && (
                 <Text size="sm" c="dimmed">
                   {selectedDoctorId
-                    ? "По этому врачу начислений пока нет."
-                    : "Начислений по зарплате пока нет."}
+                    ? t("finance.emptySalaryDoctor")
+                    : t("finance.emptySalary")}
                 </Text>
               )}
               {salaryTxs && salaryTxs.length > 0 && (
@@ -524,21 +522,21 @@ export default function AdminFinancePage() {
                   <Table withRowBorders highlightOnHover verticalSpacing="sm">
                     <Table.Thead>
                       <Table.Tr>
-                        <Table.Th>Дата</Table.Th>
-                        <Table.Th>Сумма</Table.Th>
-                        <Table.Th>Тип</Table.Th>
-                        <Table.Th>Период</Table.Th>
+                        <Table.Th>{t("date")}</Table.Th>
+                        <Table.Th>{t("amount")}</Table.Th>
+                        <Table.Th>{t("type")}</Table.Th>
+                        <Table.Th>{t("finance.colPeriod")}</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {salaryTxs.map((t) => (
-                        <Table.Tr key={t.id}>
-                          <Table.Td>{dayjs(t.created_at).format("DD.MM.YYYY")}</Table.Td>
-                          <Table.Td>{t.amount}</Table.Td>
-                          <Table.Td>{t.type}</Table.Td>
+                      {salaryTxs.map((tx) => (
+                        <Table.Tr key={tx.id}>
+                          <Table.Td>{dayjs(tx.created_at).format("DD.MM.YYYY")}</Table.Td>
+                          <Table.Td>{tx.amount}</Table.Td>
+                          <Table.Td>{moneySalaryTxTypeLabel(tx.type)}</Table.Td>
                           <Table.Td>
-                            {t.period_start && t.period_end
-                              ? `${t.period_start} — ${t.period_end}`
+                            {tx.period_start && tx.period_end
+                              ? `${tx.period_start} — ${tx.period_end}`
                               : "-"}
                           </Table.Td>
                         </Table.Tr>
@@ -548,14 +546,13 @@ export default function AdminFinancePage() {
                   {salarySummary && (
                     <Stack gap={4} mt="sm">
                       <Text size="sm">
-                        Всего начислений: <strong>{salarySummary.count}</strong>
+                        {t("finance.salaryCount", { count: salarySummary.count })}
                       </Text>
                       <Text size="sm">
-                        Суммарно: <strong>{salarySummary.total.toFixed(2)} ₽</strong>
+                        {t("finance.salarySum", { amount: salarySummary.total.toFixed(2) })}
                       </Text>
                       <Text size="sm">
-                        Среднее начисление:{" "}
-                        <strong>{salarySummary.avg.toFixed(2)} ₽</strong>
+                        {t("finance.salaryAvg", { amount: salarySummary.avg.toFixed(2) })}
                       </Text>
                     </Stack>
                   )}
@@ -569,21 +566,21 @@ export default function AdminFinancePage() {
           <Stack>
             <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Text size="sm" fw={500} mb="sm">
-                Товары и материалы
+                {t("finance.productsTitle")}
               </Text>
               {products && products.length === 0 && (
                 <Text size="sm" c="dimmed">
-                  Склад ещё не настроен. Добавьте продукты через админку или API.
+                  {t("finance.emptyProducts")}
                 </Text>
               )}
               {products && products.length > 0 && (
                 <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th>Название</Table.Th>
-                      <Table.Th>SKU</Table.Th>
-                      <Table.Th>Ед.</Table.Th>
-                      <Table.Th>Активен</Table.Th>
+                      <Table.Th>{t("finance.colName")}</Table.Th>
+                      <Table.Th>{t("finance.sku")}</Table.Th>
+                      <Table.Th>{t("finance.colUnit")}</Table.Th>
+                      <Table.Th>{t("active")}</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -596,7 +593,7 @@ export default function AdminFinancePage() {
                         <Table.Td>{p.name}</Table.Td>
                         <Table.Td>{p.sku ?? "-"}</Table.Td>
                         <Table.Td>{p.unit}</Table.Td>
-                        <Table.Td>{p.is_active ? "Да" : "Нет"}</Table.Td>
+                        <Table.Td>{p.is_active ? t("yes") : t("no")}</Table.Td>
                       </Table.Tr>
                     ))}
                   </Table.Tbody>
@@ -606,19 +603,19 @@ export default function AdminFinancePage() {
 
             <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Text size="sm" fw={500} mb="sm">
-                Склады
+                {t("finance.warehousesTitle")}
               </Text>
               {warehouses && warehouses.length === 0 && (
                 <Text size="sm" c="dimmed">
-                  Складские площадки ещё не созданы.
+                  {t("finance.emptyWarehouses")}
                 </Text>
               )}
               {warehouses && warehouses.length > 0 && (
                 <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th>Название</Table.Th>
-                      <Table.Th>По умолчанию</Table.Th>
+                      <Table.Th>{t("finance.colName")}</Table.Th>
+                      <Table.Th>{t("finance.colDefault")}</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
@@ -629,7 +626,7 @@ export default function AdminFinancePage() {
                         onClick={() => setSelectedWarehouseId(w.id)}
                       >
                         <Table.Td>{w.name}</Table.Td>
-                        <Table.Td>{w.is_default ? "Да" : "Нет"}</Table.Td>
+                        <Table.Td>{w.is_default ? t("yes") : t("no")}</Table.Td>
                       </Table.Tr>
                     ))}
                   </Table.Tbody>
@@ -640,23 +637,23 @@ export default function AdminFinancePage() {
             <Card shadow="sm" padding="md" withBorder className="data-table-card">
               <Group justify="space-between" mb="sm">
                 <Text size="sm" fw={500}>
-                  История движений по складу
+                  {t("finance.invHistory")}
                 </Text>
                 <Text size="xs" c="dimmed">
-                  Фильтруется по выбранному товару, складу и периоду.
+                  {t("finance.invHistoryHint")}
                 </Text>
               </Group>
               <Group mb="md" gap="sm">
                 <TextInput
                   type="date"
-                  label="Дата с"
+                  label={t("finance.dateFrom")}
                   value={invDateFrom ?? ""}
                   onChange={(e) => setInvDateFrom(e.target.value || null)}
                   size="xs"
                 />
                 <TextInput
                   type="date"
-                  label="Дата по"
+                  label={t("finance.dateTo")}
                   value={invDateTo ?? ""}
                   onChange={(e) => setInvDateTo(e.target.value || null)}
                   size="xs"
@@ -664,28 +661,26 @@ export default function AdminFinancePage() {
               </Group>
               {(!inventoryTxs || inventoryTxs.length === 0) && (
                 <Text size="sm" c="dimmed">
-                  Нет движений по выбранным фильтрам.
+                  {t("finance.emptyInvTx")}
                 </Text>
               )}
               {inventoryTxs && inventoryTxs.length > 0 && (
                 <Table withRowBorders highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th>Дата</Table.Th>
-                      <Table.Th>Тип</Table.Th>
-                      <Table.Th>Количество</Table.Th>
-                      <Table.Th>Описание</Table.Th>
+                      <Table.Th>{t("date")}</Table.Th>
+                      <Table.Th>{t("type")}</Table.Th>
+                      <Table.Th>{t("finance.colQty")}</Table.Th>
+                      <Table.Th>{t("finance.colDescription")}</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {inventoryTxs.map((t) => (
-                      <Table.Tr key={t.id}>
-                        <Table.Td>
-                          {dayjs(t.happened_at).format("DD.MM.YYYY HH:mm")}
-                        </Table.Td>
-                        <Table.Td>{t.type}</Table.Td>
-                        <Table.Td>{t.quantity}</Table.Td>
-                        <Table.Td>{t.description ?? "-"}</Table.Td>
+                    {inventoryTxs.map((tx) => (
+                      <Table.Tr key={tx.id}>
+                        <Table.Td>{dayjs(tx.happened_at).format("DD.MM.YYYY HH:mm")}</Table.Td>
+                        <Table.Td>{moneyInventoryTxTypeLabel(tx.type)}</Table.Td>
+                        <Table.Td>{tx.quantity}</Table.Td>
+                        <Table.Td>{tx.description ?? "-"}</Table.Td>
                       </Table.Tr>
                     ))}
                   </Table.Tbody>
@@ -696,10 +691,10 @@ export default function AdminFinancePage() {
             {inventoryStock && (
               <Card shadow="sm" padding="md" withBorder className="data-toolbar-card">
                 <Text size="sm" fw={500} mb="xs">
-                  Текущий остаток по выбранной паре товар/склад
+                  {t("finance.stockPair")}
                 </Text>
                 <Text size="sm">
-                  Остаток:{" "}
+                  {t("finance.stock")}{" "}
                   <strong>
                     {inventoryStock.quantity} {inventoryStock.unit}
                   </strong>
@@ -717,26 +712,26 @@ export default function AdminFinancePage() {
         onClose={() => setTxDrawerOpen(false)}
         title={
           txDrawerMode === "income"
-            ? "Внести в кассу"
+            ? t("finance.drawerDeposit")
             : txDrawerMode === "expense"
-              ? "Изъять из кассы"
-              : "Перевод между кассами"
+              ? t("finance.drawerWithdraw")
+              : t("finance.drawerTransfer")
         }
       >
         <Stack gap="sm">
           {txDrawerMode === "transfer" && (
             <>
               <Select
-                label="Из кассы"
-                placeholder="Выберите кассу"
+                label={t("finance.fromCashbox")}
+                placeholder={t("finance.pickCashbox")}
                 data={cashboxOptions}
                 value={txFromCashboxId}
                 onChange={setTxFromCashboxId}
                 required
               />
               <Select
-                label="В кассу"
-                placeholder="Выберите кассу"
+                label={t("finance.toCashbox")}
+                placeholder={t("finance.pickCashbox")}
                 data={cashboxOptions.filter((o) => o.value !== txFromCashboxId)}
                 value={txToCashboxId}
                 onChange={setTxToCashboxId}
@@ -746,11 +741,11 @@ export default function AdminFinancePage() {
           )}
           {txDrawerMode !== "transfer" && txDrawerCashboxId && (
             <Text size="sm" c="dimmed">
-              Касса: {cashboxes?.find((c) => c.id === txDrawerCashboxId)?.name ?? txDrawerCashboxId}
+              {t("finance.cashboxLabel", { name: cashboxes?.find((c) => c.id === txDrawerCashboxId)?.name ?? txDrawerCashboxId })}
             </Text>
           )}
           <NumberInput
-            label="Сумма"
+            label={t("amount")}
             value={txAmount}
             onChange={(v) => setTxAmount(String(v ?? ""))}
             min={0.01}
@@ -758,15 +753,15 @@ export default function AdminFinancePage() {
             required
           />
           <TextInput
-            label="Назначение / категория"
-            placeholder="Например: Оплата услуги, Изъятие наличных"
+            label={t("finance.category")}
+            placeholder={t("finance.categoryPlaceholder")}
             value={txCategory}
             onChange={(e) => setTxCategory(e.currentTarget.value)}
             required
           />
           <Group justify="flex-end">
             <Button variant="subtle" onClick={() => setTxDrawerOpen(false)}>
-              Отмена
+              {t("cancel")}
             </Button>
             <Button
               disabled={
@@ -783,7 +778,7 @@ export default function AdminFinancePage() {
                     {
                       type: "transfer",
                       amount: txAmount,
-                      category: txCategory || "Перевод",
+                      category: txCategory || t("finance.categoryTransfer"),
                       from_cashbox_id: txFromCashboxId!,
                       to_cashbox_id: txToCashboxId!,
                     },
@@ -818,7 +813,7 @@ export default function AdminFinancePage() {
                 }
               }}
             >
-              Создать
+              {t("create")}
             </Button>
           </Group>
         </Stack>

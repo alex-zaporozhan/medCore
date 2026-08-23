@@ -19,7 +19,8 @@ import { useAdminSession } from "@/hooks/useAdminSession";
 import { DataSkeleton } from "@/shared/ui/DataSkeleton";
 import { QueryErrorAlert, ContextBar, AdminDataTableToolbar } from "@/shared/ui";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
-import { ADMIN_CHAT_MESSAGES_REGION, adminChatIncomingBubbleStyle, adminChatOutgoingBubbleStyle } from "@/shared/adminChatChrome";
+import { adminChatIncomingBubbleStyle, adminChatOutgoingBubbleStyle } from "@/shared/adminChatChrome";
+import { adminChatMessagesRegion } from "@/shared/chatI18n";
 import { SEMANTIC } from "@/shared/semanticUi";
 import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
 import { ClinicChatAttachments } from "@/shared/ClinicChatAttachments";
@@ -353,7 +354,7 @@ export default function AdminChatPage() {
                   {msgLoading ? (
                     <DataSkeleton lines={3} />
                   ) : (
-                    <Stack gap="xs" {...ADMIN_CHAT_MESSAGES_REGION}>
+                    <Stack gap="xs" {...adminChatMessagesRegion()}>
                       {(msgData?.items ?? []).map((m: ChatMessageDto) => {
                         const audioMinW = (m.attachments ?? []).some((a) =>
                           (a.content_type || "").toLowerCase().startsWith("audio/")

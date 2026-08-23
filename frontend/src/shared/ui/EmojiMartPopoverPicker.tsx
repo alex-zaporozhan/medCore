@@ -2,6 +2,7 @@ import type { ActionIconProps } from "@mantine/core";
 import { ActionIcon, Center, Loader, Popover } from "@mantine/core";
 import { IconMoodSmile } from "@tabler/icons-react";
 import { lazy, Suspense, useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { STAFF_FEED_CHROME } from "@/shared/staffFeedChrome";
 
 const EmojiMartApplePickerPane = lazy(async () => {
@@ -30,8 +31,10 @@ export function EmojiMartPopoverPicker({
   onInserted,
   actionIconProps,
   dropdownClassName = "emoji-mart-picker-shell",
-  ariaLabel = "Эмодзи",
+  ariaLabel,
 }: Props) {
+  const { t } = useTranslation("common");
+  const resolvedAriaLabel = ariaLabel ?? t("emoji");
   const [opened, setOpened] = useState(false);
 
   const handleSelect = useCallback(
@@ -57,7 +60,7 @@ export function EmojiMartPopoverPicker({
         <ActionIcon
           {...STAFF_FEED_CHROME.actionIcon}
           {...actionIconProps}
-          aria-label={ariaLabel}
+          aria-label={resolvedAriaLabel}
           aria-expanded={opened}
           onClick={() => setOpened((o) => !o)}
         >

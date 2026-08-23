@@ -37,6 +37,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { ContextBar } from "@/shared/ui/ContextBar";
+import { useTranslation } from "react-i18next";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   useAdminOmniChatDetail,
@@ -59,10 +60,10 @@ import { EmojiMartPopoverPicker } from "@/shared/ui/EmojiMartPopoverPicker";
 import { VoiceNoteRecorderButton } from "@/shared/ui/VoiceNoteRecorderButton";
 import { OmniMessageRichBody } from "@/shared/OmniMessageRichBody";
 import {
-  ADMIN_CHAT_MESSAGES_REGION,
   adminChatOmniClientInboundBubbleStyle,
   adminChatOmniOutboundBubbleStyle,
 } from "@/shared/adminChatChrome";
+import { adminChatMessagesRegion, omniAiModeLabel, omniChannelTypeLabel } from "@/shared/chatI18n";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAdminSession } from "@/hooks/useAdminSession";
 import { ApiErrorWithCode, getAdminId } from "@/api/client";
@@ -91,7 +92,7 @@ function ChannelTypeRow({ types }: { types: string[] }) {
   return (
     <Group gap={6} wrap="nowrap">
       {uniq.slice(0, 5).map((t) => (
-        <Tooltip key={t} label={t}>
+        <Tooltip key={t} label={omniChannelTypeLabel(t)}>
           <Box style={{ color: "var(--mantine-color-gray-6)", display: "flex", alignItems: "center" }}>
             <ChannelIcon type={t} />
           </Box>
@@ -108,21 +109,25 @@ function toDayKey(iso: string | null | undefined): string | null {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const dateLabelFmt = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", day: "numeric" });
-const timeLabelFmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
-
-function formatDayLabel(iso: string | null | undefined): string {
+function formatDayLabel(iso: string | null | undefined, locale: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return dateLabelFmt.format(d);
+  return new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(d);
 }
 
-function formatTimeLabel(iso: string | null | undefined): string {
+function formatTimeLabel(iso: string | null | undefined, locale: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return timeLabelFmt.format(d);
+  return new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
 }
 
 function isClosedStatus(status: unknown): boolean {
@@ -161,6 +166,7 @@ function OmniWorkPane({
   mineOpen: any[];
   mineClosed: any[];
 }) {
+  const { t } = useTranslation("chat");
   const [tab, setTab] = useState<"mine" | "closed">("mine");
   const items = tab === "mine" ? mineOpen : mineClosed;
 
@@ -179,12 +185,12 @@ function OmniWorkPane({
     >
       <Box p="sm" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
         <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: rem(0.4) }}>
-          Мои заявки
+          {t("work.title")}
         </Text>
         <Tabs value={tab} onChange={(v) => v && setTab(v as any)} variant="pills" mt="xs">
           <Tabs.List grow>
-            <Tabs.Tab value="mine">В работе</Tabs.Tab>
-            <Tabs.Tab value="closed">Закрытые</Tabs.Tab>
+            <Tabs.Tab value="mine">{t("work.inProgress")}</Tabs.Tab>
+            <Tabs.Tab value="closed">{t("work.closed")}</Tabs.Tab>
           </Tabs.List>
         </Tabs>
       </Box>
@@ -210,8 +216,8 @@ function OmniWorkPane({
                         <ChannelTypeRow
                           types={(c.channel_types ?? (c.channel_type ? [c.channel_type] : [])) as string[]}
                         />
-                        <Text size="sm" fw={600} truncate="end" title={c.contact_name ?? "Без имени"} style={{ minWidth: 0 }}>
-                          {c.contact_name ?? "Без имени"}
+                        <Text size="sm" fw={600} truncate="end" title={c.contact_name ?? t("unknownName")} style={{ minWidth: 0 }}>
+                          {c.contact_name ?? t("unknownName")}
                         </Text>
                       </Group>
                     <Text size="xs" c="dimmed" truncate="end">
@@ -219,14 +225,14 @@ function OmniWorkPane({
                     </Text>
                   </Stack>
                   <Badge size="xs" variant="light" color="gray">
-                    {String(c.status || "").toUpperCase() === "CLOSED" ? "закрыто" : "в работе"}
+                    {String(c.status || "").toUpperCase() === "CLOSED" ? t("work.closed") : t("work.inProgress")}
                   </Badge>
                 </Group>
               </Paper>
             ))
           ) : (
             <Text size="sm" c="dimmed">
-              {tab === "mine" ? "Нет чатов в работе." : "Нет закрытых заявок."}
+              {tab === "mine" ? t("work.emptyMine") : t("work.emptyClosed")}
             </Text>
           )}
         </Stack>
@@ -236,6 +242,7 @@ function OmniWorkPane({
 }
 
 export default function AdminOmniChatPage() {
+  const { t, i18n } = useTranslation("chat");
   const qc = useQueryClient();
   const { data: adminSession } = useAdminSession();
   const adminId = useMemo(() => getAdminId(), []);
@@ -372,6 +379,7 @@ export default function AdminOmniChatPage() {
   }, []);
 
   const draftRef = useRef(false);
+  const autoClaimKeyRef = useRef<string | null>(null);
   useEffect(() => {
     draftRef.current = Boolean(messageText.trim() || pendingFile);
   }, [messageText, pendingFile]);
@@ -384,16 +392,21 @@ export default function AdminOmniChatPage() {
     }
   }, []);
 
-  // При открытии диалога без исполнителя — сразу закрепляем за текущим администратором (бэкенд claim).
+  // Open unassigned → claim once per chat id. On failure the Claim button is the retry (canClaim).
   useEffect(() => {
     if (!selectedChatId || !chatDetail) return;
     const closed = String(chatDetail.status || "").toUpperCase() === "CLOSED";
-    if (closed || chatDetail.assignee_admin_id) return;
+    if (closed || chatDetail.assignee_admin_id) {
+      if (chatDetail.assignee_admin_id) autoClaimKeyRef.current = selectedChatId;
+      return;
+    }
+    if (autoClaimKeyRef.current === selectedChatId) return;
+    autoClaimKeyRef.current = selectedChatId;
     void claimChat.mutate(
       { chatId: selectedChatId },
       {
         onError: () => {
-          /* уже занят другим — оставляем как есть */
+          autoClaimKeyRef.current = null;
         },
       },
     );
@@ -582,18 +595,14 @@ export default function AdminOmniChatPage() {
           },
           onError: (err) => {
             if (err instanceof ApiErrorWithCode && err.code === "omni_chat_already_claimed") {
-              setSendError(
-                isOwner
-                  ? "Чат закреплён за другим оператором. Нажмите «Перехватить заявку» в шапке."
-                  : "Ответ может отправить только оператор, у которого заявка в работе.",
-              );
+              setSendError(isOwner ? t("errors.claimedByOtherOwner") : t("errors.claimedByOther"));
               return;
             }
             if (err instanceof ApiErrorWithCode && err.code === "omni_reply_channel_unresolved") {
-              setSendError("Не удалось определить канал для ответа. Проверьте настройки канала.");
+              setSendError(t("errors.channelUnresolved"));
               return;
             }
-            setAttachError("Не удалось отправить файл");
+            setAttachError(t("errors.sendFileFailed"));
           },
         },
       );
@@ -615,22 +624,18 @@ export default function AdminOmniChatPage() {
         },
         onError: (err) => {
           if (err instanceof ApiErrorWithCode && err.code === "omni_chat_already_claimed") {
-            setSendError(
-              isOwner
-                ? "Чат закреплён за другим оператором. Нажмите «Перехватить заявку» в шапке."
-                : "Ответ может отправить только оператор, у которого заявка в работе.",
-            );
+            setSendError(isOwner ? t("errors.claimedByOtherOwner") : t("errors.claimedByOther"));
             return;
           }
           if (err instanceof ApiErrorWithCode && err.code === "omni_reply_channel_unresolved") {
-            setSendError("Не удалось определить канал для ответа. Проверьте настройки канала.");
+            setSendError(t("errors.channelUnresolved"));
             return;
           }
-          setSendError(err instanceof Error ? err.message : "Не удалось отправить сообщение");
+          setSendError(err instanceof Error ? err.message : t("errors.sendMessageFailed"));
         },
       },
     );
-  }, [composerLocked, isOwner, messageText, pendingFile, qc, replyingTo, selectedChatId, sendMessage, sendWithFile]);
+  }, [composerLocked, isOwner, messageText, pendingFile, qc, replyingTo, selectedChatId, sendMessage, sendWithFile, t]);
 
   const canResolveSelected = Boolean(
     selectedChatId &&
@@ -645,10 +650,10 @@ export default function AdminOmniChatPage() {
 
   const getOmniBlobForMessage = useCallback(
     (messageId: string, attachmentId: string) => {
-      if (!selectedChatId) return Promise.reject(new Error("no chat"));
+      if (!selectedChatId) return Promise.reject(new Error(t("errors.noConversation")));
       return getAdminOmniAttachmentBlob(selectedChatId, messageId, attachmentId);
     },
-    [selectedChatId],
+    [selectedChatId, t],
   );
 
   const pickFile = useCallback(
@@ -676,11 +681,11 @@ export default function AdminOmniChatPage() {
       const preview = String((meta ? meta.rest : raw) || "")
         .trim()
         .replace(/\s+/g, " ")
-        .slice(0, 180) || "Сообщение";
+        .slice(0, 180) || t("message");
       setReplyingTo({ messageId, preview });
       queueMicrotask(() => composerRef.current?.focus());
     },
-    [mergedMessages],
+    [mergedMessages, t],
   );
 
   useHotkeys([["mod+enter", () => handleSend()]]);
@@ -694,7 +699,7 @@ export default function AdminOmniChatPage() {
         body: { client_event_id: mkPresenceEventId(), tab_id: tabId, event: "CLOSE" },
       });
     } catch {
-      setResolveError("Не удалось закрыть сессию присутствия. Уберите черновик в поле ввода и повторите.");
+      setResolveError(t("errors.presenceCloseFailed"));
       return;
     }
     try {
@@ -704,16 +709,16 @@ export default function AdminOmniChatPage() {
         try {
           await resolveChat.mutateAsync({ chatId: selectedChatId, force: true });
         } catch {
-          setResolveError(e instanceof Error ? e.message : "Не удалось сохранить снимок в журнал лидов.");
+          setResolveError(e instanceof Error ? e.message : t("errors.leadSnapshotFailed"));
           return;
         }
       } else {
-        setResolveError(e instanceof Error ? e.message : "Не удалось завершить заявку.");
+        setResolveError(e instanceof Error ? e.message : t("errors.resolveFailed"));
         return;
       }
     }
     setSelectedChatId(null);
-  }, [selectedChatId, isOwner, presenceMut, resolveChat, mkPresenceEventId, tabId]);
+  }, [selectedChatId, isOwner, presenceMut, resolveChat, mkPresenceEventId, tabId, t]);
 
   const closeOmniDialogOnly = useCallback(() => {
     setResolveError(null);
@@ -724,12 +729,12 @@ export default function AdminOmniChatPage() {
     <Stack gap={0} style={{ height: "100%", minHeight: 0 }}>
       <Box px="md" pt="sm" style={{ flexShrink: 0 }}>
         <ContextBar
-          title="Omni‑чат — только работа"
+          title={t("omni.title")}
           actions={
             <Group gap="xs">
               {canViewAnalytics ? (
                 <Button size="xs" variant="subtle" color="gray" onClick={() => setAnalyticsOpen(true)}>
-                  Аналитика
+                  {t("omni.analytics")}
                 </Button>
               ) : null}
             </Group>
@@ -754,21 +759,21 @@ export default function AdminOmniChatPage() {
           <Box p="sm" style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
             <Group justify="space-between" wrap="nowrap" gap="xs">
               <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: rem(0.4) }}>
-                Входящие
+                {t("omni.inbox")}
               </Text>
             </Group>
 
             <Stack gap="xs" mt="xs">
               <Tabs value={leftMode} onChange={(v) => v && setLeftMode(v as any)} variant="pills">
                 <Tabs.List grow>
-                  <Tabs.Tab value="all">Все чаты</Tabs.Tab>
-                  <Tabs.Tab value="new">Новые ({newCount})</Tabs.Tab>
+                  <Tabs.Tab value="all">{t("omni.allChats")}</Tabs.Tab>
+                  <Tabs.Tab value="new">{t("omni.newWithCount", { count: newCount })}</Tabs.Tab>
                 </Tabs.List>
               </Tabs>
 
               <TextInput
                 size="xs"
-                placeholder="Поиск по контакту"
+                placeholder={t("omni.searchContact")}
                 leftSection={<IconSearch size={14} />}
                 value={search}
                 onChange={(e) => setSearch(e.currentTarget.value)}
@@ -776,13 +781,13 @@ export default function AdminOmniChatPage() {
 
               <MultiSelect
                 size="xs"
-                placeholder="Каналы: все"
+                placeholder={t("omni.channelsAll")}
                 value={channelTypeFilters}
                 onChange={setChannelTypeFilters}
-                data={availableChannelTypes.map((t) => ({ value: t, label: t }))}
+                data={availableChannelTypes.map((ch) => ({ value: ch, label: ch }))}
                 clearable
                 searchable
-                nothingFoundMessage="Нет каналов"
+                nothingFoundMessage={t("omni.noChannels")}
               />
             </Stack>
           </Box>
@@ -845,14 +850,14 @@ export default function AdminOmniChatPage() {
                           <ChannelTypeRow
                             types={(c.channel_types ?? (c.channel_type ? [c.channel_type] : [])) as string[]}
                           />
-                          <Text size="sm" fw={600} truncate="end" title={c.contact_name ?? "Без имени"} style={{ minWidth: 0 }}>
-                            {c.contact_name ?? "Без имени"}
+                          <Text size="sm" fw={600} truncate="end" title={c.contact_name ?? t("unknownName")} style={{ minWidth: 0 }}>
+                            {c.contact_name ?? t("unknownName")}
                           </Text>
                         </Group>
                         <Group gap={6} wrap="nowrap" align="center">
                           {c.last_message_at ? (
                             <Text size="xs" c="dimmed">
-                              {formatTimeLabel(c.last_message_at)}
+                              {formatTimeLabel(c.last_message_at, i18n.language)}
                             </Text>
                           ) : null}
                           {c.contact_primary_phone ? (
@@ -863,7 +868,7 @@ export default function AdminOmniChatPage() {
                         </Group>
                         {leftMode === "all" && c.assignee_name ? (
                           <Text size="xs" c="dimmed" truncate="end">
-                            В работе: {c.assignee_name}
+                            {t("omni.inProgressNamed", { name: c.assignee_name })}
                           </Text>
                         ) : null}
                       </Stack>
@@ -882,12 +887,12 @@ export default function AdminOmniChatPage() {
                             />
                           ) : null}
                           <Badge size="xs" variant="light" color={closed ? "gray" : "blue"}>
-                            {closed ? "закрыто" : "открыто"}
+                            {closed ? t("status.closed") : t("status.open")}
                           </Badge>
                         </Group>
                         {tone === "waiting" ? (
                           <Badge size="xs" variant="light" color="yellow">
-                            Ожидает
+                            {t("status.waiting")}
                           </Badge>
                         ) : null}
                       </Stack>
@@ -898,7 +903,7 @@ export default function AdminOmniChatPage() {
                 ))
               ) : (
                 <Text size="sm" c="dimmed">
-                  Нет чатов.
+                  {t("omni.noChats")}
                 </Text>
               )}
             </Stack>
@@ -909,7 +914,7 @@ export default function AdminOmniChatPage() {
         <Flex ref={centerPaneRef} direction="column" style={{ flex: 1, minWidth: 0, minHeight: 0, background: "var(--bg-main)" }}>
           {!selectedChatId ? (
             <Stack h="100%" align="center" justify="center">
-              <EmptyStateHint title="Выберите диалог" subtitle="Слева — все/новые, справа — ваши в работе." />
+              <EmptyStateHint title={t("omni.pickDialogTitle")} subtitle={t("omni.pickDialogHint")} />
             </Stack>
           ) : (
             <>
@@ -917,7 +922,7 @@ export default function AdminOmniChatPage() {
                 <Group justify="space-between" wrap="nowrap" gap={8} align="center">
                   <Stack gap={1} style={{ minWidth: 0 }}>
                     <Text fw={700} size="sm" truncate="end" style={{ lineHeight: 1.15 }}>
-                      {chatDetail?.contact_name ?? "Диалог"}
+                      {chatDetail?.contact_name ?? t("dialog")}
                     </Text>
                     <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
                       <ChannelTypeRow
@@ -929,7 +934,7 @@ export default function AdminOmniChatPage() {
                       />
                       {chatDetail?.assignee_name ? (
                         <Badge size="xs" variant="light" color="indigo">
-                          В работе: {chatDetail.assignee_name}
+                          {t("omni.inProgressNamed", { name: chatDetail.assignee_name })}
                         </Badge>
                       ) : null}
                       {chatDetail?.status ? (
@@ -940,19 +945,19 @@ export default function AdminOmniChatPage() {
                     </Group>
                   </Stack>
                   <Group gap={8} wrap="nowrap" align="center">
-                    <Tooltip label="Режим ассистента" withArrow>
+                    <Tooltip label={t("assistant.tooltip")} withArrow>
                       <Box>
                         <Select
                           size="xs"
                           w={160}
-                          aria-label="Режим ассистента"
-                          label="Ассистент"
-                          placeholder="Режим"
+                          aria-label={t("assistant.aria")}
+                          label={t("assistant.label")}
+                          placeholder={t("assistant.placeholder")}
                           value={(chatDetail?.ai_mode || "DISABLED").toUpperCase()}
                       data={[
-                        { value: "DISABLED", label: "Выкл" },
-                        { value: "SUGGEST_ONLY", label: "Подсказка" },
-                        { value: "AUTO_REPLY", label: "Автоответчик" },
+                        { value: "DISABLED", label: omniAiModeLabel("DISABLED") },
+                        { value: "SUGGEST_ONLY", label: omniAiModeLabel("SUGGEST_ONLY") },
+                        { value: "AUTO_REPLY", label: omniAiModeLabel("AUTO_REPLY") },
                       ].filter((o) => (OMNI_CHAT_AI_MODES as readonly string[]).includes(o.value))}
                       onChange={(v) => {
                         if (!selectedChatId || !v || !canToggleAi) return;
@@ -963,6 +968,26 @@ export default function AdminOmniChatPage() {
                         />
                       </Box>
                     </Tooltip>
+                    {canClaim ? (
+                      <Button
+                        size="xs"
+                        variant="light"
+                        loading={claimChat.isPending}
+                        onClick={() => {
+                          if (!selectedChatId) return;
+                          setSendError(null);
+                          claimChat.mutate(
+                            { chatId: selectedChatId },
+                            {
+                              onError: (e) =>
+                                setSendError(e instanceof Error ? e.message : t("errors.claimFailed")),
+                            },
+                          );
+                        }}
+                      >
+                        {t("omni.claim")}
+                      </Button>
+                    ) : null}
                     {blockedByOtherAssignee && isOwner ? (
                       <Button
                         size="xs"
@@ -976,12 +1001,12 @@ export default function AdminOmniChatPage() {
                             { chatId: selectedChatId, force: true },
                             {
                               onError: (e) =>
-                                setSendError(e instanceof Error ? e.message : "Не удалось перехватить заявку"),
+                                setSendError(e instanceof Error ? e.message : t("errors.takeOverFailed")),
                             },
                           );
                         }}
                       >
-                        Перехватить заявку
+                        {t("omni.takeOver")}
                       </Button>
                     ) : null}
                     {canResolveSelected ? (
@@ -992,19 +1017,19 @@ export default function AdminOmniChatPage() {
                         loading={resolveChat.isPending}
                         onClick={() => void finishOmniTicket()}
                       >
-                        Завершить заявку
+                        {t("omni.resolve")}
                       </Button>
                     ) : null}
                     {!canClaim && !canResolveSelected && chatDetail?.assignee_name ? (
                       <Button size="xs" variant="light" color="gray" disabled>
-                        В работе у {chatDetail.assignee_name}
+                        {t("omni.assignedTo", { name: chatDetail.assignee_name })}
                       </Button>
                     ) : null}
-                    <Tooltip label="Закрыть диалог (не завершать заявку)" withArrow>
+                    <Tooltip label={t("omni.closeDialog")} withArrow>
                       <ActionIcon
                         variant="subtle"
                         color="gray"
-                        aria-label="Закрыть диалог"
+                        aria-label={t("omni.closeDialogAria")}
                         onClick={closeOmniDialogOnly}
                       >
                         <IconX size={18} />
@@ -1019,13 +1044,13 @@ export default function AdminOmniChatPage() {
                 scrollHideDelay={250}
                 viewportRef={messagesViewportRef as any}
               >
-                <Stack gap="xs" p="md" {...ADMIN_CHAT_MESSAGES_REGION}>
+                <Stack gap="xs" p="md" {...adminChatMessagesRegion()}>
                   {mergedMessages.length ? (
                     mergedMessages.map((m: any, idx: number) => {
                       const dayKey = toDayKey(m.created_at);
                       const prevDayKey = idx > 0 ? toDayKey(mergedMessages[idx - 1]?.created_at) : null;
                       const showDaySeparator = !!dayKey && dayKey !== prevDayKey;
-                      const timeLabel = formatTimeLabel(m.created_at);
+                      const timeLabel = formatTimeLabel(m.created_at, i18n.language);
                       const outbound = String(m.direction || "").toUpperCase() === "OUTBOUND";
                       const replyMeta = parseReplyLine(String(m.content || ""));
                       const displayContent = replyMeta ? replyMeta.rest : String(m.content || "");
@@ -1036,14 +1061,14 @@ export default function AdminOmniChatPage() {
                         targetMsg && String(targetMsg.content || "").trim()
                           ? String(parseReplyLine(String(targetMsg.content || ""))?.rest ?? String(targetMsg.content || "")).trim()
                           : replyMeta?.messageId
-                            ? "Сообщение"
+                            ? t("message")
                             : "";
                       return (
                         <Stack key={m.id} gap={6}>
                           {showDaySeparator ? (
                             <Group justify="center">
                               <Badge size="xs" variant="light" color="gray">
-                                {formatDayLabel(m.created_at)}
+                                {formatDayLabel(m.created_at, i18n.language)}
                               </Badge>
                             </Group>
                           ) : null}
@@ -1160,12 +1185,12 @@ export default function AdminOmniChatPage() {
                                       <ChannelIcon type={String(m.channel_type)} />
                                     </Box>
                                   ) : null}
-                                  <Tooltip label="Ответить" withArrow>
+                                  <Tooltip label={t("reply")} withArrow>
                                     <ActionIcon
                                       variant="subtle"
                                       color="gray"
                                       size="sm"
-                                      aria-label="Ответить"
+                                      aria-label={t("reply")}
                                       onClick={() => startReply(String(m.id))}
                                     >
                                       <IconCornerUpLeft size={16} />
@@ -1182,7 +1207,7 @@ export default function AdminOmniChatPage() {
                     })
                   ) : (
                     <Text size="sm" c="dimmed">
-                      Нет сообщений.
+                      {t("omni.noMessages")}
                     </Text>
                   )}
                 </Stack>
@@ -1211,7 +1236,7 @@ export default function AdminOmniChatPage() {
                           setCtxMenu((s) => ({ ...s, opened: false }));
                         }}
                       >
-                        Ответить
+                        {t("reply")}
                       </Menu.Item>
                       <Menu.Item
                         onClick={async () => {
@@ -1223,7 +1248,7 @@ export default function AdminOmniChatPage() {
                           setCtxMenu((s) => ({ ...s, opened: false }));
                         }}
                       >
-                        Копировать текст
+                        {t("omni.copyText")}
                       </Menu.Item>
                     </Menu.Dropdown>
                   </Menu>
@@ -1267,7 +1292,7 @@ export default function AdminOmniChatPage() {
                           size="sm"
                           variant="subtle"
                           color="gray"
-                          aria-label="Убрать ответ"
+                          aria-label={t("omni.removeReplyAria")}
                           onClick={() => setReplyingTo(null)}
                         >
                           ×
@@ -1278,10 +1303,13 @@ export default function AdminOmniChatPage() {
                   {pendingFile ? (
                     <Group justify="space-between" gap="xs">
                       <Text size="xs" c="dimmed" truncate="end" style={{ maxWidth: 520 }}>
-                        Файл: {pendingFile.name} ({Math.ceil(pendingFile.size / 1024)} КБ)
+                        {t("omni.fileWithSize", {
+                          name: pendingFile.name,
+                          size: Math.ceil(pendingFile.size / 1024),
+                        })}
                       </Text>
                       <Button size="xs" variant="subtle" color="gray" onClick={() => setPendingFile(null)}>
-                        Убрать
+                        {t("omni.remove")}
                       </Button>
                     </Group>
                   ) : null}
@@ -1291,7 +1319,7 @@ export default function AdminOmniChatPage() {
                     </Text>
                   ) : null}
                   {sendError ? (
-                    <Alert color="red" variant="light" title="Отправка недоступна" onClose={() => setSendError(null)} withCloseButton>
+                    <Alert color="red" variant="light" title={t("omni.sendUnavailable")} onClose={() => setSendError(null)} withCloseButton>
                       {sendError}
                     </Alert>
                   ) : null}
@@ -1302,15 +1330,12 @@ export default function AdminOmniChatPage() {
                   ) : null}
                   {selectedChatId && String(chatDetail?.status || "").toUpperCase() !== "CLOSED" ? (
                     <Text size="xs" c="dimmed">
-                      «Завершить заявку» — снимок переписки и статус попадают в раздел лидов. Крестик только убирает
-                      диалог с экрана. Автозакрытие по тишине возможно после снятия присутствия (lease); при черновике в
-                      поле ввода CLOSE не отправляется сразу.
+                      {t("omni.resolveHint")}
                     </Text>
                   ) : null}
                   {composerLocked ? (
                     <Text size="xs" c="dimmed">
-                      Этот диалог в работе у другого оператора — ответ может отправить только он (или владелец клиники
-                      может перехватить заявку).
+                      {t("omni.otherOperatorHint")}
                     </Text>
                   ) : null}
                   <Group align="flex-end" wrap="nowrap" gap="sm">
@@ -1323,7 +1348,7 @@ export default function AdminOmniChatPage() {
                         autosize
                         minRows={4}
                         maxRows={composerMaxRows}
-                        placeholder="Написать ответ… (Ctrl+Enter)"
+                        placeholder={t("omni.composerPlaceholder")}
                         styles={{
                           input: {
                             fontSize: 14,
@@ -1338,7 +1363,7 @@ export default function AdminOmniChatPage() {
                       onClick={handleSend}
                       disabled={composerLocked}
                       loading={sendMessage.isPending || sendWithFile.isPending}
-                      aria-label="Отправить"
+                      aria-label={t("omni.sendAria")}
                     >
                       <IconSend size={18} />
                     </ActionIcon>
@@ -1349,9 +1374,9 @@ export default function AdminOmniChatPage() {
                       <EmojiMartPopoverPicker
                         onPick={(native) => setMessageText((prev) => `${prev}${native}`)}
                         onInserted={() => composerRef.current?.focus()}
-                        ariaLabel="Эмодзи"
+                        ariaLabel={t("omni.emojiAria")}
                       />
-                      <ActionIcon size="lg" variant="light" color="gray" onClick={() => pickFile("*")} aria-label="Файл">
+                      <ActionIcon size="lg" variant="light" color="gray" onClick={() => pickFile("*")} aria-label={t("omni.fileAria")}>
                         <IconPaperclip size={20} />
                       </ActionIcon>
                       <ActionIcon
@@ -1359,7 +1384,7 @@ export default function AdminOmniChatPage() {
                         variant="light"
                         color="gray"
                         onClick={() => pickFile("image/*")}
-                        aria-label="Фото"
+                        aria-label={t("omni.photoAria")}
                       >
                         <IconPhoto size={20} />
                       </ActionIcon>
@@ -1374,16 +1399,16 @@ export default function AdminOmniChatPage() {
 
                     <Box style={{ flex: 1, minWidth: 320, maxWidth: 520 }}>
                       <Select
-                        label="Быстрые ответы"
-                        placeholder="Выберите…"
+                        label={t("omni.quickReplies")}
+                        placeholder={t("omni.quickRepliesPlaceholder")}
                         disabled={!quickRepliesData?.items?.length}
                         data={(quickRepliesData?.items ?? []).map((qr: any) => ({
                           value: String(qr.id),
-                          label: String(qr.title || qr.body || "Ответ"),
+                          label: String(qr.title || qr.body || t("omni.quickReplyFallback")),
                         }))}
                         searchable
                         clearable
-                        nothingFoundMessage="Нет быстрых ответов"
+                        nothingFoundMessage={t("omni.noQuickReplies")}
                         onChange={(v) => {
                           const id = v ? String(v) : null;
                           const qr = id ? (quickRepliesData?.items ?? []).find((x: any) => String(x.id) === id) : null;
@@ -1410,41 +1435,41 @@ export default function AdminOmniChatPage() {
       <Modal
         opened={analyticsOpen}
         onClose={() => setAnalyticsOpen(false)}
-        title="Аналитика omni‑чата"
+        title={t("analytics.title")}
         size="lg"
         centered
       >
         <Stack gap="sm">
           <Group grow>
-            <TextInput label="Дата от" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.currentTarget.value)} />
-            <TextInput label="Дата до" type="date" value={dateTo} onChange={(e) => setDateTo(e.currentTarget.value)} />
+            <TextInput label={t("analytics.dateFrom")} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.currentTarget.value)} />
+            <TextInput label={t("analytics.dateTo")} type="date" value={dateTo} onChange={(e) => setDateTo(e.currentTarget.value)} />
           </Group>
           {analyticsQuery.isLoading ? (
             <Text size="sm" c="dimmed">
-              Загрузка…
+              {t("loading")}
             </Text>
           ) : analyticsQuery.isError ? (
             <Text size="sm" c="red">
-              Не удалось загрузить аналитику.
+              {t("analytics.loadFailed")}
             </Text>
           ) : analyticsQuery.data ? (
             <>
               <Group grow>
                 <Paper withBorder p="sm" radius="md">
                   <Text size="xs" c="dimmed">
-                    Создано чатов
+                    {t("analytics.created")}
                   </Text>
                   <Text fw={700}>{analyticsQuery.data.total_chats_created}</Text>
                 </Paper>
                 <Paper withBorder p="sm" radius="md">
                   <Text size="xs" c="dimmed">
-                    Взято в работу
+                    {t("analytics.claimed")}
                   </Text>
                   <Text fw={700}>{analyticsQuery.data.total_claimed}</Text>
                 </Paper>
                 <Paper withBorder p="sm" radius="md">
                   <Text size="xs" c="dimmed">
-                    Закрыто
+                    {t("analytics.closed")}
                   </Text>
                   <Text fw={700}>{analyticsQuery.data.total_closed}</Text>
                 </Paper>
@@ -1453,21 +1478,21 @@ export default function AdminOmniChatPage() {
               <Group grow>
                 <Paper withBorder p="sm" radius="md">
                   <Text size="xs" c="dimmed">
-                    Среднее время до взятия
+                    {t("analytics.avgToClaim")}
                   </Text>
                   <Text fw={700}>
                     {analyticsQuery.data.avg_time_to_claim_seconds != null
-                      ? `${Math.round(analyticsQuery.data.avg_time_to_claim_seconds / 60)} мин`
+                      ? t("analytics.minutes", { count: Math.round(analyticsQuery.data.avg_time_to_claim_seconds / 60) })
                       : "—"}
                   </Text>
                 </Paper>
                 <Paper withBorder p="sm" radius="md">
                   <Text size="xs" c="dimmed">
-                    Среднее время до закрытия
+                    {t("analytics.avgToClose")}
                   </Text>
                   <Text fw={700}>
                     {analyticsQuery.data.avg_time_to_close_seconds != null
-                      ? `${Math.round(analyticsQuery.data.avg_time_to_close_seconds / 60)} мин`
+                      ? t("analytics.minutes", { count: Math.round(analyticsQuery.data.avg_time_to_close_seconds / 60) })
                       : "—"}
                   </Text>
                 </Paper>
@@ -1476,7 +1501,7 @@ export default function AdminOmniChatPage() {
               <Divider />
 
               <Stack gap="xs">
-                <Text fw={600}>Исходы</Text>
+                <Text fw={600}>{t("analytics.outcomes")}</Text>
                 {(analyticsQuery.data.outcomes ?? []).length ? (
                   (analyticsQuery.data.outcomes ?? []).map((o) => (
                     <Group key={o.outcome} justify="space-between">
@@ -1488,7 +1513,7 @@ export default function AdminOmniChatPage() {
                   ))
                 ) : (
                   <Text size="sm" c="dimmed">
-                    Нет закрытий за период.
+                    {t("analytics.noClosures")}
                   </Text>
                 )}
               </Stack>
@@ -1496,20 +1521,20 @@ export default function AdminOmniChatPage() {
               <Divider />
 
               <Stack gap="xs">
-                <Text fw={600}>По администраторам</Text>
+                <Text fw={600}>{t("analytics.byAdmin")}</Text>
                 {(analyticsQuery.data.by_admin ?? []).length ? (
                   (analyticsQuery.data.by_admin ?? []).map((a) => (
                     <Paper key={a.admin_id} withBorder p="xs" radius="md">
                       <Group justify="space-between" wrap="nowrap">
                         <Text size="sm" truncate="end">
-                          {a.admin_name ?? a.admin_id}
+                          {a.admin_name ?? t("unknownName")}
                         </Text>
                         <Group gap="xs">
                           <Badge size="sm" variant="light" color="blue">
-                            взял: {a.claimed_count}
+                            {t("analytics.claimedCount", { count: a.claimed_count })}
                           </Badge>
                           <Badge size="sm" variant="light" color="gray">
-                            закрыл: {a.closed_count}
+                            {t("analytics.closedCount", { count: a.closed_count })}
                           </Badge>
                         </Group>
                       </Group>
@@ -1517,7 +1542,7 @@ export default function AdminOmniChatPage() {
                   ))
                 ) : (
                   <Text size="sm" c="dimmed">
-                    Нет данных.
+                    {t("analytics.noData")}
                   </Text>
                 )}
               </Stack>

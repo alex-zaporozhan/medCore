@@ -470,6 +470,17 @@ AdminStaffCalendarPage: перевести chrome; **не** возвращать
 | Stream move / comment / routing save — silent или ошибка за модалкой | `errors.saveFailed` в видимом Alert |
 | Tooltip карточки AI был литерал `"AI"` | `card.ai` |
 
+**A4-repass 2026-08-21 (Kanban leftover review):**
+
+| Дыра | Фикс |
+|------|------|
+| `AdminTaskDetailsPage` chrome литералы «Задача» / «Назад к Kanban» при ключах `detail.task` / `page.backToKanban` | страница на `useTranslation("tasks")` |
+| `{/* legacy detail modal removed */}` ~600 строк всё ещё в файле (A12 заявлял удаление) | блок вырезан; живой путь только `TaskDetailsView` |
+| Дубли ключей `view.assigneesInline` (JSON last-wins) + alias `assigneeDelegate` | один набор `view.*`; `TaskDetailsView` на канонические ключи |
+| Колонки Kanban: `taskStatusLabel` без `i18n.language` в deps — подписи не обновлялись при смене языка | `statusColumns` зависит от `i18n.language` |
+| `errors.createFailed` / `errors.claimFailed` в словаре, create/claim без `onError` в живом UI | Alert через `setDragError` |
+| Create stream placeholder «Required» | `view.pickStream` |
+
 **Вне скоупа A4 (следующий шаг зафиксирован):**
 
 - Тело `QueryErrorAlert` / `formatQueryError` оптом — **A10 / R10** (сырой API `detail` без `code` остаётся как есть).
@@ -482,7 +493,7 @@ AdminStaffCalendarPage: перевести chrome; **не** возвращать
 - Поле `channel_type` в тесте routing остаётся техническим placeholder API (`TELEGRAM_BOT / …`) — данные, не chrome.
 - Cross-column drop на конкретный слот больше не вставляет в позицию (только смена статуса, rank на сервере). Позиционирование в чужой колонке одним жестом — отдельный контракт API (status, затем reorder), не A5.
 
-Проверка: `cd frontend && npx tsc -b` + `npm test -- --run src/i18n src/admin/pages/__tests__/AdminTasksPage.test.tsx`.
+Проверка: `cd frontend && npx tsc -b` + `npm test -- --run src/i18n src/admin/pages/__tests__/AdminTasksPage.test.tsx src/admin/pages/__tests__/AdminTaskDetailsPage.test.tsx`.
 
 ### QUEUE A4 (исторический — не запускать повторно)
 
@@ -725,7 +736,7 @@ ns: `money.json`
 
 ## A8 — Лента и отчёты
 
-**Статус:** принят в коде + A8-audit 2026-08-18. Не перезапускать QUEUE A8.
+**Статус:** словари A8 2026-08-18; **перепроверка 2026-08-19:** JSX снова был на RU литералах, e2e ждал «Лента». Pass 3 заново подключил `useTranslation("feed"|"reports")` и EN e2e. Не запускать QUEUE A8 с нуля.
 
 **Файлы:** `AdminDashboardPage.tsx`, `AdminReportsPage.tsx` (+ тест), `AdminAiReportsPage.tsx`, `frontend/e2e/admin-dashboard-feed.spec.ts`
 
@@ -1172,7 +1183,7 @@ data/comment/api-detail — в отчёт, не океан комментари�
 | Default `EmojiMartPopoverPicker` / `VoiceNoteRecorderButton` / `SignatureCanvas` RU | A10: admin уже передаёт `t()`; patient props |
 | `QueryListStates.test.tsx` RU title / `/app` crash / API detail | Тест контракта patient vs admin, не дыра chrome |
 | Founder/patient panels (`PlatformFounder*`, `PatientPhoneAuthPanel`) | R4 / вне волны |
-| `index.html` `lang="ru"`, маркетинг body | Вне очереди / @SEO |
+| `index.html` `lang="ru"`, маркетинг body | **Phase 4 + leftover 2026-08-21.** Sandbox/legal/founder ops/PWA chrome on keys. Task **modal** (`TaskDetailsView`) + **Kanban/create/routing/stream colour/chat/approval queue** + **`AdminTaskDetailsPage` chrome** on `tasks` keys. Остальные admin families, API catalog без seed, backend `detail`. |
 
 ### Тесты (честно, не полный `npm test`)
 
@@ -1222,11 +1233,11 @@ npx vitest run src/i18n src/admin src/shared/__tests__ src/shared/ui/__tests__/Q
 
 Владелец без отдельного батча i18n — иначе к этому не вернутся.
 
-1. **Маркетинг / SEO:** `index.html` `lang="ru"`, лендинг, signup, `PublicLoginPage` body. @LEAD + @SEO.
-2. **Founder form** (`PlatformFounderLoginPage` / `PlatformFounderSignInPanel` / MFA) остаётся RU (R4). Та же маркетинговая волна, не админ chrome.
-3. **Patient `/app`:** `getBookingErrorMessage`, `formatQueryError` fallback, default emoji/voice/signature, `BookingWizardPage`.
-4. **`PlatformPricingSection` на `/admin/subscription`:** каталог — маркетинговый корпус (API `display_name`, `ENTERPRISE_PLAN_MARKETING`, checkout copy). Не переводить кусками: глобальный i18n default = `en` сломает лендинг, если повесить `useTranslation` на секцию. Закрывать **одним** разговором с п.1 (пропсы chrome для `catalog_only` **или** locale на маркетинговых маршрутах = `ru`). Пока страница подписки смешанная — принятый лимит, не QUEUE.
-5. **`client.ts` HTML 4xx** (nginx-полотно без JSON): сообщение RU, **без** transport-кода (не маскировать 404-HTML под `internal_server_error`). Короткий 5xx с телом API без code — сырой `detail` (R10). Полный EN-текст в `normalizeErrorMessage` **не** делать без сплита patient/admin.
+1. **Маркетинг / SEO:** Phase 4 + checkout chrome **сделаны**. Sandbox/legal bodies + `founder` ns + FE catalog overlay. Checkout/lead **errors** follow `ui.locale`. SSG нет (ADR-018). SEO TECH — не заявлен. Остаток: API `display_name` без seed overlay. Задачи: Kanban/create/routing/stream colour + details-page chrome закрыты ключами `tasks`.
+2. **Founder form after login** (dashboard / queue / leads / MFA) на `founder` ns. Ошибки очереди — `FounderQueryError` (перевод на рендере, без refetch при смене языка).
+3. **Patient `/app`:** chrome на `patient` ns (включая loyalty/forms/feed/success). Остаток: `getBookingErrorMessage`, `formatQueryError` fallback, default emoji/voice/signature; имена полей анкет — с API.
+4. **`PlatformPricingSection`:** chrome + overlay + entitlement overlay. **Остаток:** Alembic-only DB без seed — RU `display_name`.
+5. **`client.ts` HTML 4xx / 502–503 traceback:** `common.errors` (`method_not_allowed`, `html_gateway`, `service_unavailable`, `internal_server_error`). Admin 401 → `ApiErrorWithCode(..., "unauthorized")`. Короткий 5xx с телом API без code — сырой `detail` (R10).
 6. **Backend `code: empty_db_no_clinic`:** сейчас 404 + RU `detail` + узкий heuristic. Снять heuristic после кода на API.
 7. **Доменные коды** `omni_*` / `rag_*` / `billing_revoked` / booking `slot_unavailable` на `QueryErrorAlert` — экранные ключи, не раздувать `common.errors`.
 8. **R14** native HTML `required` / `type=email` — текст браузера ≠ `ui.locale`.

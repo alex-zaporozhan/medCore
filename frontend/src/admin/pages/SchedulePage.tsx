@@ -41,6 +41,8 @@ import { IconCalendarEvent, IconChevronLeft, IconChevronRight, IconCalendar } fr
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { ClinicSelector } from "@/admin/components/ClinicSelector";
 import { SEMANTIC } from "@/shared/semanticUi";
+import { useTranslation } from "react-i18next";
+import { displayPersonName } from "@/shared/ui/personNameFallback";
 
 interface ScheduleCreateBookingFormProps {
   date: string;
@@ -52,6 +54,7 @@ interface ScheduleCreateBookingFormProps {
   servicesOptions: ComboboxItem[];
   onClose: () => void;
   onCreate: (payload: CreateAdminBookingPayload) => void;
+  isPending?: boolean;
 }
 
 function ScheduleCreateBookingForm({
@@ -64,7 +67,9 @@ function ScheduleCreateBookingForm({
   servicesOptions,
   onClose,
   onCreate,
+  isPending = false,
 }: ScheduleCreateBookingFormProps) {
+  const { t } = useTranslation("schedule");
   const [patientId, setPatientId] = useState("");
   const [searchPhone, setSearchPhone] = useState("");
   const [searchFullName, setSearchFullName] = useState("");
@@ -101,65 +106,69 @@ function ScheduleCreateBookingForm({
   return (
     <Stack gap="sm">
       <Text size="sm" c="dimmed">
-        {displayRole ?? "Специалист"}
+        {displayRole ?? t("specialist")}
       </Text>
       <Text size="sm">{doctorName}</Text>
       <Text size="sm" c="dimmed" mt="xs">
-        Дата и время
+        {t("dateTime")}
       </Text>
       <Text size="sm">
         {date} {time}
       </Text>
       <Text size="sm" c="dimmed" mt="xs">
-        Найдите пациента по телефону или ФИО
+        {t("searchPatientHint")}
       </Text>
       <Group grow>
         <TextInput
-          label="Телефон"
+          label={t("phone")}
           placeholder="+7..."
           value={searchPhone}
           onChange={(e) => setSearchPhone(e.target.value)}
         />
         <TextInput
-          label="ФИО"
-          placeholder="Например, Иванов Иван"
+          label={t("fullName")}
+          placeholder={t("fullNamePlaceholder")}
           value={searchFullName}
           onChange={(e) => setSearchFullName(e.target.value)}
         />
       </Group>
       <Select
-        label="Пациент"
-        placeholder="Выберите пациента из списка"
+        label={t("patient")}
+        placeholder={t("patientPlaceholder")}
         data={patientOptions}
         value={patientId}
         onChange={(value) => setPatientId(value ?? "")}
         searchable
         nothingFoundMessage={
           searchPhone || searchFullName
-            ? "Пациенты не найдены. Проверьте данные или создайте нового пациента в разделе «Пациенты»."
-            : "Начните вводить телефон или ФИО."
+            ? t("patientsNotFound")
+            : t("startTypingPatient")
         }
       />
       <Select
-        label="Услуга"
-        placeholder="Выберите услугу"
+        label={t("service")}
+        placeholder={t("servicePlaceholder")}
         data={servicesOptions}
         value={serviceId}
         onChange={setServiceId}
         searchable
       />
       <TextInput
-        label="Комментарий"
-        placeholder="Необязательно"
+        label={t("comment")}
+        placeholder={t("commentOptional")}
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
       />
       <Group justify="flex-end" mt="sm">
-        <Button variant="subtle" onClick={onClose}>
-          Отмена
+        <Button variant="subtle" onClick={onClose} disabled={isPending}>
+          {t("cancel")}
         </Button>
-        <Button onClick={handleSubmit} disabled={!patientId || !serviceId}>
-          Создать запись
+        <Button
+          onClick={handleSubmit}
+          disabled={!patientId || !serviceId || isPending}
+          loading={isPending}
+        >
+          {t("createBooking")}
         </Button>
       </Group>
     </Stack>
@@ -167,6 +176,7 @@ function ScheduleCreateBookingForm({
 }
 
 export default function SchedulePage() {
+  const { t } = useTranslation("schedule");
   const { currentClinicId, clinics, isClinicScopeLocked } = useAdminClinic();
   const [searchParams] = useSearchParams();
   const [dateStr, setDateStr] = useState(dayjs().format("YYYY-MM-DD"));
@@ -255,7 +265,7 @@ export default function SchedulePage() {
       toDoctorId: payload.toDoctorId,
       toDate: payload.date,
       toTime: payload.time,
-      patientLabel: String(patientLabel).trim() || "Пациент",
+      patientLabel: displayPersonName(String(patientLabel).trim() || null, b.patient_id),
     });
   };
 
@@ -278,7 +288,7 @@ export default function SchedulePage() {
   const gridDoctors =
     doctors?.filter((d) => doctorIds.includes(d.id)).map((d) => ({ id: d.id, name: d.full_name })) ?? [];
 
-  /** В сетке показываем только активные записи — отменённые не отображаем и слот считается свободным */
+  /** Grid shows active bookings only — cancelled visits free the slot. */
   const bookingsForGrid = useMemo(
     () => bookings?.filter((b) => b.status !== "cancelled") ?? [],
     [bookings]
@@ -342,17 +352,17 @@ export default function SchedulePage() {
   return (
     <Stack>
       <ContextBar
-        title="Расписание"
+        title={t("title")}
         breadcrumbs={<ClinicSelector variant="compact" />}
       />
       {!isClinicScopeLocked && clinics.length > 1 && (
         <Text size="sm" c="dimmed">
-          В другой клинике — другие врачи и услуги. Выберите клинику выше.
+          {t("otherClinicHint")}
         </Text>
       )}
       <MultiSelect
-        label="Врачи"
-        placeholder="Выберите одного или нескольких врачей"
+        label={t("doctors")}
+        placeholder={t("doctorsPlaceholder")}
         data={doctorOptions}
         value={doctorIds}
         onChange={setDoctorIds}
@@ -361,7 +371,7 @@ export default function SchedulePage() {
       />
       <Stack gap="xs">
         <Text size="sm" fw={600}>
-          Дата
+          {t("date")}
         </Text>
         <Group align="center" gap="sm" wrap="wrap">
           <ActionIcon
@@ -369,7 +379,7 @@ export default function SchedulePage() {
             size="lg"
             radius="md"
             color={SEMANTIC.dateNav.yesterday}
-            aria-label="Предыдущий день"
+            aria-label={t("prevDay")}
             onClick={() => setDateStr(dayjs(dateStr).subtract(1, "day").format("YYYY-MM-DD"))}
             style={{ boxShadow: "var(--shadow-soft-sm)" }}
           >
@@ -381,7 +391,7 @@ export default function SchedulePage() {
             color={SEMANTIC.dateNav.yesterday}
             onClick={() => setDateStr(dayjs(dateStr).subtract(1, "day").format("YYYY-MM-DD"))}
           >
-            Вчера
+            {t("yesterday")}
           </Button>
           <Button
             size="xs"
@@ -389,7 +399,7 @@ export default function SchedulePage() {
             color={SEMANTIC.dateNav.today}
             onClick={() => setDateStr(dayjs().format("YYYY-MM-DD"))}
           >
-            Сегодня
+            {t("today")}
           </Button>
           <Button
             size="xs"
@@ -397,14 +407,14 @@ export default function SchedulePage() {
             color={SEMANTIC.dateNav.tomorrow}
             onClick={() => setDateStr(dayjs(dateStr).add(1, "day").format("YYYY-MM-DD"))}
           >
-            Завтра
+            {t("tomorrow")}
           </Button>
           <ActionIcon
             variant="light"
             size="lg"
             radius="md"
             color={SEMANTIC.dateNav.tomorrow}
-            aria-label="Следующий день"
+            aria-label={t("nextDay")}
             onClick={() => setDateStr(dayjs(dateStr).add(1, "day").format("YYYY-MM-DD"))}
             style={{ boxShadow: "var(--shadow-soft-sm)" }}
           >
@@ -454,8 +464,8 @@ export default function SchedulePage() {
       {doctorIds.length > 0 && isError && <QueryErrorAlert error={error} />}
       {doctorIds.length === 0 && (
         <EmptyState
-          title="Выберите врачей"
-          description="Выберите одного или нескольких врачей для отображения сетки расписания."
+          title={t("pickDoctorsTitle")}
+          description={t("pickDoctorsHint")}
         />
       )}
       {aggregatedSchedule &&
@@ -464,11 +474,11 @@ export default function SchedulePage() {
           <Stack gap="lg">
             {bookingsForGrid.length === 0 && (
               <EmptyState
-                title="Нет записей на эту дату"
-                description="Создайте запись по кнопке ниже или добавьте пациента из листа ожидания."
+                title={t("noBookingsTitle")}
+                description={t("noBookingsHint")}
                 icon={<IconCalendarEvent size={64} stroke={1} color="var(--mantine-color-gray-4)" />}
                 action={{
-                  label: "Новая запись",
+                  label: t("newBooking"),
                   onClick: () => {
                     const firstDoctor = gridDoctors[0];
                     const firstTime = aggregatedSchedule?.times[0];
@@ -513,23 +523,23 @@ export default function SchedulePage() {
         aggregatedSchedule.times.length === 0 &&
         doctorIds.length > 0 && (
           <EmptyState
-            title="Нет слотов на эту дату"
-            description="На выбранную дату нет доступных слотов расписания."
+            title={t("noSlotsTitle")}
+            description={t("noSlotsHint")}
           />
         )}
 
       <GlassModal
         opened={pendingCancelBookingId !== null}
         onClose={() => setPendingCancelBookingId(null)}
-        title="Подтверждение отмены"
+        title={t("cancelConfirmTitle")}
       >
         <Stack gap="md">
           <Text size="sm">
-            Вы действительно хотите отменить запись?
+            {t("cancelConfirmBody")}
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="subtle" onClick={() => setPendingCancelBookingId(null)}>
-              Нет
+              {t("no")}
             </Button>
             <Button
               color="red"
@@ -553,7 +563,7 @@ export default function SchedulePage() {
                 });
               }}
             >
-              Отменить запись
+              {t("cancelBooking")}
             </Button>
           </Group>
         </Stack>
@@ -620,27 +630,19 @@ export default function SchedulePage() {
       <GlassModal
         opened={pendingDragMove !== null}
         onClose={() => setPendingDragMove(null)}
-        title="Подтверждение перемещения"
+        title={t("moveConfirmTitle")}
       >
         <Stack gap="md">
           <Text size="sm">
-            Вы действительно хотите переместить запись{" "}
-            <Text component="span" fw={700}>
-              {pendingDragMove?.patientLabel ?? "Пациент"}
-            </Text>{" "}
-            с{" "}
-            <Text component="span" fw={700}>
-              {pendingDragMove ? `${pendingDragMove.fromDate} ${pendingDragMove.fromTime}` : ""}
-            </Text>{" "}
-            на{" "}
-            <Text component="span" fw={700}>
-              {pendingDragMove ? `${pendingDragMove.toDate} ${pendingDragMove.toTime}` : ""}
-            </Text>
-            ?
+            {t("moveConfirmBody", {
+              name: pendingDragMove?.patientLabel ?? t("patient"),
+              from: pendingDragMove ? `${pendingDragMove.fromDate} ${pendingDragMove.fromTime}` : "",
+              to: pendingDragMove ? `${pendingDragMove.toDate} ${pendingDragMove.toTime}` : "",
+            })}
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="subtle" onClick={() => setPendingDragMove(null)} disabled={rescheduleMutation.isPending}>
-              Нет
+              {t("no")}
             </Button>
             <Button
               onClick={() => {
@@ -661,7 +663,7 @@ export default function SchedulePage() {
               }}
               loading={rescheduleMutation.isPending}
             >
-              Да
+              {t("yes")}
             </Button>
           </Group>
         </Stack>
@@ -687,7 +689,7 @@ export default function SchedulePage() {
       <GlassModal
         opened={createSlot !== null}
         onClose={() => setCreateSlot(null)}
-        title="Новая запись"
+        title={t("newBooking")}
         size="lg"
       >
         {createSlot && (
@@ -702,6 +704,7 @@ export default function SchedulePage() {
             clinicId={currentClinicId ?? ""}
             servicesOptions={servicesOptions}
             onClose={() => setCreateSlot(null)}
+            isPending={createAdminBooking.isPending}
             onCreate={(payload) =>
               createAdminBooking.mutate(payload, {
                 onSuccess: () => {

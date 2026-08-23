@@ -48,7 +48,8 @@ import { EmojiMartPopoverPicker, AppleEmojiOverlayTextarea } from "@/shared/ui";
 import { VoiceNoteRecorderButton } from "@/shared/ui/VoiceNoteRecorderButton";
 import { api } from "@/api/client";
 import { useAdminSession } from "@/hooks/useAdminSession";
-import { ADMIN_CHAT_MESSAGES_REGION, adminChatIncomingBubbleStyle, adminChatOutgoingBubbleStyle } from "@/shared/adminChatChrome";
+import { adminChatIncomingBubbleStyle, adminChatOutgoingBubbleStyle } from "@/shared/adminChatChrome";
+import { adminChatMessagesRegion } from "@/shared/chatI18n";
 
 export default function AdminStaffChatPage() {
   const { data: adminSession } = useAdminSession();
@@ -422,7 +423,7 @@ export default function AdminStaffChatPage() {
                       description="Напишите сообщение или запишите голос (микрофон). Файл или фото — иконками; вложение добавляется к последнему отправленному тексту."
                     />
                   ) : (
-                    <Stack gap="sm" {...ADMIN_CHAT_MESSAGES_REGION}>
+                    <Stack gap="sm" {...adminChatMessagesRegion()}>
                       {messages.map((m) => {
                         const isMine = m.author.id === currentAdminId;
                         const audioMinW = (m.attachments ?? []).some((a) =>
