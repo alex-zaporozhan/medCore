@@ -1,7 +1,8 @@
 import { useCancelWaitlistEntry, type WaitlistEntry } from "@/hooks";
 import { Box, Button, Card, Stack, Text, Title } from "@mantine/core";
+import { useTranslation } from "react-i18next";
+import { displayPersonName } from "@/shared/ui/personNameFallback";
 
-/** patient_id -> display name (ФИО или телефон) */
 interface WaitlistPanelProps {
   clinicId: string | null;
   doctorId: string | null;
@@ -17,6 +18,7 @@ export function WaitlistPanel({
   entries,
   patientNameMap,
 }: WaitlistPanelProps) {
+  const { t } = useTranslation("schedule");
   const cancelMutation = useCancelWaitlistEntry(clinicId);
 
   if (!doctorId) {
@@ -28,54 +30,56 @@ export function WaitlistPanel({
   return (
     <Box>
       <Title order={4} mb="sm">
-        Очередь ожидания
+        {t("waitlistPanel.title")}
       </Title>
       {entries && entries.length === 0 && (
         <Text size="sm" c="dimmed">
-          На выбранную дату очередь пуста.
+          {t("waitlistPanel.empty")}
         </Text>
       )}
       <Stack gap="sm">
-        {entries?.map((entry) => (
-          <Card
-            key={entry.id}
-            withBorder
-            padding="sm"
-            radius="md"
-            style={{ background: "var(--bg-card)" }}
-          >
-            <Stack gap={4}>
-              <Text size="sm" fw={500}>
-                Пациент: {patientNameMap?.[entry.patient_id] ?? entry.patient_id}
-              </Text>
-              <Text size="xs" c="dimmed">
-                Предпочитаемое время:{" "}
-                {(() => {
-                  const p = prefs(entry);
-                  return p?.from && p?.to
-                    ? `${String(p.from).slice(0, 5)}–${String(p.to).slice(0, 5)}`
-                    : "не указано";
-                })()}
-              </Text>
-              <Text size="xs" c="dimmed">
-                Статус: {entry.status}
-              </Text>
-              <Box style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <Button
-                  size="xs"
-                  variant="subtle"
-                  color="red"
-                  onClick={() => cancelMutation.mutate(entry.id)}
-                  loading={cancelMutation.isPending}
-                >
-                  Отменить ожидание
-                </Button>
-              </Box>
-            </Stack>
-          </Card>
-        ))}
+        {entries?.map((entry) => {
+          const p = prefs(entry);
+          const preferred =
+            p?.from && p?.to
+              ? `${String(p.from).slice(0, 5)}–${String(p.to).slice(0, 5)}`
+              : t("waitlistPanel.unspecified");
+          return (
+            <Card
+              key={entry.id}
+              withBorder
+              padding="sm"
+              radius="md"
+              style={{ background: "var(--bg-card)" }}
+            >
+              <Stack gap={4}>
+                <Text size="sm" fw={500}>
+                  {t("waitlistPanel.patientLine", {
+                    name: displayPersonName(patientNameMap?.[entry.patient_id], entry.patient_id),
+                  })}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {t("waitlistPanel.preferredTime", { value: preferred })}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {t("waitlistPanel.statusLine", { status: entry.status })}
+                </Text>
+                <Box style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    color="red"
+                    onClick={() => cancelMutation.mutate(entry.id)}
+                    loading={cancelMutation.isPending}
+                  >
+                    {t("waitlistPanel.cancelWait")}
+                  </Button>
+                </Box>
+              </Stack>
+            </Card>
+          );
+        })}
       </Stack>
     </Box>
   );
 }
-

@@ -81,9 +81,9 @@ describe("AdminReportsPage marketing attribution filters", () => {
   it("renders marketing attribution table and filter controls", () => {
     renderWithProviders(<AdminReportsPage />);
 
-    expect(screen.getByText(/Маркетинг и атрибуция/)).toBeInTheDocument();
-    expect(screen.getByText("Источник трафика")).toBeInTheDocument();
-    expect(screen.getByText("Кампания")).toBeInTheDocument();
+    expect(screen.getByText(/Marketing and attribution/)).toBeInTheDocument();
+    expect(screen.getAllByText("Traffic source").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Campaign").length).toBeGreaterThan(0);
 
     expect(screen.getAllByText("Кампания 1").length).toBeGreaterThan(0);
     expect(screen.getByText("Google Ads")).toBeInTheDocument();
@@ -94,10 +94,10 @@ describe("AdminReportsPage marketing attribution filters", () => {
     const user = userEvent.setup();
     renderWithProviders(<AdminReportsPage />);
 
-    await user.click(screen.getAllByLabelText("Источник трафика")[0]);
+    await user.click(screen.getAllByLabelText("Traffic source")[0]);
     await user.click(await screen.findByRole("option", { name: /Google Ads/i }));
 
-    await user.click(screen.getAllByLabelText("Кампания")[0]);
+    await user.click(screen.getAllByLabelText("Campaign")[0]);
     await user.click(await screen.findByRole("option", { name: /Кампания 1/i }));
 
     await waitFor(() => {

@@ -22,10 +22,12 @@ import { getCurrentUtm } from "@/shared/utmTracking";
 import { SEMANTIC } from "@/shared/semanticUi";
 import { ROUTE_PATHS } from "@/routePaths";
 import { safeAuthReturnTo } from "@/auth/signInReturnTo";
+import { useTranslation } from "react-i18next";
 
 const EMPTY_DB_MESSAGE = "В базе данных нет ни одной клиники";
 
 export function PatientPhoneAuthPanel() {
+  const { t } = useTranslation("patient");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { clinicSlug } = usePatientEntry();
@@ -129,12 +131,10 @@ export function PatientPhoneAuthPanel() {
     <Stack gap="sm">
       <div>
         <Title order={3}>
-          {mode === "login" ? "Вход в личный кабинет" : "Регистрация в клинике"}
+          {mode === "login" ? t("signIn.loginTitle") : t("signIn.registerTitle")}
         </Title>
         <Text size="sm" c="dimmed" mt={6}>
-          {mode === "login"
-            ? "Если вы уже записывались в клинику, введите номер телефона — мы отправим SMS‑код для входа."
-            : "Если вы впервые записываетесь в клинику, заполните данные и получите SMS‑код для входа."}
+          {mode === "login" ? t("signIn.loginLead") : t("signIn.registerLead")}
         </Text>
       </div>
       <SegmentedControl
@@ -148,18 +148,18 @@ export function PatientPhoneAuthPanel() {
           setCode("");
         }}
         data={[
-          { label: "Уже есть запись", value: "login" },
-          { label: "Я новый пациент", value: "register" },
+          { label: t("signIn.modeLogin"), value: "login" },
+          { label: t("signIn.modeRegister"), value: "register" },
         ]}
-        aria-label="Режим: вход или регистрация"
+        aria-label={t("signIn.modeAria")}
       />
       {import.meta.env.DEV ? (
-        <Alert color="gray" variant="light" title="Режим разработки">
-          Если SMS не настроены, одноразовый код смотрите в логе API-сервера (ключ Redis / вывод send-code).
+        <Alert color="gray" variant="light" title={t("signIn.devTitle")}>
+          {t("signIn.devBody")}
         </Alert>
       ) : null}
       <Text size="xs" c="dimmed">
-        Или войдите через социальную сеть:
+        {t("signIn.orSocial")}
       </Text>
       <Group gap="xs">
         <Button
@@ -171,7 +171,7 @@ export function PatientPhoneAuthPanel() {
                 window.location.href = `${API_BASE}/v1/auth/oauth/vk/start?${oauthStartQuery}`;
               }}
         >
-          Войти через VK
+          {t("signIn.vk")}
         </Button>
         <Button
           type="button"
@@ -182,51 +182,51 @@ export function PatientPhoneAuthPanel() {
                 window.location.href = `${API_BASE}/v1/auth/oauth/yandex/start?${oauthStartQuery}`;
               }}
         >
-          Войти через Яндекс
+          {t("signIn.yandex")}
         </Button>
       </Group>
       {step === "phone" && (
         <>
           <TextInput
-            label="Телефон"
-            placeholder="+7 900 123 45 67"
+            label={t("signIn.phone")}
+            placeholder={t("signIn.phonePlaceholder")}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
           />
           {mode === "register" && (
             <>
               <TextInput
-                label="ФИО"
-                placeholder="Иванов Иван Иванович"
+                label={t("signIn.fullName")}
+                placeholder={t("signIn.fullNamePlaceholder")}
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
               />
               <TextInput
-                label="Дата рождения"
+                label={t("signIn.birthDate")}
                 type="date"
-                placeholder="ГГГГ-ММ-ДД"
+                placeholder={t("signIn.birthPlaceholder")}
                 value={birthDate}
                 onChange={(e) => setBirthDate(e.target.value)}
               />
               <Checkbox
                 label={
                   <>
-                    Я согласен(а) на обработку персональных данных в соответствии с{" "}
+                    {t("signIn.consentPd")}{" "}
                     <Anchor component="button" type="button" size="sm" onClick={openPolicy}>
-                      политикой клиники
+                      {t("signIn.clinicPolicy")}
                     </Anchor>
                   </>
                 }
                 checked={consentPd}
                 onChange={(e) => setConsentPd(e.currentTarget.checked)}
               />
-              <Modal opened={policyOpened} onClose={closePolicy} title="Политика обработки ПД" size="lg" centered>
+              <Modal opened={policyOpened} onClose={closePolicy} title={t("signIn.policyTitle")} size="lg" centered>
                 <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                  {agreement?.pd_agreement_text || "Текст политики не задан. Обратитесь в клинику."}
+                  {agreement?.pd_agreement_text || t("signIn.policyMissing")}
                 </Text>
               </Modal>
               <Checkbox
-                label="Я согласен(а) получать рассылку и новости от клиники (акции, напоминания)"
+                label={t("signIn.consentMailing")}
                 checked={consentMailing}
                 onChange={(e) => setConsentMailing(e.currentTarget.checked)}
               />
@@ -240,17 +240,17 @@ export function PatientPhoneAuthPanel() {
             fullWidth
             disabled={mode === "login" ? !canSendCodeLogin : !canSendCodeRegister}
           >
-            Получить код
+            {t("signIn.getCode")}
           </Button>
         </>
       )}
       {step === "code" && (
         <>
           <Text size="sm" c="dimmed">
-            Код отправлен на {phone}. Введите его, чтобы продолжить.
+            {t("signIn.codeSent", { phone })}
           </Text>
           <TextInput
-            label="Код из SMS"
+            label={t("signIn.smsCode")}
             placeholder="1234"
             value={code}
             onChange={(e) => setCode(e.target.value)}
@@ -262,7 +262,7 @@ export function PatientPhoneAuthPanel() {
             loading={verifyCode.isPending}
             fullWidth
           >
-            Войти
+            {t("signIn.enter")}
           </Button>
           <Button
             type="button"
@@ -271,7 +271,7 @@ export function PatientPhoneAuthPanel() {
             onClick={() => setStep("phone")}
             fullWidth
           >
-            Изменить номер
+            {t("signIn.changeNumber")}
           </Button>
         </>
       )}

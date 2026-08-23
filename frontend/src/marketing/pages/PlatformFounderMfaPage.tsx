@@ -1,19 +1,18 @@
 import { SignInShell } from "@/auth/SignInShell";
 import { PlatformFounderMfaPanel } from "@/auth/panels/PlatformFounderMfaPanel";
 import { Stack, Text, Title } from "@mantine/core";
+import { useTranslation } from "react-i18next";
 
-/**
- * Шаг 2 входа основателя: только TOTP после успешной проверки email/пароля.
- * Прямой URL: `/platform/login/mfa` (ожидается MFA-токен в sessionStorage после шага 1).
- */
+/** Founder sign-in step 2: TOTP after email/password. Direct URL: `/platform/login/mfa`. */
 export default function PlatformFounderMfaPage() {
+  const { t } = useTranslation("founder");
   return (
     <SignInShell>
       <Stack gap="lg">
         <div>
-          <Title order={2}>Двухфакторный вход</Title>
+          <Title order={2}>{t("mfa.title")}</Title>
           <Text size="sm" c="dimmed" mt={6}>
-            Шаг 2 из 2: код из приложения-аутентификатора (TOTP).
+            {t("mfa.lead")}
           </Text>
         </div>
         <PlatformFounderMfaPanel />

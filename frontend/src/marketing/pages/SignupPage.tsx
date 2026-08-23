@@ -1,13 +1,16 @@
+import { UiLocaleSwitch } from "@/i18n/UiLocaleSwitch";
 import { PlatformPricingSection } from "@/marketing/components/PlatformPricingSection";
 import { ROUTE_PATHS } from "@/routePaths";
-import { Anchor, Box, Checkbox, Container, Stack, Text, Title } from "@mantine/core";
+import { Anchor, Box, Checkbox, Container, Group, Stack, Text, Title } from "@mantine/core";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 /**
- * Регистрация организации на платформе: согласия PII + тот же checkout, что на /pricing.
+ * Organization signup: PII consents + the same checkout as /pricing.
  */
 export default function SignupPage() {
+  const { t } = useTranslation("marketing");
   const [consentPd, setConsentPd] = useState(false);
   const [consentTerms, setConsentTerms] = useState(false);
   const canProceed = consentPd && consentTerms;
@@ -16,15 +19,17 @@ export default function SignupPage() {
     <Box className="marketing-gradient-bg" style={{ minHeight: "100vh", padding: "40px 16px" }}>
       <Container size="lg">
         <Stack gap="xl">
-          <div>
-            <Title order={1} style={{ color: "var(--text-main)" }}>
-              Регистрация организации
-            </Title>
-            <Text size="sm" c="dimmed" mt={8}>
-              Подбор тарифа из каталога и оплата. После успешной оплаты платформа создаёт организацию и отправляет
-              владельцу приглашение в админку.
-            </Text>
-          </div>
+          <Group justify="space-between" wrap="wrap" gap="sm" align="flex-start">
+            <div>
+              <Title order={1} style={{ color: "var(--text-main)" }}>
+                {t("signup.title")}
+              </Title>
+              <Text size="sm" c="dimmed" mt={8}>
+                {t("signup.lead")}
+              </Text>
+            </div>
+            <UiLocaleSwitch />
+          </Group>
 
           <Stack gap="sm">
             <Checkbox
@@ -32,12 +37,15 @@ export default function SignupPage() {
               onChange={(e) => setConsentPd(e.currentTarget.checked)}
               label={
                 <Text size="sm">
-                  Согласен(на) на обработку персональных данных владельца (email) в рамках оформления подписки.
-                  Политика:{" "}
-                  <Anchor component={Link} to={ROUTE_PATHS.marketing.legalPrivacy} target="_blank">
-                    Конфиденциальность
-                  </Anchor>
-                  .
+                  <Trans
+                    ns="marketing"
+                    i18nKey="signup.consentPd"
+                    components={{
+                      privacyLink: (
+                        <Anchor component={Link} to={ROUTE_PATHS.marketing.legalPrivacy} target="_blank" />
+                      ),
+                    }}
+                  />
                 </Text>
               }
             />
@@ -46,11 +54,13 @@ export default function SignupPage() {
               onChange={(e) => setConsentTerms(e.currentTarget.checked)}
               label={
                 <Text size="sm">
-                  Ознакомлен(а) и согласен(на) с{" "}
-                  <Anchor component={Link} to={ROUTE_PATHS.marketing.legalTerms} target="_blank">
-                    условиями использования
-                  </Anchor>
-                  .
+                  <Trans
+                    ns="marketing"
+                    i18nKey="signup.consentTerms"
+                    components={{
+                      termsLink: <Anchor component={Link} to={ROUTE_PATHS.marketing.legalTerms} target="_blank" />,
+                    }}
+                  />
                 </Text>
               }
             />
@@ -58,14 +68,14 @@ export default function SignupPage() {
 
           {!canProceed ? (
             <Text size="sm" c="dimmed">
-              Отметьте оба согласия, чтобы активировать кнопку оплаты. Тарифы ниже можно просматривать сразу.
+              {t("signup.needConsents")}
             </Text>
           ) : null}
 
-          <PlatformPricingSection title="Выбор плана и оплата" checkoutEnabled={canProceed} />
+          <PlatformPricingSection title={t("signup.pricingTitle")} checkoutEnabled={canProceed} />
 
           <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="sm">
-            ← На главную
+            ← {t("signup.backHome")}
           </Anchor>
         </Stack>
       </Container>

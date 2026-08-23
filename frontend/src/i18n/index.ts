@@ -17,6 +17,9 @@ import enReports from "./locales/en/reports.json";
 import enRbac from "./locales/en/rbac.json";
 import enSettings from "./locales/en/settings.json";
 import enTasks from "./locales/en/tasks.json";
+import enMarketing from "./locales/en/marketing.json";
+import enPatient from "./locales/en/patient.json";
+import enFounder from "./locales/en/founder.json";
 import ruAuth from "./locales/ru/auth.json";
 import ruBookings from "./locales/ru/bookings.json";
 import ruCommon from "./locales/ru/common.json";
@@ -31,6 +34,9 @@ import ruReports from "./locales/ru/reports.json";
 import ruRbac from "./locales/ru/rbac.json";
 import ruSettings from "./locales/ru/settings.json";
 import ruTasks from "./locales/ru/tasks.json";
+import ruMarketing from "./locales/ru/marketing.json";
+import ruPatient from "./locales/ru/patient.json";
+import ruFounder from "./locales/ru/founder.json";
 
 export const UI_LOCALE_STORAGE_KEY = "ui.locale";
 export type UiLocale = "en" | "ru";
@@ -40,7 +46,7 @@ export type UiLocale = "en" | "ru";
  * as `locales/{en,ru}/<ns>.json`, and in `i18next.d.ts`. Changing fallbackLng /
  * detector / useSuspense is not part of adding a namespace.
  */
-export const I18N_NAMESPACES = ["common", "nav", "auth", "schedule", "bookings", "directory", "tasks", "chat", "crm", "money", "reports", "feed", "settings", "rbac"] as const;
+export const I18N_NAMESPACES = ["common", "nav", "auth", "schedule", "bookings", "directory", "tasks", "chat", "crm", "money", "reports", "feed", "settings", "rbac", "marketing", "patient", "founder"] as const;
 
 export function normalizeUiLocale(lng: string | undefined): UiLocale {
   if (lng && lng.toLowerCase().startsWith("ru")) return "ru";
@@ -97,6 +103,9 @@ void i18n
         feed: cloneResource(enFeed),
         settings: cloneResource(enSettings),
         rbac: cloneResource(enRbac),
+        marketing: cloneResource(enMarketing),
+        patient: cloneResource(enPatient),
+        founder: cloneResource(enFounder),
       },
       ru: {
         common: cloneResource(ruCommon),
@@ -113,6 +122,9 @@ void i18n
         feed: cloneResource(ruFeed),
         settings: cloneResource(ruSettings),
         rbac: cloneResource(ruRbac),
+        marketing: cloneResource(ruMarketing),
+        patient: cloneResource(ruPatient),
+        founder: cloneResource(ruFounder),
       },
     },
     lng: readStoredUiLocale(),

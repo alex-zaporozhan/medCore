@@ -353,6 +353,20 @@ body {
     radial-gradient(ellipse 70% 50% at 0% 100%, rgba(13, 148, 136, 0.04), transparent 45%);
 }
 
+/* Sign-in split: both panes share a height floor on desktop; mobile stays content-sized. */
+.signin-split-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+@media (min-width: 62em) {
+  .signin-split-pane {
+    min-height: 28rem;
+  }
+}
+
 /* Generic app container card for landing and dashboards */
 .app-shell-card {
   background: var(--bg-card);

@@ -1,10 +1,10 @@
 """P1-4: local payment row before YooKassa create (contour A)."""
 
-from datetime import time
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
+from tests.booking_slot import unique_booking_slot
 
 from src.application.services.payment_service import (
     PaymentService,
@@ -23,6 +23,7 @@ async def test_create_payment_yookassa_fail_leaves_local_pending_row(
 ):
     clinic_id = seed_data["clinic_id"]
     booking_id = uuid4()
+    slot_day, slot_time = unique_booking_slot(seed_data["date"], hour=6)
 
     class _FailingYk:
         def create_payment(self, amount, return_url, description, booking_id):  # noqa: ARG002
@@ -39,8 +40,8 @@ async def test_create_payment_yookassa_fail_leaves_local_pending_row(
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
-                appointment_time=time(17, 57, 0),
+                appointment_date=slot_day,
+                appointment_time=slot_time,
                 status=BookingStatus.AWAITING_PAYMENT,
                 prepayment_amount=500,
             )
@@ -75,6 +76,7 @@ async def test_create_payment_idempotent_second_call_uses_get_payment_only(
 ):
     clinic_id = seed_data["clinic_id"]
     booking_id = uuid4()
+    slot_day, slot_time = unique_booking_slot(seed_data["date"], hour=7)
     counters = {"create": 0, "get": 0}
     ext_id = f"yookassa-ext-{uuid4().hex[:12]}"
 
@@ -102,8 +104,8 @@ async def test_create_payment_idempotent_second_call_uses_get_payment_only(
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
-                appointment_time=time(17, 58, 0),
+                appointment_date=slot_day,
+                appointment_time=slot_time,
                 status=BookingStatus.AWAITING_PAYMENT,
                 prepayment_amount=500,
             )

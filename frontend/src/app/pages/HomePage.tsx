@@ -10,19 +10,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconRefresh } from "@tabler/icons-react";
 import { ROUTE_PATHS } from "@/routePaths";
 import { SEMANTIC } from "@/shared/semanticUi";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 const SELECTED_CLINIC_KEY = "app.selectedClinicId";
 
-function shortId(id: string): string {
-  if (id.length <= 12) return id;
-  return `${id.slice(0, 8)}…`;
-}
-
-function getGreeting(): string {
+function getGreeting(t: TFunction<"patient">): string {
   const h = new Date().getHours();
-  if (h < 12) return "Доброе утро";
-  if (h < 18) return "Добрый день";
-  return "Добрый вечер";
+  if (h < 12) return t("home.greetingMorning");
+  if (h < 18) return t("home.greetingAfternoon");
+  return t("home.greetingEvening");
 }
 
 /** Имя пациента для приветствия: при наличии GET /v1/patient/me с full_name — подставляется. */
@@ -45,6 +42,7 @@ function usePatientName(accessToken: string | null) {
 }
 
 export default function HomePage() {
+  const { t } = useTranslation("patient");
   const queryClient = useQueryClient();
   const { data: clinics, isLoading, isError, error } = useClinics();
   const { patientId, accessToken } = usePatientAuth();
@@ -88,18 +86,18 @@ export default function HomePage() {
   const nextVisitDoctorLabel = useMemo(() => {
     if (!nextVisit) return "";
     const d = visitDoctors?.find((x) => x.id === nextVisit.doctor_id);
-    return d?.full_name ?? shortId(nextVisit.doctor_id);
-  }, [nextVisit, visitDoctors]);
+    return d?.full_name ?? t("home.unknownDoctor");
+  }, [nextVisit, visitDoctors, t]);
 
   const nextVisitServiceLabel = useMemo(() => {
     if (!nextVisit) return "";
     const s = visitServices?.find((x) => x.id === nextVisit.service_id);
-    return s?.name ?? shortId(nextVisit.service_id);
-  }, [nextVisit, visitServices]);
+    return s?.name ?? t("home.unknownService");
+  }, [nextVisit, visitServices, t]);
 
   const hasSingleClinic = clinics && clinics.length === 1;
   const hasMultipleClinics = clinics && clinics.length > 1;
-  const greetingText = patientName ? `${getGreeting()}, ${patientName}!` : `${getGreeting()}!`;
+  const greetingText = patientName ? `${getGreeting(t)}, ${patientName}!` : `${getGreeting(t)}!`;
 
   const refreshHome = () => {
     queryClient.invalidateQueries({ queryKey: ["patient", "bookings", patientId ?? ""] });
@@ -120,9 +118,9 @@ export default function HomePage() {
           leftSection={<IconRefresh size={14} />}
           loading={bookingsFetching}
           onClick={refreshHome}
-          aria-label="Обновить"
+          aria-label={t("home.refresh")}
         >
-          Обновить
+          {t("home.refresh")}
         </Button>
       </Group>
 
@@ -136,15 +134,21 @@ export default function HomePage() {
           style={{ borderColor: "var(--divider)" }}
         >
           <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb="xs" style={{ letterSpacing: "0.04em" }}>
-            Ближайший визит
+            {t("home.nextVisit")}
           </Text>
           <Group align="flex-start" justify="space-between" wrap="nowrap">
             <Stack gap={4}>
               <Text fw={600} c="dark.8" size="lg">
-                {String(nextVisit.appointment_date)} в {String(nextVisit.appointment_time).slice(0, 5)}
+                {t("home.atTime", {
+                  date: String(nextVisit.appointment_date),
+                  time: String(nextVisit.appointment_time).slice(0, 5),
+                })}
               </Text>
               <Text size="sm" c="dimmed">
-                Врач: {nextVisitDoctorLabel} · Услуга: {nextVisitServiceLabel}
+                {t("home.doctorService", {
+                  doctor: nextVisitDoctorLabel,
+                  service: nextVisitServiceLabel,
+                })}
               </Text>
               <Group mt="sm">
                 <Button
@@ -154,7 +158,7 @@ export default function HomePage() {
                   color={SEMANTIC.action.send}
                   size="xs"
                 >
-                  Перенести
+                  {t("home.reschedule")}
                 </Button>
                 <Button
                   component={Link}
@@ -163,7 +167,7 @@ export default function HomePage() {
                   color={SEMANTIC.action.send}
                   size="xs"
                 >
-                  Отменить
+                  {t("home.cancel")}
                 </Button>
                 <Button
                   component={Link}
@@ -171,7 +175,7 @@ export default function HomePage() {
                   color={SEMANTIC.action.confirm}
                   size="xs"
                 >
-                  Добавить в календарь
+                  {t("home.addToCalendar")}
                 </Button>
               </Group>
             </Stack>
@@ -193,17 +197,17 @@ export default function HomePage() {
                 QR
               </div>
               <Text size="xs" c="dimmed" ta="center" mt={4}>
-                Визит
+                {t("home.visit")}
               </Text>
             </Paper>
           </Group>
         </Card>
       ) : (
         <EmptyState
-          title="Нет ближайших записей"
-          description="Запишитесь на приём — выберите врача и удобное время."
+          title={t("home.noUpcoming")}
+          description={t("home.noUpcomingHint")}
           action={{
-            label: "Записаться",
+            label: t("home.book"),
             onClick: () => window.location.assign(ROUTE_PATHS.patient.booking),
           }}
         />
@@ -212,7 +216,7 @@ export default function HomePage() {
       {/* Stories Bar — горизонтальный скролл (акции, новости) */}
       <div>
         <Text size="sm" fw={600} mb="xs" c="dark.8">
-          Акции и новости
+          {t("home.stories")}
         </Text>
         <ScrollArea type="scroll" scrollbarSize={6} style={{ width: "100%" }}>
           <Group gap="md" style={{ flexWrap: "nowrap", paddingBottom: 4 }}>
@@ -256,10 +260,10 @@ export default function HomePage() {
       >
         <Stack gap="md">
           <Title order={4} c="dark.8" fw={600}>
-            Онлайн‑запись к врачу
+            {t("home.onlineTitle")}
           </Title>
           <Text size="sm" c="dimmed">
-            Выберите удобное время приёма, не звоня в клинику.
+            {t("home.onlineLead")}
           </Text>
           <Button
             component={Link}
@@ -268,18 +272,18 @@ export default function HomePage() {
             variant="outline"
             color={SEMANTIC.action.confirm}
           >
-            Записаться на приём
+            {t("home.bookVisit")}
           </Button>
           <Anchor component={Link} to={ROUTE_PATHS.patient.history} c={SEMANTIC.action.link} fw={500}>
-            Смотреть историю посещений
+            {t("home.viewHistory")}
           </Anchor>
           {isLoading && (
             <Text size="sm" c="dimmed">
-              Загружаем клиники...
+              {t("home.loadingClinics")}
             </Text>
           )}
           {isError && (
-            <QueryErrorAlert error={error} title="Не удалось загрузить клиники" />
+            <QueryErrorAlert error={error} title={t("home.clinicsFailed")} />
           )}
           {hasSingleClinic && (
             <Card
@@ -290,7 +294,7 @@ export default function HomePage() {
               style={{ borderColor: "var(--divider)" }}
             >
               <Stack gap={4}>
-                <Text fw={500}>Клиника</Text>
+                <Text fw={500}>{t("home.clinic")}</Text>
                 <Text size="sm">{clinics![0].name}</Text>
                 {clinics![0].address && (
                   <Text size="sm" c="dimmed">
@@ -300,7 +304,7 @@ export default function HomePage() {
                 <Group gap="md" mt="xs">
                   {clinics![0].phone && (
                     <Text size="sm" c="dimmed">
-                      Телефон: {clinics![0].phone}
+                      {t("home.phone", { phone: clinics![0].phone })}
                     </Text>
                   )}
                   {clinics![0].email && (
@@ -315,7 +319,7 @@ export default function HomePage() {
           {hasMultipleClinics && (
             <Stack gap="xs" mt="md">
               <Text size="sm" fw={500}>
-                Выберите клинику перед записью
+                {t("home.pickClinicBefore")}
               </Text>
               {clinics!.map((c) => {
                 const isSelected = selectedId === c.id;
@@ -343,7 +347,7 @@ export default function HomePage() {
                       <Group gap="md" mt="xs">
                         {c.phone && (
                           <Text size="sm" c="dimmed">
-                            Телефон: {c.phone}
+                            {t("home.phone", { phone: c.phone })}
                           </Text>
                         )}
                         {c.email && (

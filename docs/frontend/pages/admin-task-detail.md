@@ -52,7 +52,7 @@
 
 ## UI-скелет (as-built)
 
-- `ContextBar` («Задача», действие «Назад к Kanban»).
+- `ContextBar` (`tasks.detail.task`, действие `tasks.page.backToKanban`).
 - `TaskDetailsView`: верх — бейджи приоритета/статуса/блокировки; `Paper` с описанием и мета (срок, исполнители для read-only).
 - `SimpleGrid` (2 колонки на md): слева карточки «Исполнители», «Поток и теги» (условно); справа «Срок выполнения» (Select статуса + date/time), «Статус и блокировка» (быстрые кнопки статуса, textarea причины, toggle блокировки, кнопка «Закрыть» только если передан `onClose` — на странице обычно скрыта).
 - Ниже на всю ширину: карточка «Комментарии» (`ScrollArea` + `AppleEmojiOverlayTextarea`), карточка «История статусов» (до 20 записей).
@@ -76,7 +76,7 @@
 
 ## Тесты
 
-- **gap:** выделенных vitest/e2e под эту страницу в репозитории не найдено (поиск по именам страницы/компонента).
+- `frontend/src/admin/pages/__tests__/AdminTaskDetailsPage.test.tsx` — chrome (title + back). Тело формы покрыто через `TaskDetailsView` / Kanban modal, не отдельным e2e.
 
 ## Gap scan (вторая редакция)
 

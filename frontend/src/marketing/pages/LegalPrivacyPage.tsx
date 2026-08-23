@@ -1,26 +1,27 @@
 import { Anchor, Container, Paper, Stack, Text, Title } from "@mantine/core";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ROUTE_PATHS } from "@/routePaths";
+import { MarketingPublicChrome } from "@/marketing/components/MarketingPublicChrome";
 
-/**
- * Плейсхолдер политики конфиденциальности (Phase 1b / МП §5).
- * Юридический текст заполняется отдельно; маршрут нужен для лендинга и чеклистов.
- */
+/** Privacy-policy placeholder. Legal copy is filled separately; the route is required for landing checklists. */
 export default function LegalPrivacyPage() {
+  const { t } = useTranslation("marketing");
   return (
-    <Container size="sm" py="xl">
-      <Paper p="xl" radius="md" withBorder>
-        <Stack gap="md">
-          <Title order={2}>Политика конфиденциальности</Title>
-          <Text c="dimmed" size="sm">
-            Здесь будет актуальный текст политики обработки персональных данных и хранения данных
-            сервиса. До публикации финальной версии обратитесь к администратору платформы.
-          </Text>
-          <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="sm">
-            На главную
-          </Anchor>
-        </Stack>
-      </Paper>
-    </Container>
+    <MarketingPublicChrome>
+      <Container size="sm" py="xl">
+        <Paper p="xl" radius="md" withBorder>
+          <Stack gap="md">
+            <Title order={2}>{t("legal.privacyTitle")}</Title>
+            <Text c="dimmed" size="sm">
+              {t("legal.privacyBody")}
+            </Text>
+            <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="sm">
+              {t("legal.home")}
+            </Anchor>
+          </Stack>
+        </Paper>
+      </Container>
+    </MarketingPublicChrome>
   );
 }

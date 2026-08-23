@@ -41,7 +41,7 @@
 Скрипт **`scripts/dev/check_dependency_updates.py`** — ручная сводка для ревью апдейтов; **не дублирует** обязательный шаг **`pip-audit`** в **`.github/workflows/backend-ci.yml`**, но удобен перед bump’ом версий.
 
 - **`poetry run python scripts/dev/check_dependency_updates.py`** — печатает `poetry show --outdated` и при наличии **`npm`** в PATH — `npm outdated` в каталоге **`frontend/`**.
-- **`poetry run python scripts/dev/check_dependency_updates.py --audit`** — то же плюс **`pip-audit`** в окружении Poetry; **ненулевой код выхода**, если найдены известные уязвимости (как в CI).
+- **`poetry run python scripts/dev/check_dependency_updates.py --audit`** — то же плюс **`pip-audit`** в окружении Poetry; **ненулевой код выхода**, если найдены известные уязвимости (как в CI). Перед аудитом в CI обновляют **pip**, **setuptools** и **msgpack** в venv (они входят в отчёт `pip-audit`, хотя не в `pyproject.toml`; **msgpack** тянется самим `pip-audit`).
 - **Windows:** если `npm` не находится или shim не запускается из `subprocess`, блок frontend помечается как пропущенный; для полной картины по фронту запустите скрипт из среды, где **`npm`** в PATH, или смотрите **`npm outdated`** вручную в **`frontend/`**.
 
 Полный **`poetry run pytest tests/`** как в workflow (Postgres + Redis, **`DATABASE_URL_TEST`**, при необходимости **`RUN_REDIS_INTEGRATION_TESTS=1`**, для e2e — **`FRONTEND_E2E_URL`** / автоподъём preview) — см. **`documentation/DEVELOPMENT.md`**. Отдельная тестовая БД с **`alembic upgrade head`** ближе к CI, чем «живая» dev-БД с устаревшими или частичными данными: иначе сервисные тесты могут падать на бизнес-инвариантах (например, нет дефолтной кассы у клиники).

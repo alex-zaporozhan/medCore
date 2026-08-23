@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import dayjs from "dayjs";
 import i18n, { readStoredUiLocale, UI_LOCALE_STORAGE_KEY } from "../index";
 import { taskStatusLabel } from "@/shared/taskStatusI18n";
@@ -38,6 +41,10 @@ import enMoney from "../locales/en/money.json";
 import enReports from "../locales/en/reports.json";
 import enSettings from "../locales/en/settings.json";
 import enRbac from "../locales/en/rbac.json";
+import { marketingPlanCopy } from "@/marketing/marketingPublicPlans";
+import enMarketing from "../locales/en/marketing.json";
+import enPatient from "../locales/en/patient.json";
+import enFounder from "../locales/en/founder.json";
 import ruAuth from "../locales/ru/auth.json";
 import ruBookings from "../locales/ru/bookings.json";
 import ruCommon from "../locales/ru/common.json";
@@ -52,6 +59,9 @@ import ruMoney from "../locales/ru/money.json";
 import ruReports from "../locales/ru/reports.json";
 import ruSettings from "../locales/ru/settings.json";
 import ruRbac from "../locales/ru/rbac.json";
+import ruMarketing from "../locales/ru/marketing.json";
+import ruPatient from "../locales/ru/patient.json";
+import ruFounder from "../locales/ru/founder.json";
 
 function leafKeys(value: unknown, prefix = ""): string[] {
   if (value !== null && typeof value === "object") {
@@ -90,6 +100,23 @@ describe("i18n default locale", () => {
 
   it("auth clinic login heading is EN by default", () => {
     expect(i18n.t("clinic.pageTitle", { ns: "auth" })).toBe("Clinic staff sign-in");
+  });
+
+  it("auth public and founder login headings are EN by default", () => {
+    expect(i18n.t("public.pageTitle", { ns: "auth" })).toBe("Sign in");
+    expect(i18n.t("founder.pageTitle", { ns: "auth" })).toBe("Platform founder");
+    expect(i18n.t("founder.navOverview", { ns: "auth" })).toBe("Overview");
+    expect(i18n.t("founder.navProvision", { ns: "auth" })).toBe("Provision queue");
+  });
+
+  it("AdminLayout source has no Russian string literals", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const srcPath = path.resolve(here, "../../admin/layouts/AdminLayout.tsx");
+    const src = fs
+      .readFileSync(srcPath, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(src).not.toMatch(/["'`][^"'`\n]*[А-Яа-яЁё]/);
   });
 
   it("nav feed item is EN by default", () => {
@@ -188,6 +215,8 @@ describe("i18n default locale", () => {
     expect(i18n.t("newPost", { ns: "feed" })).toBe("New post");
     expect(i18n.t("composeAria", { ns: "feed" })).toBe("Create a clinic feed post");
     expect(i18n.t("publish", { ns: "feed" })).toBe("Publish");
+    expect(i18n.t("filesQueued", { ns: "feed", count: 1 })).toBe("1 file (uploaded after publish)");
+    expect(i18n.t("filesQueued", { ns: "feed", count: 2 })).toBe("2 files (uploaded after publish)");
     expect(i18n.t("titleFull", { ns: "reports" })).toBe("Reports and dashboard");
     expect(i18n.t("trafficSource", { ns: "reports" })).toBe("Traffic source");
     expect(i18n.t("attributionTitle", { ns: "reports" })).toBe(
@@ -204,6 +233,18 @@ describe("i18n default locale", () => {
     expect(feedRevenuePeriodLabel("night")).toBe("overnight");
     expect(feedRevenuePeriodLabel("not-a-period")).toBe("overnight");
     expect(feedRevenuePeriodLabel(undefined)).toBe("overnight");
+  });
+
+  it("marketing landing chrome is EN by default", () => {
+    expect(i18n.t("hero.title", { ns: "marketing" })).toBe("The operating system for growing your business");
+    expect(i18n.t("header.patientApp", { ns: "marketing" })).toBe("Patient app");
+    expect(i18n.t("header.signIn", { ns: "marketing" })).toBe("Sign in");
+    expect(i18n.t("signup.title", { ns: "marketing" })).toBe("Register your organization");
+    expect(i18n.t("checkout.subscribe", { ns: "marketing" })).toBe("Subscribe");
+    expect(i18n.t("htmlTitle", { ns: "marketing" })).toBe("MedCore — clinic operating system");
+    expect(i18n.t("invite.title", { ns: "marketing" })).toBe("Owner invitation");
+    expect(marketingPlanCopy("start").headline).toBe("Start");
+    expect(marketingPlanCopy("growth").headline).toBe("Growth");
   });
 
   it("settings chrome is EN by default", () => {
@@ -328,6 +369,18 @@ describe("dictionary key parity", () => {
 
   it("rbac en/ru keys match", () => {
     expect(leafKeys(ruRbac).sort()).toEqual(leafKeys(enRbac).sort());
+  });
+
+  it("marketing en/ru keys match", () => {
+    expect(leafKeys(ruMarketing).sort()).toEqual(leafKeys(enMarketing).sort());
+  });
+
+  it("patient en/ru keys match", () => {
+    expect(leafKeys(ruPatient).sort()).toEqual(leafKeys(enPatient).sort());
+  });
+
+  it("founder en/ru keys match", () => {
+    expect(leafKeys(ruFounder).sort()).toEqual(leafKeys(enFounder).sort());
   });
 });
 

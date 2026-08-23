@@ -704,7 +704,7 @@ async def test_platform_webhook_tariff_gate_monthly_price_matches_catalog(client
 
     with patch(
         "src.application.services.platform_billing_service.YooKassaClient",
-        return_value=_fake_yookassa_class(assert_payment_id=provider_pid, amount_value="2900.00")(),
+        return_value=_fake_yookassa_class(assert_payment_id=provider_pid, amount_value="20.00")(),
     ):
         r = await client.post(
             WEBHOOK_PATH,
@@ -808,7 +808,7 @@ async def test_platform_force_retry_409_when_execute_catalog_gate_blocks(
         "src.application.services.platform_billing_service.YooKassaClient",
         return_value=_fake_yookassa_class(
             assert_payment_id=provider_pid,
-            amount_value="2900.00",
+            amount_value="20.00",
         )(),
     ):
         with patch(

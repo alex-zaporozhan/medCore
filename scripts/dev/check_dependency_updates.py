@@ -64,7 +64,21 @@ def main() -> int:
 
     if args.audit:
         print("\n=== pip-audit (Poetry env) ===")
-        _run(["poetry", "run", "pip", "install", "-q", "pip-audit"], cwd=root)
+        _run(
+            [
+                "poetry",
+                "run",
+                "pip",
+                "install",
+                "-q",
+                "-U",
+                "pip>=26.2",
+                "setuptools>=83",
+                "msgpack>=1.2.1",
+                "pip-audit",
+            ],
+            cwd=root,
+        )
         ar, ao = _run(["poetry", "run", "pip-audit"], cwd=root)
         print(ao.strip())
         if ar != 0:

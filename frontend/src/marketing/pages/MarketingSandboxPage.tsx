@@ -1,15 +1,16 @@
 import { API_BASE, newOutboundRequestId } from "@/api/client";
+import { MarketingPublicChrome } from "@/marketing/components/MarketingPublicChrome";
 import { TurnstileWidget } from "@/marketing/components/TurnstileWidget";
 import { parseEnterpriseLeadSubmitFailure } from "@/marketing/enterpriseLeadPublic";
 import { ROUTE_PATHS } from "@/routePaths";
 import { Anchor, Box, Button, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
-/**
- * Публичная заглушка демо-контура: контакт уходит в ту же очередь заявок, что и корпоративная форма.
- */
+/** Public demo-contour stub: contact goes to the same lead queue as the corporate form. */
 export default function MarketingSandboxPage() {
+  const { t } = useTranslation("marketing");
   const [contact, setContact] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -20,9 +21,9 @@ export default function MarketingSandboxPage() {
   const submit = (tokenOverride: string | null) => {
     const v = contact.trim();
     if (!v || busy) return;
-    const t = tokenOverride?.trim();
-    if (turnstileSiteKey && !t) {
-      setError("Сначала пройдите проверку Turnstile, затем снова нажмите кнопку.");
+    const tok = tokenOverride?.trim();
+    if (turnstileSiteKey && !tok) {
+      setError(t("sandbox.needCaptcha"));
       return;
     }
     setError(null);
@@ -30,12 +31,12 @@ export default function MarketingSandboxPage() {
     void (async () => {
       try {
         const body: Record<string, unknown> = {
-          name: "Ранний доступ к демо",
-          company_name: "Публичная страница",
+          name: "Early demo access",
+          company_name: "Public page",
           phone_or_email: v,
           lead_source: "sandbox_demo",
         };
-        if (t) body.turnstile_token = t;
+        if (tok) body.turnstile_token = tok;
         const r = await fetch(`${API_BASE}/v1/platform-leads/`, {
           method: "POST",
           headers: {
@@ -62,7 +63,7 @@ export default function MarketingSandboxPage() {
         setTurnstileToken(null);
         setSent(true);
       } catch {
-        setError("Не удалось отправить заявку. Проверьте соединение и повторите попытку.");
+        setError(t("sandbox.network"));
       } finally {
         setBusy(false);
       }
@@ -73,13 +74,18 @@ export default function MarketingSandboxPage() {
     <Box
       style={{
         minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
         background: "var(--bg-main)",
-        padding: "24px 16px",
       }}
     >
+      <MarketingPublicChrome>
+        <Box
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px 16px",
+          }}
+        >
       <Paper
         p="xl"
         radius="md"
@@ -91,29 +97,28 @@ export default function MarketingSandboxPage() {
         <Stack gap="lg">
           <div>
             <Title order={1} size="h2" style={{ color: "var(--text-main)" }}>
-              Демо-версия системы готовится к запуску
+              {t("sandbox.title")}
             </Title>
             <Text size="sm" c="dimmed" mt="md" style={{ lineHeight: 1.65 }}>
-              Мы обновляем публичную песочницу, чтобы показать вам всю мощь наших новых ИИ-модулей и финансового
-              учёта. Оставьте контакты, и мы пришлём вам персональный доступ первыми.
+              {t("sandbox.lead")}
             </Text>
           </div>
           {sent ? (
             <Text size="sm" fw={500}>
-              Заявка принята, мы свяжемся с вами.
+              {t("sandbox.success")}
             </Text>
           ) : (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                const tok = turnstileSiteKey ? turnstileToken : null;
-                submit(tok);
+                const cap = turnstileSiteKey ? turnstileToken : null;
+                submit(cap);
               }}
             >
               <Stack gap="sm">
                 <TextInput
-                  label="Email или Telegram"
-                  placeholder="you@company.ru или @username"
+                  label={t("sandbox.contact")}
+                  placeholder={t("sandbox.contactPlaceholder")}
                   value={contact}
                   onChange={(e) => setContact(e.currentTarget.value)}
                   type="text"
@@ -122,7 +127,7 @@ export default function MarketingSandboxPage() {
                 {turnstileSiteKey ? (
                   <Stack gap="xs">
                     <Text size="sm" fw={500}>
-                      Проверка антиспама
+                      {t("sandbox.captcha")}
                     </Text>
                     <TurnstileWidget
                       siteKey={turnstileSiteKey}
@@ -137,16 +142,18 @@ export default function MarketingSandboxPage() {
                   </Text>
                 ) : null}
                 <Button type="submit" loading={busy} disabled={!contact.trim()}>
-                  Получить ранний доступ
+                  {t("sandbox.submit")}
                 </Button>
               </Stack>
             </form>
           )}
           <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="sm" c="dimmed">
-            ← Вернуться на главную
+            {t("sandbox.backHome")}
           </Anchor>
         </Stack>
       </Paper>
+        </Box>
+      </MarketingPublicChrome>
     </Box>
   );
 }

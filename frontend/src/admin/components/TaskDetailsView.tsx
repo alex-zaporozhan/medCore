@@ -49,22 +49,36 @@ import { AppleEmojiOverlayTextarea } from "@/shared/ui/AppleEmojiOverlayTextarea
 import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
 import { PersonNameLink } from "@/shared/ui/PersonNameLink";
 import { priorityBadgeColor, taskStatusBadgeStyles, taskStatusCardSurface, taskStatusTextColors } from "@/shared/taskStatusSemantic";
+import { useTranslation } from "react-i18next";
+import { tNs } from "@/i18n";
 
-const STATUS_META: Record<string, string> = {
-  open: "Открыто",
-  in_progress: "В работе",
-  on_hold: "На паузе",
-  review: "На проверке",
-  done: "Выполнено",
-  cancelled: "Отменено",
-};
+const TASK_ASSIGNEE_AUDIT_NOTE = "System event: assignees updated.";
 
-const PRIORITY_META: Record<string, string> = {
-  low: "Низкий",
-  medium: "Средний",
-  high: "Высокий",
-  urgent: "Срочно",
-};
+function statusLabel(status: string): string {
+  switch (status) {
+    case "open":
+    case "in_progress":
+    case "on_hold":
+    case "review":
+    case "done":
+    case "cancelled":
+      return tNs("tasks", `status.${status}`);
+    default:
+      return status;
+  }
+}
+
+function priorityLabel(priority: string): string {
+  switch (priority) {
+    case "low":
+    case "medium":
+    case "high":
+    case "urgent":
+      return tNs("tasks", `priority.${priority}`);
+    default:
+      return priority;
+  }
+}
 
 function taskAssigneeIdList(task: { assignee_ids?: string[]; assignee_id?: string | null }): string[] {
   if (task.assignee_ids && task.assignee_ids.length > 0) return task.assignee_ids;
@@ -81,6 +95,7 @@ export function TaskDetailsView({
   mode: "modal" | "page";
   onClose?: () => void;
 }) {
+  const { t } = useTranslation("tasks");
   const { data: adminSession } = useAdminSession();
   const currentAdminId = useMemo(() => getAdminId(), []);
   const { data: admins = [] } = useAdminAdmins();
@@ -180,7 +195,7 @@ export function TaskDetailsView({
   }, [task, dueDayIso, dueTimeStr]);
 
   if (taskLoading) return <Loader size="sm" />;
-  if (!task) return <Alert color="red" icon={<IconAlertTriangle size={16} />}>Не удалось загрузить задачу</Alert>;
+  if (!task) return <Alert color="red" icon={<IconAlertTriangle size={16} />}>{t("view.loadFailed")}</Alert>;
 
   const tc = taskStatusTextColors(task.status);
 
@@ -195,20 +210,24 @@ export function TaskDetailsView({
       <Group justify="space-between" align="center" wrap="wrap">
         <Group gap="xs" wrap="wrap">
           <Badge size="sm" variant="light" color={priorityBadgeColor(task.priority)} tt="uppercase">
-            {PRIORITY_META[task.priority] ?? task.priority}
+            {priorityLabel(task.priority)}
           </Badge>
           <Badge size="sm" variant="transparent" tt="uppercase" styles={taskStatusBadgeStyles(task.status)}>
-            {STATUS_META[task.status] ?? task.status}
+            {statusLabel(task.status)}
           </Badge>
           {task.blocked ? (
             <Tooltip
-              label={task.blocked_reason?.trim() ? `Причина: ${task.blocked_reason}` : "Причина блокировки не указана"}
+              label={
+                task.blocked_reason?.trim()
+                  ? t("card.blockedReason", { reason: task.blocked_reason })
+                  : t("card.blockedReasonMissing")
+              }
               withArrow
               multiline
               maw={320}
             >
               <Badge size="sm" color="red" variant="light" leftSection={<IconLock size={12} />}>
-                Заблокировано
+                {t("card.blocked")}
               </Badge>
             </Tooltip>
           ) : null}
@@ -223,7 +242,7 @@ export function TaskDetailsView({
             size="xs"
             leftSection={<IconExternalLink size={14} />}
           >
-            Открыть в новой вкладке
+            {t("openNewTab")}
           </Button>
         ) : null}
       </Group>
@@ -235,15 +254,17 @@ export function TaskDetailsView({
           </Text>
         ) : (
           <Text size="sm" c="dimmed">
-            Без описания
+            {t("noDescription")}
           </Text>
         )}
         <Text size="xs" mt="xs" style={{ color: tc.meta }}>
-          Срок: {task.due_at ? dayjs(task.due_at).format("DD.MM.YYYY HH:mm") : "—"}
+          {t("view.dueLine", {
+            when: task.due_at ? dayjs(task.due_at).format("DD.MM.YYYY HH:mm") : "—",
+          })}
           {!canEditAssignees ? (
             <>
               {" "}
-              · Исполнители:{" "}
+              · {t("view.assigneesInline")}{" "}
               {(() => {
                 const ids = taskAssigneeIdList(task);
                 if (!ids.length) return task.role_assignee || "—";
@@ -267,11 +288,11 @@ export function TaskDetailsView({
           {canEditAssignees ? (
             <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
               <Stack gap="xs">
-                <Text size="sm" fw={600}>Исполнители</Text>
+                <Text size="sm" fw={600}>{t("createForm.assignees")}</Text>
                 <MultiSelect
-                  label="Назначение и делегирование"
-                  description="Первый в списке — основной исполнитель."
-                  placeholder="Выберите одного или нескольких"
+                  label={t("view.assignTitle")}
+                  description={t("view.assignHint")}
+                  placeholder={t("createForm.assigneesPlaceholder")}
                   data={adminOptions}
                   value={assigneeDraft}
                   onChange={setAssigneeDraft}
@@ -280,7 +301,7 @@ export function TaskDetailsView({
                   clearable
                 />
                 <Checkbox
-                  label="Добавить служебную запись в комментарии об изменении состава"
+                  label={t("view.auditComment")}
                   checked={assigneeAuditComment}
                   onChange={(e) => setAssigneeAuditComment(e.currentTarget.checked)}
                 />
@@ -291,7 +312,7 @@ export function TaskDetailsView({
                     onClick={() => task && setAssigneeDraft(taskAssigneeIdList(task))}
                     disabled={assigneeListUnchanged}
                   >
-                    Сбросить
+                    {t("reset")}
                   </Button>
                   <Button
                     size="xs"
@@ -306,17 +327,17 @@ export function TaskDetailsView({
                           onSuccess: () => {
                             setApiError(null);
                             if (assigneeAuditComment) {
-                              postComment.mutate("Системное событие: обновлён состав исполнителей.");
+                              postComment.mutate(TASK_ASSIGNEE_AUDIT_NOTE);
                             }
                           },
                           onError: (e) => {
-                            setApiError(e instanceof ApiErrorWithCode ? e.message : "Не удалось сохранить исполнителей");
+                            setApiError(e instanceof ApiErrorWithCode ? e.message : t("view.saveAssigneesFailed"));
                           },
                         }
                       );
                     }}
                   >
-                    Сохранить
+                    {t("save")}
                   </Button>
                 </Group>
               </Stack>
@@ -326,18 +347,18 @@ export function TaskDetailsView({
           {canManageBoards ? (
             <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
               <Stack gap="xs">
-                <Text size="sm" fw={600}>Поток и теги</Text>
+                <Text size="sm" fw={600}>{t("view.streamAndTags")}</Text>
                 <Select
-                  label="Поток"
-                  placeholder="Выберите поток"
+                  label={t("createForm.stream")}
+                  placeholder={t("view.pickStream")}
                   data={streamOptions}
                   value={streamDraft}
                   onChange={(v) => setStreamDraft(v)}
                   searchable
                 />
                 <MultiSelect
-                  label="Теги"
-                  placeholder="Необязательно"
+                  label={t("createForm.tags")}
+                  placeholder={t("createForm.optional")}
                   data={taskTags.map((t) => ({ value: t.id, label: t.name }))}
                   value={tagDraft}
                   onChange={setTagDraft}
@@ -354,7 +375,7 @@ export function TaskDetailsView({
                       setTagDraft([...(task.tag_ids ?? [])]);
                     }}
                   >
-                    Сбросить
+                    {t("reset")}
                   </Button>
                   <Button
                     size="xs"
@@ -368,13 +389,13 @@ export function TaskDetailsView({
                         {
                           onSuccess: () => setApiError(null),
                           onError: (e) => {
-                            setApiError(e instanceof ApiErrorWithCode ? e.message : "Не удалось сохранить поток и теги");
+                            setApiError(e instanceof ApiErrorWithCode ? e.message : t("view.saveContextFailed"));
                           },
                         }
                       );
                     }}
                   >
-                    Сохранить
+                    {t("save")}
                   </Button>
                 </Group>
               </Stack>
@@ -386,23 +407,26 @@ export function TaskDetailsView({
           {canPatchTaskFields ? (
             <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
               <Stack gap="xs">
-                <Text size="sm" fw={600}>Срок выполнения</Text>
+                <Text size="sm" fw={600}>{t("view.dueTitle")}</Text>
                 <Select
-                  label="Статус"
-                  placeholder="Выберите статус"
-                  data={Object.entries(STATUS_META).map(([value, label]) => ({ value, label }))}
+                  label={t("view.status")}
+                  placeholder={t("view.pickStatus")}
+                  data={["open", "in_progress", "on_hold", "review", "done", "cancelled"].map((value) => ({
+                    value,
+                    label: statusLabel(value),
+                  }))}
                   value={String(task.status)}
                   onChange={(v) => {
                     if (!v || v === task.status) return;
                     setApiError(null);
                     updateStatusMutation.mutate(
                       { taskId: task.id, status: v },
-                      { onError: (e) => setApiError(e instanceof ApiErrorWithCode ? e.message : "Не удалось изменить статус") }
+                      { onError: (e) => setApiError(e instanceof ApiErrorWithCode ? e.message : t("view.statusFailed")) }
                     );
                   }}
                 />
                 <Group align="flex-end" gap="md" wrap="wrap">
-                  <Input.Wrapper label="Дата">
+                  <Input.Wrapper label={t("view.date")}>
                     <Input
                       type="date"
                       value={dueDayIso}
@@ -411,7 +435,7 @@ export function TaskDetailsView({
                       disabled={!canEditDue}
                     />
                   </Input.Wrapper>
-                  <Input.Wrapper label="Время">
+                  <Input.Wrapper label={t("view.time")}>
                     <Input
                       type="time"
                       value={dueTimeStr}
@@ -431,13 +455,13 @@ export function TaskDetailsView({
                       patchDueMutation.mutate(
                         { taskId: task.id, due_at: null },
                         {
-                          onError: (e) => setApiError(e instanceof ApiErrorWithCode ? e.message : "Не удалось очистить срок"),
+                          onError: (e) => setApiError(e instanceof ApiErrorWithCode ? e.message : t("view.clearDueFailed")),
                         }
                       );
                     }}
                     disabled={!canEditDue || !task.due_at}
                   >
-                    Очистить
+                    {t("view.clearDue")}
                   </Button>
                   <Button
                     size="xs"
@@ -449,13 +473,13 @@ export function TaskDetailsView({
                       patchDueMutation.mutate(
                         { taskId: task.id, due_at: iso },
                         {
-                          onError: (e) => setApiError(e instanceof ApiErrorWithCode ? e.message : "Не удалось сохранить срок"),
+                          onError: (e) => setApiError(e instanceof ApiErrorWithCode ? e.message : t("view.saveDueFailed")),
                         }
                       );
                     }}
                     disabled={!canEditDue || dueUnchanged || !dueDayIso || !dueTimeStr}
                   >
-                    Сохранить срок
+                    {t("view.saveDue")}
                   </Button>
                 </Group>
               </Stack>
@@ -465,7 +489,7 @@ export function TaskDetailsView({
           {canPatchTaskFields ? (
             <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
               <Stack gap="xs">
-                <Text size="sm" fw={600}>Статус и блокировка</Text>
+                <Text size="sm" fw={600}>{t("view.statusAndBlock")}</Text>
                 <Group gap="xs" wrap="wrap">
                   <Button
                     size="xs"
@@ -473,7 +497,7 @@ export function TaskDetailsView({
                     loading={updateStatusMutation.isPending}
                     onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "in_progress" })}
                   >
-                    В работу
+                    {t("view.toInProgress")}
                   </Button>
                   <Button
                     size="xs"
@@ -481,7 +505,7 @@ export function TaskDetailsView({
                     loading={updateStatusMutation.isPending}
                     onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "review" })}
                   >
-                    На проверку
+                    {t("view.toReview")}
                   </Button>
                   <Button
                     size="xs"
@@ -489,13 +513,13 @@ export function TaskDetailsView({
                     loading={updateStatusMutation.isPending}
                     onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "done" })}
                   >
-                    Завершить
+                    {t("view.toDone")}
                   </Button>
                 </Group>
                 <Divider />
                 <Textarea
-                  label="Причина блокировки"
-                  placeholder="Опционально"
+                  label={t("view.blockReason")}
+                  placeholder={t("view.blockReasonPlaceholder")}
                   value={blockedReasonDraft}
                   onChange={(e) => setBlockedReasonDraft(e.currentTarget.value)}
                   minRows={2}
@@ -512,15 +536,15 @@ export function TaskDetailsView({
                       updateMetaMutation.mutate(
                         { taskId: task.id, blocked: !task.blocked, blocked_reason: blockedReasonDraft.trim() || null },
                         {
-                          onError: (e) => setApiError(e instanceof ApiErrorWithCode ? e.message : "Не удалось обновить блокировку"),
+                          onError: (e) => setApiError(e instanceof ApiErrorWithCode ? e.message : t("view.blockFailed")),
                         }
                       );
                     }}
                   >
-                    {task.blocked ? "Разблокировать" : "Заблокировать"}
+                    {task.blocked ? t("view.unblock") : t("view.block")}
                   </Button>
                   <Button size="xs" variant="default" onClick={onClose} disabled={!onClose}>
-                    Закрыть
+                    {t("close")}
                   </Button>
                 </Group>
               </Stack>
@@ -532,7 +556,7 @@ export function TaskDetailsView({
       <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
         <Stack gap="sm" style={{ minHeight: 240 }}>
           <Group justify="space-between" wrap="wrap" gap="xs">
-            <Text size="sm" fw={600}>Комментарии</Text>
+            <Text size="sm" fw={600}>{t("view.comments")}</Text>
           </Group>
 
           {commentsLoading ? (
@@ -541,12 +565,12 @@ export function TaskDetailsView({
             <ScrollArea h={260} offsetScrollbars>
               <Stack gap="xs">
                 {comments.length === 0 ? (
-                  <Text size="sm" c="dimmed">Пока нет сообщений. Напишите коллегам в контексте этой задачи.</Text>
+                  <Text size="sm" c="dimmed">{t("chat.empty")}</Text>
                 ) : (
                   comments.map((c) => (
                     <Paper key={c.id} p="xs" withBorder>
                       <Text size="xs" c="dimmed" mb={4}>
-                        {c.author_full_name || "Сотрудник"} · {dayjs(c.created_at).format("DD.MM.YYYY HH:mm")}
+                        {c.author_full_name || t("employee")} · {dayjs(c.created_at).format("DD.MM.YYYY HH:mm")}
                       </Text>
                       <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
                         <AppleEmojiRichText text={c.text} />
@@ -558,10 +582,10 @@ export function TaskDetailsView({
             </ScrollArea>
           )}
 
-          <Input.Wrapper label="Сообщение">
+          <Input.Wrapper label={t("chat.message")}>
             <AppleEmojiOverlayTextarea
               ref={commentTextareaRef}
-              placeholder="Текст для команды…"
+              placeholder={t("chat.placeholder")}
               minRows={3}
               value={commentDraft}
               onChange={(e) => setCommentDraft(e.currentTarget.value)}
@@ -578,7 +602,7 @@ export function TaskDetailsView({
                 postComment.mutate(text, { onSuccess: () => setCommentDraft("") });
               }}
             >
-              Отправить
+              {t("send")}
             </Button>
           </Group>
         </Stack>
@@ -586,14 +610,14 @@ export function TaskDetailsView({
 
       <Card withBorder p="sm" style={{ borderColor: "var(--calendar-card-border)", boxShadow: "var(--calendar-card-shadow)" }}>
         <Stack gap="xs">
-          <Text size="sm" fw={600}>История статусов</Text>
+          <Text size="sm" fw={600}>{t("view.statusHistory")}</Text>
           {transitions.length === 0 ? (
-            <Text size="sm" c="dimmed">Пока нет переходов.</Text>
+            <Text size="sm" c="dimmed">{t("view.noTransitions")}</Text>
           ) : (
             transitions.slice(0, 20).map((tr) => (
               <Text key={tr.id} size="xs" c="dimmed">
-                {dayjs(tr.created_at).format("DD.MM HH:mm")} · {STATUS_META[tr.from_status] ?? tr.from_status} →{" "}
-                {STATUS_META[tr.to_status] ?? tr.to_status}
+                {dayjs(tr.created_at).format("DD.MM HH:mm")} · {statusLabel(tr.from_status)} →{" "}
+                {statusLabel(tr.to_status)}
               </Text>
             ))
           )}

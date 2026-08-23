@@ -27,6 +27,10 @@ Run from project root: poetry run pytest tests/
 - TRUNCATE runs only when the DB name contains "test". Never point at production.
 - Before TRUNCATE, other ``client backend`` sessions on the same database are terminated so
   ``TRUNCATE`` is not blocked by stray uvicorn/psql/pytest (set ``PYTEST_DISABLE_TEST_DB_SESSION_KILL=1`` to skip).
+- Session-scoped ``seed_data`` does not delete ``bookings`` between tests. Occupying statuses share
+  one seed doctor; inserts must use ``tests.booking_slot.unique_booking_slot`` (or ``unique_clock_time``
+  when the calendar day is fixed). Clock time and hardcoded ``time(HH, MM)`` on ``seed_data["date"]``
+  collide on ``ux_bookings_doctor_slot_active``.
 - If Postgres returns ``too many clients already``, the server hit ``max_connections`` (often shared with a running
   uvicorn using a large pool). Stop the API or raise Postgres limits (``docker-compose`` ``db`` sets ``max_connections=200``).
 """
@@ -575,8 +579,8 @@ else:
                     "Start",
                     "База для моно-бизнеса: 1 филиал, до 5 сотрудников.",
                     ["core.base", "crm.pipeline", "tasks.kanban"],
-                    Decimal("2900.00"),
-                    Decimal("29000.00"),
+                    Decimal("20.00"),
+                    Decimal("200.00"),
                     0,
                 ),
                 (
@@ -592,8 +596,8 @@ else:
                         "marketing.attribution",
                         "retention.bundle",
                     ],
-                    Decimal("5900.00"),
-                    Decimal("59000.00"),
+                    Decimal("100.00"),
+                    Decimal("1000.00"),
                     1,
                 ),
                 (
@@ -611,8 +615,8 @@ else:
                         "omni.embed.bundle",
                         "ai.rag.org_kb",
                     ],
-                    Decimal("14900.00"),
-                    Decimal("149000.00"),
+                    Decimal("200.00"),
+                    Decimal("2000.00"),
                     2,
                 ),
             ]
@@ -649,7 +653,7 @@ else:
                     "tasks.kanban",
                     "Задачи / канбан",
                     None,
-                    Decimal("1500.00"),
+                    Decimal("15.00"),
                     10,
                 ),
                 (
@@ -657,7 +661,7 @@ else:
                     "crm.pipeline",
                     "CRM / воронка",
                     None,
-                    Decimal("2800.00"),
+                    Decimal("29.00"),
                     20,
                 ),
                 (
@@ -665,7 +669,7 @@ else:
                     "marketing.attribution",
                     "Маркетинг / атрибуция",
                     None,
-                    Decimal("1200.00"),
+                    Decimal("12.00"),
                     15,
                 ),
                 (
@@ -673,7 +677,7 @@ else:
                     "retention.bundle",
                     "Ретеншн / возврат пациентов",
                     None,
-                    Decimal("1800.00"),
+                    Decimal("19.00"),
                     18,
                 ),
                 (
@@ -681,7 +685,7 @@ else:
                     "omni.embed.bundle",
                     "Embed-виджет + публичный периметр (§24)",
                     "Моно-пакет встраивания; API keys и webhook-инбокс",
-                    Decimal("4900.00"),
+                    Decimal("49.00"),
                     40,
                 ),
                 (
@@ -689,7 +693,7 @@ else:
                     "ai.assistant.chat",
                     "AI-ассистент в чате (§24.2)",
                     None,
-                    Decimal("2900.00"),
+                    Decimal("29.00"),
                     50,
                 ),
                 (
@@ -697,7 +701,7 @@ else:
                     "ai.rag.org_kb",
                     "RAG база знаний организации (§24.3)",
                     None,
-                    Decimal("3900.00"),
+                    Decimal("39.00"),
                     60,
                 ),
                 (
@@ -705,7 +709,7 @@ else:
                     "import.crm_v1",
                     "Импорт CRM v1",
                     "ADR-010 Phase 3+",
-                    Decimal("1990.00"),
+                    Decimal("19.00"),
                     70,
                 ),
             ]

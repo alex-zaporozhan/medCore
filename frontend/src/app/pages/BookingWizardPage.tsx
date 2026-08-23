@@ -29,10 +29,12 @@ import type { ApiErrorWithCode } from "@/api/client";
 import { getBookingErrorMessage } from "@/shared/errors";
 import { ROUTE_PATHS } from "@/routePaths";
 import { useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 const CLINIC_STORAGE_KEY = "app.selectedClinicId";
 
 export default function BookingWizardPage() {
+  const { t } = useTranslation("patient");
   const { accessToken, patientId } = usePatientAuth();
   const location = useLocation();
   const [step, setStep] = useState(0);
@@ -252,26 +254,26 @@ export default function BookingWizardPage() {
 
   return (
     <Stack>
-      <Title order={3}>Запись на приём</Title>
+      <Title order={3}>{t("booking.title")}</Title>
       {currentClinic && (
         <Group justify="space-between" align="flex-start" wrap="wrap">
           <Text size="sm" c="dimmed">
-            Вы записываетесь в: <strong>{currentClinic.name}</strong>
+            {t("booking.bookingAt", { name: currentClinic.name })}
             {currentClinic.address ? ` — ${currentClinic.address}` : ""}
           </Text>
           {multiClinic && step > clinicStep && (
             <Button variant="subtle" size="xs" onClick={() => setStep(clinicStep)}>
-              Сменить клинику
+              {t("booking.changeClinic")}
             </Button>
           )}
         </Group>
       )}
       <Stepper active={step > lastStep ? lastStep : step} onStepClick={setStep}>
         {multiClinic && (
-          <Stepper.Step label="Клиника" description="Выберите филиал">
+          <Stepper.Step label={t("booking.stepClinic")} description={t("booking.stepClinicHint")}>
             <Select
-              label="Клиника"
-              placeholder="Выберите клинику"
+              label={t("booking.clinic")}
+              placeholder={t("booking.clinicPlaceholder")}
               data={clinics?.map((c) => ({ value: c.id, label: c.address ? `${c.name} — ${c.address}` : c.name })) ?? []}
               value={selectedClinicId}
               onChange={(v) => {
@@ -280,12 +282,12 @@ export default function BookingWizardPage() {
             />
           </Stepper.Step>
         )}
-        <Stepper.Step label="Услуга" description="Выберите услугу">
-          {!clinicId && multiClinic && <Text size="sm" c="dimmed">Сначала выберите клинику.</Text>}
+        <Stepper.Step label={t("booking.stepService")} description={t("booking.stepServiceHint")}>
+          {!clinicId && multiClinic && <Text size="sm" c="dimmed">{t("booking.pickClinicFirst")}</Text>}
           {servicesLoading && <Loader />}
           <Select
-            label="Услуга"
-            placeholder="Выберите услугу"
+            label={t("booking.service")}
+            placeholder={t("booking.servicePlaceholder")}
             data={serviceOptions}
             value={serviceId}
             onChange={(v) => {
@@ -296,11 +298,11 @@ export default function BookingWizardPage() {
             disabled={!clinicId}
           />
         </Stepper.Step>
-        <Stepper.Step label="Врач" description="Выберите врача">
+        <Stepper.Step label={t("booking.stepDoctor")} description={t("booking.stepDoctorHint")}>
           {doctorsLoading && <Loader />}
           {!doctorsLoading && doctorOptions.length === 0 && selectedService && (
             <Text size="sm" c="dimmed">
-              Нет доступных врачей для этой услуги
+              {t("booking.noDoctors")}
             </Text>
           )}
           {!doctorsLoading && doctors && doctors.length > 0 && (
@@ -339,7 +341,7 @@ export default function BookingWizardPage() {
                           {d.full_name}
                         </Text>
                         <Text size="xs" c="dimmed">
-                          Рейтинг: {d.rating ?? "—"}
+                          {t("booking.rating", { value: d.rating ?? "—" })}
                         </Text>
                       </Stack>
                     </Card>
@@ -348,17 +350,17 @@ export default function BookingWizardPage() {
             </SimpleGrid>
           )}
           <Select
-            label="Врач (или выберите выше)"
-            placeholder={doctorOptions.length === 0 ? "Нет доступных врачей" : "Выберите врача"}
+            label={t("booking.doctorSelect")}
+            placeholder={doctorOptions.length === 0 ? t("booking.noDoctorsShort") : t("booking.doctorPlaceholder")}
             data={doctorOptions}
             value={doctorId}
             onChange={setDoctorId}
             disabled={doctorOptions.length === 0}
           />
         </Stepper.Step>
-        <Stepper.Step label="Дата и время" description="Выберите слот">
+        <Stepper.Step label={t("booking.stepSlot")} description={t("booking.stepSlotHint")}>
           <TextInput
-            label="Дата"
+            label={t("booking.date")}
             type="date"
             value={dateStr}
             onChange={(e) => setDateStr(e.target.value || dayjs().format("YYYY-MM-DD"))}
@@ -366,11 +368,11 @@ export default function BookingWizardPage() {
           {scheduleLoading && <Loader />}
           <Stack gap="xs">
             <Text size="sm" fw={500}>
-              Доступные слоты
+              {t("booking.slots")}
             </Text>
             {slots.length === 0 && !scheduleLoading && (
               <Text size="sm" c="dimmed">
-                Нет свободных слотов на эту дату
+                {t("booking.noSlots")}
               </Text>
             )}
             {slots.map((s) => {
@@ -390,19 +392,19 @@ export default function BookingWizardPage() {
           </Stack>
         </Stepper.Step>
         {prepaymentEnabled && (
-          <Stepper.Step label="Подтверждение" description="Оплата">
-            <Text size="sm">Услуга: {publicServices?.find((s) => s.id === serviceId)?.name}</Text>
+          <Stepper.Step label={t("booking.stepPay")} description={t("booking.stepPayHint")}>
+            <Text size="sm">{t("booking.serviceLine", { name: publicServices?.find((s) => s.id === serviceId)?.name })}</Text>
             <Text size="sm">
-              {doctors?.find((d) => d.id === doctorId)?.display_role ?? "Специалист"}:{" "}
+              {doctors?.find((d) => d.id === doctorId)?.display_role ?? t("booking.specialist")}:{" "}
               {doctors?.find((d) => d.id === doctorId)?.full_name}
             </Text>
             <Text size="sm">
-              Дата: {dateStr}, время: {timeForApi || selectedSlot}
+              {t("booking.dateTime", { date: dateStr, time: timeForApi || selectedSlot })}
             </Text>
             {paymentOptions.length > 0 ? (
               <Stack gap="xs">
                 <Text size="sm" fw={500}>
-                  Способ оплаты
+                  {t("booking.payMethod")}
                 </Text>
                 {paymentOptions.map((opt) => (
                   <Button
@@ -412,7 +414,7 @@ export default function BookingWizardPage() {
                     loading={createBooking.isPending || createPayment.isPending}
                     disabled={!!nextDisabled}
                   >
-                    Оплатить через {opt.display_name}
+                    {t("booking.payVia", { name: opt.display_name })}
                   </Button>
                 ))}
               </Stack>
@@ -423,7 +425,7 @@ export default function BookingWizardPage() {
                 loading={createBooking.isPending || createPayment.isPending}
                 disabled={!!nextDisabled}
               >
-                Перейти к оплате
+                {t("booking.goPay")}
               </Button>
             )}
           </Stepper.Step>
@@ -443,7 +445,7 @@ export default function BookingWizardPage() {
             {paymentErrorMessage && <Text size="sm">{paymentErrorMessage}</Text>}
             {(bookingError?.traceId || paymentError?.traceId) && (
               <Text size="xs" c="dimmed">
-                Код для поддержки: {bookingError?.traceId || paymentError?.traceId}
+                {t("booking.supportCode", { id: bookingError?.traceId || paymentError?.traceId })}
               </Text>
             )}
           </Stack>
@@ -452,12 +454,12 @@ export default function BookingWizardPage() {
       <Group>
         {step > 0 && (
           <Button variant="light" color={SEMANTIC.action.dismiss} onClick={() => setStep(step - 1)}>
-            Назад
+            {t("booking.back")}
           </Button>
         )}
         {step < lastStep && (
           <Button color={SEMANTIC.action.send} onClick={() => setStep(step + 1)} disabled={!!nextDisabled}>
-            Далее
+            {t("booking.next")}
           </Button>
         )}
         {!prepaymentEnabled && step === slotStep && (
@@ -467,7 +469,7 @@ export default function BookingWizardPage() {
             loading={createBooking.isPending}
             disabled={!!nextDisabled}
           >
-            Подтвердить запись
+            {t("booking.confirm")}
           </Button>
         )}
       </Group>

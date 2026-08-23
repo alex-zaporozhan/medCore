@@ -21,7 +21,7 @@ poetry run python -m src.scripts.seed_multi_tenant_showcase
 
 **Почты** (полные таблицы по ролям): **`documentation/DEMO_MULTI_TENANT_CREDENTIALS.md`**.
 
-Кратко: владельцы `owner.*@showcase-mt.demo`, админы `admin1|2.*@showcase-mt.demo`, маркетологи `marketing1|2.*@showcase-mt.demo` (города: kazan, nizhny, samara, krasnodar, rostov).
+Кратко: владельцы `owner.*@showcase-mt.demo`, админы `admin1|2.*@showcase-mt.demo`, маркетологи `marketing1|2.*@showcase-mt.demo`, узкая роль врача `doctor1.*@showcase-mt.demo` (города: kazan, nizhny, samara, krasnodar, rostov). После повторного сида — слой ±14 дней (календарь/Kanban/чаты) на английском; это seed, не Alembic.
 
 Повторный вывод из кода:
 

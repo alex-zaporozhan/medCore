@@ -39,6 +39,8 @@ async def test_public_platform_checkout_happy_path_stub_yookassa(
     assert data.get("payment_url") == "https://pay.example/yk"
     assert data.get("signup_intent_id")
     assert data.get("amount_rub")
+    assert data.get("currency") == "USD"
+    assert data.get("charge_currency") == "RUB"
 
 
 @pytest.mark.asyncio
@@ -240,7 +242,7 @@ async def test_public_platform_checkout_requires_turnstile_when_enabled(
 async def test_public_platform_checkout_extra_modules_monthly_total(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ):
-    """Add-on list_price_rub is monthly; start + omni.embed.bundle → 2900 + 4900 (conftest seed)."""
+    """Add-on list_price_rub is monthly; start + omni.embed.bundle → 20 + 49 (conftest seed)."""
     monkeypatch.setattr(settings, "yookassa_shop_id", "test-shop")
     monkeypatch.setattr(settings, "yookassa_secret_key", "test-secret")
     from src.infrastructure.external_apis import yookassa_client as yk_mod
@@ -272,7 +274,9 @@ async def test_public_platform_checkout_extra_modules_monthly_total(
     assert r.status_code == 200
     data = r.json()
     assert data.get("payment_url") == "https://pay.example/yk"
-    assert abs(float(str(data.get("amount_rub", 0))) - 7800.0) < 0.01
+    assert abs(float(str(data.get("amount_rub", 0))) - 69.0) < 0.01
+    assert data.get("currency") == "USD"
+    assert data.get("charge_currency") == "RUB"
     assert captured.get("amount") is not None
 
 

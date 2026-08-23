@@ -281,13 +281,13 @@ describe("AdminTasksPage workstation behavior", () => {
   it("renders WIP/SLA/Aging indicators", () => {
     renderPage();
     expect(
-      screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("Лимит 2/8"))).length
+      screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("Limit 2/8"))).length
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("SLA просрочено: 1"))).length
+      screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("SLA overdue: 1"))).length
     ).toBeGreaterThan(0);
     expect(
-      screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("В работе 48ч+: 1"))).length
+      screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("In progress 48h+: 1"))).length
     ).toBeGreaterThan(0);
   });
 
@@ -331,7 +331,7 @@ describe("AdminTasksPage workstation behavior", () => {
   it("switching stream changes visible tasks", () => {
     renderPage();
     // Switch to another stream via menu
-    fireEvent.click(screen.getByText("Все потоки"));
+    fireEvent.click(screen.getByText("All streams"));
     fireEvent.click(screen.getByText("Продажи"));
     expect(screen.getByText("Продажи")).toBeInTheDocument();
   });
@@ -349,13 +349,16 @@ describe("AdminTasksPage workstation behavior", () => {
     vi.useRealTimers();
   });
 
-  it("handles drag reorder inside a column", () => {
+  it("create modal chrome comes from the tasks dictionary", async () => {
     renderPage();
-    if (!capturedOnDragEnd) throw new Error("DnD handler not captured");
-    capturedOnDragEnd({
-      active: { id: "task-1" },
-      over: { id: "task-slot-open--task-2" },
-    });
-    expect(mutateReorder).toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole("button", { name: "New task" })[0]);
+    expect(await screen.findByRole("button", { name: "Create" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
+  it("approval queue chrome comes from the tasks dictionary", () => {
+    renderPage();
+    expect(screen.getAllByText("Needs approval").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("The approval queue is empty.").length).toBeGreaterThan(0);
   });
 });

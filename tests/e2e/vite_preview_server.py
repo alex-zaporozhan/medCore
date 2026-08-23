@@ -27,6 +27,12 @@ _proc: subprocess.Popen[bytes] | None = None
 _started_by_us = False
 
 
+def _npm_executable() -> str | None:
+    if sys.platform == "win32":
+        return shutil.which("npm.cmd") or shutil.which("npm")
+    return shutil.which("npm")
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -114,7 +120,8 @@ def ensure_vite_preview_for_smoke(*, ci_strict: bool = False) -> None:
             ci_strict=ci_strict,
         )
 
-    if shutil.which("npm") is None:
+    npm_bin = _npm_executable()
+    if npm_bin is None:
         _fail_or_exit(
             "npm not found on PATH; install Node.js or set FRONTEND_E2E_URL to a running frontend",
             ci_strict=ci_strict,
@@ -137,7 +144,7 @@ def ensure_vite_preview_for_smoke(*, ci_strict: bool = False) -> None:
         if not emoji_sheet.is_file():
             try:
                 subprocess.run(
-                    ["npm", "ci"],
+                    [npm_bin, "ci"],
                     cwd=frontend,
                     check=True,
                     timeout=900,
@@ -147,7 +154,7 @@ def ensure_vite_preview_for_smoke(*, ci_strict: bool = False) -> None:
                 _fail_or_exit(f"frontend npm ci failed: {e}", ci_strict=ci_strict)
         try:
             subprocess.run(
-                ["npm", "run", "build"],
+                [npm_bin, "run", "build"],
                 cwd=frontend,
                 check=True,
                 timeout=900,
@@ -157,7 +164,7 @@ def ensure_vite_preview_for_smoke(*, ci_strict: bool = False) -> None:
             _fail_or_exit(f"frontend npm run build failed: {e}", ci_strict=ci_strict)
 
     cmd = [
-        "npm",
+        npm_bin,
         "run",
         "preview",
         "--",

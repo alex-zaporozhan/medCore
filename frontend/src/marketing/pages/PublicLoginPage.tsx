@@ -11,9 +11,11 @@ import {
   Title,
 } from "@mantine/core";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 export default function PublicLoginPage() {
+  const { t } = useTranslation("auth");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [patientSlug, setPatientSlug] = useState("");
@@ -21,19 +23,19 @@ export default function PublicLoginPage() {
   const patientEntryHint = useMemo(() => {
     const v = searchParams.get("patientEntry");
     if (v === "need-clinic") {
-      return "Войдите по ссылке вашей клиники или укажите адрес клиники ниже (как в ссылке …/c/адрес-клиники/…).";
+      return t("public.hintNeedClinic");
     }
     if (v === "patient-url-needs-clinic-slug") {
-      return "В ссылке для входа пациента должен быть адрес клиники: /c/ваш-slug/sign-in (три части пути после домена), а не /c/sign-in.";
+      return t("public.hintNeedsSlug");
     }
     if (v === "session-expired") {
-      return "Сессия истекла. Войдите снова по ссылке клиники.";
+      return t("public.hintSessionExpired");
     }
     if (v === "oauth-cancelled" || v === "oauth-error") {
-      return "Вход через соцсеть прерван или не удался. Используйте ссылку клиники и вход по телефону.";
+      return t("public.hintOauth");
     }
     return null;
-  }, [searchParams]);
+  }, [searchParams, t]);
 
   const goPatientBySlug = () => {
     const raw = patientSlug.trim().replace(/^\/+|\/+$/g, "");
@@ -47,46 +49,33 @@ export default function PublicLoginPage() {
     <SignInShell>
       <Stack gap="xl">
         <div>
-          <Title order={2}>Вход</Title>
+          <Title order={2}>{t("public.pageTitle")}</Title>
           <Text size="sm" c="dimmed" mt={6}>
-            Пациенты — по адресу клиники. Сотрудники и владелец — email и пароль ниже.
+            {t("public.pageSubtitle")}
           </Text>
         </div>
 
         {patientEntryHint ? (
-          <Alert color="slate" variant="light" title="Вход для пациентов">
+          <Alert color="slate" variant="light" title={t("public.patientAlertTitle")}>
             {patientEntryHint}
           </Alert>
         ) : null}
 
         <Stack gap="sm">
           <Text size="sm" fw={600}>
-            Пациентам
+            {t("public.patientsHeading")}
           </Text>
           <Text size="xs" c="dimmed">
-            У каждой клиники свой адрес в ссылке. Вставьте адрес из приглашения (поддомен / путь после{" "}
-            <Text span ff="monospace">
-              /c/
-            </Text>
-            ).
+            {t("public.patientsHelp")}
           </Text>
           <Text size="xs" c="dimmed">
-            Для владельца клиники: в поле ниже можно ввести тот же <Text span fw={600}>Slug клиники</Text> (для
-            публичных URL), который задаётся в админке в разделе{" "}
-            <Text span fw={600}>
-              Настройки → Клиники → редактировать клинику
-            </Text>
-            . Там же при необходимости можно изменить отображаемое название клиники; slug влияет на ссылку вида{" "}
-            <Text span ff="monospace">
-              …/c/ваш-slug/sign-in
-            </Text>
-            .
+            {t("public.ownerSlugHelp")}
           </Text>
           <Group gap="xs" align="flex-end" wrap="nowrap">
             <TextInput
               flex={1}
-              label="Адрес клиники"
-              placeholder="например demo-clinic"
+              label={t("public.clinicSlugLabel")}
+              placeholder={t("public.clinicSlugPlaceholder")}
               value={patientSlug}
               onChange={(e) => setPatientSlug(e.currentTarget.value)}
               onKeyDown={(e) => {
@@ -94,12 +83,12 @@ export default function PublicLoginPage() {
               }}
             />
             <Button variant="filled" color="slate" onClick={goPatientBySlug}>
-              Войти
+              {t("public.patientContinue")}
             </Button>
           </Group>
         </Stack>
 
-        <Divider label="Сотрудники клиники" labelPosition="center" />
+        <Divider label={t("public.staffDivider")} labelPosition="center" />
 
         <ClinicStaffSignInPanel />
       </Stack>

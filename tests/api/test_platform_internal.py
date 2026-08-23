@@ -152,7 +152,8 @@ async def test_platform_internal_dashboard_summary_counts_active_org_and_mrr(cli
     body = r.json()
     assert body.get("active_organizations") == baseline_active + 1
     # mrr_partial может оставаться True из‑за других org в общей БД (session seed); важен прирост по каталогу.
-    assert float(body.get("mrr_rub_monthly", "0")) == pytest.approx(baseline_mrr + 2900.0)
+    assert float(body.get("mrr_rub_monthly", "0")) == pytest.approx(baseline_mrr + 20.0)
+    assert body.get("currency") == "USD"
 
 
 @pytest.mark.asyncio

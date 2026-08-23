@@ -18,13 +18,15 @@ import type { DigitalFormFieldSchema, DigitalFormTemplate } from "@/api/types";
 import { SignatureCanvas, type SignaturePayload } from "@/shared/ui/SignatureCanvas";
 import { QueryErrorAlert } from "@/shared/ui";
 import { SEMANTIC } from "@/shared/semanticUi";
+import { useTranslation } from "react-i18next";
 
 type FormValues = Record<string, unknown>;
 
 function renderField(
   field: DigitalFormFieldSchema,
   value: unknown,
-  onChange: (v: unknown) => void
+  onChange: (v: unknown) => void,
+  datePlaceholder: string,
 ) {
   switch (field.type) {
     case "text":
@@ -105,7 +107,7 @@ function renderField(
         <TextInput
           label={field.label}
           required={field.required}
-          placeholder="ГГГГ‑ММ‑ДД"
+          placeholder={datePlaceholder}
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.currentTarget.value)}
         />
@@ -123,6 +125,7 @@ function renderField(
 }
 
 export default function FormsPage() {
+  const { t } = useTranslation("patient");
   const { accessToken } = usePatientAuth();
   const { data: templates, isLoading, isError, error } = usePatientPendingForms(accessToken);
   const submitForm = useSubmitPatientForm(accessToken);
@@ -174,13 +177,13 @@ export default function FormsPage() {
     (!selectedTemplate.requires_signature || signaturePayload !== null);
 
   if (isLoading) {
-    return <Text>Загрузка форм...</Text>;
+    return <Text>{t("forms.loading")}</Text>;
   }
   if (isError) {
     return (
       <Stack>
-        <Title order={3}>Анкеты и согласия</Title>
-        <QueryErrorAlert error={error} title="Не удалось загрузить формы" />
+        <Title order={3}>{t("forms.title")}</Title>
+        <QueryErrorAlert error={error} title={t("forms.loadFailed")} />
       </Stack>
     );
   }
@@ -188,29 +191,29 @@ export default function FormsPage() {
   if (!selectedTemplate) {
     return (
       <Stack>
-        <Title order={3}>Анкеты и согласия</Title>
+        <Title order={3}>{t("forms.title")}</Title>
         {!templates?.length && (
           <Text size="sm" c="dimmed">
-            Для вас сейчас нет ожидающих форм.
+            {t("forms.empty")}
           </Text>
         )}
-        {templates?.map((t) => (
+        {templates?.map((tmpl) => (
           <Card
-            key={t.id}
+            key={tmpl.id}
             withBorder
             radius="md"
             shadow="xs"
             className="interactive-card"
-            onClick={() => handleStart(t)}
+            onClick={() => handleStart(tmpl)}
           >
             <Stack gap={4}>
-              <Text fw={600}>{t.name}</Text>
+              <Text fw={600}>{tmpl.name}</Text>
               <Text size="sm" c="dimmed">
-                Код: {t.code}
+                {t("forms.code", { code: tmpl.code })}
               </Text>
-              {t.requires_signature && (
+              {tmpl.requires_signature && (
                 <Text size="xs" c="dimmed">
-                  Требуется электронная подпись
+                  {t("forms.needsSignature")}
                 </Text>
               )}
             </Stack>
@@ -224,30 +227,30 @@ export default function FormsPage() {
     <Stack>
       <Title order={3}>{selectedTemplate.name}</Title>
       <Text size="sm" c="dimmed">
-        Заполните поля анкеты. Поля, отмеченные звёздочкой, обязательны.
+        {t("forms.fillHint")}
       </Text>
       <Stack gap="sm">
         {selectedTemplate.schema.fields.map((field) => (
           <div key={field.id}>
-            {renderField(field, values[field.id], (v) => handleChange(field.id, v))}
+            {renderField(field, values[field.id], (v) => handleChange(field.id, v), t("forms.datePlaceholder"))}
           </div>
         ))}
         {selectedTemplate.requires_signature && (
           <>
             <TextInput
-              label="ФИО подписанта (по желанию)"
-              placeholder="Иванов И. И."
+              label={t("forms.signerName")}
+              placeholder={t("forms.signerPlaceholder")}
               value={signerName}
               onChange={(e) => setSignerName(e.currentTarget.value)}
             />
             <SignatureCanvas
-              label="Электронная подпись (обязательно)"
+              label={t("forms.signature")}
               onSignatureChange={setSignaturePayload}
               disabled={submitForm.isPending}
             />
             {!signaturePayload && (
               <Text size="xs" c="dimmed">
-                Поставьте подпись в поле выше, чтобы отправить форму.
+                {t("forms.signHint")}
               </Text>
             )}
           </>
@@ -255,7 +258,7 @@ export default function FormsPage() {
       </Stack>
       <Group justify="flex-end" mt="md">
         <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setSelectedTemplate(null)}>
-          Отмена
+          {t("forms.cancel")}
         </Button>
         <Button
           color={SEMANTIC.action.confirm}
@@ -263,7 +266,7 @@ export default function FormsPage() {
           loading={submitForm.isPending}
           disabled={!canSubmit}
         >
-          Отправить форму
+          {t("forms.submit")}
         </Button>
       </Group>
     </Stack>

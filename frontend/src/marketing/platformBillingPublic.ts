@@ -1,9 +1,10 @@
 /**
- * Публичный контур платформенного биллинга (FE-E1 / 1b-E1).
- * Парсинг ошибок — через `parseFastApiErrorBody` (единый envelope FastAPI из `main.py`).
+ * Public platform billing (checkout + shared lead/captcha envelope).
+ * User-facing copy follows `ui.locale` via the marketing namespace (not a frozen RU map).
  */
 
 import { parseFastApiErrorBody } from "@/api/client";
+import i18n, { tNs } from "@/i18n";
 
 export type PublicCheckoutErrorShape = {
   code: string;
@@ -12,24 +13,20 @@ export type PublicCheckoutErrorShape = {
   traceId: string | null;
 };
 
-const BILLING_MESSAGES: Record<string, string> = {
-  captcha_required: "Требуется подтверждение Turnstile. Выполните проверку ниже и снова нажмите «Оплатить».",
-  rate_limited: "Слишком много запросов. Подождите немного и попробуйте снова.",
-  invalid_email: "Некорректный email.",
-  unknown_plan_slug: "Тариф недоступен или отключён.",
-  invalid_billing_period: "Некорректный период оплаты.",
-  plan_price_missing: "Для выбранного периода у плана нет цены.",
-  extra_entitlement_overlaps_plan: "Этот модуль уже входит в выбранный план.",
-  extra_entitlement_unknown: "Неизвестное или отключённое дополнение.",
-  extra_entitlement_no_price: "У дополнения нет цены в каталоге.",
-  yookassa_not_configured: "Платёжный провайдер не настроен на сервере.",
-  yookassa_create_failed: "Не удалось создать платёж у провайдера. Попробуйте позже.",
-  platform_checkout_return_url_missing: "На сервере не задан URL возврата после оплаты.",
-};
-
 export function messageForPlatformCheckoutCode(code: string, fallback: string): string {
-  if (code && BILLING_MESSAGES[code]) return BILLING_MESSAGES[code];
-  return fallback;
+  if (!code) return fallback;
+  const key = `checkout.errors.${code}`;
+  const translated = tNs("marketing", key);
+  return translated === key ? fallback : translated;
+}
+
+export function catalogFetchErrorMessage(status: number, bodyText: string): string {
+  const fallback = tNs("marketing", "checkout.catalogLoadFailed");
+  if (status >= 500 || status === 0) return fallback;
+  const parsed = parseFastApiErrorBody(bodyText || "{}");
+  const msg = parsed.rawMessage?.trim() ?? "";
+  if (!msg || msg === "{}" || msg === "[]") return fallback;
+  return msg;
 }
 
 export function parsePublicCheckoutFailure(
@@ -38,7 +35,9 @@ export function parsePublicCheckoutFailure(
 ): PublicCheckoutErrorShape {
   const parsed = parseFastApiErrorBody(JSON.stringify(data));
   const code = (parsed.code ?? "").trim();
-  let message = (parsed.rawMessage ?? "").trim() || `Ошибка ${status}`;
+  let message =
+    (parsed.rawMessage ?? "").trim() ||
+    String(i18n.t("checkout.httpError", { ns: "marketing", status }));
   const details = parsed.details;
   const siteRaw = details?.site_key;
   const siteKey = typeof siteRaw === "string" ? siteRaw : null;

@@ -1,7 +1,60 @@
 /**
- * Общие утилиты для запросов кабинета основателя (разбор ошибок, безопасный JSON).
- * Сообщения согласованы с `PlatformFounderProvisionQueuePage`.
+ * Shared helpers for founder-cabinet HTTP (error envelope + JSON arrays).
+ * UI copy is translated at render time (`FounderQueryError`) so a locale switch
+ * does not refetch provision/leads queues.
  */
+
+import type { TFunction } from "i18next";
+
+export type FounderFailKind =
+  | "session"
+  | "unavailable"
+  | "http"
+  | "wrongToken"
+  | "serviceDisabled"
+  | "retryConflict"
+  | "closeConflict";
+
+export class FounderQueryError extends Error {
+  readonly kind: FounderFailKind;
+  readonly httpStatus?: number;
+  readonly apiDetail?: string;
+
+  constructor(kind: FounderFailKind, opts?: { httpStatus?: number; apiDetail?: string }) {
+    super(kind);
+    this.name = "FounderQueryError";
+    this.kind = kind;
+    this.httpStatus = opts?.httpStatus;
+    this.apiDetail = opts?.apiDetail;
+  }
+}
+
+export function founderFailMessage(err: unknown, t: TFunction<"founder">): string {
+  if (err instanceof FounderQueryError) {
+    const detail = err.apiDetail?.trim();
+    if (detail) return detail;
+    switch (err.kind) {
+      case "http":
+        return t("errors.status", { status: err.httpStatus ?? 0 });
+      case "session":
+        return t("errors.sessionInvalid");
+      case "unavailable":
+        return t("errors.serviceUnavailable");
+      case "wrongToken":
+        return t("errors.wrongToken");
+      case "serviceDisabled":
+        return t("errors.serviceDisabled");
+      case "retryConflict":
+        return t("errors.retryConflict");
+      case "closeConflict":
+        return t("errors.closeConflict");
+      default:
+        return t("errors.loadFailed");
+    }
+  }
+  if (err instanceof Error && err.message.trim()) return err.message;
+  return t("errors.loadFailed");
+}
 
 export async function formatPlatformFounderApiError(r: Response, fallback: string): Promise<string> {
   try {

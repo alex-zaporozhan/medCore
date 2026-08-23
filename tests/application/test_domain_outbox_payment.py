@@ -1,12 +1,12 @@
 """Outbox enqueue + dispatch for PaymentSuccess (ADR-009)."""
 
-from datetime import time
 from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, text
+from tests.booking_slot import unique_booking_slot
 
 from src.application.services.domain_outbox_service import (
     dispatch_domain_outbox_batch,
@@ -38,7 +38,7 @@ async def test_payment_webhook_leaves_no_pending_outbox_after_dispatch(
     payment_row_id = uuid4()
     provider_pid = f"yookassa-outbox-{uuid4().hex[:12]}"
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(17, 55, 0)
+    slot_day, appt_time = unique_booking_slot(seed_data["date"], hour=17)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(
@@ -48,7 +48,7 @@ async def test_payment_webhook_leaves_no_pending_outbox_after_dispatch(
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
+                appointment_date=slot_day,
                 appointment_time=appt_time,
                 status=BookingStatus.AWAITING_PAYMENT,
                 prepayment_amount=500,
@@ -105,7 +105,7 @@ async def test_dispatch_domain_outbox_batch_second_run_empty(seed_data: dict):
     booking_id = uuid4()
     payment_row_id = uuid4()
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(17, 56, 0)
+    slot_day, appt_time = unique_booking_slot(seed_data["date"], hour=16)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(
@@ -115,7 +115,7 @@ async def test_dispatch_domain_outbox_batch_second_run_empty(seed_data: dict):
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
+                appointment_date=slot_day,
                 appointment_time=appt_time,
                 status=BookingStatus.CONFIRMED,
                 prepayment_amount=500,

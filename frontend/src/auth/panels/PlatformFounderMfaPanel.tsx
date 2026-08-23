@@ -7,10 +7,12 @@ import { clearFounderToken, setFounderToken } from "@/marketing/platformFounderS
 import { ROUTE_PATHS } from "@/routePaths";
 import { Alert, Anchor, Button, Group, Stack, Text, TextInput } from "@mantine/core";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { defaultReturnToForTab, safeAuthReturnTo } from "@/auth/signInReturnTo";
 
 export function PlatformFounderMfaPanel() {
+  const { t } = useTranslation("founder");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [mfaToken] = useState<string | null>(() => getPendingPlatformFounderMfaToken());
@@ -22,7 +24,7 @@ export function PlatformFounderMfaPanel() {
 
   const messageFromBodyText = (text: string, status: number): string => {
     const p = parseFastApiErrorBody(text || "{}");
-    return p.rawMessage?.trim() || `Ошибка ${status}`;
+    return p.rawMessage?.trim() || t("errors.status", { status });
   };
 
   const goAfterSuccess = () => {
@@ -72,7 +74,7 @@ export function PlatformFounderMfaPanel() {
         goAfterSuccess();
         return;
       }
-      setError("Неожиданный ответ после MFA");
+      setError(t("mfa.unexpected"));
     } finally {
       setBusy(false);
     }
@@ -81,9 +83,9 @@ export function PlatformFounderMfaPanel() {
   if (!mfaToken) {
     return (
       <Stack gap="md">
-        <Text size="sm">Нет активного шага двухфакторной аутентификации. Введите сначала email и пароль.</Text>
+        <Text size="sm">{t("mfa.missing")}</Text>
         <Button variant="default" onClick={goBackToLogin}>
-          К форме входа
+          {t("mfa.backToLogin")}
         </Button>
       </Stack>
     );
@@ -92,10 +94,10 @@ export function PlatformFounderMfaPanel() {
   return (
     <Stack gap="md">
       <Text size="sm">
-        Введите одноразовый код из приложения (Google Authenticator и аналоги). Поле пароля на этом шаге не нужно.
+        {t("mfa.hint")}
       </Text>
       <TextInput
-        label="Код TOTP"
+        label={t("mfa.code")}
         placeholder="000000"
         value={totpCode}
         onChange={(e) => setTotpCode(e.currentTarget.value)}
@@ -104,21 +106,21 @@ export function PlatformFounderMfaPanel() {
       />
       <Group justify="space-between" wrap="nowrap" gap="sm">
         <Button variant="default" onClick={goBackToLogin}>
-          Назад
+          {t("mfa.back")}
         </Button>
         <Button loading={busy} color="slate" radius="md" onClick={() => void submitMfa()}>
-          Подтвердить
+          {t("mfa.confirm")}
         </Button>
       </Group>
 
       {error ? (
-        <Alert color="red" variant="light" title="Ошибка">
+        <Alert color="red" variant="light" title={t("mfa.errorTitle")}>
           {error}
         </Alert>
       ) : null}
 
       <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="sm">
-        На главную
+        {t("mfa.home")}
       </Anchor>
     </Stack>
   );

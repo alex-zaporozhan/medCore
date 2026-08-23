@@ -37,11 +37,11 @@ import {
   type MarketingChannelSummaryItem,
 } from "@/hooks/useMarketingAttribution";
 import { isBoxEdition } from "@/config/edition";
-
-const EMPTY_DB_HINT =
-  "Если ошибка из-за отсутствия данных в базе — добавьте клинику, врачей или пациентов в соответствующих разделах.";
+import { useTranslation } from "react-i18next";
+import { reportsDrillItemTypeLabel } from "@/shared/reportsI18n";
 
 export default function AdminReportsPage() {
+  const { t } = useTranslation("reports");
   const { currentClinicId } = useAdminClinic();
   const clinicId = currentClinicId ?? null;
   const showEnterpriseMarketingAnalytics = !isBoxEdition();
@@ -121,15 +121,16 @@ export default function AdminReportsPage() {
     (revErr instanceof Error ? revErr.message : null) ||
     (attrErr instanceof Error ? attrErr.message : null) ||
     "";
-  const isEmptyDb = errMsg.includes("клиник") || errMsg.includes("клиники");
+  const isEmptyDb =
+    /клиник/i.test(errMsg) || /no clinics in the database/i.test(errMsg);
   const loading = dashLoading || noShowLoading || revLoading || ownerLoading || attrLoading;
 
   if (!clinicId) {
     return (
       <Stack>
-        <ContextBar title="Отчёты" />
+        <ContextBar title={t("title")} />
         <Text size="sm" c="dimmed">
-          Выберите клинику.
+          {t("pickClinic")}
         </Text>
       </Stack>
     );
@@ -137,12 +138,17 @@ export default function AdminReportsPage() {
 
   return (
     <Stack>
-      <ContextBar title="Отчёты и дашборд" />
+      <ContextBar title={t("titleFull")} />
+      {dateFrom > dateTo ? (
+        <Text size="sm" c="red">
+          {t("dateOrder")}
+        </Text>
+      ) : null}
       <AdminDataTableToolbar>
         <Grid>
           <Grid.Col span={{ base: 12, sm: 6, lg: 3 }}>
             <TextInput
-              label="Дата с"
+              label={t("dateFrom")}
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
@@ -150,7 +156,7 @@ export default function AdminReportsPage() {
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6, lg: 3 }}>
             <TextInput
-              label="Дата по"
+              label={t("dateTo")}
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
@@ -160,8 +166,8 @@ export default function AdminReportsPage() {
             <>
               <Grid.Col span={{ base: 12, sm: 6, lg: 3 }}>
                 <Select
-                  label="Источник трафика"
-                  placeholder="Все источники"
+                  label={t("trafficSource")}
+                  placeholder={t("allSources")}
                   data={trafficSourceOptions}
                   value={selectedTrafficSourceId}
                   onChange={setSelectedTrafficSourceId}
@@ -171,8 +177,8 @@ export default function AdminReportsPage() {
               </Grid.Col>
               <Grid.Col span={{ base: 12, sm: 6, lg: 3 }}>
                 <Select
-                  label="Кампания"
-                  placeholder="Все кампании"
+                  label={t("campaign")}
+                  placeholder={t("allCampaigns")}
                   data={campaignOptions}
                   value={selectedCampaignId}
                   onChange={setSelectedCampaignId}
@@ -190,7 +196,7 @@ export default function AdminReportsPage() {
           <QueryErrorAlert error={dashErr ?? noShowErr ?? revErr ?? attrErr ?? errMsg} />
           {isEmptyDb && (
             <Text size="sm" c="dimmed">
-              {EMPTY_DB_HINT}
+              {t("emptyDbHint")}
             </Text>
           )}
         </>
@@ -202,7 +208,7 @@ export default function AdminReportsPage() {
         <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md" mb="md">
           <Card shadow="sm" padding="md" withBorder>
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-              Бюджет (реклама)
+              {t("adBudget")}
             </Text>
             <Text size="lg" fw={700}>
               {attribution.items.some((i) => i.ad_spend != null)
@@ -215,7 +221,7 @@ export default function AdminReportsPage() {
           </Card>
           <Card shadow="sm" padding="md" withBorder>
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-              Выручка
+              {t("revenue")}
             </Text>
             <Text size="lg" fw={700}>
               {ownerDashboard?.total_revenue ?? attribution.items.reduce((s, i) => s + parseFloat(i.revenue_sum || "0"), 0).toFixed(0)}{" "}
@@ -248,18 +254,18 @@ export default function AdminReportsPage() {
       {showEnterpriseMarketingAnalytics && attribution?.items && attribution.items.length > 0 && (
         <Card shadow="sm" padding="md" withBorder mb="md">
           <Text size="sm" fw={500} c="dimmed" mb="xs">
-            Воронка конверсий
+            {t("funnel")}
           </Text>
           <Stack gap="xs">
             <Group gap="md">
               <Text size="xs">
-                Лиды {attribution.items.reduce((a, i) => a + i.leads_count, 0)}
+                {t("funnelLeads", { count: attribution.items.reduce((a, i) => a + i.leads_count, 0) })}
               </Text>
               <Progress value={100} size="lg" style={{ flex: 1 }} />
             </Group>
             <Group gap="md">
               <Text size="xs">
-                Записи {attribution.items.reduce((a, i) => a + i.bookings_count, 0)}
+                {t("funnelBookings", { count: attribution.items.reduce((a, i) => a + i.bookings_count, 0) })}
               </Text>
               <Progress
                 value={
@@ -276,7 +282,7 @@ export default function AdminReportsPage() {
             </Group>
             <Group gap="md">
               <Text size="xs">
-                Оплата {attribution.items.reduce((a, i) => a + i.completed_bookings_count, 0)}
+                {t("funnelPaid", { count: attribution.items.reduce((a, i) => a + i.completed_bookings_count, 0) })}
               </Text>
               <Progress
                 value={
@@ -295,10 +301,10 @@ export default function AdminReportsPage() {
         </Card>
       )}
 
-      {showEnterpriseMarketingAnalytics && insightsData && (insightsData.insights?.length > 0 || true) && (
+      {showEnterpriseMarketingAnalytics && insightsData && (
         <Card shadow="sm" padding="md" withBorder mb="md">
           <Text size="sm" fw={500} c="dimmed" mb="xs">
-            AI Marketing Advisor
+            {t("advisorTitle")}
           </Text>
           {insightsData.insights?.length > 0 ? (
             <Stack gap="xs">
@@ -310,7 +316,7 @@ export default function AdminReportsPage() {
             </Stack>
           ) : (
             <Text size="sm" c="dimmed">
-              Пока нет персональных рекомендаций. Анализ каналов и кампаний появится после накопления данных.
+              {t("advisorEmpty")}
             </Text>
           )}
         </Card>
@@ -319,23 +325,23 @@ export default function AdminReportsPage() {
       {ownerDashboard && (
         <Card shadow="sm" padding="md" withBorder>
           <Text size="sm" fw={500} c="dimmed" mb="xs">
-            Сводка за период
+            {t("periodSummary")}
           </Text>
           <Grid>
             <Grid.Col span={4}>
-              <Text size="xs">Выручка: {ownerDashboard.total_revenue} ₽</Text>
+              <Text size="xs">{t("revenueLine", { amount: ownerDashboard.total_revenue })}</Text>
             </Grid.Col>
             <Grid.Col span={4}>
-              <Text size="xs">No-show: {(ownerDashboard.no_show_rate * 100).toFixed(1)}%</Text>
+              <Text size="xs">{t("noShowRateLine", { rate: (ownerDashboard.no_show_rate * 100).toFixed(1) })}</Text>
             </Grid.Col>
             <Grid.Col span={4}>
-              <Text size="xs">Предоплат: {ownerDashboard.prepayment_transactions_count}</Text>
+              <Text size="xs">{t("prepaymentsLine", { count: ownerDashboard.prepayment_transactions_count })}</Text>
             </Grid.Col>
             <Grid.Col span={4}>
-              <Text size="xs">В очереди: {ownerDashboard.waitlist_entries_count}</Text>
+              <Text size="xs">{t("waitlistLine", { count: ownerDashboard.waitlist_entries_count })}</Text>
             </Grid.Col>
             <Grid.Col span={4}>
-              <Text size="xs">Кампаний recall: {ownerDashboard.recall_campaigns_count}</Text>
+              <Text size="xs">{t("recallLine", { count: ownerDashboard.recall_campaigns_count })}</Text>
             </Grid.Col>
           </Grid>
         </Card>
@@ -344,17 +350,17 @@ export default function AdminReportsPage() {
       {dashboard && (
         <Card shadow="sm" padding="md">
           <Text size="sm" c="dimmed">
-            Дашборд за день ({dateTo})
+            {t("dayDashboard", { date: dateTo })}
           </Text>
           <Grid mt="xs">
             <Grid.Col span={4}>
-              <Text size="xs">Ожидают: {dashboard.bookings_pending}</Text>
+              <Text size="xs">{t("pendingLine", { count: dashboard.bookings_pending })}</Text>
             </Grid.Col>
             <Grid.Col span={4}>
-              <Text size="xs">Подтверждено: {dashboard.bookings_confirmed}</Text>
+              <Text size="xs">{t("confirmedLine", { count: dashboard.bookings_confirmed })}</Text>
             </Grid.Col>
             <Grid.Col span={4}>
-              <Text size="xs">Выручка: {dashboard.revenue} ₽</Text>
+              <Text size="xs">{t("revenueLine", { amount: dashboard.revenue })}</Text>
             </Grid.Col>
           </Grid>
         </Card>
@@ -363,10 +369,14 @@ export default function AdminReportsPage() {
       {noShow && (
         <Card shadow="sm" padding="md">
           <Text size="sm" c="dimmed">
-            No-show за период
+            {t("noShowPeriod")}
           </Text>
           <Text>
-            Всего: {noShow.total}, неявок: {noShow.no_show_count}, доля:{(noShow.no_show_rate * 100).toFixed(1)}%
+            {t("noShowStats", {
+              total: noShow.total,
+              count: noShow.no_show_count,
+              rate: (noShow.no_show_rate * 100).toFixed(1),
+            })}
           </Text>
         </Card>
       )}
@@ -374,28 +384,28 @@ export default function AdminReportsPage() {
       {revenue && (
         <Card shadow="sm" padding="md">
           <Text size="sm" c="dimmed">
-            Выручка за период
+            {t("revenuePeriod")}
           </Text>
-          <Text>Итого: {revenue.total_revenue} ₽</Text>
+          <Text>{t("revenueTotal", { amount: revenue.total_revenue })}</Text>
         </Card>
       )}
 
       {showEnterpriseMarketingAnalytics && attribution && attribution.items.length > 0 && (
         <AdminDataTableSurface>
           <Text size="sm" fw={500} c="dimmed" mb="xs">
-            Маркетинг и атрибуция (клик по строке — drill-down)
+            {t("attributionTitle")}
           </Text>
           <Table withTableBorder {...ADMIN_TABLE_PROPS}>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Канал / кампания</Table.Th>
-                <Table.Th>Лиды</Table.Th>
-                <Table.Th>Записи</Table.Th>
-                <Table.Th>Дошли</Table.Th>
-                <Table.Th>Пациенты</Table.Th>
-                <Table.Th>Выручка</Table.Th>
-                <Table.Th>Средний чек</Table.Th>
-                <Table.Th>ROI</Table.Th>
+                <Table.Th>{t("colChannel")}</Table.Th>
+                <Table.Th>{t("colLeads")}</Table.Th>
+                <Table.Th>{t("colBookings")}</Table.Th>
+                <Table.Th>{t("colCompleted")}</Table.Th>
+                <Table.Th>{t("colPatients")}</Table.Th>
+                <Table.Th>{t("colRevenue")}</Table.Th>
+                <Table.Th>{t("colAvgCheck")}</Table.Th>
+                <Table.Th>{t("colRoi")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -407,7 +417,7 @@ export default function AdminReportsPage() {
                 >
                   <Table.Td>
                     <Text size="xs">
-                      {row.campaign_name || row.traffic_source_name || "Без кампании"}
+                      {row.campaign_name || row.traffic_source_name || t("noCampaign")}
                     </Text>
                     <Text size="xs" c="dimmed">
                       {row.traffic_source_code || row.campaign_code || "—"}
@@ -435,29 +445,35 @@ export default function AdminReportsPage() {
           size="md"
           opened={!!drillDownRow}
           onClose={() => setDrillDownRow(null)}
-          title={drillDownRow ? `По источнику: ${drillDownRow.campaign_name || drillDownRow.traffic_source_name || "—"}` : ""}
+          title={
+            drillDownRow
+              ? t("drillTitle", {
+                  name: drillDownRow.campaign_name || drillDownRow.traffic_source_name || t("unnamedDrill"),
+                })
+              : ""
+          }
         >
           {drillDownRow && (
             <Stack gap="sm">
               <Text size="sm" c="dimmed">
-                Лиды и записи по выбранному каналу за период.
+                {t("drillHint")}
               </Text>
               {drillDownData?.items && drillDownData.items.length > 0 ? (
                 <Stack gap="xs">
                   {drillDownData.items.slice(0, 50).map((item) => (
                     <Text key={item.id} size="sm">
-                      {item.display_label ?? item.id} — {item.type}
+                      {item.display_label ?? t("unnamedDrill")} — {reportsDrillItemTypeLabel(item.type)}
                     </Text>
                   ))}
                   {drillDownData.total > 50 && (
                     <Text size="xs" c="dimmed">
-                      Показано 50 из {drillDownData.total}
+                      {t("shownOf", { total: drillDownData.total })}
                     </Text>
                   )}
                 </Stack>
               ) : (
                 <Text size="sm" c="dimmed">
-                  Нет данных для выбранного источника.
+                  {t("drillEmpty")}
                 </Text>
               )}
             </Stack>
@@ -466,7 +482,7 @@ export default function AdminReportsPage() {
       )}
 
       {!dashboard && !noShow && !revenue && !ownerDashboard && !anyError && !loading && (
-        <EmptyStateHint title="Нет данных за выбранный период" />
+        <EmptyStateHint title={t("emptyPeriod")} />
       )}
     </Stack>
   );

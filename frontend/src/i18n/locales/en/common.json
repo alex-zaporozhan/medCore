@@ -32,6 +32,8 @@
     "internal_server_error": "A server error occurred. Try again later.",
     "bad_request": "The request could not be processed.",
     "method_not_allowed": "This request method is not allowed. Refresh and try again.",
+    "html_gateway": "The service is temporarily unavailable or the server returned an unexpected page. Refresh and try again, or contact an administrator.",
+    "service_unavailable": "The service is temporarily unavailable. Wait a moment and refresh. If it continues, contact an administrator.",
     "empty_db_no_clinic": "No clinics in the database yet. Add a clinic in settings.",
     "clinic_forbidden": "This clinic is outside your account scope."
   },

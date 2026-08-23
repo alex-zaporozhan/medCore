@@ -200,7 +200,7 @@
   "view": {
     "assignees": "Assignees",
     "due": "Due: {{date}}",
-    "assigneesInline": " · Assignees: ",
+    "assigneesInline": "Assignees:",
     "assignTitle": "Assignment and delegation",
     "assignHint": "The first person in the list is the primary assignee.",
     "assignHintFull": "The first person in the list is the primary assignee. You can add or remove any clinic staff member.",
@@ -257,7 +257,9 @@
     "slot": "Slot",
     "inviteToSlot": "Invite to slot",
     "invite": "Invite",
-    "newComment": "New comment"
+    "newComment": "New comment",
+    "dueLine": "Due: {{when}}",
+    "noCommentsYet": "No comments yet."
   },
   "page": {
     "backToKanban": "Back to Kanban"

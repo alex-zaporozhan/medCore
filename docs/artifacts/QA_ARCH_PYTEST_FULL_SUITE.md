@@ -9,6 +9,7 @@
 | Полный `tests/` + Playwright, как **Backend CI** / **release-gate** | `scripts/dev/full_pytest_with_frontend_e2e.ps1` или `full_pytest_with_frontend_e2e.sh` (поднимает Vite preview, задаёт `FRONTEND_E2E_URL`) |
 | Догнать только последние падения | `poetry run pytest tests/ --lf -q --tb=short` |
 | Избежать deadlocks на `TRUNCATE` | Не запускать **`pytest -n`** на **одну** общую `DATABASE_URL_TEST`; см. шапку **`tests/conftest.py`** |
+| `UniqueViolationError` `ux_bookings_doctor_slot_active` в полном pytest | Session-scoped seed + занимающие статусы: `tests.booking_slot.unique_booking_slot` / `unique_clock_time`. Не `datetime.now().time()` и не общий `time(HH, MM)` на `seed_data["date"]`. Partial unique: cancel / no_show / completed слот не держат. |
 
 Workflows: `.github/workflows/backend-ci.yml`, `.github/workflows/release-gate.yml`.
 

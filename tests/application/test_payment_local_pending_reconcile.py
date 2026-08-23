@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -20,6 +20,7 @@ from src.domain.entities.payment import Payment
 from src.domain.entities.platform_signup_intent import PlatformSignupIntent
 from src.domain.entities.platform_subscription_payment import PlatformSubscriptionPayment
 from src.infrastructure.database import base as db_base
+from tests.booking_slot import unique_booking_slot
 
 
 @pytest.mark.asyncio
@@ -29,7 +30,7 @@ async def test_reconcile_patient_returns_zero_when_yookassa_not_configured(init_
     booking_id = uuid4()
     pay_id = uuid4()
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(17, 59, 0)
+    slot_day, appt_time = unique_booking_slot(seed_data["date"], hour=17)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(
@@ -39,7 +40,7 @@ async def test_reconcile_patient_returns_zero_when_yookassa_not_configured(init_
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
+                appointment_date=slot_day,
                 appointment_time=appt_time,
                 status=BookingStatus.AWAITING_PAYMENT,
                 prepayment_amount=500,
@@ -82,7 +83,7 @@ async def test_reconcile_patient_stale_local_pending_invokes_create_payment(
     booking_id = uuid4()
     pay_id = uuid4()
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(16, 59, 0)
+    slot_day, appt_time = unique_booking_slot(seed_data["date"], hour=16)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(
@@ -92,7 +93,7 @@ async def test_reconcile_patient_stale_local_pending_invokes_create_payment(
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
+                appointment_date=slot_day,
                 appointment_time=appt_time,
                 status=BookingStatus.AWAITING_PAYMENT,
                 prepayment_amount=500,

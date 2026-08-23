@@ -1,12 +1,16 @@
-import { API_BASE, newOutboundRequestId, parseFastApiErrorBody } from "@/api/client";
+import { API_BASE, newOutboundRequestId } from "@/api/client";
+import { tNs } from "@/i18n";
 import { EnterpriseLeadModal } from "@/marketing/components/EnterpriseLeadModal";
 import {
-  ENTERPRISE_PLAN_MARKETING,
-  formatMonthlyRubLabel,
+  formatCatalogUsdLabel,
+  isMarketingPlanSlug,
   marketingOverlayForSlug,
+  marketingPlanCopy,
+  parseCatalogAmount,
   sortPublicPlanRowsByMarketingOrder,
 } from "@/marketing/marketingPublicPlans";
-import { parsePublicCheckoutFailure } from "@/marketing/platformBillingPublic";
+import { catalogFetchErrorMessage, parsePublicCheckoutFailure } from "@/marketing/platformBillingPublic";
+import { labelForEntitlementKey } from "@/shared/entitlementDisplay";
 import {
   Alert,
   Box,
@@ -25,6 +29,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { TurnstileWidget } from "./TurnstileWidget";
 
 export type PublicPlanRow = {
@@ -34,6 +39,7 @@ export type PublicPlanRow = {
   option_keys?: string[];
   price_monthly_rub?: string | null;
   price_annual_rub?: string | null;
+  currency?: string | null;
 };
 
 export type PublicCatalogOption = {
@@ -41,17 +47,18 @@ export type PublicCatalogOption = {
   display_name: string;
   description?: string | null;
   list_price_rub?: string | null;
+  currency?: string | null;
 };
 
 type PlatformPricingSectionProps = {
-  /** Заголовок секции (например «Тарифы» на /pricing vs встроенный блок на лендинге). */
+  /** Section title (signup passes `marketing.signup.pricingTitle`). */
   title?: string;
   /**
-   * `full` — публичный checkout (новая регистрация клиники).
-   * `catalog_only` — только витрина цен для существующей организации (без кнопок оплаты: иначе создаётся новый signup intent).
+   * `full` — public checkout (new clinic registration).
+   * `catalog_only` — price showcase for an existing organization (no pay buttons: those create a new signup intent).
    */
   mode?: "full" | "catalog_only";
-  /** На /signup: false до согласий — тарифы видны, оплата отключена. */
+  /** On /signup: false until consents — plans stay visible, payment is off. */
   checkoutEnabled?: boolean;
 };
 
@@ -65,12 +72,6 @@ function buildOptionMap(rows: PublicCatalogOption[]): Map<string, PublicCatalogO
   return m;
 }
 
-function parseRubAmount(s: string | null | undefined): number | null {
-  if (s == null || s === "") return null;
-  const n = Number.parseFloat(String(s).replace(/\s/g, "").replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-}
-
 function resolveFeatureLabels(
   keys: string[] | undefined,
   optionMap: Map<string, PublicCatalogOption>,
@@ -78,28 +79,42 @@ function resolveFeatureLabels(
   const list = keys ?? [];
   return list.map((key) => {
     const o = optionMap.get(key);
+    const overlay = labelForEntitlementKey(key);
+    const fromCatalog = o?.display_name?.trim() || key;
     return {
       key,
-      label: o?.display_name?.trim() || key,
-      hint: o?.description?.trim() || null,
+      label: overlay.title !== key ? overlay.title : fromCatalog,
+      hint: overlay.title !== key ? overlay.hint : o?.description?.trim() || null,
     };
   });
 }
 
+function catalogOptionTitle(o: PublicCatalogOption): string {
+  const overlay = labelForEntitlementKey(o.entitlement_key);
+  if (overlay.title !== o.entitlement_key) return overlay.title;
+  return o.display_name?.trim() || o.entitlement_key;
+}
+
+function checkoutErrorFromCode(code: string, fallback: string): string {
+  if (!code) return fallback;
+  const key = `checkout.errors.${code}`;
+  const translated = tNs("marketing", key);
+  return translated === key ? fallback : translated;
+}
+
 /**
- * Публичный каталог планов + опций (GET …/catalog/plans, GET …/catalog/options) и checkout (POST …/signup/checkout).
- * Режим «конструктора»: выбор базового плана из каталога; состав модулей подтягивается из `option_keys` плана
- * и подписей из справочника опций (человекочитаемо, без внутренних ключей в интерфейсе).
+ * Public plan + options catalog (GET …/catalog/plans, GET …/catalog/options) and checkout (POST …/signup/checkout).
+ * Overlay headlines/badges/option titles follow `ui.locale` via settings entitlements + marketing plan copy. Unknown keys keep API `display_name`.
  */
 export function PlatformPricingSection({
   title,
   mode = "full",
   checkoutEnabled = true,
 }: PlatformPricingSectionProps) {
+  const { t, i18n } = useTranslation("marketing");
   const [enterpriseOpened, { open: openEnterprise, close: closeEnterprise }] = useDisclosure(false);
   const resolvedTitle =
-    title ??
-    (mode === "catalog_only" ? "Каталог тарифов (справочно)" : "Подбор тарифа и оформление");
+    title ?? (mode === "catalog_only" ? t("checkout.titleCatalog") : t("checkout.titleFull"));
   const catalogOnly = mode === "catalog_only";
   const [catalogState, setCatalogState] = useState<CatalogLoadState>("loading");
   const [catalogErr, setCatalogErr] = useState<string | null>(null);
@@ -124,10 +139,10 @@ export function PlatformPricingSection({
     [selectedPlan?.option_keys, optionMap],
   );
 
-  const selectedMarketing = useMemo(
-    () => marketingOverlayForSlug(selectedPlan?.slug),
-    [selectedPlan?.slug],
-  );
+  const selectedCopy = useMemo(() => {
+    if (!selectedPlan || !isMarketingPlanSlug(selectedPlan.slug)) return null;
+    return marketingPlanCopy(selectedPlan.slug);
+  }, [selectedPlan, i18n.language]);
 
   const planIncludedKeys = useMemo(() => {
     const keys = selectedPlan?.option_keys ?? [];
@@ -138,20 +153,21 @@ export function PlatformPricingSection({
     const rows = [...optionMap.values()].filter((o) => {
       if (planIncludedKeys.has(o.entitlement_key)) return false;
       if (o.list_price_rub == null || o.list_price_rub === "") return false;
-      return parseRubAmount(o.list_price_rub) != null;
+      return parseCatalogAmount(o.list_price_rub) != null;
     });
-    rows.sort((a, b) => a.display_name.localeCompare(b.display_name, "ru"));
+    const loc = i18n.language.startsWith("ru") ? "ru" : "en";
+    rows.sort((a, b) => a.display_name.localeCompare(b.display_name, loc));
     return rows;
-  }, [optionMap, planIncludedKeys]);
+  }, [optionMap, planIncludedKeys, i18n.language]);
 
   const totalsPreview = useMemo(() => {
     if (!selectedPlan) return { monthly: null as number | null, annual: null as number | null };
-    const baseM = parseRubAmount(selectedPlan.price_monthly_rub ?? null);
-    const baseA = parseRubAmount(selectedPlan.price_annual_rub ?? null);
+    const baseM = parseCatalogAmount(selectedPlan.price_monthly_rub ?? null);
+    const baseA = parseCatalogAmount(selectedPlan.price_annual_rub ?? null);
     let addM = 0;
     for (const k of extraSelectedKeys) {
       const o = optionMap.get(k);
-      const p = o ? parseRubAmount(o.list_price_rub) : null;
+      const p = o ? parseCatalogAmount(o.list_price_rub) : null;
       if (p != null) addM += p;
     }
     return {
@@ -166,60 +182,72 @@ export function PlatformPricingSection({
   }, [selectedSlug]);
 
   useEffect(() => {
-    let cancelled = false;
+    const abort = new AbortController();
     setCatalogState("loading");
     setCatalogErr(null);
 
     const headers = { "X-Request-Id": newOutboundRequestId() };
 
     const loadOptions = async (): Promise<PublicCatalogOption[]> => {
-      const r = await fetch(`${API_BASE}/v1/public/platform/catalog/options`, { headers });
+      const r = await fetch(`${API_BASE}/v1/public/platform/catalog/options`, {
+        headers,
+        signal: abort.signal,
+      });
       const text = await r.text().catch(() => "");
-      if (!r.ok) return [];
+      if (!r.ok) {
+        throw new Error(catalogFetchErrorMessage(r.status, text));
+      }
       try {
         const data = text ? (JSON.parse(text) as unknown) : [];
         return Array.isArray(data) ? (data as PublicCatalogOption[]) : [];
-      } catch {
-        return [];
+      } catch (err: unknown) {
+        console.error("public_catalog_options_parse_failed", {
+          message: err instanceof Error ? err.message : String(err),
+        });
+        throw new Error(tNs("marketing", "checkout.catalogParseFailed"), { cause: err });
       }
     };
 
     void (async () => {
       try {
-        const r = await fetch(`${API_BASE}/v1/public/platform/catalog/plans`, { headers });
+        const r = await fetch(`${API_BASE}/v1/public/platform/catalog/plans`, {
+          headers,
+          signal: abort.signal,
+        });
         const text = await r.text().catch(() => "");
         if (!r.ok) {
-          const parsed = parseFastApiErrorBody(text || "{}");
-          throw new Error(parsed.rawMessage?.trim() || `Ошибка ${r.status}`);
+          throw new Error(catalogFetchErrorMessage(r.status, text));
         }
         let plansData: unknown = [];
         try {
           plansData = text ? JSON.parse(text) : [];
-        } catch {
-          throw new Error("Некорректный ответ каталога планов");
+        } catch (err: unknown) {
+          console.error("public_catalog_plans_parse_failed", {
+            message: err instanceof Error ? err.message : String(err),
+          });
+          throw new Error(tNs("marketing", "checkout.catalogParseFailed"), { cause: err });
         }
         const optRows = await loadOptions();
-        if (cancelled) return;
+        if (abort.signal.aborted) return;
         const planRows = Array.isArray(plansData) ? (plansData as PublicPlanRow[]) : [];
         const sorted = sortPublicPlanRowsByMarketingOrder(planRows);
         setPlans(sorted);
         setOptionMap(buildOptionMap(optRows));
         setSelectedSlug(sorted.find((p) => p.slug === "growth")?.slug ?? sorted[0]?.slug ?? null);
         setCatalogState("ready");
-      } catch {
-        if (cancelled) return;
+      } catch (err: unknown) {
+        if (abort.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
         setPlans([]);
         setOptionMap(new Map());
         setSelectedSlug(null);
-        setCatalogErr(
-          "Не удалось загрузить каталог планов. Проверьте соединение с сервером и обновите страницу.",
-        );
+        const fallback = tNs("marketing", "checkout.catalogLoadFailed");
+        setCatalogErr(err instanceof Error && err.message.trim() ? err.message : fallback);
         setCatalogState("error");
       }
     })();
 
     return () => {
-      cancelled = true;
+      abort.abort();
     };
   }, []);
 
@@ -227,12 +255,12 @@ export function PlatformPricingSection({
     async (planSlug: string, period: "monthly" | "annual", tokenOverride: string | null) => {
       setCheckoutErr(null);
       if (!checkoutEnabled) {
-        setCheckoutErr("Отметьте оба согласия выше, чтобы перейти к оплате.");
+        setCheckoutErr(t("checkout.needConsents"));
         return;
       }
       const em = signupEmail.trim();
       if (!em) {
-        setCheckoutErr("Укажите email владельца — на него придёт приглашение в админку после оплаты.");
+        setCheckoutErr(t("checkout.needEmail"));
         return;
       }
       setCheckoutBusy(true);
@@ -243,8 +271,8 @@ export function PlatformPricingSection({
           billing_period: period,
           extra_entitlement_keys: extraSelectedKeys,
         };
-        const t = tokenOverride?.trim();
-        if (t) body.turnstile_token = t;
+        const captcha = tokenOverride?.trim();
+        if (captcha) body.turnstile_token = captcha;
 
         const r = await fetch(`${API_BASE}/v1/public/platform/signup/checkout`, {
           method: "POST",
@@ -257,46 +285,54 @@ export function PlatformPricingSection({
         const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
         if (!r.ok) {
           const parsed = parsePublicCheckoutFailure(r.status, data);
+          const shown = checkoutErrorFromCode(parsed.code, parsed.message);
           if (parsed.code === "captcha_required" && parsed.siteKey) {
             setTurnstileSiteKey(parsed.siteKey);
             setTurnstileToken(null);
-            setCheckoutErr(parsed.message);
+            setCheckoutErr(shown);
             return;
           }
           setTurnstileSiteKey(null);
           setTurnstileToken(null);
-          setCheckoutErr(parsed.message);
+          setCheckoutErr(shown);
           return;
         }
         setTurnstileSiteKey(null);
         setTurnstileToken(null);
         const url = typeof data.payment_url === "string" ? data.payment_url : "";
-        if (url) window.location.href = url;
+        if (url) {
+          window.location.href = url;
+          return;
+        }
+        setCheckoutErr(t("checkout.missingPaymentUrl"));
+      } catch (err: unknown) {
+        console.error("platform checkout request failed", err);
+        setCheckoutErr(t("checkout.network"));
       } finally {
         setCheckoutBusy(false);
       }
     },
-    [signupEmail, extraSelectedKeys, checkoutEnabled],
+    [signupEmail, extraSelectedKeys, checkoutEnabled, t],
   );
 
   const payWithOptionalCaptcha = useCallback(
     (planSlug: string, period: "monthly" | "annual") => {
       const tok = turnstileSiteKey ? turnstileToken : null;
       if (!checkoutEnabled) {
-        setCheckoutErr("Отметьте оба согласия выше, чтобы перейти к оплате.");
+        setCheckoutErr(t("checkout.needConsents"));
         return;
       }
       if (turnstileSiteKey && !tok?.trim()) {
-        setCheckoutErr("Сначала пройдите проверку Turnstile, затем снова нажмите «Оформить подписку».");
+        setCheckoutErr(t("checkout.turnstilePay"));
         return;
       }
       void startCheckout(planSlug, period, tok);
     },
-    [turnstileSiteKey, turnstileToken, startCheckout, checkoutEnabled],
+    [turnstileSiteKey, turnstileToken, startCheckout, checkoutEnabled, t],
   );
 
-  const onTurnstileToken = useCallback((t: string) => {
-    setTurnstileToken(t);
+  const onTurnstileToken = useCallback((token: string) => {
+    setTurnstileToken(token);
   }, []);
 
   const canMonthly = Boolean(
@@ -314,12 +350,14 @@ export function PlatformPricingSection({
 
   const periodSegmentData = useMemo(() => {
     const rows: { value: string; label: string }[] = [];
-    if (canMonthly) rows.push({ value: "monthly", label: "Ежемесячно" });
-    if (canAnnual) rows.push({ value: "annual", label: "Ежегодно" });
+    if (canMonthly) rows.push({ value: "monthly", label: t("checkout.periodMonthly") });
+    if (canAnnual) rows.push({ value: "annual", label: t("checkout.periodAnnual") });
     return rows;
-  }, [canMonthly, canAnnual]);
+  }, [canMonthly, canAnnual, t]);
 
   const periodAllowed = billingPeriod === "monthly" ? canMonthly : canAnnual;
+
+  const compositionName = selectedCopy?.headline ?? selectedPlan?.display_name ?? "";
 
   const planDetailsPaper = selectedPlan ? (
     <Paper
@@ -331,11 +369,11 @@ export function PlatformPricingSection({
     >
       <Stack gap="sm">
         <Text fw={600} size="sm">
-          Состав выбранного плана «{selectedMarketing?.headline ?? selectedPlan.display_name}»
+          {t("checkout.composition", { name: compositionName })}
         </Text>
-        {selectedMarketing?.bullets?.length ? (
+        {selectedCopy?.bullets?.length ? (
           <List size="sm" spacing={4} c="dimmed">
-            {selectedMarketing.bullets.map((line) => (
+            {selectedCopy.bullets.map((line) => (
               <List.Item key={line}>
                 <Text span fw={500} c="var(--text-main)">
                   {line}
@@ -345,7 +383,7 @@ export function PlatformPricingSection({
           </List>
         ) : featureRows.length === 0 ? (
           <Text size="sm" c="dimmed">
-            Состав модулей уточняется у оператора платформы.
+            {t("checkout.compositionUnknown")}
           </Text>
         ) : (
           <List size="sm" spacing={4} c="dimmed">
@@ -372,15 +410,14 @@ export function PlatformPricingSection({
       <Paper p="xl" radius="lg" withBorder shadow="none">
         <Stack gap="sm">
           <Text fw={600} size="sm">
-            Дополнительные модули (к корзине)
+            {t("checkout.addonsTitle")}
           </Text>
           <Text size="xs" c="dimmed">
-            Цены дополнений — помесячные: при годовой подписке они умножаются на 12 и добавляются к годовой цене
-            плана.
+            {t("checkout.addonsHint")}
           </Text>
           <Stack gap="xs">
             {addonOptions.map((o) => {
-              const price = parseRubAmount(o.list_price_rub);
+              const price = parseCatalogAmount(o.list_price_rub);
               return (
                 <Checkbox
                   key={o.entitlement_key}
@@ -395,11 +432,13 @@ export function PlatformPricingSection({
                   label={
                     <Stack gap={0}>
                       <Text size="sm" fw={500}>
-                        {o.display_name}
+                        {catalogOptionTitle(o)}
                       </Text>
                       {price != null ? (
                         <Text size="xs" c="dimmed">
-                          +{price.toLocaleString("ru-RU")} ₽ / мес
+                          {t("checkout.addonPrice", {
+                            price: formatCatalogUsdLabel(price) ?? "",
+                          })}
                         </Text>
                       ) : null}
                     </Stack>
@@ -412,23 +451,25 @@ export function PlatformPricingSection({
       </Paper>
     ) : null;
 
+  const enterpriseBullets = [0, 1, 2].map((i) => tNs("marketing", `enterprise.bullets.${i}`));
+
   return (
     <>
       <EnterpriseLeadModal opened={enterpriseOpened} onClose={closeEnterprise} />
       <Stack gap="xl">
         {catalogState === "loading" ? (
           <Text size="sm" c="dimmed">
-            Загрузка каталога…
+            {t("checkout.loading")}
           </Text>
         ) : null}
         {catalogState === "error" && catalogErr ? (
-          <Alert color="red" variant="light" title="Каталог недоступен">
+          <Alert color="red" variant="light" title={t("checkout.catalogUnavailableTitle")}>
             {catalogErr}
           </Alert>
         ) : null}
         {catalogState === "ready" && plans.length === 0 ? (
-          <Alert color="gray" variant="light" title="Нет планов">
-            В каталоге пока нет доступных тарифов. Обратитесь к оператору платформы.
+          <Alert color="gray" variant="light" title={t("checkout.emptyTitle")}>
+            {t("checkout.emptyBody")}
           </Alert>
         ) : null}
 
@@ -439,17 +480,11 @@ export function PlatformPricingSection({
             </Title>
             {!catalogOnly ? (
               <Text size="sm" c="dimmed" mt={6}>
-                Выберите план и при необходимости отметьте дополнительные модули — сумма пересчитывается автоматически.
-                Оплата — через ЮKassa.
+                {t("checkout.lead")}
               </Text>
             ) : (
-              <Alert color="blue" variant="light" title="Как сменить тариф" mt="sm">
-                Онлайн-оплата на публичной странице создаёт{" "}
-                <Text span fw={600}>
-                  новую
-                </Text>{" "}
-                регистрацию организации. Для апгрейда у действующего клиента используйте раздел подписки в админке или
-                свяжитесь с оператором платформы.
+              <Alert color="blue" variant="light" title={t("checkout.upgradeHintTitle")} mt="sm">
+                {t("checkout.upgradeHint")}
               </Alert>
             )}
           </div>
@@ -468,15 +503,16 @@ export function PlatformPricingSection({
                 <Grid gutter="md">
                   {plans.map((p) => {
                     const selected = p.slug === selectedSlug;
-                    const m = marketingOverlayForSlug(p.slug);
-                    const cardTitle = m?.headline ?? p.display_name;
-                    const subtitle = m?.badge ?? p.description;
-                    const featured = Boolean(m?.featured);
+                    const meta = marketingOverlayForSlug(p.slug);
+                    const copy = isMarketingPlanSlug(p.slug) ? marketingPlanCopy(p.slug) : null;
+                    const cardTitle = copy?.headline ?? p.display_name;
+                    const subtitle = copy?.badge ?? p.description;
+                    const featured = Boolean(meta?.featured);
                     const monthlyLabel =
-                      formatMonthlyRubLabel(p.price_monthly_rub) ?? `${p.price_monthly_rub ?? "—"} ₽`;
+                      formatCatalogUsdLabel(p.price_monthly_rub) ?? `${p.price_monthly_rub ?? "—"}`;
                     const annualLabel =
                       p.price_annual_rub != null && p.price_annual_rub !== ""
-                        ? formatMonthlyRubLabel(p.price_annual_rub) ?? `${p.price_annual_rub} ₽`
+                        ? formatCatalogUsdLabel(p.price_annual_rub) ?? `${p.price_annual_rub}`
                         : null;
                     return (
                       <Grid.Col
@@ -515,13 +551,13 @@ export function PlatformPricingSection({
                           tabIndex={0}
                           role="button"
                           aria-pressed={selected}
-                          aria-label={`Тариф ${cardTitle}`}
+                          aria-label={t("checkout.planAria", { name: cardTitle })}
                         >
                           <Stack gap={6} justify="space-between" style={{ flex: 1 }}>
                             <Stack gap={6}>
                               {featured ? (
                                 <Text size="xs" fw={700} tt="uppercase" c="teal.7" lts={0.6}>
-                                  Рекомендуем
+                                  {t("pricing.recommended")}
                                 </Text>
                               ) : null}
                               <Text fw={700} style={{ color: "var(--text-main)" }}>
@@ -538,12 +574,12 @@ export function PlatformPricingSection({
                             <Stack gap={4} mt="auto">
                               {p.price_monthly_rub != null && p.price_monthly_rub !== "" ? (
                                 <Text size="sm" fw={600}>
-                                  {monthlyLabel} / мес
+                                  {monthlyLabel} {t("checkout.perMonth")}
                                 </Text>
                               ) : null}
                               {annualLabel ? (
                                 <Text size="sm" c="dimmed">
-                                  {annualLabel} / год
+                                  {annualLabel} {t("checkout.perYear")}
                                 </Text>
                               ) : null}
                             </Stack>
@@ -566,19 +602,19 @@ export function PlatformPricingSection({
                   <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
                     <Stack gap="xs" maw={560}>
                       <Text fw={700} style={{ color: "var(--text-main)" }}>
-                        {ENTERPRISE_PLAN_MARKETING.headline}
+                        {t("enterprise.headline")}
                       </Text>
                       <Text size="sm" fw={600} c="var(--text-main)">
-                        {ENTERPRISE_PLAN_MARKETING.priceHint} · {ENTERPRISE_PLAN_MARKETING.priceLabel}
+                        {t("enterprise.priceHint")} · {t("enterprise.priceLabel")}
                       </Text>
                       <List size="sm" spacing={4} c="dimmed">
-                        {ENTERPRISE_PLAN_MARKETING.bullets.map((line) => (
+                        {enterpriseBullets.map((line) => (
                           <List.Item key={line}>{line}</List.Item>
                         ))}
                       </List>
                     </Stack>
                     <Button variant="outline" color="slate" size="sm" onClick={openEnterprise}>
-                      Обсудить внедрение
+                      {t("pricing.discuss")}
                     </Button>
                   </Group>
                 </Paper>
@@ -615,41 +651,43 @@ export function PlatformPricingSection({
                       }}
                     >
                       {!checkoutEnabled ? (
-                        <Alert color="gray" variant="light" title="Оплата недоступна" mb="lg">
-                          Отметьте оба согласия на странице регистрации, чтобы активировать кнопку оплаты.
+                        <Alert color="gray" variant="light" title={t("checkout.checkoutDisabledTitle")} mb="lg">
+                          {t("checkout.checkoutDisabledBody")}
                         </Alert>
                       ) : null}
                       <Title order={4} mb="md" style={{ color: "var(--text-main)" }}>
-                        К оплате
+                        {t("checkout.dueTitle")}
                       </Title>
                       {totalsPreview.monthly != null || totalsPreview.annual != null ? (
                         <Stack gap={4} mb="lg">
                           <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                            Итого
+                            {t("checkout.total")}
                           </Text>
                           {billingPeriod === "monthly" && totalsPreview.monthly != null ? (
                             <Text fz={28} fw={800} style={{ color: "var(--text-main)", letterSpacing: "-0.02em" }}>
-                              {totalsPreview.monthly.toLocaleString("ru-RU", {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 2,
-                              })}{" "}
-                              ₽ <Text span fz="md" fw={600}> / мес</Text>
+                              {formatCatalogUsdLabel(totalsPreview.monthly)}{" "}
+                              <Text span fz="md" fw={600}>
+                                {t("checkout.perMonth")}
+                              </Text>
                             </Text>
                           ) : null}
                           {billingPeriod === "annual" && totalsPreview.annual != null ? (
                             <Text fz={28} fw={800} style={{ color: "var(--text-main)", letterSpacing: "-0.02em" }}>
-                              {totalsPreview.annual.toLocaleString("ru-RU", {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 2,
-                              })}{" "}
-                              ₽ <Text span fz="md" fw={600}> / год</Text>
+                              {formatCatalogUsdLabel(totalsPreview.annual)}{" "}
+                              <Text span fz="md" fw={600}>
+                                {t("checkout.perYear")}
+                              </Text>
                             </Text>
                           ) : null}
                           {totalsPreview.monthly != null && totalsPreview.annual != null ? (
                             <Text size="sm" c="dimmed">
                               {billingPeriod === "monthly"
-                                ? `Годовой вариант: ${totalsPreview.annual.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₽ / год`
-                                : `Помесячно: ${totalsPreview.monthly.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₽ / мес`}
+                                ? t("checkout.annualAlternative", {
+                                    amount: formatCatalogUsdLabel(totalsPreview.annual) ?? "",
+                                  })
+                                : t("checkout.monthlyAlternative", {
+                                    amount: formatCatalogUsdLabel(totalsPreview.monthly) ?? "",
+                                  })}
                             </Text>
                           ) : null}
                         </Stack>
@@ -668,7 +706,7 @@ export function PlatformPricingSection({
                       ) : null}
 
                       <TextInput
-                        label="Email владельца (логин администратора)"
+                        label={t("checkout.emailLabel")}
                         placeholder="owner@company.example"
                         value={signupEmail}
                         onChange={(e) => setSignupEmail(e.currentTarget.value)}
@@ -681,10 +719,10 @@ export function PlatformPricingSection({
                       {turnstileSiteKey ? (
                         <Stack gap="xs" mb="sm">
                           <Text size="sm" fw={500}>
-                            Проверка антиспама
+                            {t("lead.captchaTitle")}
                           </Text>
                           <Text size="xs" c="dimmed">
-                            После проверки снова нажмите «Оформить подписку».
+                            {t("checkout.captchaHintPay")}
                           </Text>
                           <TurnstileWidget
                             siteKey={turnstileSiteKey}
@@ -705,12 +743,10 @@ export function PlatformPricingSection({
                         fullWidth
                         radius="md"
                         loading={checkoutBusy}
-                        disabled={
-                          !checkoutEnabled || !periodAllowed || checkoutBusy || !signupEmail.trim()
-                        }
+                        disabled={!checkoutEnabled || !periodAllowed || checkoutBusy || !signupEmail.trim()}
                         onClick={() => payWithOptionalCaptcha(selectedPlan.slug, billingPeriod)}
                       >
-                        Оформить подписку
+                        {t("checkout.subscribe")}
                       </Button>
                     </Paper>
                   </Box>

@@ -10,6 +10,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   opened: boolean;
@@ -20,6 +21,7 @@ type Props = {
  * Привязка Google Authenticator / TOTP к учётной записи Основателя (POST enroll + confirm).
  */
 export function PlatformFounderTotpSetupModal({ opened, onClose }: Props) {
+  const { t } = useTranslation("founder");
   const { token, setToken } = usePlatformFounderSession();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,12 +58,12 @@ export function PlatformFounderTotpSetupModal({ opened, onClose }: Props) {
       });
       const text = await r.text().catch(() => "");
       if (r.status === 409) {
-        setError("Двухфакторная аутентификация уже включена для этой учётной записи.");
+        setError(t("totp.alreadyOn"));
         return;
       }
       if (!r.ok) {
         const p = parseFastApiErrorBody(text || "{}");
-        setError(p.rawMessage?.trim() || `Ошибка ${r.status}`);
+        setError(p.rawMessage?.trim() || t("errors.status", { status: r.status }));
         return;
       }
       const data = JSON.parse(text) as { otpauth_uri?: string; issuer?: string; account_email?: string };
@@ -69,7 +71,7 @@ export function PlatformFounderTotpSetupModal({ opened, onClose }: Props) {
       if (data.issuer) setIssuer(data.issuer);
       if (data.account_email) setAccountEmail(data.account_email);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка сети");
+      setError(e instanceof Error ? e.message : t("errors.network"));
     } finally {
       setBusy(false);
     }
@@ -90,7 +92,7 @@ export function PlatformFounderTotpSetupModal({ opened, onClose }: Props) {
       const text = await r.text().catch(() => "");
       if (!r.ok) {
         const p = parseFastApiErrorBody(text || "{}");
-        setError(p.rawMessage?.trim() || `Ошибка ${r.status}`);
+        setError(p.rawMessage?.trim() || t("errors.status", { status: r.status }));
         return;
       }
       const data = JSON.parse(text) as { access_token?: string };
@@ -100,23 +102,22 @@ export function PlatformFounderTotpSetupModal({ opened, onClose }: Props) {
       reset();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка сети");
+      setError(e instanceof Error ? e.message : t("errors.network"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal opened={opened} onClose={handleClose} title="Двухфакторный вход (TOTP)" size="md" centered>
+    <Modal opened={opened} onClose={handleClose} title={t("totp.title")} size="md" centered>
       <Stack gap="md">
         <Text size="sm" c="dimmed">
-          Сгенерируйте секрет, добавьте его в приложение (Google Authenticator, Aegis и т.п.) — обычно через
-          «Ввести ключ вручную» или сканирование QR в приложении, если оно умеет открыть otpauth-ссылку.
+          {t("totp.lead")}
         </Text>
 
         {!otpauthUri ? (
           <Button loading={busy} onClick={() => void enroll()}>
-            Сгенерировать секрет для приложения
+            {t("totp.generate")}
           </Button>
         ) : (
           <>
@@ -124,13 +125,13 @@ export function PlatformFounderTotpSetupModal({ opened, onClose }: Props) {
               <Text size="sm">
                 {issuer ? (
                   <>
-                    Сервис: <Text span ff="monospace">{issuer}</Text>
+                    {t("totp.issuer")} <Text span ff="monospace">{issuer}</Text>
                     <br />
                   </>
                 ) : null}
                 {accountEmail ? (
                   <>
-                    Аккаунт: <Text span ff="monospace">{accountEmail}</Text>
+                    {t("totp.account")} <Text span ff="monospace">{accountEmail}</Text>
                   </>
                 ) : null}
               </Text>
@@ -139,7 +140,7 @@ export function PlatformFounderTotpSetupModal({ opened, onClose }: Props) {
               {otpauthUri}
             </Text>
             <TextInput
-              label="Код из приложения для подтверждения"
+              label={t("totp.confirmCode")}
               placeholder="000000"
               value={confirmCode}
               onChange={(e) => setConfirmCode(e.currentTarget.value)}
@@ -147,17 +148,17 @@ export function PlatformFounderTotpSetupModal({ opened, onClose }: Props) {
             />
             <Group justify="flex-end">
               <Button variant="default" onClick={reset} disabled={busy}>
-                Сбросить
+                {t("totp.reset")}
               </Button>
               <Button loading={busy} onClick={() => void confirm()} disabled={confirmCode.trim().length < 6}>
-                Подтвердить и включить 2FA
+                {t("totp.confirmEnable")}
               </Button>
             </Group>
           </>
         )}
 
         {error ? (
-          <Alert color="red" variant="light" title="Ошибка">
+          <Alert color="red" variant="light" title={t("totp.errorTitle")}>
             {error}
           </Alert>
         ) : null}

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -20,12 +20,7 @@ from src.domain.entities.customer_subscription import CustomerSubscription
 from src.domain.entities.erp_loyalty_obligation import ErpLoyaltyObligation
 from src.domain.entities.subscription_package import SubscriptionPackage
 from src.domain.entities.subscription_usage import SubscriptionUsage
-
-
-def _unique_booking_slot(base_day):
-    day = base_day + timedelta(days=(uuid4().int % 14) + 1)
-    minute = (uuid4().int % 50) + 5
-    return day, minute
+from tests.booking_slot import unique_booking_slot
 
 
 async def _create_subscription(
@@ -146,14 +141,14 @@ async def test_register_write_off_for_visit_full_and_partial(
     patient_id = seed_data["patient_id"]
     usage_id = uuid4()
     now = datetime.now(timezone.utc)
-    booking_day, booking_minute = _unique_booking_slot(seed_data["date"])
+    booking_day, booking_time = unique_booking_slot(seed_data["date"], hour=11)
     booking = Booking(
         clinic_id=clinic_id,
         patient_id=patient_id,
         doctor_id=seed_data["doctor_id"],
         service_id=seed_data["service_id"],
         appointment_date=booking_day,
-        appointment_time=time(11, booking_minute),
+        appointment_time=booking_time,
         status=BookingStatus.CONFIRMED,
         prepayment_amount=Decimal("0.00"),
         payment_id=None,
@@ -247,14 +242,14 @@ async def test_register_write_off_for_visit_overspend_clamped_with_warning(
     patient_id = seed_data["patient_id"]
     usage_id = uuid4()
     now = datetime.now(timezone.utc)
-    booking_day, booking_minute = _unique_booking_slot(seed_data["date"])
+    booking_day, booking_time = unique_booking_slot(seed_data["date"], hour=12)
     booking = Booking(
         clinic_id=clinic_id,
         patient_id=patient_id,
         doctor_id=seed_data["doctor_id"],
         service_id=seed_data["service_id"],
         appointment_date=booking_day,
-        appointment_time=time(12, booking_minute),
+        appointment_time=booking_time,
         status=BookingStatus.CONFIRMED,
         prepayment_amount=Decimal("0.00"),
         payment_id=None,

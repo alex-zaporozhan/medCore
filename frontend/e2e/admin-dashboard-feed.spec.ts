@@ -138,6 +138,7 @@ test.describe("admin dashboard feed (mocked API)", () => {
         localStorage.setItem("dental_booking_admin_token", "e2e-test-token");
         localStorage.setItem("dental_booking_admin_id", adminId);
         localStorage.setItem("dental_booking_admin_clinic_id", clinicId);
+        localStorage.setItem("ui.locale", "en");
       },
       { clinicId: CLINIC_ID, adminId: ADMIN_ID }
     );
@@ -148,18 +149,18 @@ test.describe("admin dashboard feed (mocked API)", () => {
     await page.goto("/admin");
     await expect(page).toHaveURL(/\/admin\/?$/);
 
-    await expect(page.getByText("Лента").first()).toBeVisible();
+    await expect(page.getByText("Feed").first()).toBeVisible();
 
-    await page.getByRole("button", { name: /Создать пост в ленте клиники/i }).click();
+    await page.getByRole("button", { name: /Create a clinic feed post/i }).click();
     const panel = page.getByRole("dialog");
-    await expect(panel.getByText("Новый пост")).toBeVisible();
+    await expect(panel.getByText("New post")).toBeVisible();
 
     const body = `E2E пост ${Date.now()}`;
     // AppleEmojiOverlayTextarea: нативный placeholder может отличаться; целимся в textarea внутри панели.
     await panel.locator("textarea").first().fill(body);
-    await panel.getByRole("button", { name: "Опубликовать" }).click();
+    await panel.getByRole("button", { name: "Publish" }).click();
 
-    await expect(panel.getByText("Новый пост")).not.toBeVisible();
+    await expect(panel.getByText("New post")).not.toBeVisible();
     await expect(page.getByText(body).first()).toBeVisible();
   });
 });

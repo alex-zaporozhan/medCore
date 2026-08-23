@@ -128,6 +128,7 @@ class YooKassaClient:
         payload = {
             "amount": {
                 "value": f"{amount:.2f}",
+                # Provider rail is RUB; catalog list amounts are USD-denominated (same number in demo).
                 "currency": "RUB",
             },
             "confirmation": {

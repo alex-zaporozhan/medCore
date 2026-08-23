@@ -23,6 +23,7 @@ from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.patient import Patient
 from src.domain.entities.payment import Payment
 from src.domain.entities.subscription_package import SubscriptionPackage
+from tests.booking_slot import unique_booking_slot
 
 
 @pytest.mark.asyncio
@@ -30,6 +31,7 @@ async def test_loyalty_purchase_and_use_visits(db_session: AsyncSession, seed_da
     clinic_id = seed_data["clinic_id"]
     patient_id = uuid4()
     booking_id = uuid4()
+    slot_day, slot_time = unique_booking_slot(seed_data["date"])
 
     service = LoyaltyService(db_session)
 
@@ -49,8 +51,8 @@ async def test_loyalty_purchase_and_use_visits(db_session: AsyncSession, seed_da
             patient_id=patient_id,
             doctor_id=seed_data["doctor_id"],
             service_id=seed_data["service_id"],
-            appointment_date=seed_data["date"] + timedelta(days=(uuid4().int % 180) + 1),
-            appointment_time=datetime.now(timezone.utc).time().replace(second=0, microsecond=0, tzinfo=None),
+            appointment_date=slot_day,
+            appointment_time=slot_time,
             status=BookingStatus.CONFIRMED,
             prepayment_amount=Decimal("0.00"),
             payment_id=None,
@@ -129,6 +131,7 @@ async def test_loyalty_purchase_subscription_idempotent_by_payment_id(
     patient_id = uuid4()
     booking_id = uuid4()
     payment_id = uuid4()
+    slot_day, slot_time = unique_booking_slot(seed_data["date"])
 
     service = LoyaltyService(db_session)
 
@@ -148,8 +151,8 @@ async def test_loyalty_purchase_subscription_idempotent_by_payment_id(
             patient_id=patient_id,
             doctor_id=seed_data["doctor_id"],
             service_id=seed_data["service_id"],
-            appointment_date=seed_data["date"] + timedelta(days=(uuid4().int % 180) + 1),
-            appointment_time=datetime.now(timezone.utc).time().replace(second=0, microsecond=0, tzinfo=None),
+            appointment_date=slot_day,
+            appointment_time=slot_time,
             status=BookingStatus.CONFIRMED,
             prepayment_amount=Decimal("0.00"),
             payment_id=None,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 
 import pytest
@@ -25,12 +25,11 @@ from src.domain.entities.cashbox import Cashbox
 from src.domain.entities.lead_card import LeadCard
 from src.domain.entities.lead_pipeline import LeadPipeline
 from src.domain.entities.lead_stage import LeadStage
+from tests.booking_slot import unique_booking_slot
 
 
 def _unique_slot(base_day: date, hour: int) -> tuple[date, time]:
-    day = base_day + timedelta(days=(uuid.uuid4().int % 180) + 1)
-    minute = (uuid.uuid4().int % 45) + 10
-    return day, time(hour, minute)
+    return unique_booking_slot(base_day, hour=hour)
 
 
 @pytest.mark.asyncio

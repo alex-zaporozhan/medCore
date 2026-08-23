@@ -39,6 +39,7 @@ import {
   Title,
 } from "@mantine/core";
 import { IconPaperclip, IconPhoto, IconRefresh, IconVolume } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 
 const MAX_CHAT_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -46,6 +47,7 @@ const PATIENT_CHAT_DOC_ACCEPT =
   ".pdf,.doc,.docx,.txt,.xlsx,.xls,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain";
 
 export default function ChatPage() {
+  const { t } = useTranslation("patient");
   const { accessToken, patientId } = usePatientAuth();
   const [messageText, setMessageText] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -109,7 +111,7 @@ export default function ChatPage() {
     setAttachError(null);
     if (pendingFile) {
       if (pendingFile.size > MAX_CHAT_FILE_BYTES) {
-        setAttachError("Файл больше 5 МБ");
+        setAttachError(t("chat.fileTooBig"));
         return;
       }
       const body = messageText.trim() || (pendingFile.type.startsWith("audio/") ? "" : "");
@@ -121,7 +123,7 @@ export default function ChatPage() {
             setPendingFile(null);
             scrollToBottom();
           },
-          onError: () => setAttachError("Не удалось отправить файл"),
+          onError: () => setAttachError(t("chat.sendFileFailed")),
         }
       );
       return;
@@ -152,7 +154,7 @@ export default function ChatPage() {
     e.target.value = "";
     if (!f) return;
     if (f.size > MAX_CHAT_FILE_BYTES) {
-      setAttachError("Файл больше 5 МБ");
+      setAttachError(t("chat.fileTooBig"));
       return;
     }
     setPendingFile(f);
@@ -161,8 +163,8 @@ export default function ChatPage() {
   if (!accessToken || !patientId) {
     return (
       <Stack>
-        <Title order={3}>Чат с клиникой</Title>
-        <Text c="dimmed">Войдите в аккаунт, чтобы писать в чат.</Text>
+        <Title order={3}>{t("chat.title")}</Title>
+        <Text c="dimmed">{t("chat.needAuth")}</Text>
       </Stack>
     );
   }
@@ -170,7 +172,7 @@ export default function ChatPage() {
   if (convLoading) {
     return (
       <Stack>
-        <Title order={3}>Чат с клиникой</Title>
+        <Title order={3}>{t("chat.title")}</Title>
         <DataSkeleton lines={5} />
       </Stack>
     );
@@ -178,8 +180,8 @@ export default function ChatPage() {
   if (convError) {
     return (
       <Stack>
-        <Title order={3}>Чат с клиникой</Title>
-        <QueryErrorAlert error={convErr} title="Не удалось загрузить чат" />
+        <Title order={3}>{t("chat.title")}</Title>
+        <QueryErrorAlert error={convErr} title={t("chat.loadFailed")} />
       </Stack>
     );
   }
@@ -215,7 +217,7 @@ export default function ChatPage() {
       <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={onPickFile} />
       <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
         <Title order={3} c="gray.9">
-          Чат с клиникой
+          {t("chat.title")}
         </Title>
         <Group gap={4} wrap="nowrap">
           <ActionIcon
@@ -224,7 +226,7 @@ export default function ChatPage() {
             size="sm"
             onClick={refreshChat}
             loading={msgLoading}
-            aria-label="Обновить"
+            aria-label={t("chat.refresh")}
           >
             <IconRefresh size={16} />
           </ActionIcon>
@@ -245,33 +247,31 @@ export default function ChatPage() {
               }}
               onClick={() => setClearModalOpen(true)}
             >
-              Очистить мои
+              {t("chat.clearMine")}
             </Text>
           )}
         </Group>
       </Group>
       <Text size="sm" c="dimmed" lh={1.4} maw={720}>
-        Переписка с администрацией клиники (без сторонних мессенджеров). Удалённое у вас сообщение у администратора
-        остаётся в истории. До 5 МБ: документы, фото,{" "}
-        <strong>аудио</strong> — кнопка микрофона или файл; видео-кружки не используются.
+        {t("chat.lead")}
       </Text>
       <Modal
         opened={clearModalOpen}
         onClose={() => setClearModalOpen(false)}
-        title="Очистить мои сообщения"
+        title={t("chat.clearTitle")}
         centered
         size="sm"
       >
         <Stack>
           <Text size="sm">
-            Удалить все ваши сообщения из этого чата? У администратора история переписки сохранится.
+            {t("chat.clearBody")}
           </Text>
           <Group justify="flex-end">
             <Button variant="subtle" color={SEMANTIC.action.dismiss} onClick={() => setClearModalOpen(false)}>
-              Отмена
+              {t("chat.cancel")}
             </Button>
             <Button color={SEMANTIC.action.danger} onClick={handleClearMyMessages} loading={deleteMessage.isPending}>
-              Удалить мои сообщения
+              {t("chat.deleteMine")}
             </Button>
           </Group>
         </Stack>
@@ -287,8 +287,8 @@ export default function ChatPage() {
             <DataSkeleton lines={3} />
           ) : items.length === 0 ? (
             <EmptyStateHint
-              title="Пока нет сообщений"
-              subtitle="Напишите или отправьте голосовое (микрофон) — администратор ответит. Можно прикрепить фото или документ."
+              title={t("chat.emptyTitle")}
+              subtitle={t("chat.emptyHint")}
             />
           ) : (
             <Stack gap="sm">
@@ -359,7 +359,7 @@ export default function ChatPage() {
                           onClick={() => handleDelete(m.id)}
                           disabled={deleteMessage.isPending}
                         >
-                          Удалить
+                          {t("chat.delete")}
                         </Text>
                       )}
                     </Group>
@@ -374,7 +374,7 @@ export default function ChatPage() {
       <Stack gap="xs">
         {pendingFile ? (
           <Text size="xs" c="dimmed">
-            К сообщению: {pendingFile.name}{" "}
+            {t("chat.attachTo", { name: pendingFile.name })}{" "}
             <Text
               component="button"
               type="button"
@@ -384,7 +384,7 @@ export default function ChatPage() {
               style={{ cursor: "pointer", border: "none", background: "none", font: "inherit" }}
               onClick={() => setPendingFile(null)}
             >
-              Убрать
+              {t("chat.remove")}
             </Text>
           </Text>
         ) : null}
@@ -395,7 +395,7 @@ export default function ChatPage() {
         ) : null}
         <AppleEmojiOverlayTextarea
           ref={composerRef}
-          placeholder="Сообщение… (Shift+Enter — новая строка, Enter — отправить)"
+          placeholder={t("chat.placeholder")}
           value={messageText}
           minRows={2}
           onChange={(e) => setMessageText(e.currentTarget.value)}
@@ -409,11 +409,11 @@ export default function ChatPage() {
         <Group gap="xs" align="center" wrap="wrap">
           <VoiceNoteRecorderButton
             disabled={sending}
-            onError={() => setAttachError("Нет доступа к микрофону")}
+            onError={() => setAttachError(t("chat.micDenied"))}
             onRecorded={(file) => {
               setAttachError(null);
               if (file.size > MAX_CHAT_FILE_BYTES) {
-                setAttachError("Файл больше 5 МБ");
+                setAttachError(t("chat.fileTooBig"));
                 return;
               }
               setPendingFile(file);
@@ -428,7 +428,7 @@ export default function ChatPage() {
             variant="light"
             size="lg"
             color="gray"
-            aria-label="Прикрепить документ"
+            aria-label={t("chat.attachDoc")}
             onClick={() => triggerAttachPick("doc")}
           >
             <IconPaperclip size={20} />
@@ -437,7 +437,7 @@ export default function ChatPage() {
             variant="light"
             size="lg"
             color="gray"
-            aria-label="Прикрепить изображение"
+            aria-label={t("chat.attachImage")}
             onClick={() => triggerAttachPick("image")}
           >
             <IconPhoto size={20} />
@@ -446,20 +446,20 @@ export default function ChatPage() {
             variant="light"
             size="lg"
             color="gray"
-            aria-label="Прикрепить аудиофайл"
-            title="Выбрать аудио (без видео)"
+            aria-label={t("chat.attachAudio")}
+            title={t("chat.pickAudio")}
             onClick={() => triggerAttachPick("audio")}
           >
             <IconVolume size={20} />
           </ActionIcon>
           <Button color={SEMANTIC.action.send} onClick={handleSend} loading={sending} disabled={!canSend}>
-            Отправить
+            {t("chat.send")}
           </Button>
           {defaultStickers.length > 0 && (
             <Popover width={220} position="top-start" shadow="md">
               <Popover.Target>
                 <Button variant="light" color={SEMANTIC.action.send}>
-                  Стикер
+                  {t("chat.sticker")}
                 </Button>
               </Popover.Target>
               <Popover.Dropdown>
@@ -479,7 +479,7 @@ export default function ChatPage() {
           )}
         </Group>
         <Text size="xs" c="dimmed">
-          Голос — микрофоном или файлом аудио; подпись к вложению необязательна.
+          {t("chat.voiceHint")}
         </Text>
       </Stack>
     </Stack>

@@ -1,6 +1,22 @@
+# Public documentation
+
+**English entry (GitHub / HN):** start at the root [`README.md`](../README.md), then:
+
+| File | What |
+|---|---|
+| [PRODUCT_OVERVIEW.md](./PRODUCT_OVERVIEW.md) | Product contours |
+| [ORIGIN.md](./ORIGIN.md) | Why this repo is public; relationship to [LEO](https://github.com/alex-zaporozhan/leo) |
+| [GETTING_STARTED.md](./GETTING_STARTED.md) | Clone → demo |
+| [DEMO_CREDENTIALS.md](./DEMO_CREDENTIALS.md) | Seed logins (DEMO only) |
+| [LICENSING.md](./LICENSING.md) | PolyForm Shield in plain language |
+
+Older files below this line are mixed-language engineering notes. If they disagree with the code, the code wins.
+
+---
+
 # Публичная документация репозитория
 
-> **Версия:** 2026-04-02  
+> **Версия:** 2026-08-19 (English entry added)  
 > **Назначение:** всё, что **можно** отдавать в git, клиентам и покупателям. Здесь нет внутренних регламентов команд и путей к закрытым материалам.
 
 **Официальный порядок и слои:** [STRUCTURE.md](./STRUCTURE.md). Политика репозитория: **`DOCUMENTATION_POLICY.md`** (корень проекта).

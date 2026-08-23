@@ -2,6 +2,9 @@
   "name": "dental-booking-frontend",
   "private": true,
   "version": "0.0.2",
+  "description": "MedCore clinic OS frontend (admin, patient PWA, marketing, platform)",
+  "author": "Alexandr Zaporozhan <alexandr.zaporojan@gmail.com>",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
     "predev": "node scripts/sync-emoji-apple-sheet.mjs",

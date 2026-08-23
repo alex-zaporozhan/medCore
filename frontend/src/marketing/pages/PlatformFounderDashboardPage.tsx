@@ -2,7 +2,9 @@ import { API_BASE } from "@/api/client";
 import { PlatformFounderTotpSetupModal } from "@/marketing/components/PlatformFounderTotpSetupModal";
 import { usePlatformFounderSession } from "@/marketing/contexts/PlatformFounderSessionContext";
 import {
+  FounderQueryError,
   formatPlatformFounderApiError,
+  founderFailMessage,
   parseJsonArray,
 } from "@/marketing/platformFounderApi";
 import { ROUTE_PATHS } from "@/routePaths";
@@ -28,18 +30,18 @@ import { IconExternalLink } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { useMemo, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 /** Ориентиры, если эндпоинт сводки недоступен (ошибка сети / 503). */
 const MOCK_ACTIVE_ORGANIZATIONS = 12;
-const MOCK_MRR_RUB = 350_000;
-
-const ILLUSTRATIVE_TREND = "+15% к прошлому месяцу";
+const MOCK_MRR_USD = 1_200;
 
 type DashboardSummary = {
   active_organizations: number;
   mrr_rub_monthly: string;
   mrr_partial: boolean;
+  currency?: string;
 };
 
 type EnterpriseLeadRow = {
@@ -58,13 +60,14 @@ function KpiCard({
   title,
   value,
   footnote,
-  /** Только для ориентировочных KPI (мок); на метриках из API не показываем — иначе вводит в заблуждение. */
   illustrativeTrend = false,
+  trendLabel,
 }: {
   title: string;
   value: ReactNode;
   footnote?: ReactNode;
   illustrativeTrend?: boolean;
+  trendLabel?: string;
 }) {
   return (
     <Paper p="md" radius="md" shadow="xs" withBorder bg="white" style={{ borderColor: "var(--mantine-color-gray-3)" }}>
@@ -75,7 +78,7 @@ function KpiCard({
         <Box style={{ minWidth: 0, flex: 1 }}>{value}</Box>
         {illustrativeTrend ? (
           <Badge color="green" variant="light" size="sm" style={{ flexShrink: 0 }}>
-            {ILLUSTRATIVE_TREND}
+            {trendLabel}
           </Badge>
         ) : null}
       </Group>
@@ -88,24 +91,25 @@ function KpiCard({
   );
 }
 
-function formatRub(n: number) {
-  return `${n.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽`;
+function formatUsd(n: number) {
+  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
-function parseSummaryRub(s: string): number {
-  const n = Number.parseFloat(s.replace(",", "."));
-  return Number.isFinite(n) ? n : 0;
-}
-
-function kpiNumber(n: number) {
+function kpiNumber(n: number, locale: string) {
   return (
     <Text fz={28} fw={700} lh={1.2} style={{ color: "#0f172a" }}>
-      {n.toLocaleString("ru-RU")}
+      {n.toLocaleString(locale.startsWith("ru") ? "ru-RU" : "en-US")}
     </Text>
   );
 }
 
+function parseSummaryAmount(s: string): number {
+  const n = Number.parseFloat(s.replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function PlatformFounderDashboardPage() {
+  const { t, i18n } = useTranslation("founder");
   const { token } = usePlatformFounderSession();
   const tokenReady = Boolean(token?.trim());
   const [totpModalOpen, totpModalHandlers] = useDisclosure(false);
@@ -118,18 +122,15 @@ export default function PlatformFounderDashboardPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (r.status === 401 || r.status === 403) {
-        throw new Error("Сессия недействительна. Выйдите и войдите снова.");
+        throw new FounderQueryError("session");
       }
       if (r.status === 503) {
-        throw new Error(
-          await formatPlatformFounderApiError(
-            r,
-            "Сервис основателя недоступен (проверьте конфигурацию секрета в среде).",
-          ),
-        );
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("unavailable", { apiDetail: apiDetail || undefined });
       }
       if (!r.ok) {
-        throw new Error(await formatPlatformFounderApiError(r, `Ошибка ${r.status}`));
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("http", { httpStatus: r.status, apiDetail: apiDetail || undefined });
       }
       const raw: unknown = await r.json();
       return raw as DashboardSummary;
@@ -144,18 +145,15 @@ export default function PlatformFounderDashboardPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (r.status === 401 || r.status === 403) {
-        throw new Error("Сессия недействительна. Выйдите и войдите снова.");
+        throw new FounderQueryError("session");
       }
       if (r.status === 503) {
-        throw new Error(
-          await formatPlatformFounderApiError(
-            r,
-            "Сервис основателя недоступен (проверьте конфигурацию секрета в среде).",
-          ),
-        );
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("unavailable", { apiDetail: apiDetail || undefined });
       }
       if (!r.ok) {
-        throw new Error(await formatPlatformFounderApiError(r, `Ошибка ${r.status}`));
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("http", { httpStatus: r.status, apiDetail: apiDetail || undefined });
       }
       const raw: unknown = await r.json();
       return parseJsonArray<QueueRow>(raw);
@@ -170,18 +168,15 @@ export default function PlatformFounderDashboardPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (r.status === 401 || r.status === 403) {
-        throw new Error("Сессия недействительна. Выйдите и войдите снова.");
+        throw new FounderQueryError("session");
       }
       if (r.status === 503) {
-        throw new Error(
-          await formatPlatformFounderApiError(
-            r,
-            "Сервис основателя недоступен (проверьте конфигурацию секрета в среде).",
-          ),
-        );
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("unavailable", { apiDetail: apiDetail || undefined });
       }
       if (!r.ok) {
-        throw new Error(await formatPlatformFounderApiError(r, `Ошибка ${r.status}`));
+        const apiDetail = await formatPlatformFounderApiError(r, "");
+        throw new FounderQueryError("http", { httpStatus: r.status, apiDetail: apiDetail || undefined });
       }
       const raw: unknown = await r.json();
       return parseJsonArray<EnterpriseLeadRow>(raw);
@@ -216,39 +211,39 @@ export default function PlatformFounderDashboardPage() {
         <Stack gap="xl">
           <Stack gap={6}>
             <Title order={2} style={{ color: "#0f172a" }}>
-              Обзор
+              {t("dashboard.title")}
             </Title>
             <Text size="sm" c="dimmed" maw={720}>
-              Сводка по организациям, заявкам и очереди внедрения. Показатели ниже отражают текущее состояние
-              платформы в удобном для решений виде.
+              {t("dashboard.lead")}
             </Text>
           </Stack>
 
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
             <KpiCard
-              title="Активные организации"
+              title={t("dashboard.kpiOrgs")}
               illustrativeTrend={Boolean(summaryQ.error && !summaryQ.isLoading)}
+              trendLabel={t("dashboard.trend")}
               value={
                 summaryQ.isLoading ? (
                   <Skeleton height={36} width={72} radius="sm" />
                 ) : summaryQ.error ? (
-                  kpiNumber(MOCK_ACTIVE_ORGANIZATIONS)
+                  kpiNumber(MOCK_ACTIVE_ORGANIZATIONS, i18n.language)
                 ) : (
-                  kpiNumber(summaryQ.data?.active_organizations ?? 0)
+                  kpiNumber(summaryQ.data?.active_organizations ?? 0, i18n.language)
                 )
               }
               footnote={
                 summaryQ.error ? (
                   <Text span c="red" size="xs">
-                    {(summaryQ.error as Error).message}. Показан ориентир для макета.
+                    {t("errors.mockShown", { message: founderFailMessage(summaryQ.error, t) })}
                   </Text>
                 ) : !summaryQ.isLoading ? (
-                  "Организации с активной подпиской SaaS (снимок на сервере)"
+                  t("dashboard.kpiOrgsHint")
                 ) : null
               }
             />
             <KpiCard
-              title="Заявки Enterprise"
+              title={t("dashboard.kpiLeads")}
               value={
                 leadsQ.isLoading ? (
                   <Skeleton height={36} width={56} radius="sm" />
@@ -257,21 +252,21 @@ export default function PlatformFounderDashboardPage() {
                     —
                   </Text>
                 ) : (
-                  kpiNumber(newEnterpriseCount)
+                  kpiNumber(newEnterpriseCount, i18n.language)
                 )
               }
               footnote={
                 leadsQ.error ? (
                   <Text span c="red" size="xs">
-                    {(leadsQ.error as Error).message}
+                    {founderFailMessage(leadsQ.error, t)}
                   </Text>
                 ) : !leadsQ.isLoading ? (
-                  "В статусе «Новая»"
+                  t("dashboard.kpiLeadsHint")
                 ) : null
               }
             />
             <KpiCard
-              title="Очередь провижининга"
+              title={t("dashboard.kpiQueue")}
               value={
                 queueQ.isLoading ? (
                   <Skeleton height={36} width={56} radius="sm" />
@@ -280,44 +275,45 @@ export default function PlatformFounderDashboardPage() {
                     —
                   </Text>
                 ) : (
-                  kpiNumber(queueRows.length)
+                  kpiNumber(queueRows.length, i18n.language)
                 )
               }
               footnote={
                 queueQ.error ? (
                   <Text span c="red" size="xs">
-                    {(queueQ.error as Error).message}
+                    {founderFailMessage(queueQ.error, t)}
                   </Text>
                 ) : (
-                  "Записей в очереди обработки"
+                  t("dashboard.kpiQueueHint")
                 )
               }
             />
             <KpiCard
-              title="MRR (Регулярная выручка)"
+              title={t("dashboard.kpiMrr")}
               illustrativeTrend={Boolean(summaryQ.error && !summaryQ.isLoading)}
+              trendLabel={t("dashboard.trend")}
               value={
                 summaryQ.isLoading ? (
                   <Skeleton height={36} width={120} radius="sm" />
                 ) : summaryQ.error ? (
                   <Text fz={28} fw={700} lh={1.2} style={{ color: "#0f172a" }}>
-                    {formatRub(MOCK_MRR_RUB)}
+                    {formatUsd(MOCK_MRR_USD)}
                   </Text>
                 ) : (
                   <Text fz={28} fw={700} lh={1.2} style={{ color: "#0f172a" }}>
-                    {formatRub(parseSummaryRub(summaryQ.data?.mrr_rub_monthly ?? "0"))}
+                    {formatUsd(parseSummaryAmount(summaryQ.data?.mrr_rub_monthly ?? "0"))}
                   </Text>
                 )
               }
               footnote={
                 summaryQ.error ? (
                   <Text span c="red" size="xs">
-                    {(summaryQ.error as Error).message}. Показан ориентир для макета.
+                    {t("errors.mockShown", { message: founderFailMessage(summaryQ.error, t) })}
                   </Text>
                 ) : !summaryQ.isLoading && summaryQ.data?.mrr_partial ? (
-                  "Часть активных организаций без полного тарифного снимка — сумма оценочная (каталог)."
+                  t("dashboard.kpiMrrPartial")
                 ) : !summaryQ.isLoading ? (
-                  "Оценка по тарифным снимкам и каталогу (ежемесячный эквивалент)."
+                  t("dashboard.kpiMrrHint")
                 ) : null
               }
             />
@@ -334,17 +330,17 @@ export default function PlatformFounderDashboardPage() {
                 style={{ borderColor: "var(--mantine-color-gray-3)" }}
               >
                 <Text fw={600} size="sm" mb="md" style={{ color: "#0f172a" }}>
-                  Регистрации за 30 дней
+                  {t("dashboard.chartTitle")}
                 </Text>
                 <Box
                   role="figure"
-                  aria-label="Демонстрационный график регистраций за 30 дней; данные не из продакшн-учёта"
+                  aria-label={t("dashboard.chartAria")}
                 >
                   <AreaChart
                     h={280}
                     data={chartData}
                     dataKey="day"
-                    series={[{ name: "registrations", color: "slate.7", label: "Регистрации" }]}
+                    series={[{ name: "registrations", color: "slate.7", label: t("dashboard.chartSeries") }]}
                     curveType="natural"
                     gridColor="gray.3"
                     textColor="dimmed"
@@ -358,8 +354,7 @@ export default function PlatformFounderDashboardPage() {
                   />
                 </Box>
                 <Text size="xs" c="dimmed" mt="sm">
-                  Ориентировочная кривая для интерфейса; после подключения учёта регистраций график заменится на
-                  фактические значения.
+                  {t("dashboard.chartHint")}
                 </Text>
               </Paper>
             </Grid.Col>
@@ -374,23 +369,23 @@ export default function PlatformFounderDashboardPage() {
               >
                 <Group justify="space-between" mb="md" wrap="nowrap">
                   <Text fw={600} size="sm" style={{ color: "#0f172a" }}>
-                    Очередь signup / провижининг
+                    {t("dashboard.queuePreview")}
                   </Text>
                   <Anchor component={Link} to={ROUTE_PATHS.platform.provisionQueue} size="xs">
-                    Вся очередь
+                    {t("dashboard.queueAll")}
                   </Anchor>
                 </Group>
                 {queueQ.isLoading ? (
                   <Text size="sm" c="dimmed">
-                    Загрузка…
+                    {t("dashboard.loading")}
                   </Text>
                 ) : queueQ.error ? (
                   <Text size="sm" c="red">
-                    {(queueQ.error as Error).message}
+                    {founderFailMessage(queueQ.error, t)}
                   </Text>
                 ) : previewRows.length === 0 ? (
                   <Text size="sm" c="dimmed">
-                    Нет записей в очереди.
+                    {t("dashboard.queueEmpty")}
                   </Text>
                 ) : (
                   <Table.ScrollContainer minWidth={280}>
@@ -398,13 +393,13 @@ export default function PlatformFounderDashboardPage() {
                       verticalSpacing="xs"
                       horizontalSpacing="sm"
                       highlightOnHover
-                      aria-label="Сокращённый список очереди провижининга"
+                      aria-label={t("dashboard.queueTableAria")}
                     >
                       <Table.Thead>
                         <Table.Tr>
-                          <Table.Th>Почта</Table.Th>
-                          <Table.Th>Статус</Table.Th>
-                          <Table.Th>Организация</Table.Th>
+                          <Table.Th>{t("dashboard.colEmail")}</Table.Th>
+                          <Table.Th>{t("dashboard.colStatus")}</Table.Th>
+                          <Table.Th>{t("dashboard.colOrg")}</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
@@ -420,7 +415,7 @@ export default function PlatformFounderDashboardPage() {
                             </Table.Td>
                             <Table.Td>
                               <Text size="xs" c={row.organization_id ? undefined : "dimmed"}>
-                                {row.organization_id ? "Да" : "Нет"}
+                                {row.organization_id ? t("dashboard.yes") : t("dashboard.no")}
                               </Text>
                             </Table.Td>
                           </Table.Tr>
@@ -436,22 +431,22 @@ export default function PlatformFounderDashboardPage() {
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
             <Paper p="lg" radius="md" shadow="xs" withBorder bg="white" style={{ borderColor: "var(--mantine-color-gray-3)" }}>
               <Title order={5} mb="xs" style={{ color: "#0f172a" }}>
-                Безопасность сессии
+                {t("dashboard.sessionTitle")}
               </Title>
               <Text size="sm" c="dimmed" mb="md">
-                Двухфакторная аутентификация снижает риск несанкционированного входа в кабинет основателя.
+                {t("dashboard.sessionBody")}
               </Text>
               <Button variant="light" color="slate" onClick={totpModalHandlers.open}>
-                Привязать TOTP / Google Authenticator
+                {t("dashboard.bindTotp")}
               </Button>
             </Paper>
 
             <Paper p="lg" radius="md" shadow="xs" withBorder bg="white" style={{ borderColor: "var(--mantine-color-gray-3)" }}>
               <Title order={5} mb="xs" style={{ color: "#0f172a" }}>
-                Мониторинг инфраструктуры
+                {t("dashboard.infraTitle")}
               </Title>
               <Text size="sm" c="dimmed" mb="md">
-                Prometheus метрики и дашборды собираются в реальном времени.
+                {t("dashboard.infraBody")}
               </Text>
               <Button
                 component="a"
@@ -461,7 +456,7 @@ export default function PlatformFounderDashboardPage() {
                 variant="default"
                 leftSection={<IconExternalLink size={16} aria-hidden />}
               >
-                Открыть Grafana
+                {t("dashboard.openGrafana")}
               </Button>
             </Paper>
           </SimpleGrid>

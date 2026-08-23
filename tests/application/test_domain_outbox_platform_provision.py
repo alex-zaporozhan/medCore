@@ -1,12 +1,12 @@
 """Contour B: platform signup provision via domain_outbox (ADR-009 §17.1 / 2-E1)."""
 
-from datetime import time
 from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, text
+from tests.booking_slot import unique_booking_slot
 
 from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.domain_outbox import DomainOutbox
@@ -169,7 +169,7 @@ async def test_booking_outbox_dedup_and_second_dispatch_empty(seed_data: dict):
 
     booking_id = uuid4()
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(14, 30, 0)
+    slot_day, appt_time = unique_booking_slot(seed_data["date"], hour=14)
     async with db_base.AsyncSessionLocal() as session:
         session.add(
             Booking(
@@ -178,7 +178,7 @@ async def test_booking_outbox_dedup_and_second_dispatch_empty(seed_data: dict):
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
+                appointment_date=slot_day,
                 appointment_time=appt_time,
                 status=BookingStatus.PENDING,
                 prepayment_amount=0,
@@ -213,7 +213,7 @@ async def test_booking_outbox_redelivery_republishes_event(seed_data: dict):
 
     booking_id = uuid4()
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(15, 0, 0)
+    slot_day, appt_time = unique_booking_slot(seed_data["date"], hour=15)
     async with db_base.AsyncSessionLocal() as session:
         session.add(
             Booking(
@@ -222,7 +222,7 @@ async def test_booking_outbox_redelivery_republishes_event(seed_data: dict):
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
+                appointment_date=slot_day,
                 appointment_time=appt_time,
                 status=BookingStatus.PENDING,
                 prepayment_amount=0,

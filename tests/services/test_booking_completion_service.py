@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import time, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -18,16 +17,7 @@ from src.domain.entities.task import Task
 from src.application.dto.erp_finance_dto import ErpVisitNodeResult
 from src.application.dto.erp_loyalty_dto import ErpLoyaltyWriteOffSummary
 from src.infrastructure.database import base as db_base
-
-
-def _unique_time(hour: int) -> time:
-    """Return a per-test unique minute in the given hour to avoid slot collisions."""
-    minute = (uuid4().int % 50) + 5  # 05..54
-    return time(hour, minute)
-
-
-def _unique_day(base_day):
-    return base_day + timedelta(days=(uuid4().int % 20) + 1)
+from tests.booking_slot import unique_booking_slot
 
 
 @pytest.mark.asyncio
@@ -57,7 +47,7 @@ async def test_complete_visit_invalid_status(init_db, seed_data):
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day = _unique_day(seed_data["date"])
+    day, appt_time = unique_booking_slot(seed_data["date"], hour=10)
 
     async with db_base.AsyncSessionLocal() as session:
         booking_service = BookingService(session)
@@ -72,7 +62,7 @@ async def test_complete_visit_invalid_status(init_db, seed_data):
                     "doctor_id": doctor_id,
                     "service_id": service_id,
                     "appointment_date": day,
-                    "appointment_time": _unique_time(10),
+                    "appointment_time": appt_time,
                     "status": "completed",  # уже завершён
                     "prepayment_amount": 0,
                     "notes": None,
@@ -104,7 +94,7 @@ async def test_complete_visit_success_happy_path(init_db, seed_data):
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day = _unique_day(seed_data["date"])
+    day, appt_time = unique_booking_slot(seed_data["date"], hour=11)
 
     async with db_base.AsyncSessionLocal() as session:
         booking_service = BookingService(session)
@@ -119,7 +109,7 @@ async def test_complete_visit_success_happy_path(init_db, seed_data):
                     "doctor_id": doctor_id,
                     "service_id": service_id,
                     "appointment_date": day,
-                    "appointment_time": _unique_time(11),
+                    "appointment_time": appt_time,
                     "status": "confirmed",
                     "prepayment_amount": 0,
                     "notes": None,
@@ -156,7 +146,7 @@ async def test_complete_visit_unexpected_loyalty_error_best_effort(init_db, seed
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day = _unique_day(seed_data["date"])
+    day, appt_time = unique_booking_slot(seed_data["date"], hour=12)
 
     async with db_base.AsyncSessionLocal() as session:
         booking_service = BookingService(session)
@@ -171,7 +161,7 @@ async def test_complete_visit_unexpected_loyalty_error_best_effort(init_db, seed
                     "doctor_id": doctor_id,
                     "service_id": service_id,
                     "appointment_date": day,
-                    "appointment_time": _unique_time(12),
+                    "appointment_time": appt_time,
                     "status": "confirmed",
                     "prepayment_amount": 0,
                     "notes": None,
@@ -231,7 +221,7 @@ async def test_complete_visit_subscription_business_error_blocks(init_db, seed_d
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day = _unique_day(seed_data["date"])
+    day, appt_time = unique_booking_slot(seed_data["date"], hour=12)
 
     async with db_base.AsyncSessionLocal() as session:
         booking_service = BookingService(session)
@@ -246,7 +236,7 @@ async def test_complete_visit_subscription_business_error_blocks(init_db, seed_d
                     "doctor_id": doctor_id,
                     "service_id": service_id,
                     "appointment_date": day,
-                    "appointment_time": _unique_time(12),
+                    "appointment_time": appt_time,
                     "status": "confirmed",
                     "prepayment_amount": 0,
                     "notes": None,
@@ -319,7 +309,7 @@ async def test_complete_visit_erp_configuration_error_reported(init_db, seed_dat
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day = _unique_day(seed_data["date"])
+    day, appt_time = unique_booking_slot(seed_data["date"], hour=13)
 
     async with db_base.AsyncSessionLocal() as session:
         booking_service = BookingService(session)
@@ -334,7 +324,7 @@ async def test_complete_visit_erp_configuration_error_reported(init_db, seed_dat
                     "doctor_id": doctor_id,
                     "service_id": service_id,
                     "appointment_date": day,
-                    "appointment_time": _unique_time(13),
+                    "appointment_time": appt_time,
                     "status": "confirmed",
                     "prepayment_amount": 0,
                     "notes": None,
@@ -399,7 +389,7 @@ async def test_complete_visit_creates_task_on_loyalty_erp_inconsistent_obligatio
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day = _unique_day(seed_data["date"])
+    day, appt_time = unique_booking_slot(seed_data["date"], hour=14)
 
     async with db_base.AsyncSessionLocal() as session:
         booking_service = BookingService(session)
@@ -414,7 +404,7 @@ async def test_complete_visit_creates_task_on_loyalty_erp_inconsistent_obligatio
                     "doctor_id": doctor_id,
                     "service_id": service_id,
                     "appointment_date": day,
-                    "appointment_time": _unique_time(14),
+                    "appointment_time": appt_time,
                     "status": "confirmed",
                     "prepayment_amount": 0,
                     "notes": None,
@@ -495,7 +485,7 @@ async def test_complete_visit_erp_node_failure_sets_error_and_creates_task(
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day = _unique_day(seed_data["date"])
+    day, appt_time = unique_booking_slot(seed_data["date"], hour=15)
 
     async with db_base.AsyncSessionLocal() as session:
         booking_service = BookingService(session)
@@ -510,7 +500,7 @@ async def test_complete_visit_erp_node_failure_sets_error_and_creates_task(
                     "doctor_id": doctor_id,
                     "service_id": service_id,
                     "appointment_date": day,
-                    "appointment_time": _unique_time(15),
+                    "appointment_time": appt_time,
                     "status": "confirmed",
                     "prepayment_amount": 0,
                     "notes": None,
@@ -582,7 +572,7 @@ async def test_complete_visit_blocked_when_required_form_missing(init_db, seed_d
     doctor_id = seed_data["doctor_id"]
     service_id = seed_data["service_id"]
     patient_id = seed_data["patient_id"]
-    day = _unique_day(seed_data["date"])
+    day, appt_time = unique_booking_slot(seed_data["date"], hour=14)
 
     loyalty_called = {"n": 0}
 
@@ -622,7 +612,7 @@ async def test_complete_visit_blocked_when_required_form_missing(init_db, seed_d
                         "doctor_id": doctor_id,
                         "service_id": service_id,
                         "appointment_date": day,
-                        "appointment_time": _unique_time(14),
+                        "appointment_time": appt_time,
                         "status": "confirmed",
                         "prepayment_amount": 0,
                         "notes": None,

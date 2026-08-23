@@ -39,16 +39,10 @@ import {
 import { useEffect, useState } from "react";
 import { IconCalendarEvent } from "@tabler/icons-react";
 import { bookingStatusSelectOptions } from "@/shared/bookingStatusMeta";
+import { displayPersonName } from "@/shared/ui/personNameFallback";
 
 function looksLikeUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s).trim());
-}
-
-function displayPersonName(name: string | undefined, fallbackId: string): string {
-  const n = (name ?? "").trim();
-  if (n) return n;
-  if (looksLikeUuid(fallbackId)) return "Имя неизвестно";
-  return fallbackId;
 }
 
 /** Высота области вкладок — фиксированная, чтобы модалка не прыгала при смене вкладки. */

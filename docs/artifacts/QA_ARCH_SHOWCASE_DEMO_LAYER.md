@@ -26,10 +26,10 @@ poetry run python -m src.scripts.backfill_showcase_saas_extras
 |--------|-------------------|
 | Commerce | код точки `SHOWCASE_DEMO_MAIN` |
 | Записи пациентов (расписание врачей) | `bookings.notes = showcase_calendar_v1` |
-| Kanban | `tasks.title` LIKE `Демо Kanban:%` + поток `task_streams.slug = general` + доска `clinic_wide` |
-| Календарь сотрудника | `staff_calendar_events.title` LIKE `Демо календарь:%` |
-| Лента | посты с префиксом `Демо CRM:` |
-| Чат | комната `GENERAL` |
+| Kanban | канонические EN titles (`TASK_TITLES_CANONICAL`) **или** legacy `Демо Kanban:%` / `Demo Kanban:%`; поток `task_streams.slug = general` + доска `clinic_wide`. Окно ±14 дней: отдельные titles без префикса `Demo` (`WINDOW_TASK_TITLES`) |
+| Календарь сотрудника | `CAL_TITLES_CANONICAL` **или** legacy `Демо календарь:%` / `Demo calendar:%`; встречи окна — `WINDOW_MEETINGS` |
+| Лента | `Week plan` / `NPS and reviews digest` **или** legacy `Демо CRM:` / `Demo CRM:` |
+| Чат | комната `GENERAL` title `Team chat`; group rooms без префикса `Demo huddle:` |
 
 Реализация: `src/scripts/showcase_saas_extras.py`.
 

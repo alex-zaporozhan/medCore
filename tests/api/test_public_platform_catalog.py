@@ -19,8 +19,20 @@ async def test_public_catalog_plans_includes_start_growth_business_os(client: As
     assert "core.base" in keys
     assert "crm.pipeline" in keys
     assert "tasks.kanban" in keys
-    assert start.get("price_monthly_rub") == "2900.00"
-    assert start.get("price_annual_rub") == "29000.00"
+    assert start.get("price_monthly_rub") == "20.00"
+    assert start.get("price_annual_rub") == "200.00"
+    assert start.get("currency") == "USD"
+
+
+@pytest.mark.asyncio
+async def test_public_catalog_options_list_prices_are_usd_denominated(client: AsyncClient):
+    r = await client.get("/api/v1/public/platform/catalog/options")
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data, list)
+    embed = next(x for x in data if x.get("entitlement_key") == "omni.embed.bundle")
+    assert embed.get("currency") == "USD"
+    assert embed.get("list_price_rub") == "49.00"
 
 
 @pytest.mark.asyncio

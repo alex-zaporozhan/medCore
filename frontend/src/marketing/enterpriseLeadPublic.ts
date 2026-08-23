@@ -1,7 +1,8 @@
 /**
- * Публичная отправка заявок POST /api/v1/platform-leads/ (Turnstile как на checkout).
+ * Public POST /api/v1/platform-leads/ (Turnstile same as checkout).
  */
 
+import { tNs } from "@/i18n";
 import { parsePublicCheckoutFailure } from "@/marketing/platformBillingPublic";
 
 export type EnterpriseLeadSubmitErrorShape = {
@@ -23,17 +24,10 @@ export function parseEnterpriseLeadSubmitFailure(
   }
   const base = parsePublicCheckoutFailure(status, data);
   if (base.code === "captcha_required") {
-    return {
-      ...base,
-      message:
-        "Требуется подтверждение Turnstile. Выполните проверку ниже и снова отправьте форму.",
-    };
+    return { ...base, message: tNs("marketing", "lead.turnstile") };
   }
   if (base.code === "rate_limited") {
-    return {
-      ...base,
-      message: "Слишком много попыток. Подождите немного и повторите отправку.",
-    };
+    return { ...base, message: tNs("marketing", "lead.rateLimited") };
   }
   return base;
 }

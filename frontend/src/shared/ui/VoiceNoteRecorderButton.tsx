@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { IconMicrophone, IconPlayerStop } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   onRecorded: (file: File) => void;
@@ -69,6 +70,7 @@ export function VoiceNoteRecorderButton({
   disabled,
   maxDurationMs = 120_000,
 }: Props) {
+  const { t } = useTranslation("chat");
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
@@ -105,7 +107,7 @@ export function VoiceNoteRecorderButton({
     setError(null);
     if (disabled || recording) return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      const msg = "Микрофон недоступен";
+      const msg = t("errors.micUnavailable");
       setError(msg);
       onError?.(msg);
       return;
@@ -138,7 +140,7 @@ export function VoiceNoteRecorderButton({
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       rec.onerror = () => {
-        const msg = "Ошибка записи";
+        const msg = t("errors.recordFailed");
         setError(msg);
         onError?.(msg);
         stopInternal();
@@ -165,12 +167,12 @@ export function VoiceNoteRecorderButton({
         }
       }, maxDurationMs);
     } catch {
-      const msg = "Нет доступа к микрофону";
+      const msg = t("errors.micDenied");
       setError(msg);
       onError?.(msg);
       stopInternal();
     }
-  }, [disabled, maxDurationMs, onError, onRecorded, recording, stopInternal]);
+  }, [disabled, maxDurationMs, onError, onRecorded, recording, stopInternal, t]);
 
   const toggle = useCallback(() => {
     if (recording) {
@@ -184,12 +186,12 @@ export function VoiceNoteRecorderButton({
   }, [recording, startRecording]);
 
   return (
-    <Tooltip label={error || (recording ? "Остановить запись" : "Голосовое сообщение")}>
+    <Tooltip label={error || (recording ? t("voice.stop") : t("voice.tooltip"))}>
       <ActionIcon
         variant={recording ? "filled" : "light"}
         color={recording ? "red" : "gray"}
         size="lg"
-        aria-label={recording ? "Остановить запись" : "Записать голос"}
+        aria-label={recording ? t("voice.stop") : t("voice.record")}
         disabled={disabled}
         onClick={toggle}
       >

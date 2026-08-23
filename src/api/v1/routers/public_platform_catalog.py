@@ -67,6 +67,7 @@ async def list_public_catalog_plans(
                 option_keys=[str(x) for x in keys],
                 price_monthly_rub=pm,
                 price_annual_rub=pa,
+                currency="USD",
             )
         )
     return out
@@ -94,6 +95,7 @@ async def list_public_catalog_options(
                 display_name=o.display_name,
                 description=o.description,
                 list_price_rub=price,
+                currency="USD",
             )
         )
     return out

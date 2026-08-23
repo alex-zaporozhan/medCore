@@ -60,12 +60,13 @@ class PlatformCatalogPlanPublic(BaseModel):
     option_keys: list[str] = Field(default_factory=list)
     price_monthly_rub: str | None = Field(
         default=None,
-        description="Subscription price per month (RUB), if set by platform catalog",
+        description="Subscription list price per month (USD-denominated catalog amount)",
     )
     price_annual_rub: str | None = Field(
         default=None,
-        description="Subscription price per year (RUB), if set by platform catalog",
+        description="Subscription list price per year (USD-denominated catalog amount)",
     )
+    currency: str = Field(default="USD", description="ISO currency for catalog list prices")
 
 
 class PlatformCatalogPlanInternal(BaseModel):
@@ -82,6 +83,7 @@ class PlatformCatalogPlanInternal(BaseModel):
     price_annual_rub: str | None = None
     is_active: bool
     sort_order: int
+    currency: str = Field(default="USD", description="ISO currency for catalog list prices")
 
 
 class PlatformCatalogPlanUpsertRequest(BaseModel):
@@ -103,6 +105,7 @@ class PlatformCatalogOptionPublic(BaseModel):
     display_name: str
     description: str | None = None
     list_price_rub: str | None = None
+    currency: str = Field(default="USD", description="ISO currency for catalog list prices")
 
 
 class PlatformSignupCheckoutRequest(BaseModel):
@@ -145,4 +148,11 @@ class PlatformSignupCheckoutResponse(BaseModel):
     signup_intent_id: str
     payment_url: str
     amount_rub: str
-    currency: str = Field(default="RUB")
+    currency: str = Field(
+        default="USD",
+        description="Catalog list currency of amount_rub (USD-denominated).",
+    )
+    charge_currency: str = Field(
+        default="RUB",
+        description="ISO currency posted to the payment provider. Demo YooKassa rail is RUB with the same numeric amount as the USD list price.",
+    )

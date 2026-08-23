@@ -12,6 +12,8 @@ export const ROUTE_PATHS = {
     pricing: "/pricing",
     /** Регистрация клиники: согласия PII + checkout (FE-E1). */
     signup: "/signup",
+    /** After YooKassa provision: set owner password from email token. */
+    ownerInviteAccept: "/signup/owner-invite",
     legalPrivacy: "/legal/privacy",
     legalTerms: "/legal/terms",
   },
@@ -182,6 +184,7 @@ export function buildDerivedPublicAppPaths(): readonly string[] {
     ROUTE_PATHS.marketing.sandbox,
     ROUTE_PATHS.marketing.pricing,
     ROUTE_PATHS.marketing.signup,
+    ROUTE_PATHS.marketing.ownerInviteAccept,
     ROUTE_PATHS.marketing.legalPrivacy,
     ROUTE_PATHS.marketing.legalTerms,
     ROUTE_PATHS.platform.login,

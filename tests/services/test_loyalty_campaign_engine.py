@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -21,6 +21,7 @@ from src.domain.entities.subscription_package import SubscriptionPackage
 from src.domain.entities.task import Task
 from src.domain.entities.wallet import Wallet
 from src.infrastructure.database import base as db_base
+from tests.booking_slot import unique_clock_time
 
 
 @pytest.mark.asyncio
@@ -127,7 +128,7 @@ async def test_high_balance_skips_when_recent_visit(seed_data):
                 doctor_id=doctor_id,
                 service_id=service_id,
                 appointment_date=today,
-                appointment_time=datetime.now(timezone.utc).time().replace(tzinfo=None),
+                appointment_time=unique_clock_time(hour=10),
                 status=BookingStatus.COMPLETED,
             )
         )

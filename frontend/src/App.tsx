@@ -80,6 +80,7 @@ import MarketingSandboxPage from "@/marketing/pages/MarketingSandboxPage";
 import PricingPage from "@/marketing/pages/PricingPage";
 import PublicLoginPage from "@/marketing/pages/PublicLoginPage";
 import SignupPage from "@/marketing/pages/SignupPage";
+import PlatformOwnerInviteAcceptPage from "@/marketing/pages/PlatformOwnerInviteAcceptPage";
 import { PatientEntryBoundary } from "@/contexts/PatientEntryContext";
 import {
   ADMIN_SHELL_ROUTE_SEGMENTS,
@@ -211,6 +212,7 @@ const router = createBrowserRouter(
       <Route path={ROUTE_PATHS.marketing.landing} element={<MarketingLandingPage />} />
       <Route path={ROUTE_PATHS.marketing.sandbox} element={<MarketingSandboxPage />} />
       <Route path={ROUTE_PATHS.marketing.pricing} element={<PricingPage />} />
+      <Route path={ROUTE_PATHS.marketing.ownerInviteAccept} element={<PlatformOwnerInviteAcceptPage />} />
       <Route path={ROUTE_PATHS.marketing.signup} element={<SignupPage />} />
       <Route path={ROUTE_PATHS.marketing.legalPrivacy} element={<LegalPrivacyPage />} />
       <Route path={ROUTE_PATHS.marketing.legalTerms} element={<LegalTermsPage />} />

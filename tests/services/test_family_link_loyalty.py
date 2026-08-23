@@ -24,6 +24,7 @@ from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.loyalty_group import LoyaltyGroup  # noqa: F401
 from src.domain.entities.patient import Patient
 from src.domain.entities.subscription_package import SubscriptionPackage
+from tests.booking_slot import unique_booking_slot
 
 
 @pytest.mark.asyncio
@@ -43,6 +44,7 @@ async def test_family_link_allows_beneficiary_spend(
         Patient(id=child_id, clinic_id=clinic_id, phone="+1002", full_name="Child")
     )
     await db_session.flush()
+    slot_day, slot_time = unique_booking_slot(seed_data["date"], hour=6)
     db_session.add(
         Booking(
             id=booking_id,
@@ -50,8 +52,8 @@ async def test_family_link_allows_beneficiary_spend(
             patient_id=owner_id,
             doctor_id=doctor_id,
             service_id=service_id,
-            appointment_date=(now := datetime.now(timezone.utc)).date(),
-            appointment_time=now.time().replace(second=0, microsecond=0),
+            appointment_date=slot_day,
+            appointment_time=slot_time,
             status=BookingStatus.CONFIRMED,
             prepayment_amount=Decimal("0.00"),
             payment_id=None,

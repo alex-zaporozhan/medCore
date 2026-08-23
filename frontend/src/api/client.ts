@@ -10,6 +10,7 @@
 import type { ApiErrorResponseBody } from "@/api/types";
 import { ROUTE_PATHS, patientPublicLoginSearch } from "@/routePaths";
 import { isPatientLoginPath } from "@/routePathUtils";
+import i18n from "@/i18n";
 
 /** Базовый префикс HTTP-моста; dev-прокси в `vite.config.ts` не менять без согласования с деплоем. */
 export const API_BASE = "/api";
@@ -280,10 +281,10 @@ function normalizeErrorMessage(raw: string, status: number, statusText: string) 
   if (status >= 400 && status < 500) {
     // 405 Method Not Allowed — часто от прокси, когда бэкенд недоступен или метод не разрешён
     if (status === 405) {
-      return "Сервер не принимает этот тип запроса. Если вы входите в админку — попробуйте обновить страницу и войти снова. При повторении обратитесь к администратору.";
+      return i18n.t("errors.method_not_allowed", { ns: "common" });
     }
     if (looksLikeHtml) {
-      return "Сервис временно недоступен или ответ сервера некорректен. Обновите страницу и повторите попытку или обратитесь к администратору.";
+      return i18n.t("errors.html_gateway", { ns: "common" });
     }
     return message;
   }
@@ -296,10 +297,10 @@ function normalizeErrorMessage(raw: string, status: number, statusText: string) 
 
   if (status >= 500) {
     if (status === 502 || status === 503) {
-      return "Сервис временно недоступен. Подождите минуту и обновите страницу. При повторении обратитесь к администратору.";
+      return i18n.t("errors.service_unavailable", { ns: "common" });
     }
     if (looksLikeTraceback) {
-      return "Внутренняя ошибка сервера. Обратитесь к администратору.";
+      return i18n.t("errors.internal_server_error", { ns: "common" });
     }
   }
 
@@ -363,7 +364,7 @@ async function request<T>(
     if (typeof window !== "undefined") {
       window.location.href = ROUTE_PATHS.admin.login;
     }
-    throw new Error("Требуется авторизация");
+    throw new ApiErrorWithCode(i18n.t("errors.unauthorized", { ns: "common" }), "unauthorized");
   }
   if (res.status === 401 && shouldClearPatientSessionOn401(path, resolvedToken)) {
     clearPatientAuth();
@@ -416,7 +417,7 @@ async function requestFormJson<T>(
     if (typeof window !== "undefined") {
       window.location.href = ROUTE_PATHS.admin.login;
     }
-    throw new Error("Требуется авторизация");
+    throw new ApiErrorWithCode(i18n.t("errors.unauthorized", { ns: "common" }), "unauthorized");
   }
   if (res.status === 401 && shouldClearPatientSessionOn401(path, resolvedToken)) {
     clearPatientAuth();
@@ -463,7 +464,7 @@ async function requestBlob(path: string, token?: string | null): Promise<Blob> {
     if (typeof window !== "undefined") {
       window.location.href = ROUTE_PATHS.admin.login;
     }
-    throw new Error("Требуется авторизация");
+    throw new ApiErrorWithCode(i18n.t("errors.unauthorized", { ns: "common" }), "unauthorized");
   }
   if (!res.ok) {
     const bodyText = await res.text();

@@ -3,8 +3,10 @@ import { useCancelPatientBooking, usePatientBookings, useClinics } from "@/hooks
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import { QueryErrorAlert } from "@/shared/ui";
 import { Button, Loader, Stack, Table, Title } from "@mantine/core";
+import { useTranslation } from "react-i18next";
 
 export default function HistoryPage() {
+  const { t } = useTranslation("patient");
   const { accessToken, patientId } = usePatientAuth();
   const { data: clinics } = useClinics();
   const { data: bookings, isLoading, isError, error } = usePatientBookings(patientId, accessToken);
@@ -14,24 +16,24 @@ export default function HistoryPage() {
   if (isError) {
     return (
       <Stack>
-        <Title order={3}>История посещений</Title>
-        <QueryErrorAlert error={error} title="Не удалось загрузить записи" />
+        <Title order={3}>{t("history.title")}</Title>
+        <QueryErrorAlert error={error} title={t("history.loadFailed")} />
       </Stack>
     );
   }
-  if (!bookings?.length) return <EmptyStateHint title="Нет записей" subtitle="Запишитесь на приём через «Быстрая запись»." />;
+  if (!bookings?.length) return <EmptyStateHint title={t("history.emptyTitle")} subtitle={t("history.emptyHint")} />;
 
   return (
     <Stack>
-      <Title order={3}>История посещений</Title>
+      <Title order={3}>{t("history.title")}</Title>
       <Table striped>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Клиника</Table.Th>
-            <Table.Th>Дата</Table.Th>
-            <Table.Th>Время</Table.Th>
-            <Table.Th>Статус</Table.Th>
-            <Table.Th>Действия</Table.Th>
+            <Table.Th>{t("history.clinic")}</Table.Th>
+            <Table.Th>{t("history.date")}</Table.Th>
+            <Table.Th>{t("history.time")}</Table.Th>
+            <Table.Th>{t("history.status")}</Table.Th>
+            <Table.Th>{t("history.actions")}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -50,7 +52,7 @@ export default function HistoryPage() {
                     onClick={() => cancelMutation.mutate({ bookingId: b.id, patientId })}
                     loading={cancelMutation.isPending}
                   >
-                    Отменить
+                    {t("history.cancel")}
                   </Button>
                 )}
               </Table.Td>

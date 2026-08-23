@@ -4,10 +4,12 @@ import { setFounderToken } from "@/marketing/platformFounderSession";
 import { ROUTE_PATHS } from "@/routePaths";
 import { Alert, Anchor, Button, PasswordInput, Stack, Text, TextInput } from "@mantine/core";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { defaultReturnToForTab, safeAuthReturnTo } from "@/auth/signInReturnTo";
 
 export function PlatformFounderSignInPanel() {
+  const { t } = useTranslation("auth");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
@@ -19,7 +21,7 @@ export function PlatformFounderSignInPanel() {
 
   const messageFromBodyText = (text: string, status: number): string => {
     const p = parseFastApiErrorBody(text || "{}");
-    return p.rawMessage?.trim() || `Ошибка ${status}`;
+    return p.rawMessage?.trim() || t("founder.errorStatus", { status });
   };
 
   const goAfterSuccess = () => {
@@ -65,7 +67,9 @@ export function PlatformFounderSignInPanel() {
         goAfterSuccess();
         return;
       }
-      setError("Неожиданный ответ сервера при входе");
+      setError(t("founder.unexpectedResponse"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("founder.signInFailed"));
     } finally {
       setBusy(false);
     }
@@ -74,33 +78,33 @@ export function PlatformFounderSignInPanel() {
   return (
     <Stack gap="md">
       <TextInput
-        label="Email (логин)"
+        label={t("founder.email")}
         type="email"
         autoComplete="username"
         value={email}
         onChange={(e) => setEmail(e.currentTarget.value)}
       />
       <PasswordInput
-        label="Пароль"
+        label={t("founder.password")}
         autoComplete="current-password"
         value={password}
         onChange={(e) => setPassword(e.currentTarget.value)}
       />
       <Text size="xs" c="dimmed">
-        Если включена 2FA, после входа откроется отдельный шаг с кодом из приложения-аутентификатора.
+        {t("founder.mfaHint")}
       </Text>
       <Button loading={busy} onClick={() => void submitCredentials()} fullWidth color="slate" radius="md">
-        Войти
+        {t("founder.signIn")}
       </Button>
 
       {error ? (
-        <Alert color="red" variant="light" title="Ошибка">
+        <Alert color="red" variant="light" title={t("founder.errorTitle")}>
           {error}
         </Alert>
       ) : null}
 
       <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="sm">
-        На главную
+        {t("founder.home")}
       </Anchor>
     </Stack>
   );

@@ -17,6 +17,7 @@ from src.domain.entities.product import Product
 from src.domain.entities.salary_transaction import SalaryTransaction
 from src.domain.entities.visit_attribution import VisitAttribution
 from src.domain.entities.warehouse import Warehouse
+from tests.booking_slot import unique_clock_time
 
 
 async def _seed_cashbox_id(db_session: AsyncSession, clinic_id) -> object:
@@ -27,14 +28,14 @@ async def _seed_cashbox_id(db_session: AsyncSession, clinic_id) -> object:
     return cashbox_id
 
 
-async def _create_booking_id(db_session: AsyncSession, seed_data, day: date, minute: int) -> object:
+async def _create_booking_id(db_session: AsyncSession, seed_data, day: date) -> object:
     booking = Booking(
         clinic_id=seed_data["clinic_id"],
         patient_id=seed_data["patient_id"],
         doctor_id=seed_data["doctor_id"],
         service_id=seed_data["service_id"],
         appointment_date=day,
-        appointment_time=datetime.min.time().replace(hour=11, minute=minute),
+        appointment_time=unique_clock_time(hour=11),
         status=BookingStatus.CONFIRMED,
         prepayment_amount=Decimal("0.00"),
         payment_id=None,
@@ -52,7 +53,7 @@ async def test_get_visit_revenue_by_period_basic(
 ) -> None:
     clinic_id = seed_data["clinic_id"]
     today = date.today()
-    booking_id = await _create_booking_id(db_session, seed_data, today, 5)
+    booking_id = await _create_booking_id(db_session, seed_data, today)
     cashbox_id = await _seed_cashbox_id(db_session, clinic_id)
 
     tx = FinancialTransaction(
@@ -91,7 +92,7 @@ async def test_crm_lead_income_sum_aligns_with_visit_revenue_for_same_booking(
     lead_id = uuid4()
     today = date.today()
     happened = datetime.combine(today, datetime.min.time())
-    booking_id = await _create_booking_id(db_session, seed_data, today, 6)
+    booking_id = await _create_booking_id(db_session, seed_data, today)
     cashbox_id = await _seed_cashbox_id(db_session, clinic_id)
 
     db_session.add(
@@ -132,8 +133,8 @@ async def test_sum_income_revenue_for_crm_lead_by_lead_id_and_bookings(
     clinic_id = seed_data["clinic_id"]
     lead_id = uuid4()
     happened = datetime.combine(date.today(), datetime.min.time())
-    booking_a = await _create_booking_id(db_session, seed_data, date.today(), 7)
-    booking_b = await _create_booking_id(db_session, seed_data, date.today(), 8)
+    booking_a = await _create_booking_id(db_session, seed_data, date.today())
+    booking_b = await _create_booking_id(db_session, seed_data, date.today())
     cashbox_id = await _seed_cashbox_id(db_session, clinic_id)
 
     db_session.add_all(
@@ -277,7 +278,7 @@ async def test_get_visit_inventory_by_period_basic(
     product_id = uuid4()
     today = date.today()
     happened = datetime.combine(today, datetime.min.time())
-    booking_id = await _create_booking_id(db_session, seed_data, today, 9)
+    booking_id = await _create_booking_id(db_session, seed_data, today)
     warehouse_id = uuid4()
     db_session.add(
         Warehouse(id=warehouse_id, clinic_id=clinic_id, name="ERP Repo W", is_default=False)
@@ -320,7 +321,7 @@ async def test_get_visit_payroll_by_period_overlapping(
     today = date.today()
     period_start = today - timedelta(days=1)
     period_end = today + timedelta(days=1)
-    booking_id = await _create_booking_id(db_session, seed_data, today, 10)
+    booking_id = await _create_booking_id(db_session, seed_data, today)
 
     tx = SalaryTransaction(
         clinic_id=clinic_id,
