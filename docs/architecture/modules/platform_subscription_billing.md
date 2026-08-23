@@ -53,7 +53,9 @@
 
 **Факт кода (2026-04-06):**
 
-- Таблицы: `platform_catalog_options` (`list_price_rub`); `platform_catalog_plans` — `slug`, `option_keys`, **`price_monthly_rub`**, **`price_annual_rub`** (nullable), миграция `20260411_phase1b_catalog_plan_subscription_prices`.
+**Факт кода (каталог цен, 2026-08):** публичные list-цены планов — **USD-деноминированные** `$20 / $100 / $200` (миграция `20260433_catalog_usd_list_prices`). Имена колонок `price_*_rub` / `list_price_rub` сохранены (аддитивный контракт). Публичные DTO отдают `currency: "USD"`. Checkout отвечает `currency: "USD"` (каталог) и `charge_currency: "RUB"` (рельс YooKassa: то же число в RUB до появления USD/Stripe). Клиника-внутренние деньги (услуги, касса, зарплаты) остаются в ₽.
+
+- Таблицы: `platform_catalog_options` (`list_price_rub`); `platform_catalog_plans` — `slug`, `option_keys`, **`price_monthly_rub`**, **`price_annual_rub`** (nullable), миграции `20260411_phase1b_catalog_plan_subscription_prices` и `20260433_catalog_usd_list_prices`.
 - Публичное API: `GET /api/v1/public/platform/catalog/plans|options` (в планах — строки цен периодов).
 - Основатель (JWT `platform_founder`): `GET` / `PUT /api/v1/platform/internal/catalog/plans` — список и upsert пресета; **`option_keys`** валидируются по строкам **`platform_catalog_options`**.
 - **`resolve_entitlement_keys_for_intent`:** `plan_slug` в `tariff_snapshot` нормализуется к **lower** перед поиском плана.
@@ -64,11 +66,11 @@
 
 **Целевое поведение (продукт, эпиками):** публичный **checkout** создаёт intent с `plan_slug` + `billing_period` и инициирует оплату на сумму из каталога; лендинг — выбор периода и CTA. Трекинг: **1b-F5–F8** в том же файле бэклога.
 
-**Архитектурные инварианты (для @ARCH / @DEV):**
+**Архитектурные инварианты:**
 
 - После оплаты в `organization_entitlements` попадает **набор ключей** (из плана или снимка); период влияет на **деньги и продление**, а не на состав SKU, если иное явно не решено Product.
 - В `tariff_snapshot` фиксировать **`billing_period`** и **`plan_slug`** для reconcile/refund/renewal (после checkout — основной путь).
-- Публичный каталог отдаёт **видимые цены** по периодам; не подменять смысл «год = 12× месяц» без явной политики скидки.
+- Публичный каталог отдаёт **видимые цены** по периодам в **USD** (`currency` в DTO); не подменять смысл «год = 12× месяц» без явной политики скидки. Рельс списания YooKassa в демо остаётся RUB с тем же числом (`charge_currency`).
 - CRUD каталога — только `/platform/internal/*`; §25 / SEC: расширить до **таблицы audit в БД** (бэклог).
 
 **Бэклог QA_ARCH (эпики):** см. [PHASE_FULL_CLOSURE_BACKLOG.md](../arch_plan/PHASE_FULL_CLOSURE_BACKLOG.md) — **1b-F5** (checkout), **1b-F6** (retry vs гейт), **1b-F7** (audit БД), **1b-F8** (recurring / НДС), **1b-F9** (internal CRUD опций каталога).

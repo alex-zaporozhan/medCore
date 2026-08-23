@@ -34,8 +34,9 @@ async def test_platform_founder_lists_catalog_plans(client: AsyncClient, seed_da
     slugs = {row["slug"] for row in data}
     assert "start" in slugs
     starter = next(x for x in data if x["slug"] == "start")
-    assert starter.get("price_monthly_rub") == "2900.00"
-    assert starter.get("price_annual_rub") == "29000.00"
+    assert starter.get("price_monthly_rub") == "20.00"
+    assert starter.get("price_annual_rub") == "200.00"
+    assert starter.get("currency") == "USD"
     assert "core.base" in (starter.get("option_keys") or [])
 
 

@@ -149,4 +149,5 @@ def plan_to_internal_dto(row: PlatformCatalogPlan) -> PlatformCatalogPlanInterna
         price_annual_rub=format_catalog_rub_amount(row.price_annual_rub),
         is_active=bool(row.is_active),
         sort_order=int(row.sort_order or 0),
+        currency="USD",
     )

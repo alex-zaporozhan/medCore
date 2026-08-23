@@ -234,4 +234,6 @@ async def public_platform_signup_checkout(
         signup_intent_id=str(intent_id),
         payment_url=pay_url,
         amount_rub=format(Decimal(amount), "f") if amount is not None else "0",
+        currency="USD",
+        charge_currency="RUB",
     )

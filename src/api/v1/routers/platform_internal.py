@@ -54,10 +54,13 @@ class PlatformDashboardSummaryResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     active_organizations: int = Field(ge=0)
-    mrr_rub_monthly: str = Field(description="Monthly recurring revenue, RUB (decimal string)")
+    mrr_rub_monthly: str = Field(
+        description="Monthly recurring revenue in catalog list units (USD-denominated decimal string)",
+    )
     mrr_partial: bool = Field(
         description="True if at least one active org lacked a computable catalog MRR (legacy snapshot)",
     )
+    currency: str = Field(default="USD", description="ISO currency of mrr_rub_monthly")
 
 
 class PlatformOwnerInviteMintResponse(BaseModel):
@@ -137,6 +140,7 @@ async def platform_dashboard_summary(
         active_organizations=summary.active_organizations,
         mrr_rub_monthly=format(summary.mrr_rub_monthly, "f"),
         mrr_partial=summary.mrr_partial,
+        currency="USD",
     )
 
 
