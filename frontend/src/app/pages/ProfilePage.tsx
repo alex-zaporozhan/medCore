@@ -10,8 +10,10 @@ import { IconGift, IconWallet, IconDoorExit } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
 import { SEMANTIC } from "@/shared/semanticUi";
+import { useTranslation } from "react-i18next";
 
 export default function ProfilePage() {
+  const { t } = useTranslation("patient");
   const { accessToken, logout } = usePatientAuth();
   const navigate = useNavigate();
   const { data: loyaltyMe } = usePatientLoyaltyMe(accessToken);
@@ -20,8 +22,8 @@ export default function ProfilePage() {
     if (navigator.share) {
       navigator
         .share({
-          title: "Единая система управления",
-          text: "Подари другу 1000₽ — запишись по моей ссылке!",
+          title: t("profile.shareTitle"),
+          text: t("profile.shareText"),
           url: window.location.origin + ROUTE_PATHS.patient.home,
         })
         .catch(() => {});
@@ -32,20 +34,20 @@ export default function ProfilePage() {
 
   return (
     <Stack gap="lg">
-      <Title order={3}>Профиль</Title>
+      <Title order={3}>{t("profile.title")}</Title>
 
       {/* Digital Wallet (баланс кэшбэка, прогресс до VIP) */}
       {loyaltyMe?.wallet && (
         <Card withBorder padding="md" radius="md">
           <Group gap="xs" mb="xs">
             <IconWallet size={20} />
-            <Text fw={600}>Кошелёк</Text>
+            <Text fw={600}>{t("profile.wallet")}</Text>
           </Group>
           <Text size="xl" fw={700}>
             {loyaltyMe.wallet.balance} {loyaltyMe.wallet.currency}
           </Text>
           <Text size="xs" c="dimmed">
-            Кэшбэк с визитов. Можно списать при записи.
+            {t("profile.cashback")}
           </Text>
           <Button
             component={Link}
@@ -55,7 +57,7 @@ export default function ProfilePage() {
             size="sm"
             mt="sm"
           >
-            Абонементы и баллы
+            {t("profile.passes")}
           </Button>
         </Card>
       )}
@@ -63,7 +65,7 @@ export default function ProfilePage() {
       {(!loyaltyMe?.wallet || loyaltyMe.subscriptions.length === 0) && (
         <Card withBorder padding="md" radius="md">
           <Text size="sm" c="dimmed" mb="sm">
-            Баланс и абонементы появятся после визитов.
+            {t("profile.emptyWallet")}
           </Text>
           <Button
             component={Link}
@@ -72,7 +74,7 @@ export default function ProfilePage() {
             color={SEMANTIC.action.confirm}
             size="sm"
           >
-            Перейти в раздел лояльности
+            {t("profile.goLoyalty")}
           </Button>
         </Card>
       )}
@@ -81,10 +83,10 @@ export default function ProfilePage() {
       <Card withBorder padding="md" radius="md">
         <Group gap="xs" mb="xs">
           <IconGift size={20} />
-          <Text fw={600}>Подарить другу 1000₽</Text>
+          <Text fw={600}>{t("profile.giftTitle")}</Text>
         </Group>
         <Text size="sm" c="dimmed" mb="sm">
-          Поделитесь ссылкой — друг получит бонус при записи.
+          {t("profile.giftLead")}
         </Text>
         <Button
           color={SEMANTIC.action.send}
@@ -92,7 +94,7 @@ export default function ProfilePage() {
           onClick={handleReferral}
           leftSection={<IconGift size={16} />}
         >
-          Поделиться ссылкой
+          {t("profile.share")}
         </Button>
       </Card>
 
@@ -105,7 +107,7 @@ export default function ProfilePage() {
           navigate(ROUTE_PATHS.marketing.landing);
         }}
       >
-        Выйти
+        {t("logout")}
       </Button>
     </Stack>
   );

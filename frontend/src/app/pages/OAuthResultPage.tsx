@@ -3,6 +3,7 @@ import { Center, Loader, Paper, Stack, Text, Title } from "@mantine/core";
 import { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ROUTE_PATHS, patientPublicLoginSearch } from "@/routePaths";
+import { useTranslation } from "react-i18next";
 
 function useQueryParams() {
   const { search } = useLocation();
@@ -10,6 +11,7 @@ function useQueryParams() {
 }
 
 export default function OAuthResultPage() {
+  const { t } = useTranslation("patient");
   const navigate = useNavigate();
   const { login } = usePatientAuth();
   const params = useQueryParams();
@@ -19,7 +21,7 @@ export default function OAuthResultPage() {
   const token = params.get("token");
   const patientId = params.get("patient_id");
 
-  const providerName = oauth === "vk" ? "VK" : oauth === "yandex" ? "Яндекс" : "соцсеть";
+  const providerName = oauth === "vk" ? "VK" : oauth === "yandex" ? "Yandex" : t("oauth.social");
 
   useEffect(() => {
     if (status === "ok" && token && patientId) {
@@ -53,20 +55,20 @@ export default function OAuthResultPage() {
     });
   }, [status, token, patientId, login, navigate]);
 
-  let message = "Обрабатываем результат входа...";
+  let message = t("oauth.processing");
   if (status === "ok") {
-    message = `Успешный вход через ${providerName}. Перенаправляем в личный кабинет...`;
+    message = t("oauth.ok", { provider: providerName });
   } else if (status === "cancelled") {
-    message = `Вы отменили вход через ${providerName}. Возвращаем на страницу логина...`;
+    message = t("oauth.cancelled", { provider: providerName });
   } else if (status && ["error", "state_invalid", "provider_error"].includes(status)) {
-    message = `Не удалось войти через ${providerName}. Попробуйте ещё раз или используйте вход по SMS.`;
+    message = t("oauth.failed", { provider: providerName });
   }
 
   return (
     <Center h="100%">
       <Paper radius="lg" shadow="md" p="xl" maw={420} w="100%" withBorder>
         <Stack gap="sm" align="center">
-          <Title order={3}>Вход через {providerName}</Title>
+          <Title order={3}>{t("oauth.title", { provider: providerName })}</Title>
           <Loader />
           <Text ta="center">{message}</Text>
         </Stack>

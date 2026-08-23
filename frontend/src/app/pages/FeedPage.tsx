@@ -14,8 +14,10 @@ import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
 import { QueryErrorAlert } from "@/shared/ui";
 import { SEMANTIC } from "@/shared/semanticUi";
+import { useTranslation } from "react-i18next";
 
 export default function FeedPage() {
+  const { t } = useTranslation("patient");
   const { data: clinics } = useClinics();
   const clinicId = clinics?.[0]?.id ?? null;
   const { data: feed, isLoading: feedLoading, isError: feedError, error: feedErr } = usePublicFeed(clinicId);
@@ -24,8 +26,8 @@ export default function FeedPage() {
   if (!clinicId) {
     return (
       <Stack>
-        <Title order={3}>Лента</Title>
-        <Text size="sm" c="dimmed">Нет выбранной клиники.</Text>
+        <Title order={3}>{t("feed.title")}</Title>
+        <Text size="sm" c="dimmed">{t("feed.noClinic")}</Text>
       </Stack>
     );
   }
@@ -35,14 +37,14 @@ export default function FeedPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={3}>Лента</Title>
+      <Title order={3}>{t("feed.title")}</Title>
       <Text size="sm" c="dimmed">
-        Акции, новости и спецпредложения клиники. Сторис — короткие предложения, посты — подробные акции и новости.
+        {t("feed.lead")}
       </Text>
 
       {storyList.length > 0 && (
         <Stack gap="xs">
-          <Text size="sm" fw={500} c="dimmed">Сторис</Text>
+          <Text size="sm" fw={500} c="dimmed">{t("feed.stories")}</Text>
           <ScrollArea type="scroll" scrollbarSize="xs">
             <Group gap="md" wrap="nowrap" align="stretch">
               {storyList.map((s) => (
@@ -90,13 +92,13 @@ export default function FeedPage() {
       )}
 
       <Stack gap="xs">
-        <Text size="sm" fw={500} c="dimmed">Акции и новости</Text>
+        <Text size="sm" fw={500} c="dimmed">{t("feed.posts")}</Text>
         {storiesLoading || feedLoading ? (
           <Loader size="sm" />
         ) : feedError ? (
-          <QueryErrorAlert error={feedErr} title="Не удалось загрузить ленту" />
+          <QueryErrorAlert error={feedErr} title={t("feed.loadFailed")} />
         ) : posts.length === 0 ? (
-          <Text size="sm" c="dimmed">Пока нет записей в ленте.</Text>
+          <Text size="sm" c="dimmed">{t("feed.empty")}</Text>
         ) : (
           <Stack gap="lg" maw={760} mx="auto" w="100%">
             {posts.map((p) => (
@@ -178,7 +180,7 @@ export default function FeedPage() {
                       c={SEMANTIC.action.link}
                       fw={500}
                     >
-                      Подробнее
+                      {t("feed.more")}
                     </Anchor>
                   )}
                 </Stack>
@@ -189,7 +191,7 @@ export default function FeedPage() {
       </Stack>
 
       <Anchor component={Link} to={ROUTE_PATHS.patient.booking} size="sm" c={SEMANTIC.action.confirm} fw={500}>
-        Записаться на приём
+        {t("feed.book")}
       </Anchor>
     </Stack>
   );

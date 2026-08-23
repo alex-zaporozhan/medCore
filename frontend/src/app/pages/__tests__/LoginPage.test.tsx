@@ -51,16 +51,16 @@ describe("Patient sign-in UTM integration", () => {
       routerInitialEntries: ["/c/demo-clinic/sign-in"],
     });
 
-    const phoneInput = screen.getByLabelText("Телефон");
+    const phoneInput = screen.getByLabelText("Phone");
     fireEvent.change(phoneInput, { target: { value: "9001234567" } });
 
-    const getCodeButton = screen.getByText("Получить код");
+    const getCodeButton = screen.getByText("Get code");
     fireEvent.click(getCodeButton);
 
-    const codeInput = screen.getByLabelText("Код из SMS");
+    const codeInput = screen.getByLabelText("SMS code");
     fireEvent.change(codeInput, { target: { value: "1234" } });
 
-    const loginButton = screen.getByText("Войти");
+    const loginButton = screen.getByText("Sign in");
     fireEvent.click(loginButton);
 
     expect(mockVerify).toHaveBeenCalledTimes(1);

@@ -7,6 +7,7 @@ import { IconShoppingCart } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTE_PATHS } from "@/routePaths";
+import { useTranslation } from "react-i18next";
 
 const SELECTED_CLINIC_KEY = "app.selectedClinicId";
 
@@ -20,6 +21,7 @@ type VitrineResponse = {
 };
 
 export default function StorePage() {
+  const { t } = useTranslation("patient");
   const { accessToken } = usePatientAuth();
   const { data: clinics } = useClinics();
   const selectedClinicId =
@@ -51,23 +53,23 @@ export default function StorePage() {
         headers: { "X-Trace-Id": newOutboundRequestId() },
       });
       if (r.status === 429) {
-        setErr("Слишком много запросов. Подождите минуту и нажмите «Повторить».");
+        setErr(t("store.rateLimit"));
         setData(null);
         return;
       }
       if (!r.ok) {
-        setErr("Не удалось загрузить витрину");
+        setErr(t("store.loadFailed"));
         setData(null);
         return;
       }
       setData((await r.json()) as VitrineResponse);
     } catch {
-      setErr("Ошибка сети");
+      setErr(t("store.network"));
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [clinic?.id, clinic?.patient_store_visible]);
+  }, [clinic?.id, clinic?.patient_store_visible, t]);
 
   useEffect(() => {
     void load();
@@ -81,7 +83,7 @@ export default function StorePage() {
     return (
       <Stack p="md">
         <Text size="sm" c="dimmed">
-          Выберите клинику в приложении.
+          {t("store.pickClinic")}
         </Text>
       </Stack>
     );
@@ -90,13 +92,13 @@ export default function StorePage() {
   if (!clinic.patient_store_visible) {
     return (
       <Stack p="md" gap="md">
-        <Title order={2}>Магазин</Title>
+        <Title order={2}>{t("store.title")}</Title>
         <EmptyStateHint
-          title="Витрина не подключена"
-          subtitle="Владелец клиники может включить магазин в админке: раздел «Магазин (Commerce)» — блок про приложение пациента."
+          title={t("store.offTitle")}
+          subtitle={t("store.offHint")}
         />
         <Text size="sm" c="dimmed" component={Link} to={ROUTE_PATHS.patient.chat}>
-          Есть вопрос по товарам — напишите в чат клиники.
+          {t("store.askChat")}
         </Text>
       </Stack>
     );
@@ -115,13 +117,13 @@ export default function StorePage() {
       <Stack p="md" gap="sm">
         <Text c="red">{err}</Text>
         <Button size="xs" variant="light" onClick={() => void load()}>
-          Повторить
+          {t("store.retry")}
         </Button>
       </Stack>
     );
   }
 
-  const title = data?.section_title?.trim() || "Магазин";
+  const title = data?.section_title?.trim() || t("store.title");
   const subtitle = data?.section_subtitle?.trim() || null;
   const items = data?.items ?? [];
 
@@ -135,14 +137,13 @@ export default function StorePage() {
           </Text>
         ) : (
           <Text size="sm" c="dimmed" mt={6}>
-            Ассортимент клиники. Оформление заказа и оплата в приложении появятся в следующих версиях — уточняйте
-            наличие и цену в чате.
+            {t("store.lead")}
           </Text>
         )}
       </div>
 
       {items.length === 0 ? (
-        <EmptyStateHint title="Пока нет позиций" subtitle="Администратор добавит товары в номенклатуре Commerce." />
+        <EmptyStateHint title={t("store.emptyTitle")} subtitle={t("store.emptyHint")} />
       ) : (
         <SimpleGrid cols={{ base: 1, xs: 2, sm: 2 }} spacing="md">
           {items.map((it) => (

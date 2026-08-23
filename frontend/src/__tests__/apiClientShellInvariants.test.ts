@@ -62,6 +62,8 @@ describe("API client and app shell invariants", () => {
 
   it("vite dev proxy keeps /api prefix (align with deploy)", () => {
     const vite = readFileSync(join(frontendRoot, "vite.config.ts"), "utf8");
-    expect(vite).toMatch(/proxy:\s*\{[\s\S]*?"\/api"\s*:\s*\{/);
+    expect(vite).toMatch(/proxy:\s*\{/);
+    expect(vite).toMatch(/["']\/api["']\s*:\s*apiProxy/);
+    expect(vite).toMatch(/["']\/health["']\s*:\s*apiProxy/);
   });
 });

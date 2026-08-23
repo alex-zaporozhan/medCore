@@ -61,8 +61,14 @@ describe("ClinicSignInPage A1", () => {
   });
 });
 
-describe("SignInShell patient variant", () => {
-  it("does not mount the locale switch", async () => {
+describe("SignInShell", () => {
+  it("split variant keeps brand and form panes in one card", async () => {
+    const { container } = await renderWithI18n(wrap(<SignInShell>form</SignInShell>), { locale: "en" });
+    expect(container.querySelectorAll(".signin-split-pane").length).toBe(2);
+    expect(screen.getByText("form")).toBeTruthy();
+  });
+
+  it("patient variant does not mount the locale switch", async () => {
     await renderWithI18n(
       wrap(<SignInShell variant="patient">form</SignInShell>),
       { locale: "en" },

@@ -3,27 +3,33 @@ import { useClinics, usePatientConversation } from "@/hooks";
 import { Anchor, AppShell, Badge, Box, Button, Group, Text, Alert, MantineProvider } from "@mantine/core";
 import { Outlet, Link, useNavigate, useLocation, createSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { ROUTE_PATHS, patientPublicLoginSearch } from "@/routePaths";
 import { isPatientLoginPath } from "@/routePathUtils";
 import { usePatientEntry } from "@/contexts/PatientEntryContext";
 import { appTheme } from "@/theme";
 import { applyPwaUpdate, PWA_NEED_REFRESH, PWA_OFFLINE_READY } from "@/pwa/registerPwa";
+import { UiLocaleSwitch } from "@/i18n/UiLocaleSwitch";
 
 const SELECTED_CLINIC_KEY = "app.selectedClinicId";
 
 type PatientPrimaryNavItem = { to: string; label: string };
 
-function buildPatientPrimaryNav(showStore: boolean): PatientPrimaryNavItem[] {
+function buildPatientPrimaryNav(
+  showStore: boolean,
+  t: TFunction<"patient">,
+): PatientPrimaryNavItem[] {
   const items: PatientPrimaryNavItem[] = [
-    { to: ROUTE_PATHS.patient.home, label: "Главная" },
-    { to: ROUTE_PATHS.patient.booking, label: "Запись" },
+    { to: ROUTE_PATHS.patient.home, label: t("nav.home") },
+    { to: ROUTE_PATHS.patient.booking, label: t("nav.booking") },
   ];
   if (showStore) {
-    items.push({ to: ROUTE_PATHS.patient.store, label: "Магазин" });
+    items.push({ to: ROUTE_PATHS.patient.store, label: t("nav.store") });
   }
   items.push(
-    { to: ROUTE_PATHS.patient.chat, label: "Чат" },
-    { to: ROUTE_PATHS.patient.profile, label: "Профиль" },
+    { to: ROUTE_PATHS.patient.chat, label: t("nav.chat") },
+    { to: ROUTE_PATHS.patient.profile, label: t("nav.profile") },
   );
   return items;
 }
@@ -41,6 +47,7 @@ const patientChromeBottom = {
 } as const;
 
 export default function AppLayout() {
+  const { t } = useTranslation("patient");
   const { accessToken, logout, patientId } = usePatientAuth();
   const { clinicSlug } = usePatientEntry();
   const navigate = useNavigate();
@@ -59,12 +66,12 @@ export default function AppLayout() {
 
   const showPatientStore = Boolean(themeClinic?.patient_store_visible);
   const patientNavMobile = useMemo(
-    () => buildPatientPrimaryNav(showPatientStore),
-    [showPatientStore],
+    () => buildPatientPrimaryNav(showPatientStore, t),
+    [showPatientStore, t],
   );
   const patientNavDesktop = useMemo(
-    () => [...buildPatientPrimaryNav(showPatientStore), { to: ROUTE_PATHS.patient.history, label: "История" }],
-    [showPatientStore],
+    () => [...buildPatientPrimaryNav(showPatientStore, t), { to: ROUTE_PATHS.patient.history, label: t("nav.history") }],
+    [showPatientStore, t],
   );
 
   useEffect(() => {
@@ -162,7 +169,7 @@ export default function AppLayout() {
             />
           ) : (
             <Text fw={700} c="gray.9" visibleFrom="xs">
-              Единая система управления
+              {t("brand")}
             </Text>
           )}
           <Group gap="md" style={{ flex: 1, justifyContent: "center" }} visibleFrom="sm">
@@ -191,17 +198,18 @@ export default function AppLayout() {
             })}
           </Group>
           <Group gap="xs">
+            <UiLocaleSwitch />
             {accessToken && (
               <Button variant="subtle" size="compact-sm" color="gray" onClick={() => {
                   logout();
                   navigate(ROUTE_PATHS.marketing.landing);
                 }}
               >
-                Выйти
+                {t("logout")}
               </Button>
             )}
             <Anchor component={Link} to={ROUTE_PATHS.marketing.landing} size="xs" c="dimmed">
-              На главную
+              {t("toLanding")}
             </Anchor>
           </Group>
         </Group>
@@ -215,14 +223,14 @@ export default function AppLayout() {
             color="teal"
             variant="light"
             style={{ borderRadius: 0, borderBottom: "1px solid var(--divider)" }}
-            title="Доступна новая версия"
+            title={t("pwa.updateTitle")}
             withCloseButton
             onClose={() => setPwaUpdateAvailable(false)}
           >
             <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-              <Text size="sm">Обновите приложение, чтобы получить исправления и улучшения.</Text>
+              <Text size="sm">{t("pwa.updateBody")}</Text>
               <Button size="xs" onClick={() => applyPwaUpdate()}>
-                Обновить сейчас
+                {t("pwa.updateNow")}
               </Button>
             </Group>
           </Alert>
@@ -233,8 +241,7 @@ export default function AppLayout() {
             variant="light"
             style={{ borderRadius: 0, borderBottom: "1px solid var(--divider)" }}
           >
-            Нет подключения к интернету. Данные о записях могут быть неактуальны, создание новых
-            записей недоступно до восстановления связи.
+            {t("pwa.offline")}
           </Alert>
         )}
         <Outlet />

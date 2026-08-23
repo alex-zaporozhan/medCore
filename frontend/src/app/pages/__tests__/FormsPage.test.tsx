@@ -50,7 +50,7 @@ describe("FormsPage", () => {
   it("renders list of pending forms and allows opening a form", () => {
     renderWithProviders(<FormsPage />);
 
-    expect(screen.getByText("Анкеты и согласия")).toBeInTheDocument();
+    expect(screen.getByText("Forms and consents")).toBeInTheDocument();
     const card = screen.getByText("Анкета здоровья");
     fireEvent.click(card);
     expect(screen.getByText("ФИО")).toBeInTheDocument();

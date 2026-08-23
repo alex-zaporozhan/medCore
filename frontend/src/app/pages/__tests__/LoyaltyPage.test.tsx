@@ -58,11 +58,11 @@ describe("LoyaltyPage", () => {
   it("renders wallet balance and active subscriptions", () => {
     renderWithProviders(<LoyaltyPage />, { withRouter: true });
 
-    expect(screen.getByText("Мои абонементы и баллы")).toBeInTheDocument();
-    expect(screen.getByText("Баланс кошелька")).toBeInTheDocument();
+    expect(screen.getByText("Memberships and points")).toBeInTheDocument();
+    expect(screen.getByText("Wallet balance")).toBeInTheDocument();
     expect(screen.getByText(/150.00/)).toBeInTheDocument();
-    expect(screen.getByText("Digital Pass — Абонементы")).toBeInTheDocument();
-    expect(screen.getByText("Записаться по абонементу")).toBeInTheDocument();
+    expect(screen.getByText("Digital Pass — memberships")).toBeInTheDocument();
+    expect(screen.getByText("Book with this membership")).toBeInTheDocument();
   });
 });
 

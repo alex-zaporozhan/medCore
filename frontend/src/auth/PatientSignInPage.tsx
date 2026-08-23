@@ -2,21 +2,22 @@ import { SignInShell } from "@/auth/SignInShell";
 import { PatientPhoneAuthPanel } from "@/auth/panels/PatientPhoneAuthPanel";
 import { usePatientEntry } from "@/contexts/PatientEntryContext";
 import { Stack, Text, Title } from "@mantine/core";
+import { useTranslation } from "react-i18next";
 
 /**
- * Вход пациента только в контексте клиники (`/c/:clinicSlug/sign-in`).
- * Глобального «пациентского» URL нет — у каждой клиники свой slug.
+ * Patient sign-in only in clinic context (`/c/:clinicSlug/sign-in`).
  */
 export default function PatientSignInPage() {
+  const { t } = useTranslation("patient");
   const { clinicSlug } = usePatientEntry();
 
   return (
     <SignInShell variant="patient">
       <Stack gap="lg">
         <div>
-          <Title order={2}>Вход пациента</Title>
+          <Title order={2}>{t("signIn.title")}</Title>
           <Text size="sm" c="dimmed" mt={6}>
-            Личный кабинет клиники
+            {t("signIn.clinicCabinet")}
             {clinicSlug ? (
               <>
                 {" "}
@@ -25,7 +26,7 @@ export default function PatientSignInPage() {
                 </Text>
               </>
             ) : null}
-            . Введите телефон — отправим SMS с кодом.
+            . {t("signIn.smsHint")}
           </Text>
         </div>
         <PatientPhoneAuthPanel />
