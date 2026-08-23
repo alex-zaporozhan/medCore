@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import date, time, timedelta
+from datetime import date, time
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from sqlalchemy import delete, select, update
@@ -25,6 +25,7 @@ from src.domain.entities.warehouse import Warehouse
 from src.infrastructure.database import base as db_base
 from src.domain.entities.payment import Payment
 from src.application.services.wallet_service import WalletService, EarnPointsInput, SpendPointsInput
+from tests.booking_slot import unique_booking_slot, unique_clock_time
 
 
 def _admin_booking_create(
@@ -52,18 +53,13 @@ def _admin_booking_create(
   )
 
 
-def _unique_test_day(base_day: date) -> date:
-  """Shift test day forward to avoid collisions in shared persistent DB."""
-  return base_day + timedelta(days=(uuid4().int % 14) + 1)
-
-
 @pytest.mark.asyncio
 async def test_booking_completed_triggers_erp_and_creates_records(init_db, seed_data):
   clinic_id = seed_data["clinic_id"]
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = _unique_test_day(seed_data["date"])
+  day, daily_time = unique_booking_slot(seed_data["date"], hour=10)
 
   async with db_base.AsyncSessionLocal() as session:
     wres = await session.execute(
@@ -116,7 +112,6 @@ async def test_booking_completed_triggers_erp_and_creates_records(init_db, seed_
 
   async with db_base.AsyncSessionLocal() as session:
     booking_service = BookingService(session)
-    daily_time = time(10, 0)
     booking_read = await booking_service.create_admin_booking(
       clinic_id=clinic_id,
       data=_admin_booking_create(
@@ -192,7 +187,7 @@ async def test_booking_completed_with_full_wallet_payment_results_in_zero_income
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = _unique_test_day(seed_data["date"])
+  day, daily_time = unique_booking_slot(seed_data["date"], hour=11)
 
   async with db_base.AsyncSessionLocal() as session:
     await session.execute(
@@ -207,7 +202,6 @@ async def test_booking_completed_with_full_wallet_payment_results_in_zero_income
 
   async with db_base.AsyncSessionLocal() as session:
     booking_service = BookingService(session)
-    daily_time = time(11, 0)
     booking_read = await booking_service.create_admin_booking(
       clinic_id=clinic_id,
       data=_admin_booking_create(
@@ -287,7 +281,7 @@ async def test_booking_completed_with_partial_wallet_and_payment(
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = _unique_test_day(seed_data["date"])
+  day, daily_time = unique_booking_slot(seed_data["date"], hour=12)
 
   async with db_base.AsyncSessionLocal() as session:
     await session.execute(
@@ -302,7 +296,6 @@ async def test_booking_completed_with_partial_wallet_and_payment(
 
   async with db_base.AsyncSessionLocal() as session:
     booking_service = BookingService(session)
-    daily_time = time(12, 0)
     booking_read = await booking_service.create_admin_booking(
       clinic_id=clinic_id,
       data=_admin_booking_create(
@@ -394,7 +387,7 @@ async def test_erp_handles_many_bookings_sequentially(init_db, seed_data):
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = _unique_test_day(seed_data["date"])
+  day, _ = unique_booking_slot(seed_data["date"], hour=16)
 
   async with db_base.AsyncSessionLocal() as session:
     await session.execute(
@@ -413,8 +406,8 @@ async def test_erp_handles_many_bookings_sequentially(init_db, seed_data):
 
   async with db_base.AsyncSessionLocal() as session:
     booking_service = BookingService(session)
-    for i in range(total_bookings):
-      daily_time = time(17, i % 60)
+    for _ in range(total_bookings):
+      daily_time = unique_clock_time(hour=17)
       booking_read = await booking_service.create_admin_booking(
         clinic_id=clinic_id,
         data=_admin_booking_create(
@@ -442,7 +435,7 @@ async def test_erp_handles_many_bookings_sequentially(init_db, seed_data):
         "service_id": str(service_id),
         "status": "completed",
         "appointment_date": day.isoformat(),
-        "appointment_time": time(10, 0).isoformat(),
+        "appointment_time": daily_time.isoformat(),
       },
     )
     await handle_erp_on_booking_completed(event)
@@ -474,7 +467,7 @@ async def test_erp_configuration_error_sets_error_code_on_booking(init_db, seed_
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = _unique_test_day(seed_data["date"])
+  day, slot_time = unique_booking_slot(seed_data["date"], hour=17)
 
   # Убираем расходники по услуге, иначе ERP упадёт по складу раньше, чем по кассе.
   async with db_base.AsyncSessionLocal() as session:
@@ -510,7 +503,7 @@ async def test_erp_configuration_error_sets_error_code_on_booking(init_db, seed_
           doctor_id,
           service_id,
           day,
-          time(17, 45),
+          slot_time,
         ),
       )
       await session.commit()
@@ -525,7 +518,7 @@ async def test_erp_configuration_error_sets_error_code_on_booking(init_db, seed_
         "service_id": str(service_id),
         "status": "completed",
         "appointment_date": day.isoformat(),
-        "appointment_time": time(17, 45).isoformat(),
+        "appointment_time": slot_time.isoformat(),
       },
     )
 
@@ -565,7 +558,7 @@ async def test_erp_fatal_error_rolls_back_no_stale_state(init_db, seed_data):
   doctor_id = seed_data["doctor_id"]
   service_id = seed_data["service_id"]
   patient_id = seed_data["patient_id"]
-  day = _unique_test_day(seed_data["date"])
+  day, slot_time = unique_booking_slot(seed_data["date"], hour=14)
 
   # seed_data provides default cashbox, warehouse, and payroll policy; no extra ERP rows needed here.
 
@@ -579,7 +572,7 @@ async def test_erp_fatal_error_rolls_back_no_stale_state(init_db, seed_data):
         doctor_id,
         service_id,
         day,
-        time(14, 0),
+        slot_time,
       ),
     )
     await session.commit()
@@ -595,7 +588,7 @@ async def test_erp_fatal_error_rolls_back_no_stale_state(init_db, seed_data):
       "service_id": str(service_id),
       "status": "completed",
       "appointment_date": day.isoformat(),
-      "appointment_time": time(14, 0).isoformat(),
+      "appointment_time": slot_time.isoformat(),
     },
   )
 

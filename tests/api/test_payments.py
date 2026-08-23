@@ -1,6 +1,5 @@
 """Tests: POST /api/v1/payments/webhook and payment idempotency (contour A)."""
 
-from datetime import time
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -11,6 +10,7 @@ from src.domain.entities.booking import Booking, BookingStatus, coerce_booking_s
 from src.domain.entities.payment import Payment
 from src.infrastructure.database import base as db_base
 from src.infrastructure.external_apis.yookassa_client import YooKassaClientError
+from tests.booking_slot import unique_booking_slot
 
 
 @pytest.mark.regression_payments
@@ -46,7 +46,7 @@ async def test_payments_webhook_succeeded_twice_idempotent(
     payment_row_id = uuid4()
     provider_pid = f"yookassa-idem-{uuid4().hex[:16]}"
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(16, 43, 0)
+    slot_day, appt_time = unique_booking_slot(seed_data["date"], hour=16)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(
@@ -56,7 +56,7 @@ async def test_payments_webhook_succeeded_twice_idempotent(
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
+                appointment_date=slot_day,
                 appointment_time=appt_time,
                 status=BookingStatus.AWAITING_PAYMENT,
                 prepayment_amount=500,
@@ -121,7 +121,7 @@ async def test_payments_webhook_yookassa_unavailable_returns_502(
     payment_row_id = uuid4()
     provider_pid = f"yookassa-verify-fail-{uuid4().hex[:12]}"
     clinic_id = seed_data["clinic_id"]
-    appt_time = time(11, 15, 0)
+    slot_day, appt_time = unique_booking_slot(seed_data["date"], hour=11)
 
     async with db_base.AsyncSessionLocal() as session:
         session.add(
@@ -131,7 +131,7 @@ async def test_payments_webhook_yookassa_unavailable_returns_502(
                 patient_id=seed_data["patient_id"],
                 doctor_id=seed_data["doctor_id"],
                 service_id=seed_data["service_id"],
-                appointment_date=seed_data["date"],
+                appointment_date=slot_day,
                 appointment_time=appt_time,
                 status=BookingStatus.AWAITING_PAYMENT,
                 prepayment_amount=500,

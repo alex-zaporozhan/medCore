@@ -17,6 +17,7 @@ from src.application.services.loyalty_service import (
 from src.domain.entities.booking import Booking, BookingStatus
 from src.domain.entities.payment import Payment
 from src.domain.entities.subscription_package import SubscriptionPackage
+from tests.booking_slot import unique_booking_slot
 
 
 @pytest.mark.asyncio
@@ -43,6 +44,7 @@ async def test_subscription_usages_list_by_patient(
     patient_id = UUID(str(seed_data["patient_id"]))
     booking_id = uuid4()
     payment_id = uuid4()
+    slot_day, slot_time = unique_booking_slot()
 
     loyalty_service = LoyaltyService(db_session)
 
@@ -52,8 +54,8 @@ async def test_subscription_usages_list_by_patient(
         patient_id=patient_id,
         doctor_id=UUID(str(seed_data["doctor_id"])),
         service_id=UUID(str(seed_data["service_id"])),
-        appointment_date=datetime.now(timezone.utc).date(),
-        appointment_time=datetime.now(timezone.utc).time().replace(second=0, microsecond=0),
+        appointment_date=slot_day,
+        appointment_time=slot_time,
         status=BookingStatus.PENDING,
         prepayment_amount=Decimal("0.00"),
         payment_id=None,

@@ -27,6 +27,10 @@ Run from project root: poetry run pytest tests/
 - TRUNCATE runs only when the DB name contains "test". Never point at production.
 - Before TRUNCATE, other ``client backend`` sessions on the same database are terminated so
   ``TRUNCATE`` is not blocked by stray uvicorn/psql/pytest (set ``PYTEST_DISABLE_TEST_DB_SESSION_KILL=1`` to skip).
+- Session-scoped ``seed_data`` does not delete ``bookings`` between tests. Occupying statuses share
+  one seed doctor; inserts must use ``tests.booking_slot.unique_booking_slot`` (or ``unique_clock_time``
+  when the calendar day is fixed). Clock time and hardcoded ``time(HH, MM)`` on ``seed_data["date"]``
+  collide on ``ux_bookings_doctor_slot_active``.
 - If Postgres returns ``too many clients already``, the server hit ``max_connections`` (often shared with a running
   uvicorn using a large pool). Stop the API or raise Postgres limits (``docker-compose`` ``db`` sets ``max_connections=200``).
 """
