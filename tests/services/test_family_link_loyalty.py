@@ -43,6 +43,8 @@ async def test_family_link_allows_beneficiary_spend(
         Patient(id=child_id, clinic_id=clinic_id, phone="+1002", full_name="Child")
     )
     await db_session.flush()
+    # Unique vs seed/CI bookings: ux_bookings_doctor_slot_active is (doctor, date, time).
+    slot_day = datetime.now(timezone.utc).date() + timedelta(days=120)
     db_session.add(
         Booking(
             id=booking_id,
@@ -50,8 +52,8 @@ async def test_family_link_allows_beneficiary_spend(
             patient_id=owner_id,
             doctor_id=doctor_id,
             service_id=service_id,
-            appointment_date=(now := datetime.now(timezone.utc)).date(),
-            appointment_time=now.time().replace(second=0, microsecond=0),
+            appointment_date=slot_day,
+            appointment_time=datetime.strptime("06:17", "%H:%M").time(),
             status=BookingStatus.CONFIRMED,
             prepayment_amount=Decimal("0.00"),
             payment_id=None,

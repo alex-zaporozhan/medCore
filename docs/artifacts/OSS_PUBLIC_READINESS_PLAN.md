@@ -222,7 +222,7 @@ GitHub visitor
  └─ docs/archive/…                     ← история процесса, не канон
 ```
 
-`local/intern-courses/` — онбординг стажёра, **gitignore**, не витрина продукта. Указатель: [`local/README.md`](../../local/README.md).
+`local/intern-courses/` — онбординг стажёра, **gitignore**, не витрина продукта и не в git; указатель только на локальной машине разработчика.
 
 Канон инженерии для контрибьюторов: `docs/RAG_CANON.md` + `DOCUMENTATION_POLICY.md` — в Wave 1 дать English pointer, не полный перевод.
 
