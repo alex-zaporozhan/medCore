@@ -6,7 +6,7 @@
 
 ## Decision
 
-1. SPDX in manifests: **`LicenseRef-PolyForm-Shield-1.0.0`** (`pyproject.toml`, `frontend/package.json`). Human name: PolyForm Shield 1.0.0. Canonical text: [polyformproject.org/licenses/shield/1.0.0](https://polyformproject.org/licenses/shield/1.0.0), stored in root `LICENSE`. Required Notice (verbatim): `Required Notice: Copyright 2026 Alexandr Zaporozhan. Dental Booking (multi-tenant clinic operating system).`
+1. SPDX in manifests: **`LicenseRef-PolyForm-Shield-1.0.0`** (`pyproject.toml`, `frontend/package.json`). Human name: PolyForm Shield 1.0.0. Canonical text: [polyformproject.org/licenses/shield/1.0.0](https://polyformproject.org/licenses/shield/1.0.0), stored in root `LICENSE`. Required Notice (verbatim): `Required Notice: Copyright 2026 Alexandr Zaporozhan. MedCore (multi-tenant clinic operating system; also known as Dental Booking).`
 2. Permitted without a separate commercial deal: download, run, study, personal use, internal use in a clinic you operate (you are not offering a competing product).
 3. Not permitted: providing a competing product or practical substitute (hosted or on-prem clinic OS / booking SaaS built from this software).
 4. `LICENSE` includes `Required Notice:` and `Licensor Line of Business:` so the discontinued-product loophole does not open a competing clinic OS.
