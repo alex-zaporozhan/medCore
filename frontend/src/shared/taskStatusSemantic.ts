@@ -13,6 +13,15 @@ const SLOT_FRAME: CSSProperties = {
   borderLeftStyle: "solid",
 };
 
+export function taskKanbanQuietSurface(): CSSProperties {
+  return {
+    borderRadius: "var(--calendar-slot-radius)",
+    border: "1px solid var(--calendar-card-border)",
+    background: "var(--bg-card, #fff)",
+    boxShadow: "none",
+  };
+}
+
 export function taskStatusCardSurface(status: string): CSSProperties {
   const s = String(status).toLowerCase();
   switch (s) {
