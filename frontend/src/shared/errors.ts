@@ -2,7 +2,7 @@
 export function formatQueryError(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error.length > 0) return error;
-  return "Произошла ошибка. Попробуйте обновить страницу.";
+  return "Something went wrong. Refresh the page.";
 }
 
 export type BookingErrorCode =
@@ -54,13 +54,53 @@ const COMMON_ERROR_CODES = new Set([
   "internal_server_error",
   "bad_request",
   "method_not_allowed",
+  "html_gateway",
+  "service_unavailable",
   "empty_db_no_clinic",
   "clinic_forbidden",
+  "invalid_credentials",
+  "invalid_totp",
+  "invalid_mfa_token",
+  "billing_revoked",
+  "clinic_context_required",
+  "platform_founder_jwt_not_configured",
+  "platform_founder_inactive_or_unknown",
+  "platform_founder_totp_enrollment_required",
+  "platform_founder_token_required",
 ]);
 
+const COMMON_ERROR_CODE_ALIASES: Record<string, string> = {
+  rate_limited: "rate_limited",
+  empty_db_no_clinic: "empty_db_no_clinic",
+  billing_revoked: "billing_revoked",
+};
+
 export function commonErrorI18nKey(code: string | undefined): string | null {
-  if (!code || !COMMON_ERROR_CODES.has(code)) return null;
-  return `errors.${code}`;
+  if (!code) return null;
+  const normalized = COMMON_ERROR_CODE_ALIASES[code] ?? code;
+  if (!COMMON_ERROR_CODES.has(normalized)) return null;
+  return `errors.${normalized}`;
+}
+
+export function localizedParsedApiErrorText(
+  parsed: { code?: string; rawMessage?: string },
+  t: (key: string, options?: Record<string, unknown>) => string,
+  fallback: string,
+): string {
+  const mapped = commonErrorI18nKey(parsed.code);
+  if (mapped) return String(t(mapped, { ns: "common" }));
+  return parsed.rawMessage?.trim() || fallback;
+}
+
+export function localizedApiErrorText(
+  error: unknown,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  fallbackKey: string,
+): string {
+  const mapped = commonErrorI18nKey(apiErrorCode(error));
+  if (mapped) return String(t(mapped, { ns: "common" }));
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return String(t(fallbackKey));
 }
 
 export function isAdminChromePath(pathname: string | undefined): boolean {
@@ -78,14 +118,18 @@ function errorMessageText(error: unknown): string {
 }
 
 export function isEmptyClinicDatabaseError(error: unknown): boolean {
-  if (apiErrorCode(error) === "empty_db_no_clinic") return true;
+  const code = apiErrorCode(error);
+  if (code === "empty_db_no_clinic") return true;
   const message = errorMessageText(error);
   if (/нет ни одной клиник/i.test(message)) return true;
+  if (/no clinics in the database/i.test(message)) return true;
   return /\bno clinics?\b/i.test(message);
 }
 
 export function adminQueryErrorI18nKey(error: unknown): string | null {
-  if (isEmptyClinicDatabaseError(error)) return "errors.empty_db_no_clinic";
+  if (isEmptyClinicDatabaseError(error)) {
+    return commonErrorI18nKey("empty_db_no_clinic") ?? "errors.empty_db_no_clinic";
+  }
   return commonErrorI18nKey(apiErrorCode(error));
 }
 
@@ -98,35 +142,26 @@ export function getBookingErrorMessage(
 
   if (context === "booking") {
     if (code === "slot_unavailable") {
-      return "Выбранный слот уже занят. Пожалуйста, выберите другое время.";
+      return fallbackMessage || "This slot is already taken. Please choose another time.";
     }
     if (code === "booking_status_invalid") {
-      return fallbackMessage || "Недопустимый статус записи.";
+      return fallbackMessage || "This booking status is not allowed.";
     }
     if (code === "clinic_mismatch") {
-      return fallbackMessage || "Клиника не совпадает с услугой или профилем. Выберите клинику заново.";
+      return fallbackMessage || "Clinic does not match the service or profile. Select the clinic again.";
     }
-    // Для остальных кодов по умолчанию доверяем сообщению сервера,
-    // чтобы не терять бизнес‑смысл из patient_messages.py.
-    return fallbackMessage || "Не удалось создать запись. Повторите попытку.";
+    return fallbackMessage || "Could not create the booking. Try again.";
   }
 
-  // context === "payment"
   if (code === "payment_not_allowed") {
-    return fallbackMessage || "Оплата недоступна для этой записи.";
+    return fallbackMessage || "Payment is not available for this booking.";
   }
   if (code === "payment_failed") {
-    return (
-      fallbackMessage ||
-      "Платёж не прошёл. Попробуйте ещё раз или выберите другой способ оплаты."
-    );
+    return fallbackMessage || "Payment did not go through. Try again or choose another payment method.";
   }
   if (code === "booking_not_found") {
-    return (
-      fallbackMessage ||
-      "Запись не найдена. Обновите страницу или создайте запись заново."
-    );
+    return fallbackMessage || "Booking not found. Refresh the page or create the booking again.";
   }
 
-  return fallbackMessage || "Не удалось инициировать оплату. Попробуйте позже.";
+  return fallbackMessage || "Could not start payment. Try again later.";
 }

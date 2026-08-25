@@ -35,6 +35,9 @@ describe("commonErrorI18nKey / isAdminChromePath", () => {
     expect(commonErrorI18nKey("empty_db_no_clinic")).toBe("errors.empty_db_no_clinic");
     expect(commonErrorI18nKey("method_not_allowed")).toBe("errors.method_not_allowed");
     expect(commonErrorI18nKey("unauthorized")).toBe("errors.unauthorized");
+    expect(commonErrorI18nKey("invalid_credentials")).toBe("errors.invalid_credentials");
+    expect(commonErrorI18nKey("billing_revoked")).toBe("errors.billing_revoked");
+    expect(commonErrorI18nKey("empty_db_no_clinic")).toBe("errors.empty_db_no_clinic");
     expect(commonErrorI18nKey("slot_unavailable")).toBeNull();
     expect(commonErrorI18nKey(undefined)).toBeNull();
   });

@@ -48,4 +48,48 @@ describe("parseFastApiErrorBody (via api + fetch mock)", () => {
       expect((e as ApiErrorWithCode).message).toContain("Upstream failure");
     }
   });
+
+  it("maps invalid_credentials code to the English i18n string, not raw Russian detail", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      status: 401,
+      statusText: "Unauthorized",
+      text: async () =>
+        JSON.stringify({
+          detail: "Invalid email or password",
+          code: "invalid_credentials",
+        }),
+    });
+
+    try {
+      await api.post("/v1/admin/auth/login", { email: "a@b.co", password: "wrong-password" });
+      expect.fail("expected throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiErrorWithCode);
+      const err = e as ApiErrorWithCode;
+      expect(err.code).toBe("invalid_credentials");
+      expect(err.message.toLowerCase()).toMatch(/invalid email or password/);
+      expect(err.message).not.toMatch(/неверный/i);
+    }
+  });
+
+  it("maps nested FastAPI detail.code for omni upload errors (Q9 contract)", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      status: 400,
+      statusText: "Bad Request",
+      text: async () =>
+        JSON.stringify({
+          detail: { code: "omni_file_empty", message: "Empty file" },
+        }),
+    });
+
+    try {
+      await api.post("/v1/admin/omni-chats/x/messages/upload", new FormData());
+      expect.fail("expected throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiErrorWithCode);
+      const err = e as ApiErrorWithCode;
+      expect(err.code).toBe("omni_file_empty");
+      expect(err.message).toBe("Empty file");
+    }
+  });
 });

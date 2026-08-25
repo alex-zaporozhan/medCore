@@ -11,6 +11,7 @@ import type { ApiErrorResponseBody } from "@/api/types";
 import { ROUTE_PATHS, patientPublicLoginSearch } from "@/routePaths";
 import { isPatientLoginPath } from "@/routePathUtils";
 import i18n from "@/i18n";
+import { commonErrorI18nKey } from "@/shared/errors";
 
 /** Базовый префикс HTTP-моста; dev-прокси в `vite.config.ts` не менять без согласования с деплоем. */
 export const API_BASE = "/api";
@@ -307,6 +308,17 @@ function normalizeErrorMessage(raw: string, status: number, statusText: string) 
   return message;
 }
 
+function messageForApiFailure(
+  raw: string,
+  status: number,
+  statusText: string,
+  code: string | undefined,
+): string {
+  const key = commonErrorI18nKey(code);
+  if (key) return i18n.t(key as never, { ns: "common" });
+  return normalizeErrorMessage(raw, status, statusText);
+}
+
 /** POST /v1/patients без JWT (default clinic); остальные /v1/patients* — с админским токеном (P2-FU2). */
 function isPatientsPublicCreatePost(path: string, method: string): boolean {
   const m = (method || "GET").toUpperCase();
@@ -369,19 +381,21 @@ async function request<T>(
   if (res.status === 401 && shouldClearPatientSessionOn401(path, resolvedToken)) {
     clearPatientAuth();
     const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
-    const normalized = normalizeErrorMessage(
+    const normalized = messageForApiFailure(
       rawMessage.trim() || "Unauthorized",
       res.status,
-      res.statusText
+      res.statusText,
+      code,
     );
     throw new ApiErrorWithCode(normalized, code, traceId, details);
   }
   if (!res.ok) {
     const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
-    const normalized = normalizeErrorMessage(
+    const normalized = messageForApiFailure(
       rawMessage.trim() || res.statusText || bodyText,
       res.status,
-      res.statusText
+      res.statusText,
+      code,
     );
     throw new ApiErrorWithCode(normalized, code, traceId, details);
   }
@@ -422,19 +436,21 @@ async function requestFormJson<T>(
   if (res.status === 401 && shouldClearPatientSessionOn401(path, resolvedToken)) {
     clearPatientAuth();
     const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
-    const normalized = normalizeErrorMessage(
+    const normalized = messageForApiFailure(
       rawMessage.trim() || "Unauthorized",
       res.status,
-      res.statusText
+      res.statusText,
+      code,
     );
     throw new ApiErrorWithCode(normalized, code, traceId, details);
   }
   if (!res.ok) {
     const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
-    const normalized = normalizeErrorMessage(
+    const normalized = messageForApiFailure(
       rawMessage.trim() || res.statusText || bodyText,
       res.status,
-      res.statusText
+      res.statusText,
+      code,
     );
     throw new ApiErrorWithCode(normalized, code, traceId, details);
   }
@@ -471,18 +487,20 @@ async function requestBlob(path: string, token?: string | null): Promise<Blob> {
     if (res.status === 401 && shouldClearPatientSessionOn401(path, resolvedToken)) {
       clearPatientAuth();
       const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
-      const normalized = normalizeErrorMessage(
+      const normalized = messageForApiFailure(
         rawMessage.trim() || "Unauthorized",
         res.status,
-        res.statusText
+        res.statusText,
+        code,
       );
       throw new ApiErrorWithCode(normalized, code, traceId, details);
     }
     const { rawMessage, code, traceId, details } = parseFastApiErrorBody(bodyText);
-    const normalized = normalizeErrorMessage(
+    const normalized = messageForApiFailure(
       rawMessage.trim() || res.statusText || bodyText,
       res.status,
-      res.statusText
+      res.statusText,
+      code,
     );
     throw new ApiErrorWithCode(normalized, code, traceId, details);
   }
