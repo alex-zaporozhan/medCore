@@ -96,16 +96,14 @@ async def create_system_task_for_cancelled_booking(
     trace_id = event.payload.get("trace_id")
     trace_id_str = str(trace_id) if trace_id else None
     description = (
-        "Запись отменена. Свяжитесь с пациентом, чтобы переназначить визит "
-        "или предложить слот другим пациентам."
+        "The booking was cancelled. Contact the patient to reschedule "
+        "or offer the slot to others."
     )
-    if trace_id:
-        description += f" trace_id={trace_id} event_id={event.event_id}."
 
     due_at = datetime.now(timezone.utc) + timedelta(days=1)
     await service.create_task(
         clinic_id=booking.clinic_id,
-        title="Обработать отменённую запись",
+        title="Follow up on a cancelled booking",
         description=description,
         priority="high",
         creator_id=None,
@@ -165,16 +163,14 @@ async def create_system_task_for_no_show(
     trace_id = event.payload.get("trace_id")
     trace_id_str = str(trace_id) if trace_id else None
     description = (
-        "Пациент не пришёл на приём. Свяжитесь с пациентом, уточните причину "
-        "и предложите новую дату/время."
+        "The patient did not attend. Contact them, find out why, "
+        "and offer a new date and time."
     )
-    if trace_id:
-        description += f" trace_id={trace_id} event_id={event.event_id}."
 
     due_at = datetime.now(timezone.utc) + timedelta(days=1)
     await service.create_task(
         clinic_id=booking.clinic_id,
-        title="Обработать no-show пациента",
+        title="Follow up on a patient no-show",
         description=description,
         priority="medium",
         creator_id=None,

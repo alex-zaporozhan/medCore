@@ -19,7 +19,7 @@
 curl -s -X POST http://127.0.0.1:8000/api/v1/admin/auth/login -H "Content-Type: application/json" -d "{\"email\":\"owner.kazan@showcase-mt.demo\",\"password\":\"ShowcaseMT2026!\"}"
 ```
 
-Ожидается JSON с `access_token`. Ответ вроде «Неверный email или пароль» при корректном пароле почти всегда значит: **этого email нет в таблице `admins`** (сиды не гоняли или другая база в `DATABASE_URL`).
+Ожидается JSON с `access_token`. При **неверном пароле** API возвращает `401` с `code: invalid_credentials` и английским `detail`; экран логина показывает текст из i18n (`Неверный email или пароль` / `Invalid email or password`). Если пароль верный, а вход всё равно не проходит — почти всегда **этого email нет в таблице `admins`** (сиды не гоняли или другая база в `DATABASE_URL`).
 
 6. **Другой набор демо:** тяжёлое моно-демо — `seed_presentation_showcase` → логины `admin@dentapro.demo` / `manager@dentapro.demo`, пароль **`Presentation2026!`** (см. **`documentation/CREDENTIALS_REFERENCE.md`**). Не смешивайте с multi-tenant без осознанного сброса БД.
 

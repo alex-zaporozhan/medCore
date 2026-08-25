@@ -13,8 +13,11 @@ export { GlassModal } from "./GlassModal";
 export { CompactMonthPicker, type CompactMonthPickerProps, type CompactMonthPickerSize } from "./CompactMonthPicker";
 export { AdminDrawer } from "./AdminDrawer";
 export {
+  ADMIN_NAV_SAFE_MODAL_PROPS,
+  ADMIN_SHELL_NAVBAR_OFFSET,
   SHELL_OVERLAY_PROPS,
   SHELL_MODAL_CONTENT_STYLE,
+  SHELL_MODAL_NAV_INNER_STYLE,
   mergeDrawerStyles,
   mergeModalStyles,
 } from "./shellPanelStyles";

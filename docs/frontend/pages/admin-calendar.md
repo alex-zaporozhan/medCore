@@ -61,8 +61,9 @@
 ## Инвентарь поверхностей UI (ось H)
 
 - **AdminDrawer / GlassModal:** нет.
-- **Mantine `Modal`:** несколько экземпляров (**fact:** модалка «События {дата}» для дня — несмотря на имя стейта `dayDrawerDate`; отдельные модалки для единого конвейера create/edit/details и дополнительных сценариев — см. блоки `modal` / `CalendarModalState` в файле).
-- **Состояния:** `create` | `edit` | `details` с общим `submitModal` / `closeModal`; загрузка деталей события, ошибки через `QueryErrorAlert` / текстовые сообщения в модалках.
+- **Mantine `Modal`:** несколько экземпляров (обзор дня — стейт `dayDrawerDate`, несмотря на имя; create/edit/details; связь с задачей). Все разносят `CALENDAR_MODAL_NAV_SAFE`: `lockScroll: false`, overlay/inner с `left: var(--app-shell-navbar-offset)` и `inner.width: auto` + `justify-content: center` (не `paddingLeft` на full-viewport inner — иначе широкая EN-форма прилипает к сайдбару). Create/edit `size="56rem"`.
+- Deep-link `open_create=1` снимается через `setSearchParams(..., { replace: true })`, без лишнего шага в history (Back не открывает форму снова).
+- **Состояния:** `create` | `edit` | `details` с общим `submitModal` / `closeModal`; submit no-op при `isPending`; пересечение интервалов — предупреждение в форме + отказ save + `pg_advisory_xact_lock` на клинику перед count в `_assert_calendar_event_no_overlap`.
 - **`Loader` / `PageSkeleton` / `EmptyState`:** по месту загрузки сетки и пустых состояний.
 
 ## Целевой UX (target vs as-built)
@@ -76,7 +77,8 @@
 
 ## Тесты
 
-- **gap:** автотестов страницы не найдено.
+- `frontend/src/admin/pages/__tests__/AdminStaffCalendarPage.test.tsx` — EN chrome, ввод времени, `document.body` без `pointer-events: none` при открытой форме; inner модалки с inset `left` (не `paddingLeft`) и `justify-content: center`.
+- `frontend/src/shared/ui/__tests__/shellPanelStyles.test.ts` — `ADMIN_NAV_SAFE_MODAL_PROPS`, overlay inset, `SHELL_MODAL_NAV_INNER_STYLE` (без `paddingLeft`).
 
 ## Gap scan (вторая редакция)
 

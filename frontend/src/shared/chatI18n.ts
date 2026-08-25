@@ -11,6 +11,17 @@ const CHANNEL_TYPE_CODES = [
   "OTHER",
 ] as const;
 
+/** Channel types available in create UI (SC4: VK_BOT hidden from new setup). */
+const OMNICHANNEL_CREATE_TYPE_CODES = [
+  "TELEGRAM_BOT",
+  "WHATSAPP_BUSINESS",
+  "VIBER_BOT",
+  "MAX_CHAT",
+  "SMS_GATEWAY",
+  "EMAIL_INBOX",
+  "OTHER",
+] as const;
+
 const CHANNEL_STATUS_CODES = ["PENDING_SETUP", "ACTIVE", "DISABLED", "ERROR"] as const;
 
 export function adminChatMessagesRegion(): {
@@ -67,6 +78,15 @@ export function omniAiModeLabel(mode: string): string {
 
 export function omniChannelTypeOptions(): { value: string; label: string }[] {
   return CHANNEL_TYPE_CODES.map((value) => ({ value, label: omniChannelTypeLabel(value) }));
+}
+
+export function omniChannelCreateTypeOptions(): { value: string; label: string }[] {
+  return OMNICHANNEL_CREATE_TYPE_CODES.map((value) => ({ value, label: omniChannelTypeLabel(value) }));
+}
+
+export function isOmniChannelCreatableType(type: string): boolean {
+  const code = type.toUpperCase();
+  return (OMNICHANNEL_CREATE_TYPE_CODES as readonly string[]).includes(code);
 }
 
 export function omniChannelStatusOptions(): { value: string; label: string }[] {

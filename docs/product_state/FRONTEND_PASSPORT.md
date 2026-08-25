@@ -13,20 +13,20 @@
 |-----------|------------------------------|
 | Runtime | React 18.3, react-dom 18.3 |
 | Язык | TypeScript ~5.6 |
-| Сборка / dev | Vite ^6, `@vitejs/plugin-react` |
+| Сборка / dev | Vite ^6.4, `@vitejs/plugin-react` |
 | UI | Mantine 7 (`@mantine/core`, `hooks`, `spotlight`) |
 | Иконки | `@tabler/icons-react` |
 | Шрифт | `@fontsource/inter` |
 | Данные | `@tanstack/react-query` ^5 |
 | Виртуализация списков | `@tanstack/react-virtual` |
-| Маршрутизация | `react-router-dom` ^6 |
+| Маршрутизация | `react-router-dom` ^7 (data router: `createBrowserRouter` + `RouterProvider`) |
 | DnD | `@dnd-kit/core`, `@dnd-kit/utilities` |
 | Emoji | `@emoji-mart/react`, `@emoji-mart/data`, скрипт синхронизации apple sheet |
 | PWA | `vite-plugin-pwa` ^0.21 |
-| Unit / component tests | Vitest, Testing Library, jsdom |
-| E2E | Playwright (`@playwright/test`) |
+| Unit / component tests | Vitest ^3, Testing Library, jsdom |
+| E2E | Playwright (`@playwright/test` ^1.62) |
 
-**Скрипты npm:** `dev`, `build` (`tsc -b && vite build`), `preview`, `test`, `test:e2e`, `lint`, `security:audit`; перед dev/build — `sync-emoji-apple-sheet.mjs`.
+**Скрипты npm:** `dev`, `build` (`tsc -b && vite build`), `preview`, `test`, `test:e2e`, `lint`, `security:audit` (`npm audit --omit=dev --audit-level=high`), `security:audit:all`; перед dev/build — `sync-emoji-apple-sheet.mjs`. Сборка: Node ≥ 20 (см. `frontend/package.json` `engines` и `frontend/Dockerfile`). CI `critical-path-gate` после `npm ci` гоняет `security:audit`, затем `build`.
 
 ---
 
@@ -274,6 +274,7 @@ CORS для `:5175`, `:4173`, `:3010` (и `127.0.0.1`) — в `CORS_ORIGINS`.
 ## 12. Линтинг и ограничения UI
 
 - **`frontend/eslint-restricted-ui-imports.mjs`** — запрет второго UI-kit рядом с Mantine и использования «голого» Mantine `Drawer` вместо `AdminDrawer` (см. `no-restricted-imports` в конфиге ESLint проекта).
+- **Админ-shell и модалки (факт кода):** `GlassModal` / `AdminDrawer` по умолчанию `lockScroll={false}`; оверлей сдвинут на `--app-shell-navbar-offset`. Иначе remove-scroll вешает `pointer-events: none` на `body` и пункты меню/переключатель клиники не кликаются (регресс `/admin/calendar`). Токены z-index: `--z-admin-navbar`, `--z-admin-header` в `frontend/src/index.css`. На узком viewport бургер живёт в `AppShell.Header` (z-index выше modal), а не в `Main` под оверлеем.
 
 ---
 

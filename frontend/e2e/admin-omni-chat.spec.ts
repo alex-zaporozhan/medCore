@@ -333,13 +333,12 @@ test.describe("admin omni-chat (mocked API)", () => {
     const h2 = (await ta.boundingBox())?.height ?? 0;
     expect(h2).toBeGreaterThan(h1);
 
-    // Channel filter: select VK, Telegram chat should disappear.
+    // Channel filter: Telegram only — VK-only chat should disappear.
     await page.getByPlaceholder("Channels: all").click();
-    await page.getByRole("option", { name: "VK_BOT" }).click();
+    await page.getByRole("option", { name: "TELEGRAM_BOT" }).click();
     await page.keyboard.press("Escape");
-    await expect(page.getByText("Мария Петрова").first()).toBeVisible();
-    await page.getByText("Мария Петрова").first().click();
-    await expect(page.getByText("Мария Петрова").first()).toBeVisible();
+    await expect(page.getByText("Иван Иванов").first()).toBeVisible();
+    await expect(page.getByText("Мария Петрова")).toHaveCount(0);
   });
 
   test("deep link with chat_id+message_id scroll target exists", async ({ page }) => {

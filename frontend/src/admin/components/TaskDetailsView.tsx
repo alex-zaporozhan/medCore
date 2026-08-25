@@ -49,6 +49,7 @@ import { AppleEmojiOverlayTextarea } from "@/shared/ui/AppleEmojiOverlayTextarea
 import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
 import { PersonNameLink } from "@/shared/ui/PersonNameLink";
 import { priorityBadgeColor, taskStatusBadgeStyles, taskStatusCardSurface, taskStatusTextColors } from "@/shared/taskStatusSemantic";
+import { sanitizeTaskDescription } from "@/shared/taskDescriptionSanitize";
 import { useTranslation } from "react-i18next";
 import { tNs } from "@/i18n";
 
@@ -96,6 +97,7 @@ export function TaskDetailsView({
   onClose?: () => void;
 }) {
   const { t } = useTranslation("tasks");
+  const [supportIdCopyError, setSupportIdCopyError] = useState<string | null>(null);
   const { data: adminSession } = useAdminSession();
   const currentAdminId = useMemo(() => getAdminId(), []);
   const { data: admins = [] } = useAdminAdmins();
@@ -158,6 +160,7 @@ export function TaskDetailsView({
   );
 
   useEffect(() => {
+    setSupportIdCopyError(null);
     if (!task) return;
     setAssigneeDraft(taskAssigneeIdList(task));
     setStreamDraft(task.stream_id);
@@ -198,6 +201,7 @@ export function TaskDetailsView({
   if (!task) return <Alert color="red" icon={<IconAlertTriangle size={16} />}>{t("view.loadFailed")}</Alert>;
 
   const tc = taskStatusTextColors(task.status);
+  const cleanedDescription = task.description ? sanitizeTaskDescription(task.description) : "";
 
   return (
     <Stack gap="md">
@@ -247,10 +251,33 @@ export function TaskDetailsView({
         ) : null}
       </Group>
 
+      {task.trace_id ? (
+        <Stack gap={4} align="flex-end">
+          {supportIdCopyError ? (
+            <Text size="xs" c="red">
+              {supportIdCopyError}
+            </Text>
+          ) : null}
+          <Button
+            size="xs"
+            variant="subtle"
+            onClick={() => {
+              setSupportIdCopyError(null);
+              void navigator.clipboard.writeText(task.trace_id!).then(
+                () => setSupportIdCopyError(null),
+                () => setSupportIdCopyError(t("view.copyFailed"))
+              );
+            }}
+          >
+            {t("view.copySupportId")}
+          </Button>
+        </Stack>
+      ) : null}
+
       <Paper p="md" style={{ ...taskStatusCardSurface(task.status), borderRadius: "var(--calendar-slot-radius)" }}>
-        {task.description ? (
+        {cleanedDescription ? (
           <Text size="sm" style={{ whiteSpace: "pre-wrap", color: tc.title }}>
-            {task.description}
+            {cleanedDescription}
           </Text>
         ) : (
           <Text size="sm" c="dimmed">

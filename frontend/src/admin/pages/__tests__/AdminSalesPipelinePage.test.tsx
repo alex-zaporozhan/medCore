@@ -1,14 +1,19 @@
 import type { ReactElement } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MantineProvider } from "@mantine/core";
 import { appTheme } from "@/theme";
+import { renderWithI18n } from "@/i18n/testUtils";
 import AdminSalesPipelinePage from "../AdminSalesPipelinePage";
 
-vi.mock("react-router-dom", () => ({
-  useSearchParams: () => [new URLSearchParams()],
-}));
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return {
+    ...actual,
+    useSearchParams: () => [new URLSearchParams()],
+  };
+});
 
 vi.mock("@/contexts/AdminClinicContext", () => ({
   useAdminClinic: () => ({
@@ -58,13 +63,14 @@ const testQueryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 });
 
-function renderWithMantine(ui: ReactElement) {
-  return render(
+function renderPage(ui: ReactElement) {
+  return renderWithI18n(
     <QueryClientProvider client={testQueryClient}>
       <MantineProvider theme={appTheme} defaultColorScheme="light">
         {ui}
       </MantineProvider>
-    </QueryClientProvider>
+    </QueryClientProvider>,
+    { locale: "en" },
   );
 }
 
@@ -174,14 +180,23 @@ vi.mock("@/hooks/useCrmLeads", () => ({
   useAiUpdateLeadStage: () => ({
     mutate: vi.fn(),
     isPending: false,
+    isError: false,
+    error: null,
+    reset: vi.fn(),
   }),
   useAiCreateTaskForLead: () => ({
     mutate: vi.fn(),
     isPending: false,
+    isError: false,
+    error: null,
+    reset: vi.fn(),
   }),
   useAiIgnoreLeadRecommendation: () => ({
     mutate: vi.fn(),
     isPending: false,
+    isError: false,
+    error: null,
+    reset: vi.fn(),
   }),
   usePipelineStageSemantics: () => ({
     data: {
@@ -233,59 +248,72 @@ describe("AdminSalesPipelinePage Kanban", () => {
     mockUseCreateLeadNote.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
+      isError: false,
+      error: null,
+      reset: vi.fn(),
     });
   });
 
-  it("renders page title and filter controls", () => {
-    renderWithMantine(<AdminSalesPipelinePage />);
+  it("renders page title and filter controls", async () => {
+    await renderPage(<AdminSalesPipelinePage />);
 
-    expect(screen.getByText("CRM‑воронка продаж")).toBeInTheDocument();
+    expect(screen.getByText("Sales pipeline")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Pipeline" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Стадия" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Статус" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Поиск")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Stage" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Status" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Search")).toBeInTheDocument();
   });
 
-  it("renders Kanban columns from stages when pipeline and stages are loaded", () => {
-    renderWithMantine(<AdminSalesPipelinePage />);
+  it("renders Kanban columns from stages when pipeline and stages are loaded", async () => {
+    await renderPage(<AdminSalesPipelinePage />);
 
     expect(screen.getAllByText("Новое").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Записан").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/\(1\)\s+—/)).toBeInTheDocument();
   });
 
-  it("renders lead cards with title, source, estimated and actual value, status", () => {
-    renderWithMantine(<AdminSalesPipelinePage />);
+  it("renders lead cards with title, source, estimated and actual value, status", async () => {
+    await renderPage(<AdminSalesPipelinePage />);
 
     expect(screen.getByText("Лид из чата")).toBeInTheDocument();
-    expect(screen.getByText(/Источник: omnichannel/)).toBeInTheDocument();
-    expect(screen.getByText(/Оценка: 5000/)).toBeInTheDocument();
-    expect(screen.getByText(/Факт: 0/)).toBeInTheDocument();
-    expect(screen.getByText("open")).toBeInTheDocument();
+    expect(screen.getByText(/Source: omnichannel/)).toBeInTheDocument();
+    expect(screen.getByText(/Estimate: 5,000/)).toBeInTheDocument();
+    expect(screen.getByText(/Actual: 0/)).toBeInTheDocument();
+    expect(screen.getAllByText("Open").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows empty state in right panel when no lead selected", () => {
-    renderWithMantine(<AdminSalesPipelinePage />);
+  it("shows empty state in right panel when no lead selected", async () => {
+    await renderPage(<AdminSalesPipelinePage />);
 
-    expect(screen.getByText("Выберите лид")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Кликните по карточке лида в Kanban‑доске/)
-    ).toBeInTheDocument();
+    expect(screen.getByText("Select a lead")).toBeInTheDocument();
+    expect(screen.getByText(/Click a lead card on the Kanban board/)).toBeInTheDocument();
   });
 
-  it("shows lead details and notes when a lead card is clicked", () => {
+  it("shows empty pipelines state when no pipelines configured", async () => {
+    mockUseCrmPipelines.mockReturnValue({
+      data: [],
+      isLoading: false,
+    });
+
+    await renderPage(<AdminSalesPipelinePage />);
+
+    expect(screen.getByText("No pipelines yet")).toBeInTheDocument();
+    expect(screen.getByText(/Ask the clinic owner to create a sales pipeline/)).toBeInTheDocument();
+  });
+
+  it("shows lead details and notes when a lead card is clicked", async () => {
     mockUseCrmLeadDetails.mockImplementation((leadId: string | null) => ({
       data: leadId === "lead-1" ? mockLeadDetails : null,
       isLoading: false,
     }));
 
-    renderWithMantine(<AdminSalesPipelinePage />);
+    await renderPage(<AdminSalesPipelinePage />);
 
     const leadCard = screen.getByText("Лид из чата");
     fireEvent.click(leadCard);
 
     expect(screen.getByText("Перезвонить завтра")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Добавить заметку...")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Сохранить заметку/ })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Add a note…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Save note/ })).toBeInTheDocument();
   });
 });

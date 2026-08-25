@@ -64,6 +64,7 @@
     "leadMissingHint": "It may have been changed or deleted.",
     "actualZeroOpenDetail": "ERP actual is still 0 ₽ — normal until the visit is completed and posted.",
     "actualZeroWonDetail": "Won without an ERP amount: check lead_id / booking_id on transactions.",
+    "aiToolUnavailable": "Not enough permissions or the backend tool is unavailable.",
     "aiTitle": "AI suggestions",
     "aiSummary": "Lead summary",
     "aiNextStage": "Next stage",

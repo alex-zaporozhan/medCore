@@ -54,9 +54,24 @@
 
 ---
 
+## Волна A — эстетика / EN chrome (2026-08-23)
+
+| ID | Файл | Зачем |
+|----|------|-------|
+| **W-FE1** | [FRONTEND_AESTHETICS_AUDIT_2026-08-23.md](./FRONTEND_AESTHETICS_AUDIT_2026-08-23.md) | Анамнез + диагноз по URL владельца |
+| **W-FE2** | [FRONTEND_COSMETIC_ORDER_TZ_2026-08-23.md](./FRONTEND_COSMETIC_ORDER_TZ_2026-08-23.md) | ТЗ лечения (без кода) |
+| **W-FE3** | [QUEUE_FRONTEND_COSMETIC_ORDER_2026-08-23.md](./QUEUE_FRONTEND_COSMETIC_ORDER_2026-08-23.md) | Промпты Q0–Q13 для Cursor queue |
+| **W-FE4** | [FRONTEND_COSMETIC_ORDER_NEXT_2026-08-23.md](./FRONTEND_COSMETIC_ORDER_NEXT_2026-08-23.md) | Вне волны A: A2 C1, seed, AI tasks, grep-гейт, concept лендинга |
+
+Код волны **не писать**, пока владелец не вставит очередь. ТЗ/очередь — **rev 3** (D4 = text+blur не `type=time`; полные карты i18n; JSON один писатель; 6 вкладок nowrap). Канон i18n: [ADMIN_I18N_EN_ROADMAP.md](./ADMIN_I18N_EN_ROADMAP.md).
+
+---
+
 ## История
 
 | Дата | Изменение |
 |------|-----------|
+| 2026-08-23 | Волна A rev 3: D4 typing, полные i18n-карты, JSON-гонки, аудит §10 (без кода) |
+| 2026-08-23 | Волна A rev 2: ревью гонок/контрактов + NEXT-промпты (без кода) |
 | 2026-04-02 | Консолидация: spine + corpus; удалены архив, 85 plus, промпты и дубли |
 | 2026-03-24 | Первая версия карты (до зачистки) |

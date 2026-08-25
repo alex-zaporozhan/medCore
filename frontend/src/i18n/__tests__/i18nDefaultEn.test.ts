@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import dayjs from "dayjs";
 import i18n, { readStoredUiLocale, UI_LOCALE_STORAGE_KEY } from "../index";
 import { taskStatusLabel } from "@/shared/taskStatusI18n";
-import { adminChatMessagesRegion, omniChannelTypeLabel } from "@/shared/chatI18n";
+import { adminChatMessagesRegion, omniChannelCreateTypeOptions, omniChannelTypeLabel, isOmniChannelCreatableType } from "@/shared/chatI18n";
 import { crmLeadStatusLabel, crmRecallChannelLabel } from "@/shared/crmI18n";
 import { moneyCashboxTypeLabel, moneyDiscountTypeLabel, moneyFinanceTxSourceLabel, moneyFinanceTxTypeLabel, moneyGatewayLabel, moneyInventoryTxTypeLabel, moneyLoyaltyPackageKindLabel, moneyPassStatusLabel, moneySalaryTxTypeLabel, moneyWalletTxTypeLabel } from "@/shared/moneyI18n";
 import { feedRevenuePeriodLabel } from "@/shared/feedI18n";
@@ -150,13 +150,21 @@ describe("i18n default locale", () => {
   });
 
   it("chat omni chrome is EN by default", () => {
-    expect(i18n.t("omni.title", { ns: "chat" })).toBe("Omni-chat — work only");
+    expect(i18n.t("staff.title", { ns: "chat" })).toBe("Team chat");
+    expect(i18n.t("staff.fallbackTitle", { ns: "chat" })).toBe("Staff chat");
     expect(i18n.t("region.messages", { ns: "chat" })).toBe("Conversation messages");
     expect(i18n.t("omni.claim", { ns: "chat" })).toBe("Claim");
     expect(i18n.t("errors.claimFailed", { ns: "chat" })).toBe("Could not claim the ticket");
     expect(i18n.t("errors.saveFailed", { ns: "chat" })).toBe("Could not save");
     expect(i18n.t("errors.noConversation", { ns: "chat" })).toBe("no conversation");
+    expect(i18n.t("errors.fileTypeDenied", { ns: "chat" })).toBe("This file type is not allowed");
+    expect(i18n.t("errors.fileEmpty", { ns: "chat" })).toBe("The file is empty");
+    expect(i18n.t("errors.fileSvgForbidden", { ns: "chat" })).toBe("SVG files are not allowed");
     expect(omniChannelTypeLabel("VK_BOT")).toBe("VK bot");
+    expect(omniChannelCreateTypeOptions().some((o) => o.value === "VK_BOT")).toBe(false);
+    expect(isOmniChannelCreatableType("VK_BOT")).toBe(false);
+    expect(isOmniChannelCreatableType("telegram_bot")).toBe(true);
+    expect(i18n.t("omniChannels.intro", { ns: "chat" })).not.toMatch(/\bVK\b/i);
     expect(omniChannelTypeLabel("not_a_channel")).toBe("not_a_channel");
     expect(adminChatMessagesRegion()["aria-label"]).toBe("Conversation messages");
     expect(i18n.t("unknownName", { ns: "common" })).toBe("Unknown name");
@@ -177,6 +185,9 @@ describe("i18n default locale", () => {
   it("crm pipeline chrome is EN by default", () => {
     expect(i18n.t("pipeline.title", { ns: "crm" })).toBe("Sales pipeline");
     expect(i18n.t("pipeline.emptyPipelinesTitle", { ns: "crm" })).toBe("No pipelines yet");
+    expect(i18n.t("pipeline.aiToolUnavailable", { ns: "crm" })).toBe(
+      "Not enough permissions or the backend tool is unavailable.",
+    );
     expect(crmLeadStatusLabel("open")).toBe("Open");
     expect(crmLeadStatusLabel("success")).toBe("Won");
     expect(crmLeadStatusLabel("lost")).toBe("Lost");
@@ -290,6 +301,10 @@ describe("i18n default locale", () => {
     expect(i18n.t("dialogClose", { ns: "common" })).toBe("Close");
     expect(labelForEntitlementKey("core.base").hint).toMatch(/Bookings/i);
     expect(commonErrorI18nKey("entitlement_required")).toBe("errors.entitlement_required");
+    expect(commonErrorI18nKey("invalid_credentials")).toBe("errors.invalid_credentials");
+    expect(i18n.t("errors.invalid_credentials", { ns: "common" })).toMatch(/invalid email or password/i);
+    expect(commonErrorI18nKey("billing_revoked")).toBe("errors.billing_revoked");
+    expect(i18n.t("errors.billing_revoked", { ns: "common" })).toMatch(/subscription/i);
     expect(commonErrorI18nKey("not-a-code")).toBeNull();
     expect(isAdminChromePath("/admin/settings")).toBe(true);
     expect(isAdminChromePath("/app/chat")).toBe(false);

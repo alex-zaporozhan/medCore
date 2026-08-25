@@ -26,7 +26,7 @@ import { useHotkeys } from "@mantine/hooks";
 import {
   IconBrandTelegram,
   IconBrandWhatsapp,
-  IconBrandVk,
+  IconMessage,
   IconQuote,
   IconCornerUpLeft,
   IconMail,
@@ -38,6 +38,7 @@ import {
 } from "@tabler/icons-react";
 import { ContextBar } from "@/shared/ui/ContextBar";
 import { useTranslation } from "react-i18next";
+import { omniFileUploadErrorMessage } from "@/shared/omniUploadErrors";
 import { EmptyStateHint } from "@/shared/emptyStateHint";
 import {
   useAdminOmniChatDetail,
@@ -72,7 +73,7 @@ function ChannelIcon({ type }: { type: string }) {
   const t = (type || "").toUpperCase();
   if (t === "TELEGRAM_BOT") return <IconBrandTelegram size={14} />;
   if (t === "WHATSAPP_BUSINESS") return <IconBrandWhatsapp size={14} />;
-  if (t === "VK_BOT") return <IconBrandVk size={14} />;
+  if (t === "VK_BOT") return <IconMessage size={14} />;
   if (t === "EMAIL_INBOX") return <IconMail size={14} />;
   return null;
 }
@@ -81,7 +82,7 @@ function channelBrandColor(type: string): string {
   const t = (type || "").toUpperCase();
   if (t === "TELEGRAM_BOT") return "var(--mantine-color-blue-6)";
   if (t === "WHATSAPP_BUSINESS") return "var(--mantine-color-green-6)";
-  if (t === "VK_BOT") return "var(--mantine-color-indigo-6)";
+  if (t === "VK_BOT") return "var(--mantine-color-gray-6)";
   if (t === "EMAIL_INBOX") return "var(--mantine-color-gray-6)";
   return "var(--mantine-color-gray-6)";
 }
@@ -602,7 +603,8 @@ export default function AdminOmniChatPage() {
               setSendError(t("errors.channelUnresolved"));
               return;
             }
-            setAttachError(t("errors.sendFileFailed"));
+            const fileError = omniFileUploadErrorMessage(err, t);
+            setAttachError(fileError ?? t("errors.sendFileFailed"));
           },
         },
       );
@@ -784,7 +786,10 @@ export default function AdminOmniChatPage() {
                 placeholder={t("omni.channelsAll")}
                 value={channelTypeFilters}
                 onChange={setChannelTypeFilters}
-                data={availableChannelTypes.map((ch) => ({ value: ch, label: ch }))}
+                data={availableChannelTypes.map((ch) => ({
+                  value: ch,
+                  label: omniChannelTypeLabel(ch),
+                }))}
                 clearable
                 searchable
                 nothingFoundMessage={t("omni.noChannels")}
@@ -1044,7 +1049,7 @@ export default function AdminOmniChatPage() {
                 scrollHideDelay={250}
                 viewportRef={messagesViewportRef as any}
               >
-                <Stack gap="xs" p="md" {...adminChatMessagesRegion()}>
+                <Stack gap={8} p="md" {...adminChatMessagesRegion()}>
                   {mergedMessages.length ? (
                     mergedMessages.map((m: any, idx: number) => {
                       const dayKey = toDayKey(m.created_at);
@@ -1073,111 +1078,79 @@ export default function AdminOmniChatPage() {
                             </Group>
                           ) : null}
                           <Group justify={outbound ? "flex-end" : "flex-start"} align="flex-start" wrap="nowrap">
-                            {!outbound ? <Box style={{ width: 28, flexShrink: 0 }} /> : null}
-                            <Group gap={8} wrap="nowrap" align="flex-start" style={{ maxWidth: "92%" }}>
-                              <Paper
-                                p={6}
-                                radius="lg"
-                                withBorder
-                                id={`omni-msg-${String(m.id)}`}
-                                data-omni-message-id={String(m.id)}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  setCtxMenu({
-                                    opened: true,
-                                    x: e.clientX,
-                                    y: e.clientY,
-                                    messageId: String(m.id),
-                                    messageText: String(m.content || ""),
-                                  });
-                                }}
-                                style={{
-                                  display: "flex",
-                                  gap: 8,
-                                  alignItems: "stretch",
-                                  flex: 1,
-                                  minWidth: 0,
-                                  borderColor: "var(--mantine-color-gray-2)",
-                                  background: "transparent",
-                                }}
-                              >
+                            <Box
+                              id={`omni-msg-${String(m.id)}`}
+                              data-omni-message-id={String(m.id)}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                setCtxMenu({
+                                  opened: true,
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                  messageId: String(m.id),
+                                  messageText: String(m.content || ""),
+                                });
+                              }}
+                              style={{
+                                maxWidth: "min(68%, 36rem)",
+                                minWidth: 0,
+                                padding: "8px 12px",
+                                ...(outbound
+                                  ? adminChatOmniOutboundBubbleStyle()
+                                  : adminChatOmniClientInboundBubbleStyle()),
+                              }}
+                            >
+                              {replyMeta ? (
                                 <Paper
-                                  p="sm"
-                                  radius="lg"
-                                  style={{
-                                    flex: 1,
-                                    minWidth: 0,
-                                    border: "none",
-                                    ...(outbound ? adminChatOmniOutboundBubbleStyle : adminChatOmniClientInboundBubbleStyle),
-                                  }}
-                                >
-                                  {replyMeta ? (
-                                    <Paper
-                                      p="xs"
-                                      radius="md"
-                                      withBorder
-                                      style={{
-                                        cursor: replyMeta.messageId ? "pointer" : "default",
-                                        marginBottom: 8,
-                                        background: "var(--mantine-color-gray-0)",
-                                        borderColor: "var(--mantine-color-gray-2)",
-                                        borderLeft: `3px solid ${outbound ? "var(--mantine-color-indigo-6)" : "var(--mantine-color-teal-6)"}`,
-                                      }}
-                                      onClick={() => {
-                                        const mid = replyMeta.messageId;
-                                        if (!mid) return;
-                                        const el = document.getElementById(`omni-msg-${mid}`);
-                                        if (!el) return;
-                                        try {
-                                          (el as HTMLElement).scrollIntoView({ block: "center", behavior: "smooth" });
-                                        } catch {
-                                          (el as HTMLElement).scrollIntoView();
-                                        }
-                                      }}
-                                    >
-                                      <Group gap={6} wrap="nowrap" align="center">
-                                        <IconQuote size={16} />
-                                        <Text size="xs" c="dimmed" truncate="end" style={{ flex: 1, minWidth: 0 }}>
-                                          {quotedText}
-                                        </Text>
-                                      </Group>
-                                    </Paper>
-                                  ) : null}
-                                  <Box style={{ fontSize: 13, lineHeight: 1.35 }}>
-                                    <OmniMessageRichBody
-                                      content={displayContent}
-                                      attachments={(m.attachments ?? []).map((a: any) => ({
-                                        id: String(a.id),
-                                        file_name: String(a.file_name || ""),
-                                        content_type: String(a.content_type || "application/octet-stream"),
-                                        size_bytes: Number(a.size_bytes || 0),
-                                        source: a.source === "clinic_chat" ? "clinic_chat" : "omni",
-                                        conversation_id: a.conversation_id ?? null,
-                                      }))}
-                                      getClinicChatBlob={getClinicChatBlob}
-                                      getOmniBlob={(attachmentId) => getOmniBlobForMessage(String(m.id), attachmentId)}
-                                      allowAudioAttachmentDownload={false}
-                                    />
-                                  </Box>
-                                </Paper>
-
-                                <Paper
-                                  p={6}
+                                  p="xs"
                                   radius="md"
                                   withBorder
                                   style={{
-                                    width: 56,
-                                    flexShrink: 0,
+                                    cursor: replyMeta.messageId ? "pointer" : "default",
+                                    marginBottom: 8,
                                     background: "var(--mantine-color-gray-0)",
                                     borderColor: "var(--mantine-color-gray-2)",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    alignItems: "center",
-                                    justifyContent: "flex-start",
-                                    gap: 6,
+                                    borderLeft: `3px solid ${outbound ? "var(--mantine-color-indigo-6)" : "var(--mantine-color-teal-6)"}`,
+                                  }}
+                                  onClick={() => {
+                                    const mid = replyMeta.messageId;
+                                    if (!mid) return;
+                                    const el = document.getElementById(`omni-msg-${mid}`);
+                                    if (!el) return;
+                                    try {
+                                      (el as HTMLElement).scrollIntoView({ block: "center", behavior: "smooth" });
+                                    } catch {
+                                      (el as HTMLElement).scrollIntoView();
+                                    }
                                   }}
                                 >
-                                  <Text size="xs" c="dimmed" style={{ lineHeight: 1 }}>
+                                  <Group gap={6} wrap="nowrap" align="center">
+                                    <IconQuote size={16} />
+                                    <Text size="xs" c="dimmed" truncate="end" style={{ flex: 1, minWidth: 0 }}>
+                                      {quotedText}
+                                    </Text>
+                                  </Group>
+                                </Paper>
+                              ) : null}
+                              <Box style={{ fontSize: 13, lineHeight: 1.35 }}>
+                                <OmniMessageRichBody
+                                  content={displayContent}
+                                  attachments={(m.attachments ?? []).map((a: any) => ({
+                                    id: String(a.id),
+                                    file_name: String(a.file_name || ""),
+                                    content_type: String(a.content_type || "application/octet-stream"),
+                                    size_bytes: Number(a.size_bytes || 0),
+                                    source: a.source === "clinic_chat" ? "clinic_chat" : "omni",
+                                    conversation_id: a.conversation_id ?? null,
+                                  }))}
+                                  getClinicChatBlob={getClinicChatBlob}
+                                  getOmniBlob={(attachmentId) => getOmniBlobForMessage(String(m.id), attachmentId)}
+                                  allowAudioAttachmentDownload={false}
+                                />
+                              </Box>
+                              <Group justify="space-between" align="center" gap={6} mt={6} wrap="nowrap">
+                                <Group gap={6} align="center" wrap="nowrap" style={{ minWidth: 0 }}>
+                                  <Text size="xs" c="dimmed" style={{ fontSize: 11, lineHeight: 1 }}>
                                     {timeLabel}
                                   </Text>
                                   {m.channel_type ? (
@@ -1185,22 +1158,20 @@ export default function AdminOmniChatPage() {
                                       <ChannelIcon type={String(m.channel_type)} />
                                     </Box>
                                   ) : null}
-                                  <Tooltip label={t("reply")} withArrow>
-                                    <ActionIcon
-                                      variant="subtle"
-                                      color="gray"
-                                      size="sm"
-                                      aria-label={t("reply")}
-                                      onClick={() => startReply(String(m.id))}
-                                    >
-                                      <IconCornerUpLeft size={16} />
-                                    </ActionIcon>
-                                  </Tooltip>
-                                  {/* actions: right-click context menu */}
-                                </Paper>
-                              </Paper>
-                            </Group>
-                            {outbound ? <Box style={{ width: 28, flexShrink: 0 }} /> : null}
+                                </Group>
+                                <Tooltip label={t("reply")} withArrow>
+                                  <ActionIcon
+                                    variant="subtle"
+                                    color="gray"
+                                    size="sm"
+                                    aria-label={t("reply")}
+                                    onClick={() => startReply(String(m.id))}
+                                  >
+                                    <IconCornerUpLeft size={16} />
+                                  </ActionIcon>
+                                </Tooltip>
+                              </Group>
+                            </Box>
                           </Group>
                         </Stack>
                       );

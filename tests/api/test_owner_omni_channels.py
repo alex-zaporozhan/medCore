@@ -26,7 +26,6 @@ async def test_owner_create_and_list_channels(init_db, seed_data, client: AsyncC
         ("telegram_bot", "Telegram Bot #1", "TELEGRAM_BOT"),
         ("whatsapp_business", "WhatsApp Business #1", "WHATSAPP_BUSINESS"),
         ("viber_bot", "Viber Bot #1", "VIBER_BOT"),
-        ("vk_bot", "VK Bot #1", "VK_BOT"),
         ("max_chat", "Max Chat #1", "MAX_CHAT"),
         ("sms_gateway", "SMS Gateway #1", "SMS_GATEWAY"),
         ("email_inbox", "Email Inbox #1", "EMAIL_INBOX"),
@@ -53,6 +52,22 @@ async def test_owner_create_and_list_channels(init_db, seed_data, client: AsyncC
     ids_in_list = {item["id"] for item in list_data["items"]}
     for cid in created_ids:
         assert cid in ids_in_list
+
+
+@pytest.mark.regression_chats
+@pytest.mark.asyncio
+async def test_owner_create_vk_bot_rejected(init_db, seed_data, client: AsyncClient, admin_auth: dict):
+    """SC4: VK_BOT is hidden from create UI and rejected on owner API (legacy rows remain readable)."""
+    headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    r = await client.post(
+        "/api/v1/owner/channels",
+        json={"type": "VK_BOT", "display_name": "VK Bot blocked"},
+        headers=headers,
+    )
+    assert r.status_code == 400, r.text
+    body = r.json()
+    assert body["code"] == "omni_channel_type_not_creatable"
+    assert isinstance(body["detail"], str) and body["detail"]
 
 
 @pytest.mark.regression_chats

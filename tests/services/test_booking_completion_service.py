@@ -301,6 +301,7 @@ async def test_complete_visit_subscription_business_error_blocks(init_db, seed_d
     assert booking is not None
     assert booking.status != BookingStatus.COMPLETED
     assert len(tasks) >= 1
+    assert "trace_id=" not in (tasks[0].description or "")
 
 
 @pytest.mark.asyncio
@@ -349,6 +350,7 @@ async def test_complete_visit_erp_configuration_error_reported(init_db, seed_dat
             clinic_id=clinic_id,
             user_id=seed_data["admin_id"],
             user_type="admin",
+            trace_id="audit-trace-q7",
         )
 
         result = await service.complete_visit(
@@ -381,6 +383,12 @@ async def test_complete_visit_erp_configuration_error_reported(init_db, seed_dat
     assert tasks[0].clinic_id == clinic_id
     assert tasks[0].booking_id == booking_read.id
     assert tasks[0].source == "system"
+    assert tasks[0].title == "ERP error on visit completion"
+    assert "Could not post the visit to ERP" in (tasks[0].description or "")
+    assert "type: finance" in (tasks[0].description or "")
+    assert "trace_id=" not in (tasks[0].description or "")
+    assert tasks[0].trace_id == "audit-trace-q7"
+    assert "audit-trace-q7" not in (tasks[0].description or "")
 
 
 @pytest.mark.asyncio
@@ -473,6 +481,7 @@ async def test_complete_visit_creates_task_on_loyalty_erp_inconsistent_obligatio
     assert tasks[0].clinic_id == clinic_id
     assert tasks[0].booking_id == booking_read.id
     assert tasks[0].source == "system"
+    assert "trace_id=" not in (tasks[0].description or "")
 
 
 @pytest.mark.asyncio
@@ -561,6 +570,11 @@ async def test_complete_visit_erp_node_failure_sets_error_and_creates_task(
     assert len(tasks) == 1
     assert tasks[0].clinic_id == clinic_id
     assert tasks[0].booking_id == booking_read.id
+    assert tasks[0].title == "ERP error on visit completion"
+    assert "Could not post the visit to ERP" in (tasks[0].description or "")
+    assert "type: finance" in (tasks[0].description or "")
+    assert "trace_id=" not in (tasks[0].description or "")
+    assert tasks[0].trace_id is None
 
 
 @pytest.mark.asyncio

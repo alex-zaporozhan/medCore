@@ -22,8 +22,40 @@ def sanitize_omni_filename(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]", "_", base)[:200] or "file"
 
 
+def _normalize_mime(content_type: str) -> str:
+    return (content_type or "").split(";")[0].strip().lower()
+
+
+def sniff_omni_upload_mime(filename: str, content_type: str) -> str:
+    """Resolve MIME for uploads when the browser sends empty or application/octet-stream."""
+    ct = _normalize_mime(content_type)
+    if ct and ct != "application/octet-stream":
+        return ct
+
+    fn = (filename or "").lower()
+    if fn.endswith(".webm"):
+        return "audio/webm"
+    if fn.endswith(".ogg"):
+        return "audio/ogg"
+    if fn.endswith(".mp3"):
+        return "audio/mpeg"
+    if fn.endswith(".m4a"):
+        return "audio/mp4"
+    if fn.endswith(".wav"):
+        return "audio/wav"
+
+    return ct or "application/octet-stream"
+
+
+def is_omni_svg_upload(filename: str, sniffed_content_type: str) -> bool:
+    """SC1: deny SVG by filename suffix and by resolved MIME."""
+    fn = (filename or "").lower()
+    ct = _normalize_mime(sniffed_content_type)
+    return fn.endswith(".svg") or fn.endswith(".svgz") or ct in {"image/svg+xml", "image/svg"}
+
+
 def allowed_omni_upload_mime(content_type: str) -> bool:
-    ct = (content_type or "").split(";")[0].strip().lower()
+    ct = _normalize_mime(content_type)
     # SECURITY: forbid SVG (stored XSS) and avoid broad image/* allowlists.
     if ct in {"image/svg+xml", "image/svg"}:
         return False

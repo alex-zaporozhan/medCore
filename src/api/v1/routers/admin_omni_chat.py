@@ -52,8 +52,10 @@ from src.application.services.omni_media_storage import (
     OMNI_FILES_META_KEY,
     allowed_omni_upload_mime,
     find_omni_file_meta,
+    is_omni_svg_upload,
     read_omni_file_bytes,
     save_omni_upload,
+    sniff_omni_upload_mime,
 )
 from src.domain.entities.admin_user import AdminUser
 from src.domain.entities.omnichannel_channel import Channel as OmniChannel
@@ -1745,17 +1747,22 @@ async def send_admin_omni_message_upload(
 
     raw = await file.read()
     if not raw:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
+        raise _err("omni_file_empty", "Empty file", http_status=status.HTTP_400_BAD_REQUEST)
     if len(raw) > settings.staff_chat_max_attachment_bytes:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Файл слишком большой")
-    ct = (file.content_type or "application/octet-stream").split(";")[0].strip()
-    fn = (file.filename or "").lower()
-    if fn.endswith(".svg") or fn.endswith(".svgz") or ct.lower() in {"image/svg+xml", "image/svg"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SVG запрещён")
+        raise _err(
+            "omni_file_too_large",
+            "File too large",
+            http_status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
+    raw_ct = (file.content_type or "").split(";")[0].strip()
+    ct = sniff_omni_upload_mime(file.filename or "", raw_ct)
+    if is_omni_svg_upload(file.filename or "", ct):
+        raise _err("omni_svg_forbidden", "SVG uploads are not allowed", http_status=status.HTTP_400_BAD_REQUEST)
     if not allowed_omni_upload_mime(ct):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Недопустимый тип файла для omnichannel",
+        raise _err(
+            "omni_file_type_denied",
+            "File type is not allowed for omnichannel upload",
+            http_status=status.HTTP_400_BAD_REQUEST,
         )
 
     business_account_id: UUID = current_admin.clinic_id

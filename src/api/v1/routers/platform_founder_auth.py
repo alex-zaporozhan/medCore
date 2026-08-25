@@ -17,6 +17,12 @@ from src.api.v1.dependencies import (
 )
 from src.api.v1.routers.admin_auth import verify_password
 from src.core.config import settings
+from src.core.user_messages import (
+    INVALID_CREDENTIALS,
+    INVALID_MFA_TOKEN,
+    INVALID_TOTP,
+    LOGIN_RATE_LIMITED,
+)
 from src.core.platform_audit import log_platform_audit
 from src.core.security import (
     create_platform_founder_access_token,
@@ -81,10 +87,10 @@ async def _apply_platform_founder_login_email_rate_limit(
     "/login",
     response_model=PlatformFounderLoginResponse,
     responses={
-        401: {"description": "Неверный email/пароль или неверный TOTP при включённом 2FA"},
-        429: {"description": "Слишком много попыток (Redis; IP и/или email)"},
+        401: {"description": "Invalid email/password, or invalid TOTP when 2FA is enabled"},
+        429: {"description": "Too many attempts (Redis; IP and/or email)"},
         503: {
-            "description": "В production при пустом PLATFORM_FOUNDER_JWT_SECRET — вход отключён (нет fallback на JWT_SECRET_KEY)"
+            "description": "In production with empty PLATFORM_FOUNDER_JWT_SECRET, login is disabled (no fallback to JWT_SECRET_KEY)"
         },
     },
 )
@@ -111,7 +117,7 @@ async def platform_founder_login(
     except RateLimitExceeded:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Слишком много попыток. Попробуйте позже.",
+            detail=LOGIN_RATE_LIMITED,
         ) from None
 
     result = await session.execute(
@@ -121,7 +127,7 @@ async def platform_founder_login(
     if not row or not row.is_active or not verify_password(data.password, row.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный email или пароль",
+            detail=INVALID_CREDENTIALS,
         )
 
     if row.totp_enabled and row.totp_secret_ciphertext:
@@ -131,7 +137,7 @@ async def platform_founder_login(
             if not totp.verify(data.totp_code.strip(), valid_window=1):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Неверный код двухфакторной аутентификации",
+                    detail=INVALID_TOTP,
                 )
         else:
             mfa = create_platform_founder_mfa_token(subject=row.id)
@@ -171,9 +177,9 @@ async def platform_founder_login(
     "/login/mfa",
     response_model=PlatformFounderLoginResponse,
     responses={
-        401: {"description": "Недействительный MFA-токен, пользователь, или неверный TOTP"},
-        429: {"description": "Слишком много попыток (Redis; per-IP)"},
-        503: {"description": "Production без PLATFORM_FOUNDER_JWT_SECRET — вход отключён"},
+        401: {"description": "Invalid MFA token, user, or TOTP code"},
+        429: {"description": "Too many attempts (Redis; per-IP)"},
+        503: {"description": "Production without PLATFORM_FOUNDER_JWT_SECRET — login disabled"},
     },
 )
 async def platform_founder_login_mfa(
@@ -202,7 +208,7 @@ async def platform_founder_login_mfa(
         except RateLimitExceeded:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Слишком много попыток. Попробуйте позже.",
+                detail=LOGIN_RATE_LIMITED,
             ) from None
 
     try:
@@ -210,19 +216,19 @@ async def platform_founder_login_mfa(
     except jwt.exceptions.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Недействительный или просроченный MFA-токен",
+            detail=INVALID_MFA_TOKEN,
         ) from None
 
     sub = payload.get("sub")
     if not sub:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный MFA-токен")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_MFA_TOKEN)
 
     try:
         uid = UUID(str(sub))
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Недействительный MFA-токен",
+            detail=INVALID_MFA_TOKEN,
         ) from exc
 
     result = await session.execute(
@@ -230,14 +236,14 @@ async def platform_founder_login_mfa(
     )
     row = result.scalar_one_or_none()
     if not row or not row.is_active or not row.totp_enabled or not row.totp_secret_ciphertext:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный MFA-токен")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_MFA_TOKEN)
 
     secret = decrypt_totp_secret(row.totp_secret_ciphertext)
     totp = pyotp.TOTP(secret)
     if not totp.verify(data.totp_code.strip(), valid_window=1):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный код двухфакторной аутентификации",
+            detail=INVALID_TOTP,
         )
 
     token = create_platform_founder_access_token(
@@ -266,7 +272,7 @@ async def platform_founder_totp_enroll(
     if principal.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "platform_founder_totp_already_enabled", "message": "TOTP уже включён"},
+            detail={"code": "platform_founder_totp_already_enabled", "message": "TOTP is already enabled"},
         )
 
     secret = pyotp.random_base32()
@@ -299,12 +305,12 @@ async def platform_founder_totp_confirm(
     if principal.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "platform_founder_totp_already_enabled", "message": "TOTP уже включён"},
+            detail={"code": "platform_founder_totp_already_enabled", "message": "TOTP is already enabled"},
         )
     if not principal.totp_secret_ciphertext:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "platform_founder_totp_not_enrolled", "message": "Сначала вызовите enroll"},
+            detail={"code": "platform_founder_totp_not_enrolled", "message": "Call enroll first"},
         )
 
     secret = decrypt_totp_secret(principal.totp_secret_ciphertext)
@@ -312,7 +318,7 @@ async def platform_founder_totp_confirm(
     if not totp.verify(data.code.strip(), valid_window=1):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "platform_founder_totp_invalid_code", "message": "Неверный код"},
+            detail={"code": "platform_founder_totp_invalid_code", "message": "Invalid code"},
         )
 
     principal.totp_enabled = True

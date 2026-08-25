@@ -31,4 +31,4 @@ LEO was less developed then. This repository reads that way in places. I am publ
 
 The longer argument about context drift, amnesia, and why "treat the model like a junior" is the wrong model lives in the [LEO manifesto](https://github.com/alex-zaporozhan/leo/blob/main/MANIFESTO.md).
 
-— Alexandr Zaporozhan
+— Alexandr Zaporojan

@@ -42,6 +42,7 @@
     "drag": "Перетащить",
     "dragTask": "Перетащить задачу",
     "selectTask": "Выбрать задачу",
+    "openTask": "Открыть задачу: {{title}}",
     "actions": "Действия",
     "moveToStream": "Переместить в поток",
     "blocked": "Заблокировано",
@@ -187,6 +188,7 @@
   },
   "list": {
     "title": "Список задач",
+    "boardTitle": "Доска",
     "assignedToMe": "Назначено мне: {{count}}"
   },
   "empty": {
@@ -259,7 +261,9 @@
     "invite": "Пригласить",
     "newComment": "Новый комментарий",
     "dueLine": "Срок: {{when}}",
-    "noCommentsYet": "Пока нет комментариев."
+    "noCommentsYet": "Пока нет комментариев.",
+    "copySupportId": "Копировать ID поддержки",
+    "copyFailed": "Не удалось скопировать в буфер обмена"
   },
   "page": {
     "backToKanban": "Назад к Kanban"

@@ -49,6 +49,7 @@ flowchart LR
 См. [`PAGE_PASSPORT_CRITERIA.md`](./PAGE_PASSPORT_CRITERIA.md) и шаблон [`pages/README.md`](./pages/README.md). Дополнительно для экранов с overlay:
 
 - **Инвентарь поверхностей:** каждый `AdminDrawer`, `GlassModal`, значимый `Menu` / `Modal`, шаги `Stepper`, критичные `Alert` — триггер, мутация, loading/error (**fact** или **gap**).
+- Для админ-shell: overlay не должен глушить navbar (`lockScroll` на `body` запрещён для штатных Modal/Drawer — см. `ADMIN_NAV_SAFE_MODAL_PROPS`).
 
 ## 4. Чеклист при изменении маршрута или экрана
 

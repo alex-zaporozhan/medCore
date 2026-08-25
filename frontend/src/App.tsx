@@ -344,13 +344,17 @@ const router = createBrowserRouter(
       <Route path={ROUTE_PATHS.other.bookingSuccess} element={<BookingSuccessPage />} />
     </>
   ),
-  { future: { v7_relativeSplatPath: true } }
+  /**
+   * React Router 7: former v7_* future flags are the default (startTransition,
+   * relative splat paths). There are no `path="*"` splats in this tree; keep it that way
+   * or re-read RR7 splat semantics before adding one.
+   */
 );
 
 export default function App() {
   return (
     <ErrorBoundary>
-      <RouterProvider router={router} future={{ v7_startTransition: true }} />
+      <RouterProvider router={router} />
     </ErrorBoundary>
   );
 }

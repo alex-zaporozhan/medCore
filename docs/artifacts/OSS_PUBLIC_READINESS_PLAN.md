@@ -67,9 +67,9 @@
 - Default `VITE_EDITION` в `resolveProductFeatures` выровнен с полным продуктом (`premium`), а не `basic`.
 - Комментарии edition: legacy SKU gate, не позиционирование продукта.
 - **Проход 2 (2026-08-17):** LICENSE PolyForm Shield + ADR-017; `.gitignore` больше не глотает новые файлы `documentation/`; курсы → `local/intern-courses/` (gitignore); календарь: клик по пустой ячейке, ошибки формы, double-submit guard; SECURITY.md.  
-- **Проход 3:** Required Notice / автор **Alexandr Zaporozhan** (email `zaporojan` не трогать).  
+- **Проход 3:** Required Notice / автор **Alexandr Zaporojan** (email `zaporojan` не трогать).  
 - **Проход 4 (ревью решений):** контракт i18n закрыт в [`ADMIN_I18N_EN_ROADMAP.md`](./ADMIN_I18N_EN_ROADMAP.md) — провайдер в `main.tsx`, login-switcher, dayjs clock, владельцы e2e, гейт chrome≠комментарии. **В коде A0–A12** (гейт 2026-08-18): admin chrome на ключах; маркетинг/patient/`index.html` — вне волны.
-- **Проход 5 (2026-08-19, публичное доказательство LEO):** корневой README переписан на EN под имя **MedCore**; сторителлинг [`documentation/ORIGIN.md`](../../documentation/ORIGIN.md); обзор / запуск / демо-логины / лицензия на EN; `pyproject.toml` больше не «MVP»; автор Zaporozhan; LICENSE Required Notice = MedCore; Playwright-хелпер скриншотов `frontend/e2e/readme-screenshots.spec.ts`. Формулировка для HN: AI-authored under LEO, **не** «no-code builder».
+- **Проход 5 (2026-08-19, публичное доказательство LEO):** корневой README переписан на EN под имя **MedCore**; сторителлинг [`documentation/ORIGIN.md`](../../documentation/ORIGIN.md); обзор / запуск / демо-логины / лицензия на EN; `pyproject.toml` больше не «MVP»; автор Zaporojan; LICENSE Required Notice = MedCore; Playwright-хелпер скриншотов `frontend/e2e/readme-screenshots.spec.ts`. Формулировка для HN: AI-authored under LEO, **не** «no-code builder».
 - **Проход 6 (2026-08-19, ревью публичного фасада):** clone→login через `scripts/seed_demo_compose.*`; Playwright screenshot URL/BASE_URL; login `/login` и founder login на ключах. **Задекларированный A12 ≠ рендер:** словари были, `AdminLayout` и экраны скриншотов README всё ещё отдавали RU-литералы. Довязаны nav/schedule/feed title/omni inbox chrome/tasks ContextBar+Kanban status; founder shell after login; waitlist UUID→unknown name. Остаток admin page bodies — DECLARED-OPEN, не «вся админка EN».
 - **Проход 7 (2026-08-19, ревью pass 3):** switcher в expanded sidebar, в Main только при collapsed (omni не теряет строку); founder header + `html lang` на `/platform/*`; A8 reports сняли `|| true`; omni composer/analytics/claim retry на существующих `chat.json` ключах; `adminChatMessagesRegion()` вместо замороженного RU aria; e2e omni — EN chrome.
 - **Проход 11 (2026-08-20, ревью EN-волны):** extras после EN-заголовков больше не плодит staff calendar/Kanban/feed/promo (двойной префикс); повторный showcase seed на marked DB гоняет extras идемпотентно; catalog overlay один раз на прогон; patient loyalty/forms/feed/success на `patient` ns; Law 8 на loyalty (нет UUID-среза) и next-visit fallback.
@@ -87,7 +87,7 @@
 | ID | Класс | Факт | Что сделать | Роль |
 |----|-------|------|-------------|------|
 | D1 | P0 | Корневой README был по-русски и про «запись в стоматологию» | EN README как MedCore + LEO proof (проход 5, 2026-08-19) | сделано |
-| D2 | P0 | Автор в манифестах | `pyproject.toml` / `frontend/package.json` authors = Alexandr Zaporozhan; `LICENSE` Required Notice — тот же правообладатель. Email `alexandr.zaporojan@gmail.com` не менять (адрес ≠ транскрипция паспорта). | сделано |
+| D2 | P0 | Автор в манифестах | `pyproject.toml` / `frontend/package.json` authors = Alexandr Zaporojan; `LICENSE` Required Notice — тот же правообладатель. Email `alexandr.zaporojan@gmail.com` не менять (адрес ≠ транскрипция паспорта). | сделано |
 | D3 | P0 | **LICENSE** | PolyForm Shield (не MIT) — сделано, ADR-017 | @LAWYER |
 | D4 | P1 | Стажёрские курсы в публичном дереве | Перенесены в `local/intern-courses/` + gitignore | @LEAD |
 | D8 | P0 | `.gitignore` содержал `/documentation/` — **новые** публичные docs не попадали в git (tracked файлы жили, untracked — нет). Проверено: `git check-ignore --no-index documentation/brand-new-file.md` | Строка `/documentation/` снята; политика = documentation в git | @ARCH |
@@ -291,7 +291,7 @@ Law 40: агент не делает `git commit` / `git push`. Человек:
 | Класс | Состояние |
 |-------|-----------|
 | Публичный вход EN | DECIDED — README (MedCore + LEO) + ORIGIN + overview + getting started + demo creds + LICENSING |
-| LICENSE SPDX | DECIDED — `LicenseRef-PolyForm-Shield-1.0.0`, ADR-017, Required Notice = Zaporozhan |
+| LICENSE SPDX | DECIDED — `LicenseRef-PolyForm-Shield-1.0.0`, ADR-017, Required Notice = Zaporojan |
 | Календарь P0 (мёртвый клик / silent submit) | DECIDED — исправлено + vitest |
 | Курсы стажёров в git | OUT — `local/intern-courses/` gitignore |
 | i18n админки EN default | PARTIAL — login + shell + landing/signup/checkout/invite/sandbox/legal + founder ops + finance chrome + tasks (modal + Kanban/create/routing + details page). Other admin families DECLARED-OPEN |

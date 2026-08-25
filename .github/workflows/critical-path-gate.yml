@@ -81,6 +81,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          npm run security:audit
           npm run build
 
       - name: Playwright (chromium)

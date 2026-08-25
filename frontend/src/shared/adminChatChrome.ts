@@ -23,13 +23,11 @@ export function adminChatOutgoingBubbleStyle(extra?: CSSProperties): CSSProperti
 /** Message-list landmark: call `adminChatMessagesRegion()` from `@/shared/chatI18n` at render so the aria-label follows `ui.locale`. */
 
 /**
- * Omni-чат: входящие от клиента (карточка на нити). Исходящие — насыщенный indigo для контраста с PWA-пузырями.
- * DGN-P1-03 — единая точка смены токенов для всех админ-чатов.
+ * Omni thread bubbles (D2): inbound surface + hairline; outbound matches staff primary-alpha tint.
  */
 export function adminChatOmniClientInboundBubbleStyle(extra?: CSSProperties): CSSProperties {
   return {
-    borderRadius: "var(--mantine-radius-md)",
-    boxShadow: "var(--mantine-shadow-xs)",
+    borderRadius: "var(--radius-md)",
     backgroundColor: "var(--bg-card)",
     border: "1px solid var(--mantine-color-gray-2)",
     ...extra,
@@ -37,12 +35,7 @@ export function adminChatOmniClientInboundBubbleStyle(extra?: CSSProperties): CS
 }
 
 export function adminChatOmniOutboundBubbleStyle(extra?: CSSProperties): CSSProperties {
-  return {
-    borderRadius: "var(--mantine-radius-md)",
-    boxShadow: "var(--mantine-shadow-xs)",
-    backgroundColor: "var(--mantine-color-indigo-6)",
-    ...extra,
-  };
+  return adminChatOutgoingBubbleStyle(extra);
 }
 
 export function adminChatOmniHiddenBubbleStyle(extra?: CSSProperties): CSSProperties {

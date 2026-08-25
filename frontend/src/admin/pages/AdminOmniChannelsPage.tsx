@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
   Badge,
@@ -15,7 +15,15 @@ import {
   TextInput,
   Textarea,
 } from "@mantine/core";
+import { useTranslation } from "react-i18next";
 import { ContextBar } from "@/shared/ui/ContextBar";
+import {
+  omniChannelCreateTypeOptions,
+  omniChannelStatusLabel,
+  omniChannelStatusOptions,
+  omniChannelTypeLabel,
+  isOmniChannelCreatableType,
+} from "@/shared/chatI18n";
 import {
   useCreateOwnerOmniChannel,
   useOwnerOmniChannels,
@@ -27,32 +35,6 @@ import { DataSkeleton } from "@/shared/ui/DataSkeleton";
 import { EmptyState } from "@/shared/ui/EmptyState";
 import { GlassModal } from "@/shared/ui/GlassModal";
 import { QueryErrorAlert } from "@/shared/ui";
-
-const CHANNEL_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "TELEGRAM_BOT", label: "Telegram бот" },
-  { value: "WHATSAPP_BUSINESS", label: "WhatsApp Business" },
-  { value: "VIBER_BOT", label: "Viber бот" },
-  { value: "VK_BOT", label: "VK бот" },
-  { value: "MAX_CHAT", label: "Max чат" },
-  { value: "SMS_GATEWAY", label: "SMS шлюз" },
-  { value: "EMAIL_INBOX", label: "Email inbox" },
-  { value: "OTHER", label: "Другое" },
-];
-
-const STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: "PENDING_SETUP", label: "Ожидает настройки" },
-  { value: "ACTIVE", label: "Активен" },
-  { value: "DISABLED", label: "Отключен" },
-  { value: "ERROR", label: "Ошибка" },
-];
-
-function getChannelTypeLabel(type: string): string {
-  return CHANNEL_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type;
-}
-
-function getStatusLabel(status: string): string {
-  return STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status;
-}
 
 function getProviderTypeForChannel(type: string): string {
   switch (type) {
@@ -121,6 +103,10 @@ const initialCredentialsState: CredentialsFormState = {
 };
 
 export default function AdminOmniChannelsPage() {
+  const { t, i18n } = useTranslation("chat");
+  const channelTypeCreateOptions = useMemo(() => omniChannelCreateTypeOptions(), [i18n.language]);
+  const statusOptions = useMemo(() => omniChannelStatusOptions(), [i18n.language]);
+
   const { data, isLoading, isError, error } = useOwnerOmniChannels();
   const createChannel = useCreateOwnerOmniChannel();
   const updateChannel = useUpdateOwnerOmniChannel();
@@ -153,6 +139,7 @@ export default function AdminOmniChannelsPage() {
 
   const handleCreate = () => {
     if (!newType || !newDisplayName.trim()) return;
+    if (!isOmniChannelCreatableType(newType)) return;
     createChannel.mutate(
       {
         type: newType,
@@ -206,6 +193,7 @@ export default function AdminOmniChannelsPage() {
 
   const handleSaveCredentials = () => {
     if (!credentialsChannel) return;
+    if (credentialsChannel.type === "VK_BOT") return;
     setCredentialsError(null);
     try {
       const type = credentialsChannel.type;
@@ -226,11 +214,6 @@ export default function AdminOmniChannelsPage() {
       } else if (type === "VIBER_BOT") {
         payload = {
           bot_token: credentialsState.bot_token || undefined,
-        };
-      } else if (type === "VK_BOT") {
-        payload = {
-          group_id: credentialsState.group_id || undefined,
-          access_token: credentialsState.access_token || undefined,
         };
       } else if (type === "MAX_CHAT") {
         payload = {
@@ -259,7 +242,7 @@ export default function AdminOmniChannelsPage() {
         try {
           payload = JSON.parse(raw);
         } catch {
-          setCredentialsError("Некорректный JSON. Проверьте формат.");
+          setCredentialsError(t("errors.invalidJson"));
           return;
         }
       }
@@ -281,19 +264,19 @@ export default function AdminOmniChannelsPage() {
             setCredentialsChannel(null);
           },
           onError: (err: Error) => {
-            setCredentialsError(err?.message ?? "Не удалось сохранить ключи. Попробуйте ещё раз.");
+            setCredentialsError(err?.message ?? t("errors.saveKeysFailed"));
           },
         },
       );
     } catch {
-      setCredentialsError("Не удалось сохранить ключи. Попробуйте ещё раз.");
+      setCredentialsError(t("errors.saveKeysFailed"));
     }
   };
 
   if (isLoading) {
     return (
       <Stack>
-        <ContextBar title="Омниканальные каналы" />
+        <ContextBar title={t("omniChannels.title")} />
         <DataSkeleton lines={5} />
       </Stack>
     );
@@ -302,40 +285,42 @@ export default function AdminOmniChannelsPage() {
   if (isError) {
     return (
       <Stack>
-        <ContextBar title="Омниканальные каналы" />
-        <QueryErrorAlert error={error} title="Не удалось загрузить каналы" />
+        <ContextBar title={t("omniChannels.title")} />
+        <QueryErrorAlert error={error} title={t("errors.loadOmniChannelsFailed")} />
       </Stack>
     );
   }
 
   return (
     <Stack gap="md">
-      <ContextBar title="Омниканальные каналы" actions={<Button onClick={handleOpenCreate} size="sm">Добавить канал</Button>} />
+      <ContextBar
+        title={t("omniChannels.title")}
+        actions={
+          <Button onClick={handleOpenCreate} size="sm">
+            {t("omniChannels.add")}
+          </Button>
+        }
+      />
       <Text size="sm" c="dimmed">
-        Здесь вы подключаете каналы, через которые клиенты пишут вам (Telegram,
-        WhatsApp, VK, Viber, Max, SMS, email, другие). Все сообщения из них
-        будут стекаться в раздел «Единый чат».
+        {t("omniChannels.intro")}
       </Text>
 
       <Text size="sm" c="dimmed" mb="sm">
-        Всего каналов: {channels.length}
+        {t("omniChannels.total", { count: channels.length })}
       </Text>
 
       {!channels.length ? (
-        <EmptyState
-          title="Каналов ещё нет"
-          subtitle="Создайте первый канал, чтобы подключить мессенджеры и другие источники."
-        />
+        <EmptyState title={t("omniChannels.emptyTitle")} subtitle={t("omniChannels.emptyHint")} />
       ) : (
         <Paper withBorder radius="md" p="sm">
           <Table striped highlightOnHover withColumnBorders>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Тип</Table.Th>
-                <Table.Th>Отображаемое имя</Table.Th>
-                <Table.Th>Статус</Table.Th>
-                <Table.Th>Подключено</Table.Th>
-                <Table.Th style={{ width: 220 }}>Действия</Table.Th>
+                <Table.Th>{t("omniChannels.colType")}</Table.Th>
+                <Table.Th>{t("omniChannels.colName")}</Table.Th>
+                <Table.Th>{t("omniChannels.colStatus")}</Table.Th>
+                <Table.Th>{t("omniChannels.colConnected")}</Table.Th>
+                <Table.Th style={{ width: 220 }}>{t("omniChannels.colActions")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -344,7 +329,7 @@ export default function AdminOmniChannelsPage() {
                   <Table.Td>
                     <Stack gap={2} justify="center">
                       <Text size="sm" fw={500}>
-                        {getChannelTypeLabel(ch.type)}
+                        {omniChannelTypeLabel(ch.type)}
                       </Text>
                       <Text size="xs" c="dimmed">
                         {ch.type}
@@ -356,7 +341,7 @@ export default function AdminOmniChannelsPage() {
                   </Table.Td>
                   <Table.Td>
                     <Badge size="sm" variant="light">
-                      {getStatusLabel(ch.status)}
+                      {omniChannelStatusLabel(ch.status)}
                     </Badge>
                   </Table.Td>
                   <Table.Td>
@@ -365,24 +350,16 @@ export default function AdminOmniChannelsPage() {
                       color={ch.has_credentials ? "green" : "gray"}
                       variant={ch.has_credentials ? "filled" : "light"}
                     >
-                      {ch.has_credentials ? "Подключено" : "Не настроено"}
+                      {ch.has_credentials ? t("omniChannels.connected") : t("omniChannels.notConfigured")}
                     </Badge>
                   </Table.Td>
                   <Table.Td>
                     <Flex gap="xs" wrap="wrap">
-                      <Button
-                        size="xs"
-                        variant="light"
-                        onClick={() => handleOpenEdit(ch)}
-                      >
-                        Редактировать
+                      <Button size="xs" variant="light" onClick={() => handleOpenEdit(ch)}>
+                        {t("edit")}
                       </Button>
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={() => handleOpenCredentials(ch)}
-                      >
-                        Настроить ключи
+                      <Button size="xs" variant="outline" onClick={() => handleOpenCredentials(ch)}>
+                        {t("omniChannels.setupKeys")}
                       </Button>
                     </Flex>
                   </Table.Td>
@@ -396,36 +373,28 @@ export default function AdminOmniChannelsPage() {
       <GlassModal
         opened={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        title="Добавить омниканальный канал"
+        title={t("omniChannels.addTitle")}
         centered
       >
         <Stack gap="md">
           <Select
-            label="Тип канала"
-            data={CHANNEL_TYPE_OPTIONS}
+            label={t("omniChannels.type")}
+            data={channelTypeCreateOptions}
             value={newType}
             onChange={setNewType}
           />
           <TextInput
-            label="Отображаемое имя"
-            placeholder="Например, Telegram клиники"
+            label={t("omniChannels.displayName")}
+            placeholder={t("omniChannels.displayNamePlaceholder")}
             value={newDisplayName}
             onChange={(e) => setNewDisplayName(e.currentTarget.value)}
           />
           <Group justify="flex-end" mt="md">
-            <Button
-              variant="default"
-              onClick={() => setIsCreateOpen(false)}
-              size="sm"
-            >
-              Отмена
+            <Button variant="default" onClick={() => setIsCreateOpen(false)} size="sm">
+              {t("cancel")}
             </Button>
-            <Button
-              onClick={handleCreate}
-              loading={createChannel.isPending}
-              size="sm"
-            >
-              Создать
+            <Button onClick={handleCreate} loading={createChannel.isPending} size="sm">
+              {t("create")}
             </Button>
           </Group>
         </Stack>
@@ -434,39 +403,34 @@ export default function AdminOmniChannelsPage() {
       <GlassModal
         opened={!!editingChannel}
         onClose={() => setEditingChannel(null)}
-        title="Редактирование канала"
+        title={t("omniChannels.editTitle")}
         centered
       >
         {editingChannel && (
           <Stack gap="md">
             <Text size="sm" c="dimmed">
-              {getChannelTypeLabel(editingChannel.type)} ({editingChannel.type})
+              {t("omniChannels.typeLine", {
+                label: omniChannelTypeLabel(editingChannel.type),
+                code: editingChannel.type,
+              })}
             </Text>
             <TextInput
-              label="Отображаемое имя"
+              label={t("omniChannels.displayName")}
               value={editDisplayName}
               onChange={(e) => setEditDisplayName(e.currentTarget.value)}
             />
             <Select
-              label="Статус"
-              data={STATUS_OPTIONS}
+              label={t("omniChannels.colStatus")}
+              data={statusOptions}
               value={editStatus}
               onChange={setEditStatus}
             />
             <Group justify="flex-end" mt="md">
-              <Button
-                variant="default"
-                onClick={() => setEditingChannel(null)}
-                size="sm"
-              >
-                Отмена
+              <Button variant="default" onClick={() => setEditingChannel(null)} size="sm">
+                {t("cancel")}
               </Button>
-              <Button
-                onClick={handleSaveEdit}
-                loading={updateChannel.isPending}
-                size="sm"
-              >
-                Сохранить
+              <Button onClick={handleSaveEdit} loading={updateChannel.isPending} size="sm">
+                {t("save")}
               </Button>
             </Group>
           </Stack>
@@ -478,8 +442,8 @@ export default function AdminOmniChannelsPage() {
         onClose={() => setCredentialsChannel(null)}
         title={
           credentialsChannel
-            ? `Настройка ключей: ${credentialsChannel.display_name}`
-            : "Настройка ключей"
+            ? t("omniChannels.keysTitleNamed", { name: credentialsChannel.display_name })
+            : t("omniChannels.keysTitle")
         }
         centered
         size="lg"
@@ -487,18 +451,20 @@ export default function AdminOmniChannelsPage() {
         {credentialsChannel && (
           <Stack gap="md">
             <Text size="sm" c="dimmed">
-              Тип: {getChannelTypeLabel(credentialsChannel.type)} (
-              {credentialsChannel.type})
+              {t("omniChannels.typeLine", {
+                label: omniChannelTypeLabel(credentialsChannel.type),
+                code: credentialsChannel.type,
+              })}
             </Text>
 
             {credentialsChannel.type === "TELEGRAM_BOT" && (
               <Grid gutter="sm">
                 <Grid.Col span={12}>
                   <TextInput
-                    label="Bot token"
+                    label={t("credentials.botToken")}
                     type="password"
                     placeholder="123456:ABC..."
-                    description="Токен бота от @BotFather. Используется для отправки сообщений клиентам. Никому не передавайте этот токен."
+                    description={t("credentials.telegramBotDesc")}
                     value={credentialsState.bot_token}
                     onChange={(e) =>
                       handleChangeCredentialsField("bot_token", e.currentTarget.value)
@@ -507,8 +473,8 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={12}>
                   <TextInput
-                    label="Webhook secret (опционально)"
-                    description="Необязательный секрет для проверки вебхуков Telegram (заголовок X-Telegram-Bot-Api-Secret-Token). Укажите ту же строку, что задали в настройках вебхука бота."
+                    label={t("credentials.webhookSecretOptional")}
+                    description={t("credentials.telegramWebhookDesc")}
                     value={credentialsState.webhook_secret}
                     onChange={(e) =>
                       handleChangeCredentialsField(
@@ -520,9 +486,9 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={12}>
                   <TextInput
-                    label="ID чата админа (для оповещений)"
-                    placeholder="-1001234567890 или 123456789"
-                    description="Личный чат или группа в Telegram, куда бот будет присылать оповещения (запрос оператора, черновики AI, при включении — уведомления о записях). Узнать ID: напишите боту @userinfobot в нужный чат или посмотрите update.message.chat.id в вебхуке."
+                    label={t("credentials.adminChatId")}
+                    placeholder={t("credentials.adminChatIdPlaceholder")}
+                    description={t("credentials.telegramAdminChatDesc")}
                     value={credentialsState.admin_chat_id}
                     onChange={(e) =>
                       handleChangeCredentialsField(
@@ -539,9 +505,9 @@ export default function AdminOmniChannelsPage() {
               <Grid gutter="sm">
                 <Grid.Col span={12}>
                   <TextInput
-                    label="API URL"
+                    label={t("credentials.apiUrl")}
                     placeholder="https://graph.facebook.com/v20.0/..."
-                    description="Базовый URL WhatsApp Cloud API для отправки сообщений. Например: https://graph.facebook.com/v20.0/<PHONE_NUMBER_ID>/messages. Скопируйте из примеров в кабинете Meta Developers."
+                    description={t("credentials.whatsappUrlDesc")}
                     value={credentialsState.api_url}
                     onChange={(e) =>
                       handleChangeCredentialsField("api_url", e.currentTarget.value)
@@ -550,9 +516,9 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={12}>
                   <TextInput
-                    label="API token"
+                    label={t("credentials.apiToken")}
                     type="password"
-                    description="Постоянный Access Token WhatsApp Cloud API из кабинета Meta (раздел Access Tokens). Используется для авторизации при отправке сообщений."
+                    description={t("credentials.whatsappTokenDesc")}
                     value={credentialsState.api_token}
                     onChange={(e) =>
                       handleChangeCredentialsField("api_token", e.currentTarget.value)
@@ -561,8 +527,8 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={12}>
                   <TextInput
-                    label="Phone number ID"
-                    description="ID бизнес-номера WhatsApp (Phone Number ID), не сам номер. Найдите в разделе WhatsApp → Phone numbers в Meta Developers."
+                    label={t("credentials.phoneNumberId")}
+                    description={t("credentials.whatsappPhoneDesc")}
                     value={credentialsState.phone_number_id}
                     onChange={(e) =>
                       handleChangeCredentialsField(
@@ -577,9 +543,9 @@ export default function AdminOmniChannelsPage() {
 
             {credentialsChannel.type === "VIBER_BOT" && (
               <TextInput
-                label="Bot token"
+                label={t("credentials.botToken")}
                 type="password"
-                description="Authentication token Viber-бота. Скопируйте из кабинета Viber (Bot Settings → Authentication token). Передаётся в заголовке X-Viber-Auth-Token при отправке сообщений и установке вебхука."
+                description={t("credentials.viberTokenDesc")}
                 value={credentialsState.bot_token}
                 onChange={(e) =>
                   handleChangeCredentialsField("bot_token", e.currentTarget.value)
@@ -588,41 +554,27 @@ export default function AdminOmniChannelsPage() {
             )}
 
             {credentialsChannel.type === "VK_BOT" && (
-              <Grid gutter="sm">
-                <Grid.Col span={12}>
-                  <TextInput
-                    label="Group ID"
-                    description="ID сообщества VK (group_id), от имени которого бот ведёт переписку. Скопируйте число из адреса группы или раздела API в настройках сообщества."
-                    value={credentialsState.group_id}
-                    onChange={(e) =>
-                      handleChangeCredentialsField("group_id", e.currentTarget.value)
-                    }
-                  />
-                </Grid.Col>
-                <Grid.Col span={12}>
-                  <TextInput
-                    label="Access token"
-                    type="password"
-                    description="Access token сообщества VK с правами на сообщения (messages). Создаётся в настройках сообщества → Работа с API → Ключи доступа. Не путайте с токеном пользователя."
-                    value={credentialsState.access_token}
-                    onChange={(e) =>
-                      handleChangeCredentialsField(
-                        "access_token",
-                        e.currentTarget.value,
-                      )
-                    }
-                  />
-                </Grid.Col>
-              </Grid>
+              <Stack gap="sm">
+                <Alert color="gray" variant="light">
+                  {t("credentials.otherJsonDesc")}
+                </Alert>
+                <Textarea
+                  label={t("credentials.otherJson")}
+                  minRows={6}
+                  value={credentialsState.other_json}
+                  readOnly
+                  disabled
+                />
+              </Stack>
             )}
 
             {credentialsChannel.type === "MAX_CHAT" && (
               <Grid gutter="sm">
                 <Grid.Col span={12}>
                   <TextInput
-                    label="Base URL"
+                    label={t("credentials.baseUrl")}
                     placeholder="https://max-chat.example.com"
-                    description="Базовый URL API внешнего чат-сервиса (Max Chat). Например: https://max-chat.example.com/api. Уточните адрес в документации провайдера."
+                    description={t("credentials.maxUrlDesc")}
                     value={credentialsState.base_url}
                     onChange={(e) =>
                       handleChangeCredentialsField("base_url", e.currentTarget.value)
@@ -631,9 +583,9 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={12}>
                   <TextInput
-                    label="API key"
+                    label={t("credentials.apiKey")}
                     type="password"
-                    description="API key (секретный токен) для доступа к Max Chat. Скопируйте из личного кабинета сервиса. Хранится в зашифрованном виде."
+                    description={t("credentials.maxKeyDesc")}
                     value={credentialsState.api_key}
                     onChange={(e) =>
                       handleChangeCredentialsField("api_key", e.currentTarget.value)
@@ -642,8 +594,8 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={12}>
                   <TextInput
-                    label="Webhook secret"
-                    description="Необязательный секрет для проверки входящих вебхуков Max Chat. Укажите ту же строку, что настроена в вебхуках сервиса."
+                    label={t("credentials.webhookSecret")}
+                    description={t("credentials.maxWebhookDesc")}
                     value={credentialsState.webhook_secret}
                     onChange={(e) =>
                       handleChangeCredentialsField(
@@ -660,8 +612,8 @@ export default function AdminOmniChannelsPage() {
               <Grid gutter="sm">
                 <Grid.Col span={12}>
                   <TextInput
-                    label="Логин"
-                    description="Логин учётной записи SMS-провайдера (например, SMSC.ru). Используется для авторизации при отправке SMS."
+                    label={t("login")}
+                    description={t("credentials.smsLoginDesc")}
                     value={credentialsState.login}
                     onChange={(e) =>
                       handleChangeCredentialsField("login", e.currentTarget.value)
@@ -670,9 +622,9 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={12}>
                   <TextInput
-                    label="Пароль"
+                    label={t("password")}
                     type="password"
-                    description="Пароль или API-ключ для HTTP API SMS-провайдера. При наличии используйте выданный провайдером API-ключ, а не пароль от личного кабинета."
+                    description={t("credentials.smsPasswordDesc")}
                     value={credentialsState.password}
                     onChange={(e) =>
                       handleChangeCredentialsField("password", e.currentTarget.value)
@@ -681,8 +633,8 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={12}>
                   <TextInput
-                    label="Имя отправителя"
-                    description="Имя отправителя в SMS (от кого). Должно быть согласовано и активировано у SMS-провайдера (например, «CLINIC»)."
+                    label={t("credentials.sender")}
+                    description={t("credentials.smsSenderDesc")}
                     value={credentialsState.sender}
                     onChange={(e) =>
                       handleChangeCredentialsField("sender", e.currentTarget.value)
@@ -696,9 +648,9 @@ export default function AdminOmniChannelsPage() {
               <Grid gutter="sm">
                 <Grid.Col span={12}>
                   <TextInput
-                    label="IMAP host"
+                    label={t("credentials.imapHost")}
                     placeholder="imap.gmail.com"
-                    description="IMAP-сервер почтового ящика. Уточните у почтового провайдера (например, imap.gmail.com, imap.mail.ru)."
+                    description={t("credentials.imapHostDesc")}
                     value={credentialsState.imap_host}
                     onChange={(e) =>
                       handleChangeCredentialsField("imap_host", e.currentTarget.value)
@@ -707,9 +659,9 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <TextInput
-                    label="IMAP port"
+                    label={t("credentials.imapPort")}
                     placeholder="993"
-                    description="Порт IMAP (обычно 993 для IMAPS). Уточните в настройках почтового провайдера."
+                    description={t("credentials.imapPortDesc")}
                     value={credentialsState.imap_port}
                     onChange={(e) =>
                       handleChangeCredentialsField("imap_port", e.currentTarget.value)
@@ -718,9 +670,9 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <TextInput
-                    label="Email (inbox)"
+                    label={t("credentials.inboxEmail")}
                     placeholder="inbox@example.com"
-                    description="Адрес этого ящика. На него пользователи пишут письма, которые попадают в единый чат."
+                    description={t("credentials.inboxEmailDesc")}
                     value={credentialsState.inbox_email}
                     onChange={(e) =>
                       handleChangeCredentialsField(
@@ -732,8 +684,8 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <TextInput
-                    label="IMAP user"
-                    description="Логин почтового ящика для входа по IMAP (часто полный адрес user@example.com)."
+                    label={t("credentials.imapUser")}
+                    description={t("credentials.imapUserDesc")}
                     value={credentialsState.imap_user}
                     onChange={(e) =>
                       handleChangeCredentialsField("imap_user", e.currentTarget.value)
@@ -742,9 +694,9 @@ export default function AdminOmniChannelsPage() {
                 </Grid.Col>
                 <Grid.Col span={6}>
                   <TextInput
-                    label="IMAP password"
+                    label={t("credentials.imapPassword")}
                     type="password"
-                    description="Пароль почтового ящика или пароль приложений (app password), если провайдер его требует."
+                    description={t("credentials.imapPasswordDesc")}
                     value={credentialsState.imap_password}
                     onChange={(e) =>
                       handleChangeCredentialsField(
@@ -760,8 +712,8 @@ export default function AdminOmniChannelsPage() {
             {credentialsChannel.type === "OTHER" && (
               <Box>
                 <Textarea
-                  label="Произвольный JSON для провайдера"
-                  description="Произвольный JSON с настройками интеграции. Используйте только по инструкции разработчика: формат зависит от конкретного провайдера."
+                  label={t("credentials.otherJson")}
+                  description={t("credentials.otherJsonDesc")}
                   minRows={6}
                   value={credentialsState.other_json}
                   onChange={(e) =>
@@ -775,7 +727,7 @@ export default function AdminOmniChannelsPage() {
             )}
 
             {credentialsError && (
-              <Alert color="red" variant="light" title="Ошибка">
+              <Alert color="red" variant="light" title={t("error")}>
                 {credentialsError}
               </Alert>
             )}
@@ -786,15 +738,17 @@ export default function AdminOmniChannelsPage() {
                 onClick={() => setCredentialsChannel(null)}
                 size="sm"
               >
-                Отмена
+                {t("cancel")}
               </Button>
-              <Button
-                onClick={handleSaveCredentials}
-                loading={setCredentials.isPending}
-                size="sm"
-              >
-                Сохранить
-              </Button>
+              {credentialsChannel.type !== "VK_BOT" ? (
+                <Button
+                  onClick={handleSaveCredentials}
+                  loading={setCredentials.isPending}
+                  size="sm"
+                >
+                  {t("save")}
+                </Button>
+              ) : null}
             </Group>
           </Stack>
         )}

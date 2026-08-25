@@ -106,7 +106,7 @@ flowchart LR
 
 | Элемент | Реализация |
 |---------|------------|
-| **Маршрутизация** | React Router 6, `createBrowserRouter` |
+| **Маршрутизация** | React Router 7, `createBrowserRouter` + `RouterProvider` (`react-router-dom`) |
 | **Состояние сервера** | TanStack Query |
 | **Контекст клиники / auth** | `AdminClinicProvider`, `PatientAuthProvider` |
 | **UI система** | Mantine + локальные токены/CSS variables (`theme.ts`, shared styles) |

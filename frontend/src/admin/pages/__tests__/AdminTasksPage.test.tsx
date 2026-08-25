@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -151,6 +151,8 @@ const mockTasks = [
   },
 ];
 
+let tasksListFixture = mockTasks;
+
 vi.mock("@/api/client", () => ({
   getAdminId: () => "admin-1",
 }));
@@ -189,12 +191,16 @@ vi.mock("@dnd-kit/core", () => ({
   }),
 }));
 
+vi.mock("@/admin/components/TaskDetailsView", () => ({
+  TaskDetailsView: ({ taskId }: { taskId: string }) => <div>task-detail-{taskId}</div>,
+}));
+
 vi.mock("@/hooks", () => ({
   useAdminAdmins: () => ({
     data: mockAdmins,
   }),
   useAdminTasksList: () => ({
-    data: mockTasks,
+    data: tasksListFixture,
     isLoading: false,
   }),
   useTaskStreamsQuery: () => ({
@@ -274,8 +280,11 @@ function renderPage() {
 describe("AdminTasksPage workstation behavior", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    tasksListFixture = mockTasks;
     capturedOnDragEnd = null;
     capturedOnDragOver = null;
+    localStorage.removeItem("adminTasksStreamId");
+    localStorage.removeItem("adminKanbanBoardId");
   });
 
   it("renders WIP/SLA/Aging indicators", () => {
@@ -289,6 +298,21 @@ describe("AdminTasksPage workstation behavior", () => {
     expect(
       screen.getAllByText((_, el) => Boolean(el?.textContent?.includes("In progress 48h+: 1"))).length
     ).toBeGreaterThan(0);
+  });
+
+  it("opens task details when a board card is clicked", async () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId("kanban-task-card-task-1"));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("task-detail-task-1")).toBeInTheDocument();
+  });
+
+  it("renders a single kanban board for the selected stream", () => {
+    renderPage();
+    const pager = screen.getByTestId("stream-pager");
+    expect(pager.querySelectorAll("[data-stream-page-index]")).toHaveLength(1);
+    expect(pager.querySelector("[data-stream-id]")?.getAttribute("data-stream-id")).toBe("stream-general");
+    expect(screen.getByTestId("stream-switcher")).toHaveTextContent("Общее");
   });
 
   it("moves task by keyboard Alt+ArrowRight", () => {
@@ -312,10 +336,25 @@ describe("AdminTasksPage workstation behavior", () => {
   it("auto-scroll intent can be triggered via nav drop zones", () => {
     renderPage();
     if (!capturedOnDragOver) throw new Error("DnD over handler not captured");
-    // Should not throw when hovering nav zones (timers handled inside page).
     capturedOnDragOver({ over: { id: "nav-next" } });
     capturedOnDragOver({ over: { id: "nav-prev" } });
     capturedOnDragOver({ over: null });
+  });
+
+  it("dropping on the next-stream edge switches the visible board immediately", () => {
+    renderPage();
+    const onDragEnd = capturedOnDragEnd;
+    if (!onDragEnd) throw new Error("DnD handler not captured");
+    act(() => {
+      onDragEnd({
+        active: { id: "task-1" },
+        over: { id: "nav-next" },
+      });
+    });
+    expect(screen.getByTestId("stream-switcher")).toHaveTextContent("Продажи");
+    expect(screen.getByTestId("stream-pager").querySelector("[data-stream-id]")?.getAttribute("data-stream-id")).toBe(
+      "stream-sales"
+    );
   });
 
   it("moves task between streams when dropped on stream header drop zone", () => {
@@ -328,37 +367,60 @@ describe("AdminTasksPage workstation behavior", () => {
     expect(mutatePatchStreamTags).toHaveBeenCalled();
   });
 
-  it("switching stream changes visible tasks", () => {
+  it("switching stream changes visible tasks", async () => {
     renderPage();
-    // Switch to another stream via menu
-    fireEvent.click(screen.getByText("All streams"));
-    fireEvent.click(screen.getByText("Продажи"));
-    expect(screen.getByText("Продажи")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("stream-switcher"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Продажи" }));
+    expect(screen.getByTestId("stream-switcher")).toHaveTextContent("Продажи");
   });
 
-  it("scrolling the pager updates selected stream", async () => {
-    vi.useFakeTimers();
+  it("next-stream control switches the visible board", () => {
     renderPage();
-    const pager = screen.getByTestId("stream-pager") as HTMLElement & { scrollLeft: number };
-    Object.defineProperty(pager, "clientWidth", { value: 1000, configurable: true });
-    pager.scrollLeft = 1000; // next page
-    fireEvent.scroll(pager);
-    vi.advanceTimersByTime(200);
-    // Active stream label should update
-    expect(screen.getByText("Продажи")).toBeInTheDocument();
-    vi.useRealTimers();
+    fireEvent.click(screen.getByRole("button", { name: ">" }));
+    expect(screen.getByTestId("stream-switcher")).toHaveTextContent("Продажи");
+    expect(screen.getByTestId("stream-pager").querySelector("[data-stream-id]")?.getAttribute("data-stream-id")).toBe(
+      "stream-sales"
+    );
   });
 
   it("create modal chrome comes from the tasks dictionary", async () => {
     renderPage();
-    fireEvent.click(screen.getAllByRole("button", { name: "New task" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "New task" }));
     expect(await screen.findByRole("button", { name: "Create" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 
-  it("approval queue chrome comes from the tasks dictionary", () => {
+  it("empty board CTA opens the same create modal (setCreateOpened from parent)", async () => {
+    tasksListFixture = [];
+    renderPage();
+    const emptyCreate = screen.getByRole("button", { name: "Create task" });
+    expect(screen.getAllByRole("button", { name: "Create task" })).toHaveLength(1);
+    fireEvent.click(emptyCreate);
+    expect(await screen.findByRole("button", { name: "Create" })).toBeInTheDocument();
+  });
+
+  it("shows exactly one New task button in the chrome", () => {
+    renderPage();
+    expect(screen.getByRole("button", { name: "New task" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "New task" })).toHaveLength(1);
+  });
+
+  it("approval queue is shown only when it has tasks", () => {
     renderPage();
     expect(screen.getAllByText("Needs approval").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("The approval queue is empty.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review task").length).toBeGreaterThan(0);
+    expect(screen.queryByText("The approval queue is empty.")).not.toBeInTheDocument();
+  });
+
+  it("hides approval queue block when there are no review tasks", () => {
+    tasksListFixture = mockTasks.filter((task) => task.status !== "review");
+    renderPage();
+    expect(screen.queryByText("Needs approval")).not.toBeInTheDocument();
+    expect(screen.queryByText("The approval queue is empty.")).not.toBeInTheDocument();
+  });
+
+  it("board section uses board title from dictionary", () => {
+    renderPage();
+    expect(screen.getAllByText("Board").length).toBeGreaterThan(0);
   });
 });

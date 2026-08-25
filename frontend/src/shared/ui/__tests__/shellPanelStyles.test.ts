@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { DrawerProps, MantineTheme, ModalProps } from "@mantine/core";
 import {
+  ADMIN_NAV_SAFE_MODAL_PROPS,
+  ADMIN_SHELL_NAVBAR_OFFSET,
   mergeDrawerStyles,
   mergeModalStyles,
   SHELL_MODAL_CONTENT_STYLE,
+  SHELL_MODAL_NAV_INNER_STYLE,
   SHELL_OVERLAY_PROPS,
 } from "../shellPanelStyles";
 
@@ -14,6 +17,12 @@ describe("SHELL_OVERLAY_PROPS", () => {
     expect(SHELL_OVERLAY_PROPS.blur).toBe(10);
     expect(SHELL_OVERLAY_PROPS.backgroundOpacity).toBe(0.08);
   });
+
+  it("keeps overlay out of the admin navbar column", () => {
+    expect(SHELL_OVERLAY_PROPS.style).toMatchObject({ left: ADMIN_SHELL_NAVBAR_OFFSET });
+    expect(ADMIN_NAV_SAFE_MODAL_PROPS.lockScroll).toBe(false);
+    expect(ADMIN_NAV_SAFE_MODAL_PROPS.trapFocus).toBe(true);
+  });
 });
 
 describe("mergeModalStyles", () => {
@@ -22,6 +31,13 @@ describe("mergeModalStyles", () => {
     expect(typeof m).toBe("object");
     if (typeof m === "object" && m && "content" in m && m.content) {
       expect(m.content).toMatchObject(SHELL_MODAL_CONTENT_STYLE);
+    }
+    if (typeof m === "object" && m && "inner" in m && m.inner) {
+      expect(m.inner).toMatchObject(SHELL_MODAL_NAV_INNER_STYLE);
+      expect(m.inner).not.toHaveProperty("paddingLeft");
+    }
+    if (typeof m === "object" && m && "content" in m && m.content) {
+      expect(m.content).toMatchObject({ pointerEvents: "auto" });
     }
   });
 

@@ -64,6 +64,7 @@
     "leadMissingHint": "Возможно, он был изменён или удалён.",
     "actualZeroOpenDetail": "Факт из ERP пока 0 ₽ — это нормально до завершения визита и проводок.",
     "actualZeroWonDetail": "Успешное закрытие без суммы в ERP: проверьте lead_id / booking_id на транзакциях.",
+    "aiToolUnavailable": "Недостаточно прав или backend‑tool недоступен.",
     "aiTitle": "AI‑рекомендации",
     "aiSummary": "Резюме лида",
     "aiNextStage": "Следующая стадия",

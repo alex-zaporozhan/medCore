@@ -140,6 +140,9 @@
     "leadSnapshotFailed": "Could not save the snapshot to the leads log.",
     "resolveFailed": "Could not resolve the ticket.",
     "fileTooLarge": "File is larger than 5 MB",
+    "fileTypeDenied": "This file type is not allowed",
+    "fileEmpty": "The file is empty",
+    "fileSvgForbidden": "SVG files are not allowed",
     "micDenied": "No microphone access",
     "micUnavailable": "Microphone is unavailable",
     "recordFailed": "Recording failed",
@@ -245,7 +248,7 @@
   "omniChannels": {
     "title": "Omnichannel channels",
     "add": "Add channel",
-    "intro": "Connect the channels clients use to write to you (Telegram, WhatsApp, VK, Viber, Max, SMS, email, and others). Messages from them flow into Unified chat.",
+    "intro": "Connect the channels clients use to write to you (Telegram, WhatsApp, Viber, Max, SMS, email, and others). Messages from them flow into Unified chat.",
     "total": "Channels in total: {{count}}",
     "emptyTitle": "No channels yet",
     "emptyHint": "Create the first channel to connect messengers and other sources.",
