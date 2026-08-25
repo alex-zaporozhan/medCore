@@ -20,8 +20,9 @@
 ## Фронтенд
 
 - Страница: `frontend/src/admin/pages/AdminTasksPage.tsx`.
-- Тест UI: `frontend/src/admin/pages/__tests__/AdminTasksPage.test.tsx`.
+- Тест UI: `frontend/src/admin/pages/__tests__/AdminTasksPage.test.tsx` (клик по карточке, одна доска на выбранный поток, DnD колонок и потоков).
 - Пути: `frontend/src/routePaths.ts` — ключи `tasks`, `leads-log`.
+- Потоки: на экране одна доска `selectedStreamId`; стрелки/меню/drop на край переключают поток без карусели слайдов. Drop на шапку потока и на край доски живёт в одном `DndContext`.
 
 ## Метрики
 

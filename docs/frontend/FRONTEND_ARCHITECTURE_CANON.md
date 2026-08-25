@@ -37,6 +37,7 @@
 ## 3. Компонентные правила
 
 - Правые панели деталей в админке — **`AdminDrawer`** из `@/shared/ui`, не «голый» `Drawer` из Mantine (ESLint: `frontend/eslint-restricted-ui-imports.mjs`, тест `adminNoRawMantineDrawer`).
+- Overlay-поверхности админ-shell (`GlassModal`, `AdminDrawer`, сырой `Modal` в calendar/Ask AI) **не** ставят `lockScroll` на `document.body`: иначе `pointer-events: none` глушит клики по navbar. Контракт: `ADMIN_NAV_SAFE_MODAL_PROPS` + inset overlay `SHELL_OVERLAY_PROPS` (`shellPanelStyles.ts`). `trapFocus` остаётся включённым (клавиатура в диалоге; мышь по navbar — да).
 - Карточки списков и тулбары — паттерны `data-table-card`, `data-toolbar-card` и т.п., как в [`../TECH_PASSPORT_FRONTEND_UI_LOGIC.md`](../TECH_PASSPORT_FRONTEND_UI_LOGIC.md).
 - Модалки vs drawer: критерии в том же техпаспорте (подтверждение, форма, контекст).
 

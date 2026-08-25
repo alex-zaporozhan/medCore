@@ -1030,7 +1030,7 @@ helper: `frontend/src/shared/settingsI18n.ts` (`settingsRoleLabel` / `settingsPr
 - `PlatformPricingSection` — после A12 / marketing i18n.
 - Остатки RU chrome в экранах (например сроки на `AdminTasksPage`) — **закрыто в A12:** это был мёртвый `{/* legacy detail modal removed */}`, живой UI уже `TaskDetailsView` + ключи.
 - PATCH без `Accept-Language` — как в A9b, не раздувать API здесь.
-- Бэкенд по-прежнему не шлёт `code: empty_db_no_clinic` (строка + 404). Снять heuristic — отдельный бэкенд-срез, не A11. Пока heuristic обязателен.
+- **2026-08-24:** бэкенд шлёт `code: empty_db_no_clinic` в конверте `{code, message}` (EN `detail`). Heuristic по RU copy оставлен как fallback для старых ответов.
 - Доменные коды omni/RAG/billing в `QueryErrorAlert` остаются `formatQueryError` (экранные ключи A5/A9, не раздувать `common.errors`).
 - E2E chrome — **A11**. **Закрыто в A11** (инвентарь спек; SignInShell split на `/login` и `/platform/login`).
 

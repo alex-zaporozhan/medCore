@@ -5,6 +5,7 @@
 
 ## Сейчас
 
+- **Волна A ✅ (2026-08-24):** EN-chrome + craft Q1–Q13 закрыты. Отчёты: `QA_REPORT_*`, `QA_TEST_*`, `VISUAL_QA_REPORT_*`. Канон тестов: `npm run test:wave-a` (frontend). Долги: `FRONTEND_COSMETIC_ORDER_NEXT_2026-08-23.md`.  
 - Стабилизация **SaaS / Enterprise** на текущей кодовой базе: соблюдение tenant, NFR коробки (`SME_BOX_NFR_CHECKLIST.md`), выравнивание документации с кодом.  
 - Следующие крупные эпики — по задаче @LEAD (ссылка на issue/ветку).
 
@@ -29,7 +30,7 @@
 4. Web Push в PWA (VAPID, собственный backend).
 5. Универсализация под типы бизнеса (клиника / салон и т.д.).
 
-**Техдолг (зафиксировать до hardening):** цепочка PWA (`vite-plugin-pwa` / npm audit) — отдельная задача QA/production, без `npm audit fix --force` в рабочей ветке без решения @LEAD.
+**Техдолг (зафиксировать до hardening):** мажор `vite-plugin-pwa` 0.21 → 1.x (Workbox/SW) — отдельная задача QA/production. `npm audit` по frontend (prod, high+) закрыт точечными апдейтами (Vite 6.4, Vitest 3.2, react-router-dom 7.18, Playwright 1.62) **без** `npm audit fix --force`. Полный `npm run security:audit:all` — перед релизом. Не поднимать `--force` без решения @LEAD.
 
 ---
 

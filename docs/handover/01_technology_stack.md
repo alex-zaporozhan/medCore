@@ -26,7 +26,7 @@
 - **React 18**, **TypeScript ~5.6**, **Vite 6**.
 - **Mantine 7** — UI-компоненты и тема.
 - **TanStack Query 5** — серверное состояние и кэш запросов.
-- **React Router 6** — маршрутизация SPA.
+- **React Router 7** (`react-router-dom`) — маршрутизация SPA (`createBrowserRouter`).
 - **PWA:** `vite-plugin-pwa` + Workbox (сборка в `frontend/`).
 - **Тесты:** Vitest, Playwright (`frontend/package.json`); браузерные сценарии также вызываются из Python-pytest через `pytest-playwright` (см. `tests/`, workflow в `.github/workflows/`).
 
