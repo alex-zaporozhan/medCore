@@ -42,6 +42,7 @@
     "drag": "Drag",
     "dragTask": "Drag task",
     "selectTask": "Select task",
+    "openTask": "Open task: {{title}}",
     "actions": "Actions",
     "moveToStream": "Move to stream",
     "blocked": "Blocked",
@@ -187,6 +188,7 @@
   },
   "list": {
     "title": "Task list",
+    "boardTitle": "Board",
     "assignedToMe": "Assigned to me: {{count}}"
   },
   "empty": {
@@ -259,7 +261,9 @@
     "invite": "Invite",
     "newComment": "New comment",
     "dueLine": "Due: {{when}}",
-    "noCommentsYet": "No comments yet."
+    "noCommentsYet": "No comments yet.",
+    "copySupportId": "Copy support ID",
+    "copyFailed": "Could not copy to clipboard"
   },
   "page": {
     "backToKanban": "Back to Kanban"

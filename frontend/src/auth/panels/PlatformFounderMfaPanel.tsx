@@ -1,4 +1,5 @@
 import { API_BASE, parseFastApiErrorBody } from "@/api/client";
+import { commonErrorI18nKey, localizedParsedApiErrorText } from "@/shared/errors";
 import {
   clearPendingPlatformFounderMfaToken,
   getPendingPlatformFounderMfaToken,
@@ -17,15 +18,23 @@ export function PlatformFounderMfaPanel() {
   const [searchParams] = useSearchParams();
   const [mfaToken] = useState<string | null>(() => getPendingPlatformFounderMfaToken());
   const [totpCode, setTotpCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ code?: string; fallback: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const fallbackReturn = defaultReturnToForTab("founder");
 
-  const messageFromBodyText = (text: string, status: number): string => {
+  const errorFromBodyText = (text: string, status: number): { code?: string; fallback: string } => {
     const p = parseFastApiErrorBody(text || "{}");
-    return p.rawMessage?.trim() || t("errors.status", { status });
+    return {
+      code: p.code,
+      fallback: localizedParsedApiErrorText(p, t as never, t("errors.status", { status })),
+    };
   };
+
+  const mappedErrorKey = error ? commonErrorI18nKey(error.code) : null;
+  const errorText = mappedErrorKey
+    ? t(mappedErrorKey as never, { ns: "common" })
+    : error?.fallback;
 
   const goAfterSuccess = () => {
     clearPendingPlatformFounderMfaToken();
@@ -42,7 +51,7 @@ export function PlatformFounderMfaPanel() {
   const submitMfa = async () => {
     const token = mfaToken ?? getPendingPlatformFounderMfaToken();
     if (!token) {
-      setError("Сессия MFA устарела. Войдите снова.");
+      setError({ fallback: t("founder.mfaSessionExpired", { ns: "auth" }) });
       goBackToLogin();
       return;
     }
@@ -65,7 +74,7 @@ export function PlatformFounderMfaPanel() {
         data = {};
       }
       if (!r.ok) {
-        setError(messageFromBodyText(text, r.status));
+        setError(errorFromBodyText(text, r.status));
         return;
       }
       const access = typeof data.access_token === "string" ? data.access_token : "";
@@ -74,7 +83,7 @@ export function PlatformFounderMfaPanel() {
         goAfterSuccess();
         return;
       }
-      setError(t("mfa.unexpected"));
+      setError({ fallback: t("mfa.unexpected") });
     } finally {
       setBusy(false);
     }
@@ -113,9 +122,9 @@ export function PlatformFounderMfaPanel() {
         </Button>
       </Group>
 
-      {error ? (
+      {errorText ? (
         <Alert color="red" variant="light" title={t("mfa.errorTitle")}>
-          {error}
+          {errorText}
         </Alert>
       ) : null}
 

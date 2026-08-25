@@ -30,6 +30,7 @@
   "dateTime": "Дата и время",
   "searchPatientHint": "Найдите пациента по телефону или ФИО",
   "phone": "Телефон",
+  "phonePlaceholder": "+7...",
   "fullName": "ФИО",
   "fullNamePlaceholder": "Например, Иванов Иван",
   "patientPlaceholder": "Выберите пациента из списка",
@@ -354,7 +355,9 @@
     "searchTaskPlaceholder": "Начните вводить название задачи",
     "nothingFound": "Ничего не найдено",
     "nothingFoundHint": "Попробуйте другой фильтр или измените запрос.",
-    "wheelHint": "Колесико: быстрый выбор (часы +1, минуты +5)",
+    "wheelHint": "Прокрутите или нажмите, чтобы выбрать время",
+    "wheelHours": "Часы",
+    "wheelMinutes": "Минуты",
     "clear": "Очистить",
     "done": "Готово",
     "errors": {

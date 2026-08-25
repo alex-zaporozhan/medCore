@@ -1,4 +1,5 @@
 import { API_BASE, parseFastApiErrorBody } from "@/api/client";
+import { commonErrorI18nKey, localizedParsedApiErrorText } from "@/shared/errors";
 import { setPendingPlatformFounderMfaToken } from "@/auth/platformFounderMfaSession";
 import { setFounderToken } from "@/marketing/platformFounderSession";
 import { ROUTE_PATHS } from "@/routePaths";
@@ -14,15 +15,23 @@ export function PlatformFounderSignInPanel() {
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ code?: string; fallback: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const fallbackReturn = defaultReturnToForTab("founder");
 
-  const messageFromBodyText = (text: string, status: number): string => {
+  const errorFromBodyText = (text: string, status: number): { code?: string; fallback: string } => {
     const p = parseFastApiErrorBody(text || "{}");
-    return p.rawMessage?.trim() || t("founder.errorStatus", { status });
+    return {
+      code: p.code,
+      fallback: localizedParsedApiErrorText(p, t as never, t("founder.errorStatus", { status })),
+    };
   };
+
+  const mappedErrorKey = error ? commonErrorI18nKey(error.code) : null;
+  const errorText = mappedErrorKey
+    ? t(mappedErrorKey as never, { ns: "common" })
+    : error?.fallback;
 
   const goAfterSuccess = () => {
     const returnTo = safeAuthReturnTo(searchParams.get("returnTo"), fallbackReturn);
@@ -49,7 +58,7 @@ export function PlatformFounderSignInPanel() {
         data = {};
       }
       if (r.status === 503 || !r.ok) {
-        setError(messageFromBodyText(text, r.status));
+        setError(errorFromBodyText(text, r.status));
         return;
       }
       if (data.mfa_required === true && typeof data.mfa_token === "string") {
@@ -67,9 +76,9 @@ export function PlatformFounderSignInPanel() {
         goAfterSuccess();
         return;
       }
-      setError(t("founder.unexpectedResponse"));
+      setError({ fallback: t("founder.unexpectedResponse") });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("founder.signInFailed"));
+      setError({ fallback: err instanceof Error ? err.message : t("founder.signInFailed") });
     } finally {
       setBusy(false);
     }
@@ -97,9 +106,9 @@ export function PlatformFounderSignInPanel() {
         {t("founder.signIn")}
       </Button>
 
-      {error ? (
+      {errorText ? (
         <Alert color="red" variant="light" title={t("founder.errorTitle")}>
-          {error}
+          {errorText}
         </Alert>
       ) : null}
 

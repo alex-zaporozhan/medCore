@@ -2,15 +2,18 @@ import { useState } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, setAdminClinicId, setAdminId, setAdminToken } from "@/api/client";
+import { api, ApiErrorWithCode, setAdminClinicId, setAdminId, setAdminToken } from "@/api/client";
 import { queryKeys } from "@/queryKeys";
+import { commonErrorI18nKey, localizedApiErrorText } from "@/shared/errors";
 import { Alert, Button, Stack, Text, TextInput, Title } from "@mantine/core";
 import { ROUTE_PATHS } from "@/routePaths";
 import { defaultReturnToForTab, safeAuthReturnTo } from "@/auth/signInReturnTo";
 
 const MIN_PASSWORD_LENGTH = 8;
 
-type FormError = { kind: "passwordMin" } | { kind: "message"; text: string };
+type FormError =
+  | { kind: "passwordMin" }
+  | { kind: "api"; code?: string; text: string };
 
 export function ClinicStaffSignInPanel() {
   const { t } = useTranslation("auth");
@@ -46,18 +49,24 @@ export function ClinicStaffSignInPanel() {
       navigate(returnTo, { replace: true });
     } catch (err) {
       setError({
-        kind: "message",
-        text: err instanceof Error ? err.message : t("clinic.signInFailed"),
+        kind: "api",
+        code: err instanceof ApiErrorWithCode ? err.code : undefined,
+        text: localizedApiErrorText(err, t as never, "clinic.signInFailed"),
       });
     } finally {
       setLoading(false);
     }
   };
 
+  const mappedKey = error?.kind === "api" ? commonErrorI18nKey(error.code) : null;
   const errorText =
     error?.kind === "passwordMin"
       ? t("clinic.passwordMinError", { count: MIN_PASSWORD_LENGTH })
-      : error?.text;
+      : mappedKey
+        ? t(mappedKey as never, { ns: "common" })
+        : error?.kind === "api"
+          ? error.text
+          : undefined;
 
   return (
     <Stack gap="md">

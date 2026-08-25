@@ -167,20 +167,9 @@ export function PatientPhoneAuthPanel() {
           variant="outline"
           color="slate"
           size="xs"
-            onClick={() => {
-                window.location.href = `${API_BASE}/v1/auth/oauth/vk/start?${oauthStartQuery}`;
-              }}
-        >
-          {t("signIn.vk")}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          color="slate"
-          size="xs"
-            onClick={() => {
-                window.location.href = `${API_BASE}/v1/auth/oauth/yandex/start?${oauthStartQuery}`;
-              }}
+          onClick={() => {
+            window.location.href = `${API_BASE}/v1/auth/oauth/yandex/start?${oauthStartQuery}`;
+          }}
         >
           {t("signIn.yandex")}
         </Button>
