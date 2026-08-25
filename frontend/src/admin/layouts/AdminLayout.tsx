@@ -19,12 +19,14 @@ import {
 } from "@mantine/core";
 import { Spotlight, spotlight } from "@mantine/spotlight";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
-import { useMemo, useState, useCallback } from "react";
-import { IconSearch } from "@tabler/icons-react";
+import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMediaQuery } from "@mantine/hooks";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { clearAdminToken } from "@/api/client";
 import { useAdminOmniChats } from "@/hooks/useAdminOmniChat";
 import {
+  IconSearch,
+  IconMenu2,
   IconDashboard,
   IconCalendar,
   IconMessageCircle,
@@ -72,12 +74,38 @@ import { useAdminSession } from "@/hooks/useAdminSession";
 import { BOX_HIDDEN_ADMIN_PATHS, isBoxEdition } from "@/config/edition";
 import { ADMIN_NAV_PATH_ENTITLEMENT_KEY } from "@/shared/adminEntitlementNav";
 import { PersonCardModalHost, PersonCardProvider } from "@/shared/ui";
+import { ADMIN_NAV_SAFE_MODAL_PROPS, SHELL_OVERLAY_PROPS } from "@/shared/ui/shellPanelStyles";
 import { AdminOwnerSubscriptionStrip } from "@/admin/components/AdminOwnerSubscriptionStrip";
 import { useTranslation } from "react-i18next";
 import { UiLocaleSwitch } from "@/i18n/UiLocaleSwitch";
 
 const NAVBAR_COLLAPSED_KEY = "admin_navbar_collapsed";
 const PERM_LEADS_LOG_VIEW = "leads.log.view";
+
+function MobileNavBurger({
+  opened,
+  onToggle,
+  openLabel,
+  closeLabel,
+}: {
+  opened: boolean;
+  onToggle: () => void;
+  openLabel: string;
+  closeLabel: string;
+}) {
+  return (
+    <ActionIcon
+      variant="subtle"
+      color="gray"
+      size="lg"
+      onClick={onToggle}
+      title={opened ? closeLabel : openLabel}
+      aria-label={opened ? closeLabel : openLabel}
+    >
+      <IconMenu2 size={22} />
+    </ActionIcon>
+  );
+}
 
 type NavGroupId = "staff" | "clients" | "business" | "system";
 type NavItemLabelKey = `items.${keyof typeof enNav.items}`;
@@ -229,6 +257,13 @@ export default function AdminLayout() {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(NAVBAR_COLLAPSED_KEY) === "true";
   });
+  const isNarrowShell = useMediaQuery("(max-width: 48em)", false, {
+    getInitialValueInEffect: false,
+  });
+  const [mobileNavOpened, setMobileNavOpened] = useState(false);
+  useEffect(() => {
+    setMobileNavOpened(false);
+  }, [location.pathname]);
   const toggleNavbar = useCallback(() => {
     setNavbarCollapsed((prev) => {
       const next = !prev;
@@ -354,7 +389,12 @@ export default function AdminLayout() {
   return (
     <PersonCardProvider>
       <AppShell
-        navbar={{ width: navbarWidth, breakpoint: "sm" }}
+        navbar={{
+          width: navbarWidth,
+          breakpoint: "sm",
+          collapsed: { mobile: !mobileNavOpened, desktop: false },
+        }}
+        header={isNarrowShell ? { height: 52 } : undefined}
         padding={omniChatFullWidth ? 0 : "md"}
         styles={
           omniChatFullWidth
@@ -374,6 +414,7 @@ export default function AdminLayout() {
             overflow: "hidden",
             display: "flex",
             flexDirection: "column",
+            zIndex: "var(--z-admin-navbar)",
           }}
           withBorder={false}
         >
@@ -564,7 +605,7 @@ export default function AdminLayout() {
             backgroundColor: "var(--admin-sidebar-footer-bg)",
           }}
         >
-          {!navbarCollapsed ? (
+          {!navbarCollapsed && !isNarrowShell ? (
             <Box mb="xs" px={4}>
               <UiLocaleSwitch />
             </Box>
@@ -588,6 +629,27 @@ export default function AdminLayout() {
         </Box>
       </AppShell.Navbar>
 
+      {isNarrowShell ? (
+      <AppShell.Header
+        px="sm"
+        withBorder
+        style={{
+          zIndex: "var(--z-admin-header)",
+          backgroundColor: "var(--mantine-color-gray-0)",
+        }}
+      >
+        <Group h="100%" justify="space-between" wrap="nowrap">
+          <MobileNavBurger
+            opened={mobileNavOpened}
+            onToggle={() => setMobileNavOpened((open) => !open)}
+            openLabel={tc("openSidebar")}
+            closeLabel={tc("closeSidebar")}
+          />
+          <UiLocaleSwitch />
+        </Group>
+      </AppShell.Header>
+      ) : null}
+
       <AppShell.Main
         style={{
           backgroundColor: "var(--mantine-color-gray-0)",
@@ -598,7 +660,7 @@ export default function AdminLayout() {
       >
         {omniChatFullWidth ? (
           <>
-            {navbarCollapsed ? (
+            {navbarCollapsed && !isNarrowShell ? (
               <Group justify="flex-end" wrap="wrap" gap="xs" px="md" pt="xs" pb={4} style={{ flexShrink: 0 }}>
                 <UiLocaleSwitch />
               </Group>
@@ -614,7 +676,7 @@ export default function AdminLayout() {
           </>
         ) : (
           <Container size="xl" py="md">
-            {navbarCollapsed ? (
+            {navbarCollapsed && !isNarrowShell ? (
               <Group justify="flex-end" wrap="wrap" gap="xs" mb="sm">
                 <UiLocaleSwitch />
               </Group>
@@ -642,6 +704,8 @@ export default function AdminLayout() {
 
         {/* Ask AI (Spotlight) */}
         <Modal
+          {...ADMIN_NAV_SAFE_MODAL_PROPS}
+          overlayProps={SHELL_OVERLAY_PROPS}
           opened={askAiOpen}
           onClose={() => {
             setAskAiOpen(false);

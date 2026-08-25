@@ -1,10 +1,44 @@
 import type { DrawerProps, MantineTheme, ModalProps } from "@mantine/core";
 import type { CSSProperties } from "react";
 
+/**
+ * AppShell sets this on `:root` while the navbar is in flow.
+ * Below the navbar breakpoint it becomes `0px` (navbar off-canvas).
+ */
+export const ADMIN_SHELL_NAVBAR_OFFSET = "var(--app-shell-navbar-offset, 0px)";
+
 /** Shared overlay for glass modal and admin detail drawers (`AdminDrawer`). */
 export const SHELL_OVERLAY_PROPS: NonNullable<ModalProps["overlayProps"]> = {
   backgroundOpacity: 0.08,
   blur: 10,
+  /** Do not dim/block the admin navbar — Modal portals to `document.body`. */
+  style: { left: ADMIN_SHELL_NAVBAR_OFFSET },
+};
+
+/**
+ * Mantine Modal + `lockScroll` uses remove-scroll (`pointer-events: none` on `body`).
+ * A wide dialog that covers the sidebar would then trap the user on the page.
+ * Keep the shell navbar clickable (overlay/inner inset to the content column).
+ */
+export const ADMIN_NAV_SAFE_MODAL_PROPS: Pick<ModalProps, "lockScroll" | "trapFocus"> = {
+  lockScroll: false,
+  /** Tab stays in the dialog; mouse can still hit the navbar (lockScroll off + overlay inset). */
+  trapFocus: true,
+};
+
+/**
+ * Position the dialog in the main column (right of the navbar), then let Mantine
+ * `justify-content: center` work. `paddingLeft: navbar` on a full-viewport inner
+ * left-aligns wide dialogs and leaves a dead gap on the right.
+ */
+export const SHELL_MODAL_NAV_INNER_STYLE: CSSProperties = {
+  left: ADMIN_SHELL_NAVBAR_OFFSET,
+  right: 0,
+  width: "auto",
+  display: "flex",
+  justifyContent: "center",
+  boxSizing: "border-box",
+  pointerEvents: "none",
 };
 
 /** Center modal content — aligned with legacy `GlassModal` look. */
@@ -63,8 +97,15 @@ type ModalStylesFn = (
 ) => Record<string, unknown> | undefined;
 
 const shellModalBase = {
+  overlay: {
+    left: ADMIN_SHELL_NAVBAR_OFFSET,
+  },
+  inner: {
+    ...SHELL_MODAL_NAV_INNER_STYLE,
+  },
   content: {
     ...SHELL_MODAL_CONTENT_STYLE,
+    pointerEvents: "auto",
     // Ensure footer-like sections can be fixed inside body.
     display: "flex",
     flexDirection: "column",

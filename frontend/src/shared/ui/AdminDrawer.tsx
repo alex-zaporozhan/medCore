@@ -11,6 +11,7 @@ export function AdminDrawer({
   styles,
   position = "right",
   closeButtonProps,
+  lockScroll = false,
   ...rest
 }: DrawerProps) {
   const mergedStyles = useMemo(() => mergeDrawerStyles(styles), [styles]);
@@ -29,6 +30,7 @@ export function AdminDrawer({
       styles={mergedStyles}
       closeButtonProps={mergedClose}
       {...rest}
+      lockScroll={lockScroll}
     />
   );
 }

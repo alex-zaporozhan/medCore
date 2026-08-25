@@ -59,6 +59,14 @@
   --semantic-info: #3b82f6;
   --admin-nav-hover-bg: #eef1f4;
   --admin-nav-active-stripe-shadow: 2px 0 8px rgba(28, 46, 69, 0.25);
+  /* Above Mantine Modal overlay (200): navbar/header stay clickable with lockScroll off. */
+  --z-admin-navbar: 300;
+  --z-admin-header: 310;
+  /* In-page scale (layout stacking): raw z-index in components is forbidden. */
+  --z-base: 0;
+  --z-raised: 1;
+  --z-sticky: 20;
+  --z-page-overlay: 50;
 
   /* RADII & SHADOWS — объём без жёсткого контраста */
   --radius-xs: 4px;
@@ -559,10 +567,12 @@ body {
   border-bottom: 1px solid var(--divider);
   padding-top: var(--space-lg);
   padding-bottom: var(--space-md);
+  padding-inline: var(--space-xl);
 }
 
 .staff-cal-modal-content .mantine-Modal-body {
   padding-top: var(--space-md);
+  padding-inline: 0;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -585,6 +595,39 @@ body {
 
 .staff-cal-time-scroll::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.staff-cal-time-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-10) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: var(--bg-card);
+  cursor: pointer;
+}
+
+.staff-cal-time-slot:hover:not([data-selected="true"]) {
+  background: var(--staff-cal-day-hover-bg);
+}
+
+.staff-cal-time-slot:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.staff-cal-time-slot[data-selected="true"] {
+  background: var(--staff-cal-time-selected-bg);
+  border-color: var(--staff-cal-time-selected-border);
+  box-shadow: var(--shadow-soft-sm);
+}
+
+.staff-cal-time-slot-label {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .staff-cal-event-chip {
@@ -613,13 +656,4 @@ body {
 }
 .admin-tasks-context[data-page-tint="subtle_amber"] {
   background: linear-gradient(180deg, rgba(217, 119, 6, 0.12) 0%, transparent 320px);
-}
-
-/* Hide horizontal scrollbar for stream pager (keep swipe/trackpad). */
-.admin-stream-pager {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.admin-stream-pager::-webkit-scrollbar {
-  height: 0;
 }
