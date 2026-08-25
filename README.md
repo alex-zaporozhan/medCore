@@ -45,18 +45,27 @@ Full product map: [`documentation/PRODUCT_OVERVIEW.md`](./documentation/PRODUCT_
 
 ## Screenshots
 
-Drop PNGs into [`docs/public/screenshots/`](./docs/public/screenshots/) using the filenames in that folder's README. Until then, clone and run — the software is the evidence, not a marketing site.
+Demo seed, English chrome. Floor ops, staff chat, calendar, tasks — with a modal open where it helps.
 
-```
-docs/public/screenshots/
-  admin-schedule.png      # clinic week grid
-  admin-dashboard.png     # staff home
-  admin-omni-chat.png     # omnichannel inbox
-  admin-tasks.png         # Kanban
-  patient-booking.png     # patient PWA
-```
+| Chair schedule | New booking |
+|---|---|
+| ![Chair schedule](./docs/public/screenshots/admin-schedule.png) | ![New booking](./docs/public/screenshots/admin-schedule-booking.png) |
 
-A Playwright helper lives at `frontend/e2e/readme-screenshots.spec.ts` (`README_SCREENSHOTS=1`). It needs a running API + seeded demo. Against Compose UI set `BASE_URL=http://127.0.0.1:3010` so preview on :4173 is not also started. Patient PWA shots are still manual.
+| Team chat | New group |
+|---|---|
+| ![Team chat](./docs/public/screenshots/admin-staff-chat.png) | ![New group](./docs/public/screenshots/admin-staff-chat-group.png) |
+
+![Omnichannel thread](./docs/public/screenshots/admin-omni-chat.png)
+
+| Calendar | New event |
+|---|---|
+| ![Calendar](./docs/public/screenshots/admin-calendar.png) | ![New event](./docs/public/screenshots/admin-calendar-event.png) |
+
+| Tasks | Patient card |
+|---|---|
+| ![Tasks](./docs/public/screenshots/admin-tasks.png) | ![Patient card](./docs/public/screenshots/admin-patient-chart.png) |
+
+Regenerate: `README_SCREENSHOTS=1 BASE_URL=http://127.0.0.1:3010 npx playwright test e2e/readme-screenshots.spec.ts` from `frontend/` (Compose UI on :3010). After a frontend layout change, rebuild that image or point `BASE_URL` at Vite. A short demo video can wait.
 
 ---
 
@@ -257,7 +266,7 @@ That is the same family of license as [LEO](https://github.com/alex-zaporozhan/l
 
 ## Author
 
-**Alexandr Zaporozhan** — AI-native systems work; five years Emergency ICU before this; the person who wrote LEO because the market would not hand over a team.
+**Alexandr Zaporojan** — AI-native systems work; five years Emergency ICU before this; the person who wrote LEO because the market would not hand over a team.
 
 - Framework: [github.com/alex-zaporozhan/leo](https://github.com/alex-zaporozhan/leo)
 - [LinkedIn](https://www.linkedin.com/in/alex-zaporozhan/)

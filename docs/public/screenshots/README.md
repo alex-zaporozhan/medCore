@@ -1,19 +1,19 @@
 # README screenshots
 
-Put PNGs here. The root README lists expected names; it does not yet embed images (add them when the files exist).
+PNGs here are embedded from the root `README.md`. Demo seed only — no live PHI.
 
-| File | Shot | Produced by helper? |
-|---|---|---|
-| `admin-login.png` | `/admin/login` | yes |
-| `admin-dashboard.png` | `/admin` after sign-in | yes |
-| `admin-schedule.png` | `/admin/schedule` | yes |
-| `admin-omni-chat.png` | `/admin/omni-chat` | yes |
-| `admin-tasks.png` | `/admin/tasks` | yes |
-| `patient-booking.png` | Patient booking wizard | **manual** (different auth; copy may still be Russian) |
-
-Needs a running API + seeded staff (`documentation/DEMO_CREDENTIALS.md`). Preview-only with no API will fail login.
-
-**Compose UI (port 3010):**
+| File | Shot |
+|---|---|
+| `admin-schedule.png` | Chair grid |
+| `admin-schedule-booking.png` | **New booking** modal |
+| `admin-schedule-visit.png` | Visit drawer (not in README) |
+| `admin-staff-chat.png` | Team chat with a thread open |
+| `admin-staff-chat-group.png` | **New group** modal |
+| `admin-omni-chat.png` | Patient inbox + open thread |
+| `admin-calendar.png` | Staff month calendar |
+| `admin-calendar-event.png` | **New event** modal |
+| `admin-tasks.png` | Kanban |
+| `admin-patient-chart.png` | Patient card, Overview |
 
 ```powershell
 cd frontend
@@ -22,13 +22,6 @@ $env:BASE_URL = "http://127.0.0.1:3010"
 npx playwright test e2e/readme-screenshots.spec.ts
 ```
 
-```bash
-cd frontend
-README_SCREENSHOTS=1 BASE_URL=http://127.0.0.1:3010 npx playwright test e2e/readme-screenshots.spec.ts
-```
+`:3010` is the Compose **built** image. After a frontend layout change, either rebuild that image or capture against Vite (`BASE_URL=http://127.0.0.1:5175` / `5176`) so the PNG matches source.
 
-`BASE_URL` also skips Playwright’s preview webServer (see `frontend/playwright.config.ts`).
-
-**Host preview (4173) + API on 8000:** `npm run build` first, then `README_SCREENSHOTS=1` without `BASE_URL`.
-
-Do not commit live PHI. Demo seeds only. `cmd.exe` uses `set VAR=value` (not `$env:`).
+Demo logins: `documentation/DEMO_CREDENTIALS.md`.
