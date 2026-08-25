@@ -308,7 +308,7 @@ class BookingCompletionService:
                 await self.task_service.create_task(
                     clinic_id=booking.clinic_id,
                     title="PAPERLESS_REQUIRED_FORMS_MISSING",
-                    description=err_msg + (f" trace_id={_actor_trace_id(actor)}" if _actor_trace_id(actor) else ""),
+                    description=err_msg,
                     priority="high",
                     role_assignee="owner",
                     booking_id=booking.id,
@@ -579,8 +579,6 @@ class BookingCompletionService:
                                 "при списании по визиту (attempt_write_off_more_than_remaining). "
                                 "Проверьте остатки по подписке и ERP‑отчётности."
                             )
-                            if _actor_trace_id(actor):
-                                description += f" trace_id={_actor_trace_id(actor)}."
                             await self.task_service.create_task(
                                 clinic_id=booking.clinic_id,
                                 title="LOYALTY_ERP_INCONSISTENT_OBLIGATION",
@@ -746,8 +744,6 @@ class BookingCompletionService:
                 f"Loyalty rules blocked visit completion (code={exc.code}): {str(exc)}. "
                 "Fix subscription/family access or adjust the visit before completing."
             )
-            if _actor_trace_id(actor):
-                description += f" trace_id={_actor_trace_id(actor)}."
             await self.task_service.create_task(
                 clinic_id=booking.clinic_id,
                 title="LOYALTY_MISMATCH",
@@ -829,15 +825,12 @@ class BookingCompletionService:
         await self.booking_repository.update(booking)
         try:
             description = (
-                f"Не удалось провести визит в ERP (код: {exc.code}, "
-                f"тип: {error_type.upper()}). "
-                "Проверьте настройки кассы/ЗП/склада и перепроведите визит."
+                f"Could not post the visit to ERP (code: {exc.code}, type: {error_type}). "
+                "Check cash register / payroll / inventory settings and re-post the visit."
             )
-            if _actor_trace_id(actor):
-                description += f" trace_id={_actor_trace_id(actor)}."
             await self.task_service.create_task(
                 clinic_id=booking.clinic_id,
-                title="ERP‑ошибка при завершении визита",
+                title="ERP error on visit completion",
                 description=description,
                 priority="high",
                 role_assignee="owner",

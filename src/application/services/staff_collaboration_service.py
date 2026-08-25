@@ -12,7 +12,9 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select
+from zlib import crc32
+
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.dto.staff_collab_dto import (
@@ -1941,6 +1943,15 @@ class StaffCollaborationService:
 
         if ends_at <= starts_at:
             raise ValueError("invalid_event_range")
+
+        # Count-then-insert is racy without a lock (two concurrent creates both see cnt=0).
+        # Same pg_advisory_xact_lock pattern as doctor-slot booking and ERP refresh.
+        # Namespace 8842017 is distinct from ERP refresh (8842001).
+        lock_k = crc32(str(clinic_id).encode("utf-8")) & 0x7FFFFFFF
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(:a, :b)"),
+            {"a": 8_842_017, "b": lock_k},
+        )
 
         q = (
             select(func.count())
