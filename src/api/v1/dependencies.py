@@ -16,7 +16,14 @@ from src.core.security import (
     parse_access_token,
     parse_tenant_access_token_for_request_context,
 )
-from src.core.user_messages import EMPTY_DB_NO_CLINIC
+from src.core.user_messages import (
+    ADMIN_ORG_PLATFORM_BILLING_REVOKED,
+    AUTH_REQUIRED,
+    EMPTY_DB_NO_CLINIC,
+    LOGIN_RATE_LIMITED,
+    PLATFORM_FOUNDER_TOKEN_REQUIRED,
+    TOKEN_INVALID_OR_EXPIRED,
+)
 from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
 from src.domain.entities.platform_founder_user import PlatformFounderUser
 from src.domain.entities.clinic import Clinic
@@ -25,7 +32,6 @@ from src.infrastructure.database import base as db_base
 from src.infrastructure.database.base import get_db, get_db_reporting
 from src.core.config import settings
 from src.core.context import RequestContext
-from src.core.user_messages import ADMIN_ORG_PLATFORM_BILLING_REVOKED
 from src.core.metrics import (
     domain_outbox_post_commit_dispatch_failures_total,
     platform_founder_auth_total,
@@ -82,7 +88,7 @@ async def require_platform_founder_login_ip_rate_limit(
         except RateLimitExceeded:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Слишком много попыток. Попробуйте позже.",
+                detail=LOGIN_RATE_LIMITED,
             )
 
 
@@ -125,14 +131,14 @@ async def _resolve_platform_founder_principal(
         platform_founder_auth_total.labels(result="rate_limited").inc()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Слишком много запросов. Попробуйте позже.",
+            detail=LOGIN_RATE_LIMITED,
         )
 
     if not authorization or not authorization.startswith("Bearer "):
         platform_founder_auth_total.labels(result="missing_bearer").inc()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Требуется авторизация",
+            detail=AUTH_REQUIRED,
         )
     token = authorization[7:].strip()
     try:
@@ -153,14 +159,14 @@ async def _resolve_platform_founder_principal(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
                 "code": e.code,
-                "message": "Недействительный токен (issuer/audience)",
+                "message": "Invalid token (issuer/audience)",
             },
         )
     except jwt.exceptions.InvalidTokenError:
         platform_founder_auth_total.labels(result="invalid_token").inc()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Недействительный или истёкший токен",
+            detail=TOKEN_INVALID_OR_EXPIRED,
         )
     if payload.get("type") != "platform_founder":
         platform_founder_auth_total.labels(result="wrong_token_type").inc()
@@ -168,7 +174,7 @@ async def _resolve_platform_founder_principal(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": "platform_founder_token_required",
-                "message": "Требуется токен Основателя платформы (platform_founder)",
+                "message": PLATFORM_FOUNDER_TOKEN_REQUIRED["message"],
             },
         )
     sub = payload.get("sub")
@@ -200,7 +206,7 @@ async def _resolve_platform_founder_principal(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": "platform_founder_inactive_or_unknown",
-                "message": "Пользователь платформы не найден или отключён",
+                "message": "Platform operator not found or disabled",
             },
         )
 
@@ -215,7 +221,7 @@ async def _resolve_platform_founder_principal(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": "platform_founder_totp_enrollment_required",
-                "message": "Требуется настроить двухфакторную аутентификацию (TOTP): /platform/auth/totp/enroll и confirm",
+                "message": "TOTP enrollment required: POST /platform/auth/totp/enroll then confirm",
                 "trace_id": trace_id,
             },
         )
@@ -271,7 +277,7 @@ async def get_current_platform_founder_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": "platform_founder_inactive_or_unknown",
-                "message": "Пользователь платформы не найден или отключён",
+                "message": "Platform operator not found or disabled",
             },
         )
     return row
@@ -374,12 +380,12 @@ async def get_current_admin_optional(
         record_tenant_jwt_claim_reject(code=e.code)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": e.code, "message": "Недействительный токен (issuer/audience)"},
+            detail={"code": e.code, "message": "Invalid token (issuer/audience)"},
         )
     except jwt.exceptions.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Недействительный или истёкший токен",
+            detail=TOKEN_INVALID_OR_EXPIRED,
         )
     if payload.get("type") != "admin":
         return None
@@ -420,7 +426,7 @@ async def get_current_patient(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Требуется авторизация",
+            detail=AUTH_REQUIRED,
         )
     token = authorization[7:].strip()
     try:
@@ -429,12 +435,12 @@ async def get_current_patient(
         record_tenant_jwt_claim_reject(code=e.code)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": e.code, "message": "Недействительный токен (issuer/audience)"},
+            detail={"code": e.code, "message": "Invalid token (issuer/audience)"},
         )
     except jwt.exceptions.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Недействительный или истёкший токен",
+            detail=TOKEN_INVALID_OR_EXPIRED,
         )
     if payload.get("role") != "patient":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token role")
@@ -480,12 +486,12 @@ async def get_request_context(
             record_tenant_jwt_claim_reject(code=e.code)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"code": e.code, "message": "Недействительный токен (issuer/audience)"},
+                detail={"code": e.code, "message": "Invalid token (issuer/audience)"},
             )
         except jwt.exceptions.InvalidTokenError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Недействительный или истёкший токен",
+                detail=TOKEN_INVALID_OR_EXPIRED,
             )
 
         token_type = payload.get("type") or payload.get("role")
@@ -501,7 +507,7 @@ async def get_request_context(
             # Unknown type – treat as unauthorized
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Недопустимый тип токена",
+                detail={"code": "invalid_token_type", "message": "Invalid token type"},
             )
 
     if admin:

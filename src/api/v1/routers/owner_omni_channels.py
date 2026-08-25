@@ -119,9 +119,18 @@ async def create_owner_channel(
 ) -> OwnerChannelDto:
     """Create new omnichannel Channel for current clinic."""
     business_account_id: UUID = current_admin.clinic_id
+    channel_type = body.type.strip().upper()
+    if channel_type == "VK_BOT":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "omni_channel_type_not_creatable",
+                "message": "VK channel type cannot be created via API",
+            },
+        )
     channel = OmniChannel(
         business_account_id=business_account_id,
-        type=body.type.strip().upper(),
+        type=channel_type,
         display_name=body.display_name.strip(),
         status="PENDING_SETUP",
     )

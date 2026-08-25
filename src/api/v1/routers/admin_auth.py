@@ -17,7 +17,14 @@ from src.application.services.platform_billing_access import organization_has_pl
 from src.core.config import settings
 from src.core.metrics import record_tenant_jwt_claim_reject
 from src.core.security import JwtClaimValidationError, create_access_token, parse_access_token
-from src.core.user_messages import ADMIN_ORG_PLATFORM_BILLING_REVOKED
+from src.core.user_messages import (
+    ADMIN_ORG_PLATFORM_BILLING_REVOKED,
+    AUTH_REQUIRED,
+    CLINIC_CONTEXT_REQUIRED,
+    INVALID_CREDENTIALS,
+    LOGIN_RATE_LIMITED,
+    TOKEN_INVALID_OR_EXPIRED,
+)
 from src.core.industry_profile import INDUSTRY_PROFILE_DENTAL
 from src.domain.entities.admin_user import AdminUser, EMPLOYMENT_ACTIVE
 from src.domain.entities.clinic import Clinic
@@ -90,7 +97,7 @@ async def admin_login(
     except RateLimitExceeded:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Слишком много попыток. Попробуйте позже.",
+            detail=LOGIN_RATE_LIMITED,
         )
 
     result = await session.execute(
@@ -103,12 +110,12 @@ async def admin_login(
     if not admin or not verify_password(data.password, admin.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный email или пароль",
+            detail=INVALID_CREDENTIALS,
         )
     if admin.employment_status != EMPLOYMENT_ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный email или пароль",
+            detail=INVALID_CREDENTIALS,
         )
     if admin.organization_id is not None and await organization_has_platform_billing_revoked(
         session, admin.organization_id
@@ -145,7 +152,7 @@ def get_current_admin_dependency():
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Требуется авторизация",
+                detail=AUTH_REQUIRED,
             )
         token = authorization[7:].strip()
         try:
@@ -154,12 +161,12 @@ def get_current_admin_dependency():
             record_tenant_jwt_claim_reject(code=e.code)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"code": e.code, "message": "Недействительный токен (issuer/audience)"},
+                detail={"code": e.code, "message": "Invalid token (issuer/audience)"},
             )
         except jwt.exceptions.InvalidTokenError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Недействительный или истёкший токен",
+                detail=TOKEN_INVALID_OR_EXPIRED,
             )
         if payload.get("type") != "admin":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
@@ -202,7 +209,7 @@ async def admin_session(
     if cid is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Требуется контекст клиники",
+            detail=CLINIC_CONTEXT_REQUIRED,
         )
     clinic_row = await session.get(Clinic, cid)
     effective_org_id: UUID | None = current_admin.organization_id
@@ -255,7 +262,7 @@ def get_current_admin_sse_dependency():
         if not token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Требуется авторизация",
+                detail=AUTH_REQUIRED,
             )
         try:
             payload = parse_access_token(token, expected_audience=settings.jwt_audience_admin)
@@ -263,12 +270,12 @@ def get_current_admin_sse_dependency():
             record_tenant_jwt_claim_reject(code=e.code)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"code": e.code, "message": "Недействительный токен (issuer/audience)"},
+                detail={"code": e.code, "message": "Invalid token (issuer/audience)"},
             ) from None
         except jwt.exceptions.InvalidTokenError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Недействительный или истёкший токен",
+                detail=TOKEN_INVALID_OR_EXPIRED,
             ) from None
         if payload.get("type") != "admin":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
@@ -319,12 +326,12 @@ def get_current_admin_optional_dependency():
             record_tenant_jwt_claim_reject(code=e.code)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"code": e.code, "message": "Недействительный токен (issuer/audience)"},
+                detail={"code": e.code, "message": "Invalid token (issuer/audience)"},
             )
         except jwt.exceptions.InvalidTokenError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Недействительный или истёкший токен",
+                detail=TOKEN_INVALID_OR_EXPIRED,
             )
         if payload.get("type") != "admin":
             return None

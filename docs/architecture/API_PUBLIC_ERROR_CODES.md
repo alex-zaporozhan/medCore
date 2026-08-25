@@ -7,14 +7,14 @@
 
 ```json
 {
-  "detail": "Человекочитаемое сообщение",
+  "detail": "Human-readable message (English canonical)",
   "code": "entitlement_required",
   "details": { "field": "stream_id", "entitlement_key": "tasks.kanban" },
   "trace_id": "…"
 }
 ```
 
-- **`detail`** — всегда строка (не объект).
+- **`detail`** — всегда строка (не объект). Канонический язык ожидаемых ошибок API — **английский**; UI переводит по полю `code`.
 - **`details`** — опционально: дополнительные поля из исходного `HTTPException.detail` (например `site_key` для `captcha_required`, `field` для задач). Поля `code`, `message`, `detail`, **`trace_id`** в деталях не дублируются: `trace_id` выносится наверх.
 - **`trace_id`** — сначала `request.state.trace_id` (middleware), иначе строка из тела `HTTPException.detail`, если роутер её положил в dict.
 - **`code` и `Enum`:** в Python в `HTTPException.detail` иногда передаётся член перечисления (например `BookingErrorCode`). У `Enum` строковое представление — **не** API-значение; обработчик берёт **`.value`** и нормализует в `snake_case`.
@@ -50,7 +50,12 @@
 | `captcha_required` | Turnstile после soft rate limit (`auth`, `integrations_gateway`) |
 | `clinic_forbidden` | несовпадение клиники и JWT |
 | `platform_webhook_invalid_signature` | контур B, секрет webhook |
-| `billing_revoked` | повтор провижининга при отозванном биллинге |
+| `billing_revoked` | повтор провижининга при отозванном биллинге **или** вход/сессия admin клиники при refund подписки org (ADR-012) |
+| `invalid_credentials` | вход staff клиники / основателя: неверный email или пароль |
+| `invalid_totp` | MFA основателя: неверный код authenticator |
+| `invalid_mfa_token` | MFA основателя: недействительный или просроченный MFA-токен |
+| `rate_limited` | лимиты входа / публичного IP (HTTP 429 по умолчанию тоже `rate_limited`) |
+| `empty_db_no_clinic` | в БД ещё нет клиник (empty-state настроек, не общий 404) |
 
 ## Контур A — `POST /api/v1/payments/webhook` (YooKassa, запись на приём)
 

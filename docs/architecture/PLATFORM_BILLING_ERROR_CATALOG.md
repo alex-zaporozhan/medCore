@@ -60,4 +60,14 @@
 - **Product:** тексты UI.
 - **LEAD:** новые публичные денежные пути.
 
-**Версия:** 2026-04-06
+**Версия:** 2026-08-24
+
+## 5. Вход администратора клиники (ADR-012)
+
+| Код | HTTP | Когда | UI |
+|-----|------|-------|-----|
+| `billing_revoked` | 403 | `POST /api/v1/admin/auth/login` и любой admin JWT, если у org отозвана подписка платформы | `errors.billing_revoked` |
+| `invalid_credentials` | 401 | Неверный email/пароль (без различия «нет пользователя») | `errors.invalid_credentials` |
+| `rate_limited` | 429 | Лимит попыток входа | `errors.rate_limited` |
+
+`detail` канонически на английском; локаль — только в UI.

@@ -1,5 +1,6 @@
 """QA_ARCH §28: contract of ``http_exception_handler`` (Enum ``code``, ``trace_id``)."""
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,6 +8,11 @@ from fastapi import HTTPException
 
 from src.application.dto.booking_dto import BookingErrorCode
 from src.core.http_exception_handler import unified_http_exception_handler
+from src.core.user_messages import (
+    ADMIN_ORG_PLATFORM_BILLING_REVOKED,
+    EMPTY_DB_NO_CLINIC,
+    INVALID_CREDENTIALS,
+)
 
 
 @pytest.mark.asyncio
@@ -53,3 +59,29 @@ async def test_http_exception_trace_id_prefers_request_state() -> None:
     resp = await unified_http_exception_handler(request, exc)
     assert "from-header" in resp.body.decode()
     assert "from-body" not in resp.body.decode()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "payload", "expected_code"),
+    [
+        (401, INVALID_CREDENTIALS, "invalid_credentials"),
+        (403, ADMIN_ORG_PLATFORM_BILLING_REVOKED, "billing_revoked"),
+        (404, EMPTY_DB_NO_CLINIC, "empty_db_no_clinic"),
+    ],
+)
+async def test_http_exception_auth_and_empty_db_envelopes_are_english_with_stable_codes(
+    status: int,
+    payload: dict,
+    expected_code: str,
+) -> None:
+    request = MagicMock()
+    request.state = MagicMock(trace_id=None)
+    resp = await unified_http_exception_handler(
+        request, HTTPException(status_code=status, detail=payload)
+    )
+    body = json.loads(resp.body)
+    assert body["code"] == expected_code
+    assert isinstance(body["detail"], str)
+    assert body["detail"].isascii()
+    assert any(ch.isalpha() for ch in body["detail"])

@@ -51,7 +51,7 @@ async def unified_http_exception_handler(request: Request, exc: HTTPException) -
     elif isinstance(exc.detail, str):
         detail_str = exc.detail
     else:
-        detail_str = "Ошибка"
+        detail_str = "Error"
 
     body: dict = {"detail": detail_str, "code": code}
     if details_extra:
