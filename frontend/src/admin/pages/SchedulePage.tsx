@@ -43,6 +43,7 @@ import { ClinicSelector } from "@/admin/components/ClinicSelector";
 import { SEMANTIC } from "@/shared/semanticUi";
 import { useTranslation } from "react-i18next";
 import { displayPersonName } from "@/shared/ui/personNameFallback";
+import { doctorRoleLabel } from "@/shared/doctorRoleI18n";
 
 interface ScheduleCreateBookingFormProps {
   date: string;
@@ -121,7 +122,7 @@ function ScheduleCreateBookingForm({
       <Group grow>
         <TextInput
           label={t("phone")}
-          placeholder="+7..."
+          placeholder={t("phonePlaceholder")}
           value={searchPhone}
           onChange={(e) => setSearchPhone(e.target.value)}
         />
@@ -208,6 +209,9 @@ export default function SchedulePage() {
   const queryClient = useQueryClient();
   const cancelBookingMutation = useCancelBookingAdmin();
   const [createSlot, setCreateSlot] = useState<{ doctorId: string; time: string } | null>(null);
+  const createDoctor = createSlot
+    ? doctors?.find((d) => d.id === createSlot.doctorId)
+    : undefined;
   const [patientModalId, setPatientModalId] = useState<string | null>(null);
   const [doctorModalId, setDoctorModalId] = useState<string | null>(null);
   const [datePickerOpened, setDatePickerOpened] = useState(false);
@@ -697,10 +701,8 @@ export default function SchedulePage() {
             date={dateStr}
             time={createSlot.time}
             doctorId={createSlot.doctorId}
-            doctorName={
-              doctors?.find((d) => d.id === createSlot.doctorId)?.full_name ?? ""
-            }
-            displayRole={doctors?.find((d) => d.id === createSlot.doctorId)?.display_role}
+            doctorName={createDoctor?.full_name ?? ""}
+            displayRole={createDoctor ? doctorRoleLabel(createDoctor) : undefined}
             clinicId={currentClinicId ?? ""}
             servicesOptions={servicesOptions}
             onClose={() => setCreateSlot(null)}

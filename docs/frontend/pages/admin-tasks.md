@@ -38,9 +38,18 @@ Kanban/операционная доска задач клиники: поток
 
 ## UI-скелет (as-built)
 
-- `ContextBar` с переключением потоков (pager), фильтрами, кнопками создания и настроек.
+- `ContextBar` с переключением потоков (стрелки / меню), фильтрами, кнопками создания и настроек.
 - Область Kanban: колонки статусов, карточки `TaskKanbanCard`, DnD, боковые/нижние панели по сценарию.
 - Множество вспомогательных блоков: focus, bulk, audit trail (локальный стейт), AI-маркеры и т.д. по коду.
+
+### Stream switcher (одна доска)
+
+На экране монтируется **один** `TasksKanbanPage` для `selectedStreamId` (`?stream=` / localStorage). Соседние потоки не рендерятся слайдами: HTML `inert` на соседней копии доски глотал клики по видимой доске («картинка»).
+
+- Стрелки `<` `>` , точки и меню `stream-switcher` меняют `selectedStreamId`.
+- Клик по карточке открывает `GlassModal` + `TaskDetailsView`. Карточка — не `role="button"` (внутри чекбокс/меню/ссылка). Заголовок — `UnstyledButton`.
+- `useDraggable` только у карточек на доске; очередь согласования не вызывает хук вне контекста.
+- Один `DndContext` на страницу потока: шапка потока (`stream-page-*`) — реальный droppable. Края `nav-prev` / `nav-next` принимают pointer только во время драга; drop на край сразу переключает поток.
 
 ### Evidence / QA (скриншоты)
 
@@ -68,7 +77,7 @@ Kanban/операционная доска задач клиники: поток
 
 ## Тесты
 
-- `frontend/src/admin/pages/__tests__/AdminTasksPage.test.tsx` (создание, очередь, DnD-хуки).
+- `frontend/src/admin/pages/__tests__/AdminTasksPage.test.tsx` — chrome, очередь, DnD, клик по карточке открывает dialog, одна доска на выбранный поток, drop на `stream-page-*` и на край `nav-next`.
 - `frontend/src/admin/pages/__tests__/AdminTaskDetailsPage.test.tsx` (chrome полноэкранной страницы).
 
 ## Gap scan (вторая редакция)

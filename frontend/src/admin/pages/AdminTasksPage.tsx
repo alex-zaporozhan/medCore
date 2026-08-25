@@ -22,6 +22,7 @@ import {
   Alert,
   Tooltip,
   Divider,
+  UnstyledButton,
 } from "@mantine/core";
 import { AppleEmojiRichText } from "@/shared/AppleEmojiRichText";
 import { TaskDetailsView } from "@/admin/components/TaskDetailsView";
@@ -31,7 +32,6 @@ import {
   IconDotsVertical,
   IconExternalLink,
   IconAlertTriangle,
-  IconLock,
   IconChevronUp,
   IconChevronDown,
   IconLayoutKanban,
@@ -56,13 +56,8 @@ import { useTranslation } from "react-i18next";
 import { SEMANTIC } from "@/shared/semanticUi";
 import { PageSkeleton } from "@/shared/ui/PageSkeleton";
 import { EmptyState } from "@/shared/ui/EmptyState";
-import {
-  priorityBadgeColor,
-  taskStatusBadgeStyles,
-  taskStatusCardSurface,
-  taskStatusTextColors,
-} from "@/shared/taskStatusSemantic";
-import { leadOutcomeLabel, taskPriorityLabel, taskStatusLabel } from "@/shared/taskStatusI18n";
+import { taskKanbanQuietSurface } from "@/shared/taskStatusSemantic";
+import { leadOutcomeLabel, taskStatusLabel } from "@/shared/taskStatusI18n";
 import dayjs from "dayjs";
 import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { usePatients } from "@/hooks/usePatients";
@@ -93,6 +88,7 @@ import {
 } from "@/hooks";
 import type { AdminTaskRow, AdminUserRow, TaskStreamRow, TaskStreamMantineColor, TaskStreamPageTint } from "@/hooks";
 import { ApiErrorWithCode, getAdminId } from "@/api/client";
+import { displayPersonName } from "@/shared/ui/personNameFallback";
 import {
   DndContext,
   PointerSensor,
@@ -181,23 +177,7 @@ function firstAssigneeForAvatar(task: AdminTaskRow, admins: AdminUserRow[]): Adm
   return admins.find((a) => a.id === ids[0]) ?? null;
 }
 
-function TaskKanbanCard({
-  task,
-  admins,
-  patientName,
-  onOpenDetail,
-  onClaim: _onClaim,
-  onTaskChat: _onTaskChat,
-  isAi,
-  draggable,
-  blocked,
-  selected,
-  onSelect,
-  onMoveByKeyboard,
-  canMoveStream,
-  streamOptions,
-  onMoveToStream,
-}: {
+type TaskKanbanCardProps = {
   task: AdminTaskRow;
   admins: AdminUserRow[];
   patientName?: string | null;
@@ -213,42 +193,85 @@ function TaskKanbanCard({
   canMoveStream?: boolean;
   streamOptions?: Array<{ value: string; label: string }>;
   onMoveToStream?: (taskId: string, streamId: string) => void;
-}) {
+};
+
+function TaskKanbanCard(props: TaskKanbanCardProps) {
+  if (props.draggable) return <DraggableTaskKanbanCard {...props} />;
+  return <TaskKanbanCardSurface {...props} />;
+}
+
+function DraggableTaskKanbanCard(props: TaskKanbanCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: task.id,
-    disabled: !draggable,
+    id: props.task.id,
   });
+  return (
+    <TaskKanbanCardSurface
+      {...props}
+      drag={{ attributes, listeners, setNodeRef, transform, isDragging }}
+    />
+  );
+}
+
+function TaskKanbanCardSurface({
+  task,
+  admins,
+  patientName,
+  onOpenDetail,
+  onClaim: _onClaim,
+  onTaskChat: _onTaskChat,
+  isAi,
+  blocked,
+  selected,
+  onSelect,
+  onMoveByKeyboard,
+  canMoveStream,
+  streamOptions,
+  onMoveToStream,
+  drag,
+}: TaskKanbanCardProps & {
+  drag?: {
+    attributes: ReturnType<typeof useDraggable>["attributes"];
+    listeners: ReturnType<typeof useDraggable>["listeners"];
+    setNodeRef: ReturnType<typeof useDraggable>["setNodeRef"];
+    transform: ReturnType<typeof useDraggable>["transform"];
+    isDragging: boolean;
+  };
+}) {
   const overdue = isDueOverdue(task.due_at);
   const timeBomb = isTimeBomb(task.due_at);
   const assignee = firstAssigneeForAvatar(task, admins);
   const displayName = assignee?.full_name || assignee?.email || null;
-  const tc = taskStatusTextColors(task.status);
   const { t } = useTranslation("tasks");
+  const priorityKey =
+    task.priority === "low" ||
+    task.priority === "medium" ||
+    task.priority === "high" ||
+    task.priority === "urgent"
+      ? task.priority
+      : null;
 
-  const outerStyle = draggable
+  const outerStyle = drag
     ? {
-        transform: transform ? CSS.Translate.toString(transform) : undefined,
-        opacity: isDragging ? 0.88 : 1,
+        transform: drag.transform ? CSS.Translate.toString(drag.transform) : undefined,
+        opacity: drag.isDragging ? 0.88 : 1,
       }
     : undefined;
 
   return (
-    <Box ref={setNodeRef} style={outerStyle}>
+    <Box ref={drag?.setNodeRef} style={outerStyle}>
       <Paper
         radius="md"
         p={0}
         withBorder={false}
         style={{
-          ...taskStatusCardSurface(task.status),
+          ...taskKanbanQuietSurface(),
           cursor: "pointer",
           width: "100%",
           opacity: blocked ? 0.9 : 1,
-          boxShadow: selected
-            ? `0 0 0 2px var(--mantine-color-indigo-5), var(--calendar-card-shadow)`
-            : "var(--calendar-card-shadow)",
+          outline: selected ? "2px solid var(--mantine-color-indigo-5)" : undefined,
         }}
         onClick={() => onOpenDetail(task.id)}
-        tabIndex={0}
+        data-testid={`kanban-task-card-${task.id}`}
         onKeyDown={(e) => {
           if (!onMoveByKeyboard) return;
           if (e.altKey && e.key === "ArrowRight") {
@@ -262,11 +285,11 @@ function TaskKanbanCard({
         }}
       >
         <Group gap={0} wrap="nowrap" align="stretch">
-          {draggable ? (
+          {drag ? (
             <Tooltip label={t("card.drag")} withArrow>
               <Box
-                {...listeners}
-                {...attributes}
+                {...drag.listeners}
+                {...drag.attributes}
                 onClick={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
                 aria-label={t("card.dragTask")}
@@ -279,8 +302,7 @@ function TaskKanbanCard({
                   userSelect: "none",
                   borderTopLeftRadius: "var(--radius-md)",
                   borderBottomLeftRadius: "var(--radius-md)",
-                  background:
-                    "linear-gradient(180deg, rgba(15, 20, 25, 0.04) 0%, rgba(15, 20, 25, 0.015) 100%)",
+                  background: "var(--mantine-color-gray-1)",
                 }}
               >
                 <IconGripVertical size={16} color="var(--mantine-color-gray-6)" />
@@ -301,13 +323,14 @@ function TaskKanbanCard({
               ) : null}
 
               <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
-                <Group gap={6} wrap="wrap">
-                  <Badge size="xs" variant="transparent" tt="uppercase" styles={taskStatusBadgeStyles(task.status)}>
-                    {taskStatusLabel(task.status)}
-                  </Badge>
-                  <Badge size="xs" variant="light" color={priorityBadgeColor(task.priority)} tt="uppercase">
-                    {taskPriorityLabel(task.priority)}
-                  </Badge>
+                <Group gap={6} wrap="wrap" align="center">
+                  <Text
+                    size="xs"
+                    c="dimmed"
+                    style={{ minWidth: "3.5rem" }}
+                  >
+                    {priorityKey ? t(`priority.${priorityKey}`) : task.priority}
+                  </Text>
                   <Box style={{ marginLeft: "auto" }}>
                     <Menu shadow="md" width={260} withinPortal>
                       <Menu.Target>
@@ -364,9 +387,19 @@ function TaskKanbanCard({
                       </Box>
                     </Tooltip>
                   ) : null}
-                  <Text size="sm" fw={600} lineClamp={2} style={{ flex: 1, color: tc.title }}>
-                    {task.title}
-                  </Text>
+                  <UnstyledButton
+                    type="button"
+                    aria-label={t("card.openTask", { title: task.title })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenDetail(task.id);
+                    }}
+                    style={{ flex: 1, minWidth: 0, textAlign: "left" }}
+                  >
+                    <Text size="sm" fw={600} lineClamp={2} component="span">
+                      {task.title}
+                    </Text>
+                  </UnstyledButton>
                 </Group>
 
                 {blocked ? (
@@ -380,14 +413,14 @@ function TaskKanbanCard({
                     multiline
                     maw={300}
                   >
-                    <Badge size="xs" color="red" variant="light" leftSection={<IconLock size={12} />}>
+                    <Badge size="xs" variant="light" color="gray">
                       {t("card.blocked")}
                     </Badge>
                   </Tooltip>
                 ) : null}
 
                 {patientName ? (
-                  <Text size="xs" lineClamp={1} style={{ color: tc.meta }}>
+                  <Text size="xs" lineClamp={1} c="dimmed">
                     {t("card.linkedPatient", { name: patientName })}
                   </Text>
                 ) : null}
@@ -672,43 +705,22 @@ export default function AdminTasksPage({
     const i = streamPages.findIndex((p) => p.streamId === selectedStreamId);
     return i >= 0 ? i : 0;
   }, [selectedStreamId, streamPages]);
-
-  const pagerRef = useRef<HTMLDivElement>(null);
-  const skipAutoScrollRef = useRef(false);
-  const pagerScrollTimerRef = useRef<number | null>(null);
-  const pagerLastIdxRef = useRef<number>(-1);
-  const scrollToPage = useCallback((idx: number, behavior: ScrollBehavior = "smooth") => {
-    const el = pagerRef.current;
-    if (!el) return;
-    const clamped = Math.max(0, Math.min(idx, streamPages.length - 1));
-    const target = el.querySelector<HTMLElement>(`[data-stream-page-index="${clamped}"]`);
-    if (!target) return;
-    const nextLeft = target.offsetLeft;
-    if (typeof (el as any).scrollTo === "function") {
-      el.scrollTo({ left: nextLeft, behavior });
-    } else {
-      el.scrollLeft = nextLeft;
-    }
-  }, [streamPages.length]);
-
-  const handlePagerScroll = useCallback(() => {
-    const el = pagerRef.current;
-    if (!el) return;
-    if (pagerScrollTimerRef.current) window.clearTimeout(pagerScrollTimerRef.current);
-    pagerScrollTimerRef.current = window.setTimeout(() => {
-      const w = el.clientWidth || 1;
-      const idx = Math.max(0, Math.min(streamPages.length - 1, Math.round(el.scrollLeft / w)));
-      if (idx === pagerLastIdxRef.current) return;
-      pagerLastIdxRef.current = idx;
-      skipAutoScrollRef.current = true;
-      setSelectedStreamId(streamPages[idx]?.streamId ?? null);
-      // UX: snap to exact page after swipe settles.
-      window.setTimeout(() => scrollToPage(idx, "smooth"), 140);
-    }, 80);
-  }, [streamPages, streamPages.length, scrollToPage]);
+  const activePage = streamPages[activePageIndex];
 
   const navHoverTimerRef = useRef<number | null>(null);
   const navIntentRef = useRef<"prev" | "next" | null>(null);
+  const streamPagesRef = useRef(streamPages);
+  streamPagesRef.current = streamPages;
+  const applyNavIntent = useCallback((intent: "prev" | "next") => {
+    setSelectedStreamId((current) => {
+      const pages = streamPagesRef.current;
+      const idx = current == null ? 0 : pages.findIndex((p) => p.streamId === current);
+      const base = idx >= 0 ? idx : 0;
+      const nextIdx = intent === "prev" ? base - 1 : base + 1;
+      if (nextIdx < 0 || nextIdx >= pages.length) return current;
+      return pages[nextIdx]?.streamId ?? null;
+    });
+  }, []);
   const scheduleNavIntent = useCallback(
     (intent: "prev" | "next" | null) => {
       navIntentRef.current = intent;
@@ -718,31 +730,17 @@ export default function AdminTasksPage({
       }
       if (!intent) return;
       navHoverTimerRef.current = window.setTimeout(() => {
-        const idx = activePageIndex;
-        const nextIdx = intent === "prev" ? idx - 1 : idx + 1;
-        if (nextIdx < 0 || nextIdx >= streamPages.length) return;
-        setSelectedStreamId(streamPages[nextIdx]?.streamId ?? null);
-        scrollToPage(nextIdx);
+        applyNavIntent(intent);
       }, 420);
     },
-    [activePageIndex, scrollToPage, streamPages]
+    [applyNavIntent]
   );
 
   useEffect(() => {
     return () => {
       if (navHoverTimerRef.current) window.clearTimeout(navHoverTimerRef.current);
-      if (pagerScrollTimerRef.current) window.clearTimeout(pagerScrollTimerRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    // Sync visual position with URL/state changes, unless it was a user scroll.
-    if (skipAutoScrollRef.current) {
-      skipAutoScrollRef.current = false;
-      return;
-    }
-    scrollToPage(activePageIndex, "auto");
-  }, [activePageIndex, scrollToPage]);
 
   useEffect(() => {
     if (!createOpened) return;
@@ -868,7 +866,7 @@ export default function AdminTasksPage({
 
   const adminOptions = admins.map((a) => ({
     value: a.id,
-    label: a.full_name || a.email || a.id.slice(0, 8),
+    label: displayPersonName(a.full_name?.trim() || a.email, a.id),
   }));
 
   const activeNeedsApprovalCount = useMemo(() => {
@@ -938,7 +936,7 @@ export default function AdminTasksPage({
         }
       />
 
-      <Box style={{ position: "sticky", top: 0, zIndex: 5, background: "var(--bg-main)" }}>
+      <Box style={{ position: "sticky", top: 0, zIndex: "var(--z-sticky)", background: "var(--bg-main)" }}>
       <AdminDataTableToolbar>
         <Group gap="xs" wrap="wrap" justify="space-between" align="flex-end">
           <Group gap="xs" wrap="wrap">
@@ -950,7 +948,6 @@ export default function AdminTasksPage({
                   if (activePageIndex <= 0) return;
                   const next = Math.max(0, activePageIndex - 1);
                   setSelectedStreamId(streamPages[next]?.streamId ?? null);
-                  scrollToPage(next);
                 }}
                 disabled={forcedStreamSlug ? true : activePageIndex <= 0}
               >
@@ -963,7 +960,6 @@ export default function AdminTasksPage({
                   if (activePageIndex >= streamPages.length - 1) return;
                   const next = Math.min(streamPages.length - 1, activePageIndex + 1);
                   setSelectedStreamId(streamPages[next]?.streamId ?? null);
-                  scrollToPage(next);
                 }}
                 disabled={forcedStreamSlug ? true : activePageIndex >= streamPages.length - 1}
               >
@@ -976,7 +972,7 @@ export default function AdminTasksPage({
             {forcedStreamSlug ? null : (
               <Menu shadow="md" width={280} withinPortal>
                 <Menu.Target>
-                  <Button size="xs" variant="light">
+                  <Button size="xs" variant="light" data-testid="stream-switcher">
                     {activeStream?.name ?? t("streams.all")}
                   </Button>
                 </Menu.Target>
@@ -987,8 +983,6 @@ export default function AdminTasksPage({
                       key={p.key}
                       onClick={() => {
                         setSelectedStreamId(p.streamId);
-                        const idx = streamPages.findIndex((x) => x.key === p.key);
-                        if (idx >= 0) scrollToPage(idx);
                       }}
                     >
                       {p.label}
@@ -1127,11 +1121,6 @@ export default function AdminTasksPage({
           </Group>
 
           <Group gap="xs" wrap="wrap">
-            {mode === "leads-log" ? null : (
-              <Button size="xs" onClick={() => setCreateOpened(true)}>
-                {t("newTask")}
-              </Button>
-            )}
             {canManageBoards ? (
               <Menu shadow="md" width={320} withinPortal>
                 <Menu.Target>
@@ -1198,80 +1187,58 @@ export default function AdminTasksPage({
         </Alert>
       ) : null}
 
-      <Box
-        ref={pagerRef}
-        data-testid="stream-pager"
-        onScroll={handlePagerScroll}
-        className="admin-stream-pager"
-        style={{
-          display: "flex",
-          overflowX: "auto",
-          scrollSnapType: "x mandatory",
-          scrollBehavior: "smooth",
-          gap: "var(--space-md)",
-          paddingBottom: "var(--space-sm)",
-        }}
-      >
-        {streamPages.map((p, i) => {
-          const shouldRender = Math.abs(i - activePageIndex) <= 1;
-          const pageTint = streamPageTintKey(p.stream?.theme);
-          const accent = streamMantineColorKey(p.stream?.theme);
-          const streamName = p.streamId ? p.label : t("streams.all");
-          return (
-            <Box
-              key={p.key}
-              data-stream-page-index={i}
-              style={{
-                flex: "0 0 100%",
-                scrollSnapAlign: "start",
-                minWidth: 0,
-              }}
-            >
-              <StreamPageShell pageTint={pageTint} accentColor={accent}>
-                {shouldRender ? (
-                  <TasksKanbanPage
-                    streamId={p.streamId}
-                    streamName={streamName}
-                    streamTheme={p.stream?.theme}
-                    allTasks={allTasks}
-                    taskStreams={taskStreams}
-                    admins={admins}
-                    patientIdToName={patientIdToName}
-                    currentAdminId={currentAdminId}
-                    myFocusTasks={myFocusTasks}
-                    selectedBoard={selectedBoard}
-                    wipPolicies={wipPolicies}
-                    hiddenStatuses={hiddenStatuses}
-                    canMoveTasksAcrossStreams={canMoveTasksAcrossStreams}
-                    streamMoveOptions={streamMoveOptions}
-                    selectedTaskIds={selectedTaskIds}
-                    setSelectedTaskIds={setSelectedTaskIds}
-                    onlyNeedsMyApproval={onlyNeedsMyApproval}
-                    filterAssignee={filterAssignee}
-                    filterPriority={filterPriority}
-                    filterDue={filterDue}
-                    filterQuery={debouncedFilterQuery}
-                    setOnlyNeedsMyApproval={setOnlyNeedsMyApproval}
-                    setDetailTaskId={setDetailTaskId}
-                    setTaskChatId={setTaskChatId}
-                    claimMutation={{ mutate: claimTask }}
-                    patchStreamTagsMutation={patchStreamTagsMutation}
-                    updateStatusMutation={updateStatusMutation}
-                    reorderTasksMutation={reorderTasksMutation}
-                    setDragError={setDragError}
-                    scheduleNavIntent={scheduleNavIntent}
-                    handleKeyboardColumnMove={handleKeyboardColumnMove}
-                    activePageIndex={activePageIndex}
-                    streamPagesLength={streamPages.length}
-                  />
-                ) : (
-                  <PageSkeleton variant="cards" rows={4} />
-                )}
-              </StreamPageShell>
-            </Box>
-          );
-        })}
+      {activePage ? (
+      <Box data-testid="stream-pager" style={{ width: "100%", paddingBottom: "var(--space-sm)" }}>
+        <div
+          key={activePage.key}
+          data-stream-page-index={activePageIndex}
+          data-stream-id={activePage.streamId ?? "all"}
+        >
+          <StreamPageShell
+            pageTint={streamPageTintKey(activePage.stream?.theme)}
+            accentColor={streamMantineColorKey(activePage.stream?.theme)}
+          >
+            <TasksKanbanPage
+              streamId={activePage.streamId}
+              streamName={activePage.streamId ? activePage.label : t("streams.all")}
+              streamTheme={activePage.stream?.theme}
+              allTasks={allTasks}
+              taskStreams={taskStreams}
+              admins={admins}
+              patientIdToName={patientIdToName}
+              currentAdminId={currentAdminId}
+              myFocusTasks={myFocusTasks}
+              selectedBoard={selectedBoard}
+              wipPolicies={wipPolicies}
+              hiddenStatuses={hiddenStatuses}
+              canMoveTasksAcrossStreams={canMoveTasksAcrossStreams}
+              streamMoveOptions={streamMoveOptions}
+              selectedTaskIds={selectedTaskIds}
+              setSelectedTaskIds={setSelectedTaskIds}
+              onlyNeedsMyApproval={onlyNeedsMyApproval}
+              filterAssignee={filterAssignee}
+              filterPriority={filterPriority}
+              filterDue={filterDue}
+              filterQuery={debouncedFilterQuery}
+              setOnlyNeedsMyApproval={setOnlyNeedsMyApproval}
+              setCreateOpened={setCreateOpened}
+              setDetailTaskId={setDetailTaskId}
+              setTaskChatId={setTaskChatId}
+              claimMutation={{ mutate: claimTask }}
+              patchStreamTagsMutation={patchStreamTagsMutation}
+              updateStatusMutation={updateStatusMutation}
+              reorderTasksMutation={reorderTasksMutation}
+              setDragError={setDragError}
+              scheduleNavIntent={scheduleNavIntent}
+              applyNavIntent={applyNavIntent}
+              handleKeyboardColumnMove={handleKeyboardColumnMove}
+              activePageIndex={activePageIndex}
+              streamPagesLength={streamPages.length}
+            />
+          </StreamPageShell>
+        </div>
       </Box>
+      ) : null}
 
       <AdminDataTableSurface>
         <Text size="sm" fw={700} mb={6}>
@@ -1724,7 +1691,7 @@ export default function AdminTasksPage({
                 <Group gap="xs" wrap="wrap" align="flex-end">
                   <TextInput
                     label={t("routing.testChannel")}
-                    placeholder="TELEGRAM_BOT / WHATSAPP / VK / EMAIL"
+                    placeholder="TELEGRAM_BOT / WHATSAPP / EMAIL"
                     value={simulateChannelType}
                     onChange={(e) => setSimulateChannelType(e.currentTarget.value)}
                     w={240}
@@ -1828,7 +1795,7 @@ export default function AdminTasksPage({
                   <Group gap="xs" align="flex-end" wrap="wrap">
                     <TextInput
                       label={t("routing.fieldChannel")}
-                      placeholder="TELEGRAM_BOT / WHATSAPP / VK / EMAIL"
+                      placeholder="TELEGRAM_BOT / WHATSAPP / EMAIL"
                       value={r.channel_type}
                       onChange={(e) => {
                         const v = e.currentTarget.value;
@@ -2174,6 +2141,9 @@ function KanbanColumn({
   wipLimit,
   overdueCount,
   agingCount,
+  canMoveStream,
+  streamMoveOptions,
+  onMoveToStream,
 }: {
   id: string;
   title: string;
@@ -2190,6 +2160,9 @@ function KanbanColumn({
   wipLimit?: number;
   overdueCount: number;
   agingCount: number;
+  canMoveStream?: boolean;
+  streamMoveOptions?: Array<{ value: string; label: string }>;
+  onMoveToStream?: (taskId: string, streamId: string) => void;
 }) {
   const { t } = useTranslation("tasks");
   const { isOver, setNodeRef } = useDroppable({ id });
@@ -2214,18 +2187,22 @@ function KanbanColumn({
           <Text size="sm" fw={600}>
             {title}
           </Text>
-          <Group gap={4}>
+          <Group gap={4} wrap="wrap">
             {typeof wipLimit === "number" ? (
               <Badge size="xs" variant="light" color={tasks.length > wipLimit ? "red" : "gray"}>
                 {t("wip.limit", { current: tasks.length, max: wipLimit })}
               </Badge>
             ) : null}
-            <Badge size="xs" variant="light" color={overdueCount > 0 ? "red" : "gray"}>
-              {t("wip.slaOverdue", { count: overdueCount })}
-            </Badge>
-            <Badge size="xs" variant="light" color={agingCount > 0 ? "orange" : "gray"}>
-              {t("wip.aging", { count: agingCount })}
-            </Badge>
+            {overdueCount > 0 ? (
+              <Badge size="xs" variant="light" color="red">
+                {t("wip.slaOverdue", { count: overdueCount })}
+              </Badge>
+            ) : null}
+            {agingCount > 0 ? (
+              <Badge size="xs" variant="light" color="orange">
+                {t("wip.aging", { count: agingCount })}
+              </Badge>
+            ) : null}
           </Group>
         </Stack>
         <Badge size="sm" variant="light" color={tasks.length > (wipLimit ?? Number.MAX_SAFE_INTEGER) ? "red" : "gray"}>
@@ -2252,6 +2229,9 @@ function KanbanColumn({
               selected={selectedTaskIds.includes(t.id)}
               onSelect={onSelectTask}
               onMoveByKeyboard={onMoveByKeyboard}
+              canMoveStream={canMoveStream}
+              streamOptions={streamMoveOptions?.filter((x) => x.value !== t.stream_id)}
+              onMoveToStream={onMoveToStream}
             />
           </TaskDropSlot>
         ))}
@@ -2286,7 +2266,7 @@ function TaskDropSlot({
 
 function StreamPageShell({
   pageTint,
-  accentColor,
+  accentColor: _accentColor,
   children,
 }: {
   pageTint: string;
@@ -2301,9 +2281,8 @@ function StreamPageShell({
     >
       <Box
         style={{
-          height: 12,
-          background: `linear-gradient(90deg, var(--mantine-color-${accentColor}-5) 0%, var(--mantine-color-${accentColor}-7) 100%)`,
-          opacity: 0.9,
+          height: 1,
+          background: "var(--calendar-card-border)",
         }}
       />
       <Box p="md" style={{ paddingTop: "var(--space-md)" }}>
@@ -2353,10 +2332,19 @@ function StreamHeaderDropZone({
   );
 }
 
-function NavDropZone({ id, disabled }: { id: string; disabled?: boolean }) {
-  const { setNodeRef } = useDroppable({ id, disabled: Boolean(disabled) });
+function NavDropZone({
+  id,
+  disabled,
+  armed,
+}: {
+  id: string;
+  disabled?: boolean;
+  armed?: boolean;
+}) {
+  const blocked = Boolean(disabled) || !armed;
+  const { setNodeRef } = useDroppable({ id, disabled: blocked });
   return (
-    <Box
+    <div
       ref={setNodeRef}
       aria-hidden
       style={{
@@ -2367,8 +2355,8 @@ function NavDropZone({ id, disabled }: { id: string; disabled?: boolean }) {
         left: id === "nav-prev" ? 0 : undefined,
         right: id === "nav-next" ? 0 : undefined,
         opacity: 0,
-        pointerEvents: disabled ? "none" : "auto",
-        zIndex: 4,
+        pointerEvents: blocked ? "none" : "auto",
+        zIndex: "var(--z-page-overlay)",
       }}
     />
   );
@@ -2417,6 +2405,7 @@ function TasksKanbanPage({
   filterDue,
   filterQuery,
   setOnlyNeedsMyApproval,
+  setCreateOpened,
   setDetailTaskId,
   setTaskChatId,
   claimMutation,
@@ -2425,6 +2414,7 @@ function TasksKanbanPage({
   reorderTasksMutation,
   setDragError,
   scheduleNavIntent,
+  applyNavIntent,
   handleKeyboardColumnMove,
   activePageIndex,
   streamPagesLength,
@@ -2451,6 +2441,7 @@ function TasksKanbanPage({
   filterDue: string;
   filterQuery: string;
   setOnlyNeedsMyApproval: (v: boolean) => void;
+  setCreateOpened: (v: boolean) => void;
   setDetailTaskId: (id: string) => void;
   setTaskChatId: (id: string) => void;
   claimMutation: { mutate: (id: string) => void };
@@ -2464,6 +2455,7 @@ function TasksKanbanPage({
   };
   setDragError: (msg: string | null) => void;
   scheduleNavIntent: (intent: "prev" | "next" | null) => void;
+  applyNavIntent: (intent: "prev" | "next") => void;
   handleKeyboardColumnMove: (taskId: string, direction: -1 | 1) => void;
   activePageIndex: number;
   streamPagesLength: number;
@@ -2648,6 +2640,11 @@ function TasksKanbanPage({
       if (!over || typeof over.id !== "string") return;
       const overId = String(over.id);
 
+      if (overId === "nav-prev" || overId === "nav-next") {
+        applyNavIntent(overId === "nav-prev" ? "prev" : "next");
+        return;
+      }
+
       if (overId.startsWith("stream-page-")) {
         const taskId = String(active.id);
         const task = allTasks.find((t) => t.id === taskId);
@@ -2712,6 +2709,7 @@ function TasksKanbanPage({
     },
     [
       allTasks,
+      applyNavIntent,
       canMoveTasksAcrossStreams,
       patchStreamTagsMutation,
       statusColumns,
@@ -2741,11 +2739,29 @@ function TasksKanbanPage({
   );
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [navDropArmed, setNavDropArmed] = useState(false);
 
   const accentColor = streamMantineColorKey(streamTheme);
   const pageDroppableId = streamId ? `stream-page-${streamId}` : "stream-page-all";
 
   return (
+    <DndContext
+      sensors={sensors}
+      onDragStart={() => setNavDropArmed(true)}
+      onDragEnd={(event) => {
+        setNavDropArmed(false);
+        const overId = event.over ? String(event.over.id) : "";
+        scheduleNavIntent(null);
+        if (overId === "nav-prev") applyNavIntent("prev");
+        else if (overId === "nav-next") applyNavIntent("next");
+        handleKanbanDragEnd(event);
+      }}
+      onDragCancel={() => {
+        setNavDropArmed(false);
+        scheduleNavIntent(null);
+      }}
+      onDragOver={handleKanbanDragOver}
+    >
     <Stack>
       {canMoveTasksAcrossStreams && streamId !== null ? (
         <StreamHeaderDropZone
@@ -2767,6 +2783,7 @@ function TasksKanbanPage({
         </Group>
       )}
 
+      {approvalQueueTasks.length > 0 ? (
       <AdminDataTableSurface>
         <Group justify="space-between" mb="xs">
           <Text size="sm" fw={700}>
@@ -2775,16 +2792,11 @@ function TasksKanbanPage({
           <Badge
             size="sm"
             variant="light"
-            color={approvalQueueTasks.length > 0 ? SEMANTIC.opsSeverity.warning : "gray"}
+            color={SEMANTIC.opsSeverity.warning}
           >
             {approvalQueueTasks.length}
           </Badge>
         </Group>
-        {approvalQueueTasks.length === 0 ? (
-          <Text size="xs" c="dimmed">
-            {t("queue.empty")}
-          </Text>
-        ) : (
           <Box style={{ overflowX: "auto" }}>
             <Group gap="xs" wrap="nowrap" align="stretch">
               {approvalQueueTasks.slice(0, 24).map((t) => (
@@ -2816,15 +2828,14 @@ function TasksKanbanPage({
               ))}
             </Group>
           </Box>
-        )}
       </AdminDataTableSurface>
+      ) : null}
 
-      <DndContext sensors={sensors} onDragEnd={handleKanbanDragEnd} onDragOver={handleKanbanDragOver}>
         <Box style={{ flex: 1, minWidth: 0, position: "relative" }}>
           {canMoveTasksAcrossStreams ? (
             <>
-              <NavDropZone id="nav-prev" disabled={activePageIndex <= 0} />
-              <NavDropZone id="nav-next" disabled={activePageIndex >= streamPagesLength - 1} />
+              <NavDropZone id="nav-prev" disabled={activePageIndex <= 0} armed={navDropArmed} />
+              <NavDropZone id="nav-next" disabled={activePageIndex >= streamPagesLength - 1} armed={navDropArmed} />
               <Box
                 aria-hidden
                 style={{
@@ -2860,7 +2871,7 @@ function TasksKanbanPage({
             <AdminDataTableSurface>
               <Group justify="space-between" align="center">
                 <Text size="sm" fw={700}>
-                  {t("list.title")}
+                  {t("list.boardTitle")}
                 </Text>
                 {currentAdminId ? (
                   <Text size="xs" c="dimmed">
@@ -2885,7 +2896,7 @@ function TasksKanbanPage({
                 action={
                   onlyNeedsMyApproval
                     ? { label: t("empty.showAll"), onClick: () => setOnlyNeedsMyApproval(false) }
-                    : { label: t("empty.create"), onClick: () => {} }
+                    : { label: t("empty.create"), onClick: () => setCreateOpened(true) }
                 }
               />
             </AdminDataTableSurface>
@@ -2932,6 +2943,11 @@ function TasksKanbanPage({
                       wipLimit={wipLimit}
                       overdueCount={overdueCount}
                       agingCount={agingCount}
+                      canMoveStream={canMoveTasksAcrossStreams}
+                      streamMoveOptions={streamMoveOptions}
+                      onMoveToStream={(taskId, nextStreamId) =>
+                        patchStreamTagsMutation.mutate({ taskId, stream_id: nextStreamId })
+                      }
                     />
                   );
                 })}
@@ -2939,7 +2955,7 @@ function TasksKanbanPage({
             </Box>
           )}
         </Box>
-      </DndContext>
     </Stack>
+    </DndContext>
   );
 }
