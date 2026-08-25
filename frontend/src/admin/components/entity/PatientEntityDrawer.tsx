@@ -20,6 +20,8 @@ import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import type { Patient } from "@/api/types";
 import { EntityDrawerFieldBlock, EntityDrawerFooterBar } from "@/admin/components/entity/entityDrawerChrome";
 import { AdminDrawer, GlassModal, QueryErrorAlert } from "@/shared/ui";
+import { displayPersonName } from "@/shared/ui/personNameFallback";
+import { bookingStatusLabel } from "@/shared/bookingStatusMeta";
 import {
   Avatar,
   Badge,
@@ -43,7 +45,11 @@ import {
 import { IconCopy, IconPrinter, IconTrash, IconDotsVertical, IconMessageCircle } from "@tabler/icons-react";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
+
+/** Local copy of booking tab pane height — do not import from entity drawer chrome. */
+const PATIENT_MODAL_TABS_H = 440;
 
 const BIRTHDAY_SOON_DAYS = 14;
 
@@ -85,6 +91,7 @@ export function PatientEntityDrawer({
   tags: tagsProp,
   presentation = "modal",
 }: PatientEntityDrawerProps) {
+  const { t } = useTranslation("directory");
   const { currentClinicId } = useAdminClinic();
   const [activeTab, setActiveTab] = useState<string | null>("main");
   const [formPhone, setFormPhone] = useState(initialForm?.phone ?? patient?.phone ?? "");
@@ -100,11 +107,16 @@ export function PatientEntityDrawer({
   const patientId = patient?.id ?? null;
   const phoneForBookings = mode === "view" || mode === "edit" ? patient?.phone : formPhone;
 
-  const { data: bookings } = useAdminBookings({
-    patient_phone: phoneForBookings || undefined,
-    limit: 50,
-  });
-  const { data: loyaltySummary } = useAdminLoyaltySummaryByContact(patient?.id ?? null);
+  const bookingsQuery = useAdminBookings(
+    {
+      patient_phone: phoneForBookings || undefined,
+      limit: 50,
+    },
+    { enabled: Boolean(phoneForBookings) },
+  );
+  const { data: bookings } = bookingsQuery;
+  const loyaltyQuery = useAdminLoyaltySummaryByContact(patient?.id ?? null);
+  const { data: loyaltySummary } = loyaltyQuery;
   const { data: doctors } = useDoctors({ clinic_id: currentClinicId ?? undefined, is_active: true });
   const doctorIdToName = doctors?.reduce<Record<string, string>>((acc, d) => {
     acc[d.id] = d.full_name;
@@ -178,21 +190,30 @@ export function PatientEntityDrawer({
         setInsightStatus(res.aiStatus ?? null);
       },
       onError: () => {
-        setInsightError("AI‑обзор временно недоступен.");
+        setInsightError(t("patientDrawer.aiUnavailable"));
       },
     });
   };
 
-  const displayName = patient?.full_name || formFullName || patient?.phone || formPhone || "Новый пациент";
+  const displayName =
+    patient?.full_name || formFullName || patient?.phone || formPhone || t("patientDrawer.newTitle");
   const dateOfBirth = (patient as Patient & { date_of_birth?: string | null })?.date_of_birth;
   const showBirthdaySoon = isBirthdaySoon(dateOfBirth);
 
   const title =
     mode === "create"
-      ? "Новый пациент"
+      ? t("patientDrawer.newTitle")
       : mode === "edit"
-        ? "Редактировать пациента"
+        ? t("patientDrawer.editTitle")
         : displayName;
+
+  const passOptionLabel = (s: {
+    remaining_visits?: number | null;
+    remaining_amount?: number | string | null;
+  }) =>
+    t("patientDrawer.packageRemain", {
+      remain: String(s.remaining_visits ?? s.remaining_amount ?? "—"),
+    });
 
   const inner = (
     <>
@@ -210,7 +231,7 @@ export function PatientEntityDrawer({
                   </Text>
                   {showBirthdaySoon && (
                     <Badge size="sm" color="pink" variant="light">
-                      Скоро день рождения
+                      {t("patientDrawer.birthdaySoon")}
                     </Badge>
                   )}
                 </Group>
@@ -224,36 +245,41 @@ export function PatientEntityDrawer({
                 )}
                 {loyaltySummary?.wallet && (
                   <Text size="xs">
-                    Баланс бонусов: {loyaltySummary.wallet.balance} {loyaltySummary.wallet.currency}
+                    {t("patientDrawer.bonusBalance", {
+                      balance: loyaltySummary.wallet.balance,
+                      currency: loyaltySummary.wallet.currency,
+                    })}
                   </Text>
                 )}
                 {(showVip || showDebtor || showCancellationProne) && (
                   <Group gap="xs" mt={4}>
                     {showVip && (
-                      <Badge size="sm" color="yellow" variant="light">VIP</Badge>
+                      <Badge size="sm" color="yellow" variant="light">
+                        {t("patientDrawer.vip")}
+                      </Badge>
                     )}
                     {showDebtor && (
-                      <Badge size="sm" color="red" variant="light">Должник</Badge>
+                      <Badge size="sm" color="red" variant="light">{t("patientDrawer.debtor")}</Badge>
                     )}
                     {showCancellationProne && (
-                      <Badge size="sm" color="orange" variant="light">Склонен к отменам</Badge>
+                      <Badge size="sm" color="orange" variant="light">{t("patientDrawer.cancellationProne")}</Badge>
                     )}
                   </Group>
                 )}
-                <Text size="xs" c="dimmed">LTV — при наличии API</Text>
+                <Text size="xs" c="dimmed">{t("patientDrawer.ltvSoon")}</Text>
               </Stack>
             </Group>
             <Menu position="bottom-end">
               <Menu.Target>
-                <ActionIcon variant="subtle" size="sm" aria-label="Действия">
+                <ActionIcon variant="subtle" size="sm" aria-label={t("actions")}>
                   <IconDotsVertical size={16} />
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Item leftSection={<IconPrinter size={14} />}>Печать</Menu.Item>
-                <Menu.Item leftSection={<IconCopy size={14} />}>Скопировать</Menu.Item>
+                <Menu.Item leftSection={<IconPrinter size={14} />}>{t("print")}</Menu.Item>
+                <Menu.Item leftSection={<IconCopy size={14} />}>{t("copy")}</Menu.Item>
                 <Menu.Item leftSection={<IconTrash size={14} />} color="red">
-                  Удалить
+                  {t("delete")}
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
@@ -262,48 +288,56 @@ export function PatientEntityDrawer({
       )}
 
       <Tabs value={activeTab} onChange={setActiveTab}>
-        <Tabs.List>
-          <Tabs.Tab value="main">Основное</Tabs.Tab>
-          <Tabs.Tab value="visits">Визиты</Tabs.Tab>
-          <Tabs.Tab value="finance">Финансы</Tabs.Tab>
-          <Tabs.Tab value="subscriptions">Абонементы</Tabs.Tab>
-          <Tabs.Tab value="notes">Медкарта / Заметки</Tabs.Tab>
-          <Tabs.Tab value="comms">Коммуникации</Tabs.Tab>
+        <Tabs.List
+          style={{
+            flexWrap: "nowrap",
+            overflowX: "auto",
+            minHeight: 40,
+            flexShrink: 0,
+          }}
+        >
+          <Tabs.Tab value="main">{t("patientDrawer.tabMain")}</Tabs.Tab>
+          <Tabs.Tab value="visits">{t("patientDrawer.tabVisits")}</Tabs.Tab>
+          <Tabs.Tab value="finance">{t("patientDrawer.tabFinance")}</Tabs.Tab>
+          <Tabs.Tab value="subscriptions">{t("patientDrawer.tabSubscriptions")}</Tabs.Tab>
+          <Tabs.Tab value="notes">{t("patientDrawer.tabNotes")}</Tabs.Tab>
+          <Tabs.Tab value="comms">{t("patientDrawer.tabComms")}</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="main" pt="md">
+          <ScrollArea h={PATIENT_MODAL_TABS_H} offsetScrollbars type="scroll">
           <Stack gap="sm">
             {mode === "view" && patient ? (
               <>
-                <EntityDrawerFieldBlock label="Телефон">
+                <EntityDrawerFieldBlock label={t("patientDrawer.phone")}>
                   <Text size="sm">{patient.phone}</Text>
                 </EntityDrawerFieldBlock>
-                <EntityDrawerFieldBlock label="ФИО">
+                <EntityDrawerFieldBlock label={t("patientDrawer.fullName")}>
                   <Text size="sm">{patient.full_name ?? "—"}</Text>
                 </EntityDrawerFieldBlock>
-                <EntityDrawerFieldBlock label="Email">
+                <EntityDrawerFieldBlock label={t("email")}>
                   <Text size="sm">{patient.email ?? "—"}</Text>
                 </EntityDrawerFieldBlock>
                 {dateOfBirth && (
-                  <EntityDrawerFieldBlock label="Дата рождения">
+                  <EntityDrawerFieldBlock label={t("patientDrawer.dateOfBirth")}>
                     <Text size="sm">
                       {dayjs(dateOfBirth).format("DD.MM.YYYY")}
-                      {showBirthdaySoon && " — Скоро день рождения"}
+                      {showBirthdaySoon ? ` — ${t("patientDrawer.birthdaySoon")}` : ""}
                     </Text>
                   </EntityDrawerFieldBlock>
                 )}
-                <EntityDrawerFieldBlock label="Дополнительно">
+                <EntityDrawerFieldBlock label={t("patientDrawer.extras")}>
                   <Text size="xs" c="dimmed">
-                    Пол, категория, согласия на ПД, источник UTM — при наличии API.
+                    {t("patientDrawer.extrasHint")}
                   </Text>
                 </EntityDrawerFieldBlock>
-                <EntityDrawerFieldBlock label="AI‑обзор">
+                <EntityDrawerFieldBlock label={t("patientDrawer.aiOverview")}>
                   <Stack gap="xs">
                     <Button variant="light" size="xs" onClick={loadAiInsight}>
-                      Загрузить AI‑обзор
+                      {t("patientDrawer.loadAi")}
                     </Button>
                     {insightError && (
-                      <QueryErrorAlert error={insightError} title="Не удалось загрузить AI‑обзор" />
+                      <QueryErrorAlert error={insightError} title={t("patientDrawer.aiFailed")} />
                     )}
                     {insightText && (
                       <Stack gap={4}>
@@ -316,39 +350,39 @@ export function PatientEntityDrawer({
               </>
             ) : (
               <>
-                <EntityDrawerFieldBlock label="Контактные данные">
+                <EntityDrawerFieldBlock label={t("patientDrawer.contact")}>
                   <Stack gap="sm">
                     <TextInput
-                      label="Телефон"
+                      label={t("patientDrawer.phone")}
                       value={formPhone}
                       onChange={(e) => setFormPhone(e.target.value)}
                       required
                       disabled={!!patient}
                     />
                     <TextInput
-                      label="ФИО"
+                      label={t("patientDrawer.fullName")}
                       value={formFullName}
                       onChange={(e) => setFormFullName(e.target.value)}
                     />
                     <TextInput
-                      label="Email"
+                      label={t("email")}
                       type="email"
                       value={formEmail}
                       onChange={(e) => setFormEmail(e.target.value)}
                     />
                     {dateOfBirth && (
                       <Text size="sm" c="dimmed">
-                        Дата рождения: {dayjs(dateOfBirth).format("DD.MM.YYYY")}
-                        {showBirthdaySoon && " — Скоро день рождения"}
+                        {t("patientDrawer.birthdayLine", { date: dayjs(dateOfBirth).format("DD.MM.YYYY") })}
+                        {showBirthdaySoon ? ` — ${t("patientDrawer.birthdaySoon")}` : ""}
                       </Text>
                     )}
                     {patient && (
                       <>
                         <Button variant="light" size="xs" onClick={loadAiInsight}>
-                          AI‑обзор
+                          {t("patientDrawer.aiOverview")}
                         </Button>
                         {insightError && (
-                          <QueryErrorAlert error={insightError} title="Не удалось загрузить AI‑обзор" />
+                          <QueryErrorAlert error={insightError} title={t("patientDrawer.aiFailed")} />
                         )}
                         {insightText && (
                           <Stack gap={4}>
@@ -362,10 +396,10 @@ export function PatientEntityDrawer({
                 </EntityDrawerFieldBlock>
                 <EntityDrawerFooterBar>
                   <Button onClick={handleSave} loading={createMutation.isPending || updateMutation.isPending}>
-                    Сохранить
+                    {t("save")}
                   </Button>
                   <Button variant="subtle" onClick={onClose}>
-                    Отмена
+                    {t("cancel")}
                   </Button>
                 </EntityDrawerFooterBar>
                 {(createMutation.isError || updateMutation.isError) && (
@@ -373,36 +407,40 @@ export function PatientEntityDrawer({
                     error={
                       createMutation.isError ? createMutation.error : updateMutation.error
                     }
-                    title="Не удалось сохранить пациента"
+                    title={t("patientDrawer.saveFailed")}
                   />
                 )}
               </>
             )}
           </Stack>
+          </ScrollArea>
         </Tabs.Panel>
 
         <Tabs.Panel value="visits" pt="md">
+          <ScrollArea h={PATIENT_MODAL_TABS_H} offsetScrollbars type="scroll">
           {!phoneForBookings ? (
             <Text size="sm" c="dimmed">
-              Сохраните пациента, чтобы видеть визиты.
+              {t("patientDrawer.saveToSeeVisits")}
             </Text>
-          ) : !bookings ? (
+          ) : bookingsQuery.isError ? (
+            <QueryErrorAlert error={bookingsQuery.error} title={t("patientDrawer.chartLoadFailed")} />
+          ) : bookingsQuery.isPending || !bookings ? (
             <Skeleton height={120} />
           ) : bookings.length === 0 ? (
             <Text size="sm" c="dimmed">
-              Нет визитов.
+              {t("patientDrawer.noVisits")}
             </Text>
           ) : (
             <Table striped verticalSpacing="sm">
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Дата</Table.Th>
-                  <Table.Th>Время</Table.Th>
-                  <Table.Th>Врач</Table.Th>
-                  <Table.Th>Услуга</Table.Th>
-                  <Table.Th>Статус</Table.Th>
-                  <Table.Th>Сумма</Table.Th>
-                  <Table.Th>NPS</Table.Th>
+                  <Table.Th>{t("patientDrawer.date")}</Table.Th>
+                  <Table.Th>{t("patientDrawer.time")}</Table.Th>
+                  <Table.Th>{t("patientDrawer.doctor")}</Table.Th>
+                  <Table.Th>{t("patientDrawer.service")}</Table.Th>
+                  <Table.Th>{t("patientDrawer.status")}</Table.Th>
+                  <Table.Th>{t("patientDrawer.amount")}</Table.Th>
+                  <Table.Th>{t("patientDrawer.nps")}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -410,9 +448,14 @@ export function PatientEntityDrawer({
                   <Table.Tr key={b.id}>
                     <Table.Td>{b.appointment_date}</Table.Td>
                     <Table.Td>{String(b.appointment_time).slice(0, 5)}</Table.Td>
-                    <Table.Td>{doctorIdToName[b.doctor_id] ?? b.doctor_id}</Table.Td>
-                    <Table.Td>{b.service_id}</Table.Td>
-                    <Table.Td>{b.status}</Table.Td>
+                    <Table.Td>
+                      {displayPersonName(
+                        b.doctor_name ?? doctorIdToName[b.doctor_id],
+                        b.doctor_id,
+                      )}
+                    </Table.Td>
+                    <Table.Td>{displayPersonName(b.service_name, b.service_id)}</Table.Td>
+                    <Table.Td>{bookingStatusLabel(b.status)}</Table.Td>
                     <Table.Td>{b.prepayment_amount ? `${b.prepayment_amount} ₽` : "—"}</Table.Td>
                     <Table.Td>—</Table.Td>
                   </Table.Tr>
@@ -420,46 +463,54 @@ export function PatientEntityDrawer({
               </Table.Tbody>
             </Table>
           )}
+                  </ScrollArea>
         </Tabs.Panel>
 
         <Tabs.Panel value="finance" pt="md">
+          <ScrollArea h={PATIENT_MODAL_TABS_H} offsetScrollbars type="scroll">
           {!patient ? (
             <Text size="sm" c="dimmed">
-              Сохраните пациента для просмотра финансов.
+              {t("patientDrawer.saveToSeeFinance")}
             </Text>
-          ) : !loyaltySummary ? (
+          ) : loyaltyQuery.isError ? (
+            <QueryErrorAlert error={loyaltyQuery.error} title={t("patientDrawer.chartLoadFailed")} />
+          ) : loyaltyQuery.isPending || !loyaltySummary ? (
             <Skeleton height={80} />
           ) : (
             <Stack gap="sm">
               {loyaltySummary.wallet && (
                 <Text size="sm">
-                  Баланс: {loyaltySummary.wallet.balance} {loyaltySummary.wallet.currency}
+                  {t("patientDrawer.balance", { balance: loyaltySummary.wallet.balance, currency: loyaltySummary.wallet.currency })}
                 </Text>
               )}
               {loyaltySummary.subscriptions?.length ? (
                 <Text size="sm">
-                  Абонементы: {loyaltySummary.subscriptions.length}
+                  {t("patientDrawer.subscriptionsCount", { count: loyaltySummary.subscriptions.length })}
                 </Text>
               ) : (
                 <Text size="sm" c="dimmed">
-                  Платежи, возвраты и абонементы — при наличии API.
+                  {t("patientDrawer.financeHint")}
                 </Text>
               )}
             </Stack>
           )}
+                  </ScrollArea>
         </Tabs.Panel>
 
         <Tabs.Panel value="subscriptions" pt="md">
+          <ScrollArea h={PATIENT_MODAL_TABS_H} offsetScrollbars type="scroll">
           {!patient ? (
             <Text size="sm" c="dimmed">
-              Сохраните пациента для просмотра абонементов.
+              {t("patientDrawer.saveToSeeSubs")}
             </Text>
-          ) : !loyaltySummary ? (
+          ) : loyaltyQuery.isError ? (
+            <QueryErrorAlert error={loyaltyQuery.error} title={t("patientDrawer.chartLoadFailed")} />
+          ) : loyaltyQuery.isPending || !loyaltySummary ? (
             <Skeleton height={80} />
           ) : !loyaltySummary.subscriptions?.length ? (
             <Stack gap="sm">
               <Text size="sm" c="dimmed">
-                У пациента пока нет активных абонементов.
+                {t("patientDrawer.noSubs")}
               </Text>
             </Stack>
           ) : (
@@ -468,26 +519,28 @@ export function PatientEntityDrawer({
                 <Paper key={sub.id} p="sm" withBorder radius="md">
                   <Group justify="space-between">
                     <Text size="sm" fw={500}>
-                      Пакет {sub.subscription_package_id.slice(0, 8)}…
+                      {t("patientDrawer.package")}
                     </Text>
                     <Badge size="sm" variant="light">
-                      {sub.status}
+                      {t(`patientDrawer.subStatus.${sub.status}`, {
+                        defaultValue: sub.status,
+                      })}
                     </Badge>
                   </Group>
                   <Group gap="md" mt="xs">
                     {sub.remaining_visits != null && (
                       <Text size="xs" c="dimmed">
-                        Остаток визитов: {sub.remaining_visits}
+                        {t("patientDrawer.remainingVisits", { count: sub.remaining_visits })}
                       </Text>
                     )}
                     {sub.remaining_amount != null && (
                       <Text size="xs" c="dimmed">
-                        Остаток: {sub.remaining_amount} ₽
+                        {t("patientDrawer.remainingAmount", { amount: sub.remaining_amount })}
                       </Text>
                     )}
                     {sub.expires_at && (
                       <Text size="xs" c="dimmed">
-                        Истекает: {dayjs(sub.expires_at).format("DD.MM.YYYY")}
+                        {t("patientDrawer.expires", { date: dayjs(sub.expires_at).format("DD.MM.YYYY") })}
                       </Text>
                     )}
                   </Group>
@@ -503,34 +556,43 @@ export function PatientEntityDrawer({
                   setFamilyModalOpen(true);
                 }}
               >
-                Добавить члена семьи
+                {t("patientDrawer.addFamily")}
               </Button>
               <Modal
-                title="Добавить члена семьи"
+                title={t("patientDrawer.addFamily")}
                 opened={familyModalOpen}
-                onClose={() => setFamilyModalOpen(false)}
+                onClose={() => {
+                  setFamilyModalOpen(false);
+                  addFamilyMember.reset();
+                }}
                 centered
                 zIndex={400}
               >
                 <Stack gap="sm">
+                  {addFamilyMember.isError ? (
+                    <QueryErrorAlert
+                      error={addFamilyMember.error}
+                      title={t("patientDrawer.familyAddFailed")}
+                    />
+                  ) : null}
                   <Select
-                    label="Абонемент"
-                    placeholder="Выберите абонемент"
+                    label={t("patientDrawer.subscription")}
+                    placeholder={t("patientDrawer.subscriptionPlaceholder")}
                     data={loyaltySummary.subscriptions.map((s) => ({
                       value: s.id,
-                      label: `Пакет ${s.subscription_package_id.slice(0, 8)}… (остаток: ${s.remaining_visits ?? s.remaining_amount ?? "—"})`,
+                      label: passOptionLabel(s),
                     }))}
                     value={familySubscriptionId}
                     onChange={(v) => setFamilySubscriptionId(v)}
                   />
                   <Select
-                    label="Пациент (член семьи)"
-                    placeholder="Выберите пациента"
+                    label={t("patientDrawer.familyPatient")}
+                    placeholder={t("patientDrawer.familyPatientPlaceholder")}
                     data={patientsList
                       .filter((p) => p.id !== patient?.id)
                       .map((p) => ({
                         value: p.id,
-                        label: [p.full_name, p.phone].filter(Boolean).join(" — ") || p.id.slice(0, 8),
+                        label: [p.full_name, p.phone].filter(Boolean).join(" — ") || t("patientDrawer.familyPatient"),
                       }))}
                     value={familyPatientId}
                     onChange={(v) => setFamilyPatientId(v)}
@@ -539,7 +601,7 @@ export function PatientEntityDrawer({
                   />
                   <Group justify="flex-end" mt="md">
                     <Button variant="subtle" onClick={() => setFamilyModalOpen(false)}>
-                      Отмена
+                      {t("cancel")}
                     </Button>
                     <Button
                       disabled={!familySubscriptionId || !familyPatientId}
@@ -553,39 +615,41 @@ export function PatientEntityDrawer({
                               setFamilyModalOpen(false);
                               setFamilySubscriptionId(null);
                               setFamilyPatientId(null);
+                              addFamilyMember.reset();
                             },
                           }
                         );
                       }}
                     >
-                      Добавить
+                      {t("patientDrawer.add")}
                     </Button>
                   </Group>
                 </Stack>
               </Modal>
             </Stack>
           )}
+                  </ScrollArea>
         </Tabs.Panel>
 
         <Tabs.Panel value="notes" pt="md">
+          <ScrollArea h={PATIENT_MODAL_TABS_H} offsetScrollbars type="scroll">
           {!patientId || !currentClinicId ? (
             <Text size="sm" c="dimmed">
-              Сохраните пациента для работы с медкартой.
+              {t("patientDrawer.saveToSeeChart")}
             </Text>
           ) : (
-            <ScrollArea.Autosize mah={560} offsetScrollbars>
               <Stack gap="md" pr="md">
-                <EntityDrawerFieldBlock label="Визиты">
+                <EntityDrawerFieldBlock label={t("patientDrawer.visitsBlock")}>
                   <Stack gap="sm">
                   <TextInput
                     type="date"
-                    label="Дата"
+                    label={t("patientDrawer.date")}
                     value={visitDate}
                     onChange={(e) => setVisitDate(e.target.value)}
                     disabled={mode === "view"}
                   />
                   <Textarea
-                    label="Заметки (Markdown)"
+                    label={t("patientDrawer.notesMarkdown")}
                     value={visitNotes}
                     onChange={(e) => setVisitNotes(e.target.value)}
                     minRows={3}
@@ -602,18 +666,24 @@ export function PatientEntityDrawer({
                         }
                         loading={createVisit.isPending}
                       >
-                        Добавить визит
+                        {t("patientDrawer.addVisit")}
                       </Button>
                     </Group>
                   )}
+                  {createVisit.isError ? (
+                    <QueryErrorAlert
+                      error={createVisit.error}
+                      title={t("patientDrawer.saveFailed")}
+                    />
+                  ) : null}
                   {medVisits.isLoading ? (
                     <Skeleton height={80} />
                   ) : medVisits.data?.length ? (
                     <Table striped verticalSpacing="sm">
                       <Table.Thead>
                         <Table.Tr>
-                          <Table.Th>Дата</Table.Th>
-                          <Table.Th>Заметки</Table.Th>
+                          <Table.Th>{t("patientDrawer.date")}</Table.Th>
+                          <Table.Th>{t("patientDrawer.notes")}</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
@@ -631,31 +701,31 @@ export function PatientEntityDrawer({
                     </Table>
                   ) : (
                     <Text size="sm" c="dimmed">
-                      Пока нет визитов.
+                      {t("patientDrawer.noChartVisits")}
                     </Text>
                   )}
                   </Stack>
                 </EntityDrawerFieldBlock>
 
-                <EntityDrawerFieldBlock label="Диагнозы">
+                <EntityDrawerFieldBlock label={t("patientDrawer.diagnoses")}>
                   <Stack gap="sm">
                   <Group grow>
                     <TextInput
                       type="date"
-                      label="Дата"
+                      label={t("patientDrawer.date")}
                       value={diagDate}
                       onChange={(e) => setDiagDate(e.target.value)}
                       disabled={mode === "view"}
                     />
                     <TextInput
-                      label="Название"
+                      label={t("patientDrawer.diagName")}
                       value={diagTitle}
                       onChange={(e) => setDiagTitle(e.target.value)}
                       disabled={mode === "view"}
                     />
                   </Group>
                   <Textarea
-                    label="Описание"
+                    label={t("patientDrawer.description")}
                     value={diagDescription}
                     onChange={(e) => setDiagDescription(e.target.value)}
                     minRows={2}
@@ -674,18 +744,24 @@ export function PatientEntityDrawer({
                         loading={createDiagnosis.isPending}
                         disabled={!diagTitle.trim()}
                       >
-                        Добавить диагноз
+                        {t("patientDrawer.addDiagnosis")}
                       </Button>
                     </Group>
                   )}
+                  {createDiagnosis.isError ? (
+                    <QueryErrorAlert
+                      error={createDiagnosis.error}
+                      title={t("patientDrawer.saveFailed")}
+                    />
+                  ) : null}
                   {medDiagnoses.isLoading ? (
                     <Skeleton height={80} />
                   ) : medDiagnoses.data?.length ? (
                     <Table striped verticalSpacing="sm">
                       <Table.Thead>
                         <Table.Tr>
-                          <Table.Th>Дата</Table.Th>
-                          <Table.Th>Диагноз</Table.Th>
+                          <Table.Th>{t("patientDrawer.date")}</Table.Th>
+                          <Table.Th>{t("patientDrawer.diagnosis")}</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
@@ -708,18 +784,18 @@ export function PatientEntityDrawer({
                     </Table>
                   ) : (
                     <Text size="sm" c="dimmed">
-                      Пока нет диагнозов.
+                      {t("patientDrawer.noDiagnoses")}
                     </Text>
                   )}
                   </Stack>
                 </EntityDrawerFieldBlock>
 
-                <EntityDrawerFieldBlock label="Файлы">
+                <EntityDrawerFieldBlock label={t("patientDrawer.files")}>
                   <Stack gap="sm">
                   {medicalDownloadError ? (
                     <Alert
                       color="red"
-                      title="Не удалось скачать файл"
+                      title={t("patientDrawer.downloadFailed")}
                       onClose={() => setMedicalDownloadError(null)}
                       withCloseButton
                     >
@@ -736,25 +812,35 @@ export function PatientEntityDrawer({
                       <Button
                         onClick={async () => {
                           if (!fileToUpload) return;
-                          await uploadMedicalFile.mutateAsync({ file: fileToUpload });
-                          setFileToUpload(null);
+                          try {
+                            await uploadMedicalFile.mutateAsync({ file: fileToUpload });
+                            setFileToUpload(null);
+                          } catch {
+                            /* error surface: uploadMedicalFile.isError below */
+                          }
                         }}
                         loading={uploadMedicalFile.isPending}
                         disabled={!fileToUpload}
                       >
-                        Загрузить файл
+                        {t("patientDrawer.uploadFile")}
                       </Button>
                     </Group>
                   )}
+                  {uploadMedicalFile.isError ? (
+                    <QueryErrorAlert
+                      error={uploadMedicalFile.error}
+                      title={t("patientDrawer.saveFailed")}
+                    />
+                  ) : null}
                   {medFiles.isLoading ? (
                     <Skeleton height={80} />
                   ) : medFiles.data?.length ? (
                     <Table striped verticalSpacing="sm">
                       <Table.Thead>
                         <Table.Tr>
-                          <Table.Th>Файл</Table.Th>
-                          <Table.Th>Тип</Table.Th>
-                          <Table.Th>Размер</Table.Th>
+                          <Table.Th>{t("patientDrawer.file")}</Table.Th>
+                          <Table.Th>{t("patientDrawer.type")}</Table.Th>
+                          <Table.Th>{t("patientDrawer.size")}</Table.Th>
                           <Table.Th />
                         </Table.Tr>
                       </Table.Thead>
@@ -779,12 +865,12 @@ export function PatientEntityDrawer({
                                     window.open(url, "_blank", "noopener,noreferrer");
                                   } catch (e) {
                                     setMedicalDownloadError(
-                                      e instanceof Error ? e.message : "Неизвестная ошибка"
+                                      e instanceof Error ? e.message : t("patientDrawer.unknownError")
                                     );
                                   }
                                 }}
                               >
-                                Скачать
+                                {t("patientDrawer.download")}
                               </Button>
                             </Table.Td>
                           </Table.Tr>
@@ -793,7 +879,7 @@ export function PatientEntityDrawer({
                     </Table>
                   ) : (
                     <Text size="sm" c="dimmed">
-                      Пока нет файлов.
+                      {t("patientDrawer.noFiles")}
                     </Text>
                   )}
                   </Stack>
@@ -807,18 +893,19 @@ export function PatientEntityDrawer({
                       (medFiles.isError && medFiles.error) ||
                       null
                     }
-                    title="Не удалось загрузить медкарту"
+                    title={t("patientDrawer.chartLoadFailed")}
                   />
                 )}
               </Stack>
-            </ScrollArea.Autosize>
           )}
+          </ScrollArea>
         </Tabs.Panel>
 
         <Tabs.Panel value="comms" pt="md">
+          <ScrollArea h={PATIENT_MODAL_TABS_H} offsetScrollbars type="scroll">
           <Stack gap="sm">
             <Text size="sm" c="dimmed">
-              История отправленных уведомлений (SMS/Email/TG) — при наличии API.
+              {t("patientDrawer.commsHint")}
             </Text>
             {patient && (
               <Button
@@ -827,10 +914,11 @@ export function PatientEntityDrawer({
                 leftSection={<IconMessageCircle size={16} />}
                 variant="light"
               >
-                Открыть в чате
+                {t("patientDrawer.openInChat")}
               </Button>
             )}
           </Stack>
+                  </ScrollArea>
         </Tabs.Panel>
       </Tabs>
     </>
@@ -845,7 +933,8 @@ export function PatientEntityDrawer({
         size="xl"
         padding="lg"
         styles={{
-          body: { maxHeight: "min(78vh, 720px)", overflowY: "auto", paddingTop: 12 },
+          content: { minHeight: 560 },
+          body: { paddingTop: 12 },
           header: { marginBottom: 8, paddingBottom: 0 },
         }}
       >
@@ -861,7 +950,7 @@ export function PatientEntityDrawer({
       opened={opened}
       onClose={onClose}
       title={title}
-      styles={{ body: { paddingTop: 0 } }}
+      styles={{ body: { paddingTop: 0, minHeight: 560 } }}
     >
       {inner}
     </AdminDrawer>

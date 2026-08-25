@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
@@ -57,17 +58,25 @@ import { useAdminClinic } from "@/contexts/AdminClinicContext";
 import { useAiFeatures, getAiFeatureTooltip } from "@/shared/aiFeatures";
 import { logUiEvent } from "@/shared/uiEvents";
 import { useAvailableAiTools } from "@/hooks/useAvailableAiTools";
-import { AdminDataTableSurface, AdminDataTableToolbar, AiFeatureBadge } from "@/shared/ui";
+import { AdminDataTableSurface, AdminDataTableToolbar, AiFeatureBadge, QueryErrorAlert } from "@/shared/ui";
 import {
   buildSemanticMapFromResolved,
   buildStageIdToSemantic,
   canTransitionSemantic,
 } from "@/shared/crmStageSemantics";
 import { ApiErrorWithCode } from "@/api/client";
+import { useUiLocale } from "@/i18n/useUiLocale";
+import { crmLeadStatusLabel } from "@/shared/crmI18n";
 
 const STAGE_DROPPABLE_PREFIX = "stage-";
 
 const CRM_KANBAN_STRICT_SEMANTICS_KEY = "crm-kanban-strict-semantics";
+
+function formatCrmAmount(value: string | number | null | undefined, dateLocale: string): string {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return String(value ?? "0");
+  return new Intl.NumberFormat(dateLocale).format(n);
+}
 
 function DraggableLeadCard({
   lead,
@@ -127,6 +136,9 @@ function KanbanColumn({
   fetchNextPage,
   isFetchingNextPage,
 }: KanbanColumnProps) {
+  const { t } = useTranslation("crm");
+  const { locale } = useUiLocale();
+  const dateLocale = locale === "en" ? "en-US" : "ru-RU";
   const droppableId = `${STAGE_DROPPABLE_PREFIX}${stage.id}`;
   const { isOver, setNodeRef } = useDroppable({ id: droppableId });
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -135,7 +147,7 @@ function KanbanColumn({
     stage.sum_estimated_value != null
       ? Number(stage.sum_estimated_value)
       : leads.reduce((a, l) => a + Number(l.estimated_value || 0), 0);
-  const sumFormatted = new Intl.NumberFormat("ru-RU").format(sumVal);
+  const sumFormatted = new Intl.NumberFormat(dateLocale).format(sumVal);
 
   const virtualizer = useVirtualizer({
     count: leads.length,
@@ -156,12 +168,12 @@ function KanbanColumn({
         border: isOver ? "2px dashed var(--primary)" : undefined,
       }}
     >
-      <Group gap="xs" wrap="nowrap">
+      <Group gap="xs" wrap="wrap">
         <Badge color={stage.color || "blue"} variant="light" radius="sm">
           {stage.name}
         </Badge>
         <Text size="xs" c="dimmed">
-          ({count}) — {sumFormatted} ₽
+          {t("pipeline.columnMeta", { count, sum: sumFormatted })}
         </Text>
       </Group>
       <Box
@@ -222,7 +234,7 @@ function KanbanColumn({
                           {lead.title}
                         </Text>
                         {lead.omnichannel_contact_id && (
-                          <Tooltip label="Открыть чат">
+                          <Tooltip label={t("pipeline.openChat")}>
                             <Button
                               component={Link}
                               to={`/admin/omni-chat?contact_id=${lead.omnichannel_contact_id}`}
@@ -230,7 +242,7 @@ function KanbanColumn({
                               size="compact-xs"
                               p={4}
                               onClick={(e) => e.stopPropagation()}
-                              aria-label="Чат"
+                              aria-label={t("pipeline.chatAria")}
                             >
                               {lead.source?.toLowerCase().includes("whatsapp") ? (
                                 <IconBrandWhatsapp size={16} />
@@ -245,17 +257,21 @@ function KanbanColumn({
                         )}
                       </Group>
                       <Text size="xs" c="dimmed">
-                        Источник: {lead.source || "—"}
+                        {t("pipeline.source", { source: lead.source || "—" })}
                       </Text>
                       <Group gap={6} wrap="wrap">
-                        <Tooltip label="Прогноз в CRM (не проводка ERP)">
+                        <Tooltip label={t("pipeline.estimatedTooltip")}>
                           <Badge size="xs" variant="light">
-                            Оценка: {lead.estimated_value} ₽
+                            {t("pipeline.estimated", {
+                              amount: formatCrmAmount(lead.estimated_value, dateLocale),
+                            })}
                           </Badge>
                         </Tooltip>
-                        <Tooltip label="Доходы ERP, привязанные к лиду / записи">
+                        <Tooltip label={t("pipeline.actualTooltip")}>
                           <Badge size="xs" variant="light" color="green">
-                            Факт: {lead.actual_value} ₽
+                            {t("pipeline.actual", {
+                              amount: formatCrmAmount(lead.actual_value, dateLocale),
+                            })}
                           </Badge>
                         </Tooltip>
                         <Badge
@@ -269,22 +285,24 @@ function KanbanColumn({
                                 : "gray"
                           }
                         >
-                          {lead.status}
+                          {crmLeadStatusLabel(lead.status)}
                         </Badge>
                       </Group>
                       {lead.status === "open" && Number(lead.actual_value) === 0 ? (
                         <Text size="xs" c="dimmed">
-                          Факт из ERP: пока 0 ₽ (после визита и проводок сумма подтянется из финансов).
+                          {t("pipeline.actualZeroOpen")}
                         </Text>
                       ) : null}
                       {lead.status === "success" && Number(lead.actual_value) === 0 ? (
                         <Text size="xs" c="orange">
-                          Закрыт успешно, но в ERP нет дохода по этому лиду — проверьте привязку проводок.
+                          {t("pipeline.actualZeroWon")}
                         </Text>
                       ) : null}
                       <Group gap={4} justify="space-between">
                         <Text size="xs" c="dimmed">
-                          Создан: {new Date(lead.created_at).toLocaleDateString()}
+                          {t("pipeline.created", {
+                            date: new Date(lead.created_at).toLocaleDateString(dateLocale),
+                          })}
                         </Text>
                       </Group>
                     </Stack>
@@ -303,7 +321,7 @@ function KanbanColumn({
           loading={isFetchingNextPage}
           onClick={() => fetchNextPage()}
         >
-          Загрузить ещё
+          {t("pipeline.loadMore")}
         </Button>
       ) : null}
     </Stack>
@@ -348,6 +366,9 @@ function KanbanColumnLoader({
 }
 
 export default function AdminSalesPipelinePage() {
+  const { t } = useTranslation("crm");
+  const { locale } = useUiLocale();
+  const dateLocale = locale === "en" ? "en-US" : "ru-RU";
   const [searchParams] = useSearchParams();
   const initialLeadId = searchParams.get("lead_id");
   const { currentClinicId } = useAdminClinic();
@@ -367,10 +388,21 @@ export default function AdminSalesPipelinePage() {
   );
   const [noteText, setNoteText] = useState("");
   const [prepaymentCopyFeedback, setPrepaymentCopyFeedback] = useState(false);
+  const [prepaymentCopyError, setPrepaymentCopyError] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
-  const { data: pipelines, isLoading: pipelinesLoading } = useCrmPipelines();
-  const { data: stages, isLoading: stagesLoading } = useCrmStages(selectedPipelineId);
+  const {
+    data: pipelines,
+    isLoading: pipelinesLoading,
+    isError: pipelinesError,
+    error: pipelinesLoadError,
+  } = useCrmPipelines();
+  const {
+    data: stages,
+    isLoading: stagesLoading,
+    isError: stagesError,
+    error: stagesLoadError,
+  } = useCrmStages(selectedPipelineId);
   const { data: pipelineSemantics } = usePipelineStageSemantics(selectedPipelineId);
   const stageIdToSemantic = useMemo(() => {
     const resolved = pipelineSemantics?.resolved_stage_semantics;
@@ -401,7 +433,13 @@ export default function AdminSalesPipelinePage() {
     setSemanticDragBlock(null);
   }, [selectedPipelineId]);
 
-  const { data: leadDetails, isLoading: leadDetailsLoading } = useCrmLeadDetails(
+  useEffect(() => {
+    if (!prepaymentCopyFeedback) return;
+    const timer = window.setTimeout(() => setPrepaymentCopyFeedback(false), 2500);
+    return () => window.clearTimeout(timer);
+  }, [prepaymentCopyFeedback]);
+
+  const { data: leadDetails, isLoading: leadDetailsLoading, isError: leadDetailsError, error: leadDetailsLoadError } = useCrmLeadDetails(
     selectedLeadId
   );
   const createNote = useCreateLeadNote();
@@ -412,10 +450,20 @@ export default function AdminSalesPipelinePage() {
   const aiCreateTask = useAiCreateTaskForLead(selectedLeadId);
   const aiIgnore = useAiIgnoreLeadRecommendation(selectedLeadId);
 
+  useEffect(() => {
+    setNoteText("");
+    setPrepaymentCopyFeedback(false);
+    setPrepaymentCopyError(null);
+    createNote.reset();
+    aiApplyStage.reset();
+    aiCreateTask.reset();
+    aiIgnore.reset();
+  }, [selectedLeadId, createNote, aiApplyStage, aiCreateTask, aiIgnore]);
+
   const pipelineOptions =
     pipelines?.map((p) => ({
       value: p.id,
-      label: p.name + (p.is_default ? " (по умолчанию)" : ""),
+      label: p.name + (p.is_default ? t("pipeline.defaultSuffix") : ""),
     })) ?? [];
 
   const stageOptions =
@@ -454,7 +502,7 @@ export default function AdminSalesPipelinePage() {
       const toSem = stageIdToSemantic[newStageId];
       if (fromSem && toSem && !canTransitionSemantic(fromSem, toSem)) {
         setSemanticDragBlock(
-          `Переход заблокирован (строгий режим семантики): «${fromSem}» → «${toSem}».`
+          t("pipeline.strictBlocked", { from: fromSem, to: toSem })
         );
         return;
       }
@@ -463,15 +511,15 @@ export default function AdminSalesPipelinePage() {
       { leadId, newStageId, enforceSemanticTransition: strictKanbanSemantics },
       {
         onError: (err) => {
-          if (!strictKanbanSemantics) return;
           const msg =
             err instanceof ApiErrorWithCode && err.code === "semantic_transition_invalid"
-              ? `Сервер отклонил переход: ${String(err.details?.from_semantic ?? "?")} → ${String(
-                  err.details?.to_semantic ?? "?"
-                )}`
+              ? t("errors.semanticRejected", {
+                  from: String(err.details?.from_semantic ?? "?"),
+                  to: String(err.details?.to_semantic ?? "?"),
+                })
               : err instanceof Error
                 ? err.message
-                : "Ошибка смены стадии";
+                : t("errors.stageChangeFailed");
           setSemanticDragBlock(msg);
         },
       }
@@ -500,26 +548,47 @@ export default function AdminSalesPipelinePage() {
   if (pipelinesLoading) {
     return (
       <Stack>
-        <ContextBar title="CRM‑воронка продаж" />
+        <ContextBar title={t("pipeline.title")} />
         <DataSkeleton lines={4} />
+      </Stack>
+    );
+  }
+
+  if (pipelinesError) {
+    return (
+      <Stack>
+        <ContextBar title={t("pipeline.title")} />
+        <QueryErrorAlert error={pipelinesLoadError} title={t("errors.loadFailed", { ns: "common" })} />
+      </Stack>
+    );
+  }
+
+  if (!pipelines?.length) {
+    return (
+      <Stack>
+        <ContextBar title={t("pipeline.title")} />
+        <EmptyStateHint
+          title={t("pipeline.emptyPipelinesTitle")}
+          subtitle={t("pipeline.emptyPipelinesHint")}
+        />
       </Stack>
     );
   }
 
   return (
     <Stack gap="md">
-      <ContextBar title="CRM‑воронка продаж" />
+      <ContextBar title={t("pipeline.title")} />
       <ThreeColumnLayout
         preset="wide-center"
         left={
           <AdminDataTableToolbar>
           <Stack gap="sm">
             <Text size="sm" fw={500}>
-              Фильтры и выбор воронки
+              {t("pipeline.filters")}
             </Text>
             <Select
-              label="Pipeline"
-              placeholder="Выберите воронку"
+              label={t("pipeline.pipeline")}
+              placeholder={t("pipeline.pickPipeline")}
               data={pipelineOptions}
               value={selectedPipelineId}
               onChange={(v) => {
@@ -529,8 +598,8 @@ export default function AdminSalesPipelinePage() {
               styles={{ label: { fontSize: 12 } }}
             />
             <Select
-              label="Стадия"
-              placeholder="Все стадии"
+              label={t("pipeline.stage")}
+              placeholder={t("pipeline.allStages")}
               data={stageOptions}
               value={selectedStageId}
               onChange={setSelectedStageId}
@@ -538,33 +607,32 @@ export default function AdminSalesPipelinePage() {
               styles={{ label: { fontSize: 12 } }}
             />
             <Select
-              label="Статус"
-              placeholder="Все статусы"
+              label={t("pipeline.status")}
+              placeholder={t("pipeline.allStatuses")}
               value={statusFilter}
               onChange={setStatusFilter}
               data={[
-                { value: "open", label: "Открытые" },
-                { value: "success", label: "Успех" },
-                { value: "lost", label: "Потеряно" },
+                { value: "open", label: t("pipeline.statusOpen") },
+                { value: "success", label: t("pipeline.statusWon") },
+                { value: "lost", label: t("pipeline.statusLost") },
               ]}
               styles={{ label: { fontSize: 12 } }}
             />
             <TextInput
-              label="Поиск"
-              placeholder="Имя/комментарий/источник"
+              label={t("pipeline.search")}
+              placeholder={t("pipeline.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.currentTarget.value)}
               styles={{ label: { fontSize: 12 } }}
             />
             <Checkbox
-              label="Строгий Kanban (семантика стадий)"
+              label={t("pipeline.strictKanban")}
               checked={strictKanbanSemantics}
               onChange={(e) => setStrictKanbanSemantics(e.currentTarget.checked)}
               styles={{ label: { fontSize: 12 } }}
             />
             <Text size="xs" c="dimmed">
-              Клиент и API используют одну модель семантики (маппинг + infer по коду стадии). При
-              включении запрос смены стадии уходит с enforce — сервер отклонит недопустимый переход.
+              {t("pipeline.strictHint")}
             </Text>
           </Stack>
           </AdminDataTableToolbar>
@@ -576,12 +644,14 @@ export default function AdminSalesPipelinePage() {
                 {semanticDragBlock}
               </Alert>
             ) : null}
-            {stagesLoading ? (
+            {stagesError ? (
+              <QueryErrorAlert error={stagesLoadError} title={t("errors.loadFailed", { ns: "common" })} />
+            ) : stagesLoading ? (
               <DataSkeleton lines={4} />
             ) : !stages || !stages.length ? (
               <EmptyStateHint
-                title="Стадии не настроены"
-                subtitle="Обратитесь к владельцу, чтобы настроить воронку продаж."
+                title={t("pipeline.emptyStagesTitle")}
+                subtitle={t("pipeline.emptyStagesHint")}
               />
             ) : (
               <ScrollArea h={420} type="scroll">
@@ -615,15 +685,17 @@ export default function AdminSalesPipelinePage() {
           <AdminDataTableSurface>
             {!selectedLeadId ? (
               <EmptyStateHint
-                title="Выберите лид"
-                subtitle="Кликните по карточке лида в Kanban‑доске, чтобы увидеть детали."
+                title={t("pipeline.pickLeadTitle")}
+                subtitle={t("pipeline.pickLeadHint")}
               />
             ) : leadDetailsLoading ? (
               <DataSkeleton lines={4} />
+            ) : leadDetailsError ? (
+              <QueryErrorAlert error={leadDetailsLoadError} title={t("errors.loadFailed", { ns: "common" })} />
             ) : !leadDetails ? (
               <EmptyStateHint
-                title="Лид не найден"
-                subtitle="Возможно, он был изменён или удалён."
+                title={t("pipeline.leadMissingTitle")}
+                subtitle={t("pipeline.leadMissingHint")}
               />
             ) : (
               <Stack gap="sm">
@@ -632,39 +704,44 @@ export default function AdminSalesPipelinePage() {
                     <Stack gap={2}>
                       <Text fw={700}>{leadDetails.lead.title}</Text>
                       <Text size="sm" c="dimmed">
-                        Источник: {leadDetails.lead.source || "—"}
+                        {t("pipeline.source", { source: leadDetails.lead.source || "—" })}
                       </Text>
                     </Stack>
                     <Stack gap={4} align="flex-end">
                       <Badge size="sm" variant="outline">
-                        {leadDetails.lead.status}
+                        {crmLeadStatusLabel(leadDetails.lead.status)}
                       </Badge>
                       <Text size="xs" c="dimmed">
-                        Создан:{" "}
-                        {new Date(leadDetails.lead.created_at).toLocaleString()}
+                        {t("pipeline.created", {
+                          date: new Date(leadDetails.lead.created_at).toLocaleDateString(dateLocale),
+                        })}
                       </Text>
                     </Stack>
                   </Group>
                   <Group gap="xs">
-                    <Tooltip label="Прогноз в CRM (не проводка ERP)">
+                    <Tooltip label={t("pipeline.estimatedTooltip")}>
                       <Badge size="sm" variant="light">
-                        Оценка: {leadDetails.lead.estimated_value} ₽
+                        {t("pipeline.estimated", {
+                          amount: formatCrmAmount(leadDetails.lead.estimated_value, dateLocale),
+                        })}
                       </Badge>
                     </Tooltip>
-                    <Tooltip label="Доходы ERP, привязанные к лиду / записи">
+                    <Tooltip label={t("pipeline.actualTooltip")}>
                       <Badge size="sm" variant="light" color="green">
-                        Факт: {leadDetails.lead.actual_value} ₽
+                        {t("pipeline.actual", {
+                          amount: formatCrmAmount(leadDetails.lead.actual_value, dateLocale),
+                        })}
                       </Badge>
                     </Tooltip>
                   </Group>
                   {leadDetails.lead.status === "open" && Number(leadDetails.lead.actual_value) === 0 ? (
                     <Text size="xs" c="dimmed">
-                      Факт из ERP пока 0 ₽ — это нормально до завершения визита и проводок.
+                      {t("pipeline.actualZeroOpenDetail")}
                     </Text>
                   ) : null}
                   {leadDetails.lead.status === "success" && Number(leadDetails.lead.actual_value) === 0 ? (
                     <Text size="xs" c="orange">
-                      Успешное закрытие без суммы в ERP: проверьте lead_id / booking_id на транзакциях.
+                      {t("pipeline.actualZeroWonDetail")}
                     </Text>
                   ) : null}
                 </Stack>
@@ -679,7 +756,7 @@ export default function AdminSalesPipelinePage() {
                     mb="xs"
                     leftSection={<IconMessageCircle size={16} />}
                   >
-                    Открыть чат
+                    {t("pipeline.openChat")}
                   </Button>
                 )}
 
@@ -688,7 +765,7 @@ export default function AdminSalesPipelinePage() {
                 <Stack gap={6}>
                   <Group gap="xs" wrap="wrap">
                     <Text fw={600} size="sm">
-                      AI‑рекомендации
+                      {t("pipeline.aiTitle")}
                     </Text>
                     <AiFeatureBadge status={crmStageFeature.status} />
                   </Group>
@@ -713,11 +790,11 @@ export default function AdminSalesPipelinePage() {
                         crmStageFeature.status === "stub"
                           ? getAiFeatureTooltip(crmStageFeature.status)
                           : !canCrmAi
-                            ? "Недостаточно прав или backend‑tool недоступен."
+                            ? t("pipeline.aiToolUnavailable")
                             : undefined
                       }
                     >
-                      Резюме лида
+                      {t("pipeline.aiSummary")}
                     </Button>
                     <Button
                       variant="light"
@@ -739,11 +816,11 @@ export default function AdminSalesPipelinePage() {
                         crmStageFeature.status === "stub"
                           ? getAiFeatureTooltip(crmStageFeature.status)
                           : !canCrmAi
-                            ? "Недостаточно прав или backend‑tool недоступен."
+                            ? t("pipeline.aiToolUnavailable")
                             : undefined
                       }
                     >
-                      Следующая стадия
+                      {t("pipeline.aiNextStage")}
                     </Button>
                   </Group>
 
@@ -752,6 +829,10 @@ export default function AdminSalesPipelinePage() {
                       {getAiFeatureTooltip(crmStageFeature.status)}
                     </Text>
                   )}
+
+                  {aiSummary.isError ? (
+                    <QueryErrorAlert error={aiSummary.error} title={t("pipeline.aiActionFailed")} />
+                  ) : null}
 
                   {aiSummary.data?.summary && (
                     <Box
@@ -763,11 +844,17 @@ export default function AdminSalesPipelinePage() {
                       }}
                     >
                       <Text size="xs" c="dimmed" mb={4}>
-                        {aiSummary.data.ai_status ? `mode: ${aiSummary.data.ai_status}` : "mode: —"}
+                        {t("pipeline.aiMode", {
+                          status: aiSummary.data.ai_status ?? "—",
+                        })}
                       </Text>
                       <Text size="sm">{aiSummary.data.summary}</Text>
                     </Box>
                   )}
+
+                  {aiSuggestStage.isError ? (
+                    <QueryErrorAlert error={aiSuggestStage.error} title={t("pipeline.aiActionFailed")} />
+                  ) : null}
 
                   {aiSuggestStage.data && (
                     <Box
@@ -779,14 +866,17 @@ export default function AdminSalesPipelinePage() {
                       }}
                     >
                       <Text size="xs" c="dimmed">
-                        confidence: {Math.round((aiSuggestStage.data.confidence || 0) * 100)}%
+                        {t("pipeline.confidence", {
+                          pct: Math.round((aiSuggestStage.data.confidence || 0) * 100),
+                        })}
                       </Text>
                       <Text size="sm">
-                        Рекомендованная стадия:{" "}
-                        {aiSuggestStage.data.suggested_stage_id
-                          ? stages?.find((s) => s.id === aiSuggestStage.data!.suggested_stage_id)?.name ??
-                            aiSuggestStage.data.suggested_stage_id
-                          : "—"}
+                        {t("pipeline.suggestedStage", {
+                          name: aiSuggestStage.data.suggested_stage_id
+                            ? stages?.find((s) => s.id === aiSuggestStage.data!.suggested_stage_id)?.name ??
+                              "—"
+                            : "—",
+                        })}
                       </Text>
                       {aiSuggestStage.data.rationale && (
                         <Text size="xs" c="dimmed" mt={4}>
@@ -827,7 +917,7 @@ export default function AdminSalesPipelinePage() {
                             });
                           }}
                         >
-                          Применить
+                          {t("pipeline.apply")}
                         </Button>
                         <Button
                           size="xs"
@@ -852,7 +942,7 @@ export default function AdminSalesPipelinePage() {
                             });
                           }}
                         >
-                          Игнорировать
+                          {t("pipeline.ignore")}
                         </Button>
                         <Button
                           size="xs"
@@ -868,7 +958,7 @@ export default function AdminSalesPipelinePage() {
                             createTaskFeature.status === "stub"
                               ? getAiFeatureTooltip(createTaskFeature.status)
                               : !canCreateAiTask
-                                ? "Недостаточно прав или backend‑tool недоступен."
+                                ? t("pipeline.aiToolUnavailable")
                                 : undefined
                           }
                           onClick={() => {
@@ -884,7 +974,7 @@ export default function AdminSalesPipelinePage() {
                             });
                             aiCreateTask.mutate({
                               clinic_id: currentClinicId,
-                              title: "Связаться с клиентом по лиду",
+                              title: t("pipeline.aiTaskTitle"),
                               description: aiSuggestStage.data?.rationale ?? undefined,
                               priority: "medium",
                               initiated_by_ai: true,
@@ -892,9 +982,18 @@ export default function AdminSalesPipelinePage() {
                             });
                           }}
                         >
-                          Создать задачу
+                          {t("pipeline.createTask")}
                         </Button>
                       </Group>
+                      {aiApplyStage.isError ? (
+                        <QueryErrorAlert error={aiApplyStage.error} title={t("pipeline.aiActionFailed")} />
+                      ) : null}
+                      {aiIgnore.isError ? (
+                        <QueryErrorAlert error={aiIgnore.error} title={t("pipeline.aiActionFailed")} />
+                      ) : null}
+                      {aiCreateTask.isError ? (
+                        <QueryErrorAlert error={aiCreateTask.error} title={t("pipeline.aiActionFailed")} />
+                      ) : null}
                     </Box>
                   )}
                 </Stack>
@@ -907,28 +1006,38 @@ export default function AdminSalesPipelinePage() {
                   onClick={() => {
                     const amount = leadDetails.lead.estimated_value || leadDetails.lead.actual_value || "0";
                     const url = `${window.location.origin}/prepayment?lead_id=${leadDetails.lead.id}&amount=${amount}`;
-                    navigator.clipboard.writeText(url).then(() => {
-                      setPrepaymentCopyFeedback(true);
-                      setTimeout(() => setPrepaymentCopyFeedback(false), 2500);
-                    });
+                    setPrepaymentCopyError(null);
+                    void navigator.clipboard.writeText(url).then(
+                      () => {
+                        setPrepaymentCopyFeedback(true);
+                      },
+                      () => {
+                        setPrepaymentCopyError(t("pipeline.copyFailed"));
+                      }
+                    );
                   }}
                 >
-                  Сгенерировать ссылку на предоплату
+                  {t("pipeline.prepaymentLink")}
                 </Button>
-                {prepaymentCopyFeedback && (
+                {prepaymentCopyFeedback ? (
                   <Text size="xs" c="green" mb="xs">
-                    Ссылка скопирована в буфер обмена. Вставьте в чат или отправьте клиенту.
+                    {t("pipeline.prepaymentCopied")}
                   </Text>
-                )}
+                ) : null}
+                {prepaymentCopyError ? (
+                  <Text size="xs" c="red" mb="xs">
+                    {prepaymentCopyError}
+                  </Text>
+                ) : null}
 
                 <Stack gap={4}>
                   <Text fw={600} size="sm">
-                    Заметки
+                    {t("pipeline.notes")}
                   </Text>
                   <ScrollArea h={160} type="scroll">
                     {leadDetails.notes.length === 0 ? (
                       <Text size="xs" c="dimmed">
-                        Пока нет заметок.
+                        {t("pipeline.noNotes")}
                       </Text>
                     ) : (
                       <Stack gap="xs">
@@ -944,7 +1053,7 @@ export default function AdminSalesPipelinePage() {
                           >
                             <Text size="sm">{note.text}</Text>
                             <Text size="xs" c="dimmed">
-                              {new Date(note.created_at).toLocaleString()}
+                              {new Date(note.created_at).toLocaleString(dateLocale)}
                             </Text>
                           </Box>
                         ))}
@@ -952,7 +1061,7 @@ export default function AdminSalesPipelinePage() {
                     )}
                   </ScrollArea>
                   <Textarea
-                    placeholder="Добавить заметку..."
+                    placeholder={t("pipeline.notePlaceholder")}
                     minRows={2}
                     value={noteText}
                     onChange={(e) => setNoteText(e.currentTarget.value)}
@@ -962,10 +1071,14 @@ export default function AdminSalesPipelinePage() {
                       size="xs"
                       onClick={handleAddNote}
                       loading={createNote.isPending}
+                      disabled={!noteText.trim() || createNote.isPending}
                     >
-                      Сохранить заметку
+                      {t("pipeline.saveNote")}
                     </Button>
                   </Group>
+                  {createNote.isError ? (
+                    <QueryErrorAlert error={createNote.error} title={t("errors.saveFailed")} />
+                  ) : null}
                 </Stack>
               </Stack>
             )}

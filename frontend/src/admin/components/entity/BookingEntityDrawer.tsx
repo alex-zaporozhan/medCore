@@ -31,15 +31,18 @@ import {
   ADMIN_TABLE_PROPS,
   AdminDrawer,
   GlassModal,
+  QueryErrorAlert,
 } from "@/shared/ui";
 import {
   EntityDrawerFieldBlock,
   EntityDrawerFooterBar,
 } from "@/admin/components/entity/entityDrawerChrome";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { IconCalendarEvent } from "@tabler/icons-react";
 import { bookingStatusSelectOptions } from "@/shared/bookingStatusMeta";
 import { displayPersonName } from "@/shared/ui/personNameFallback";
+import { doctorRoleLabel } from "@/shared/doctorRoleI18n";
 
 function looksLikeUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s).trim());
@@ -104,19 +107,24 @@ export function BookingEntityDrawer({
   scheduleShareUrl,
   onBookingUpdated,
 }: BookingEntityDrawerProps) {
+  const { t } = useTranslation("schedule");
   const { currentClinicId } = useAdminClinic();
   const patchBooking = usePatchBookingAdmin();
   const setBookingStatus = useSetBookingStatusAdmin();
   const clipboard = useClipboard({ timeout: 2500 });
   const [notesDraft, setNotesDraft] = useState("");
   const timeStr = booking ? String(booking.appointment_time).slice(0, 5) : "";
-  const { data: consumables } = useServiceConsumables(
-    currentClinicId,
-    booking?.service_id ?? null
-  );
-  const { data: patientSummary, isPending: patientSummaryLoading } = useAdminLoyaltySummaryByContact(
-    booking?.patient_id ?? null
-  );
+  const {
+    data: consumables,
+    isLoading: consumablesLoading,
+    isError: consumablesError,
+    error: consumablesErr,
+  } = useServiceConsumables(currentClinicId, booking?.service_id ?? null);
+  const {
+    data: patientSummary,
+    isLoading: patientSummaryLoading,
+    isError: patientSummaryError,
+  } = useAdminLoyaltySummaryByContact(booking?.patient_id ?? null);
   const { data: doctors } = useDoctors({
     clinic_id: currentClinicId ?? undefined,
     is_active: true,
@@ -125,7 +133,11 @@ export function BookingEntityDrawer({
 
   useEffect(() => {
     if (booking) setNotesDraft(booking.notes ?? "");
-  }, [booking?.id, booking?.notes]);
+    patchBooking.reset();
+    setBookingStatus.reset();
+    // Sync draft only on booking identity — refetch of the same notes must not wipe in-progress typing.
+    // Reset mutations when the open booking changes (intentional narrow deps).
+  }, [booking?.id]);
 
   if (!booking) return null;
 
@@ -133,7 +145,7 @@ export function BookingEntityDrawer({
   const shellProps = {
     opened,
     onClose,
-    title: "Запись",
+    title: t("drawer.title"),
     styles: {
       header: {
         borderBottom: "1px solid var(--mantine-color-gray-2)",
@@ -178,15 +190,18 @@ export function BookingEntityDrawer({
     <Box>
       <Tabs defaultValue="details" variant="outline" color="brand" keepMounted styles={bookingTabsStyles}>
         <Tabs.List grow>
-          <Tabs.Tab value="details">Детали</Tabs.Tab>
-          <Tabs.Tab value="services">Услуги и чек</Tabs.Tab>
-          <Tabs.Tab value="consumables">Расходники</Tabs.Tab>
-          <Tabs.Tab value="tasks">Задачи</Tabs.Tab>
+          <Tabs.Tab value="details">{t("drawer.details")}</Tabs.Tab>
+          <Tabs.Tab value="services">{t("drawer.services")}</Tabs.Tab>
+          <Tabs.Tab value="consumables">{t("drawer.consumables")}</Tabs.Tab>
+          <Tabs.Tab value="tasks">{t("drawer.tasks")}</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="details">
           <ScrollArea h={BOOKING_MODAL_TABS_SCROLL_H} offsetScrollbars type="scroll">
           <Stack gap="sm">
+            {(patchBooking.isError || setBookingStatus.isError) && (
+              <QueryErrorAlert error={patchBooking.error ?? setBookingStatus.error} />
+            )}
             {!editing ? (
               <>
                 <Paper
@@ -202,7 +217,7 @@ export function BookingEntityDrawer({
                   <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
                     <Stack gap={4} style={{ flex: 1, minWidth: 220 }}>
                       <Text size="xs" c="dimmed" fw={700}>
-                        Сводка
+                        {t("drawer.summary")}
                       </Text>
                       <Text size="sm" fw={700} c="gray.9">
                         {displayPersonName(patientName, booking.patient_id)}
@@ -214,17 +229,17 @@ export function BookingEntityDrawer({
                     </Stack>
                     <Stack gap={6} style={{ alignItems: "flex-end" }}>
                       <Badge variant="light" color="gray">
-                        {statusCfg?.label ?? "Статус"}
+                        {statusCfg?.label ?? t("drawer.status")}
                       </Badge>
                       {booking.notes?.trim() ? (
                         <Text size="xs" c="dimmed">
-                          Есть комментарий администратора
+                          {t("drawer.hasAdminComment")}
                         </Text>
                       ) : null}
                     </Stack>
                   </Group>
                 </Paper>
-                <EntityDrawerFieldBlock label="Пациент">
+                <EntityDrawerFieldBlock label={t("drawer.patient")}>
                   <HoverCard openDelay={300} width={280} shadow="md" withinPortal>
                     <HoverCard.Target>
                       <Anchor
@@ -234,7 +249,7 @@ export function BookingEntityDrawer({
                         fw={500}
                         c="brand.6"
                       >
-                        {patientSummaryLoading && !patientName?.trim() ? (
+                        {patientSummaryLoading && !patientSummaryError && !patientName?.trim() ? (
                           <Skeleton height={18} width={200} />
                         ) : (
                           displayPersonName(
@@ -251,19 +266,22 @@ export function BookingEntityDrawer({
                             displayPersonName(patientName, booking.patient_id)}
                         </Text>
                         {patientSummary?.patient_phone && (
-                          <Text size="xs" c="dimmed">Телефон: {patientSummary.patient_phone}</Text>
+                          <Text size="xs" c="dimmed">{t("drawer.phoneLine", { phone: patientSummary.patient_phone })}</Text>
                         )}
                         {patientSummary?.wallet && (
                           <Text size="xs" c="dimmed">
-                            Баланс: {patientSummary.wallet.balance} {patientSummary.wallet.currency}
+                            {t("drawer.balanceLine", {
+                              balance: patientSummary.wallet.balance,
+                              currency: patientSummary.wallet.currency,
+                            })}
                           </Text>
                         )}
-                        <Text size="xs" c="dimmed">След. визит — при API</Text>
+                        <Text size="xs" c="dimmed">{t("drawer.nextVisitApi")}</Text>
                       </Stack>
                     </HoverCard.Dropdown>
                   </HoverCard>
                 </EntityDrawerFieldBlock>
-                <EntityDrawerFieldBlock label="Врач">
+                <EntityDrawerFieldBlock label={t("drawer.doctor")}>
                   <HoverCard openDelay={300} width={280} shadow="md" withinPortal>
                     <HoverCard.Target>
                       <Anchor
@@ -281,22 +299,29 @@ export function BookingEntityDrawer({
                         <Text size="sm" fw={500} c="gray.9">
                           {displayPersonName(doctor?.full_name ?? doctorName, booking.doctor_id)}
                         </Text>
-                        {doctor?.specialization && (
-                          <Text size="xs" c="dimmed">Специализация: {doctor.specialization}</Text>
-                        )}
+                        {doctor ? (
+                          <Text size="xs" c="dimmed">
+                            {t("drawer.specializationLine", { value: doctorRoleLabel(doctor) })}
+                          </Text>
+                        ) : null}
+                        {doctor?.specialization?.trim() ? (
+                          <Text size="xs" c="dimmed">
+                            {doctor.specialization.trim()}
+                          </Text>
+                        ) : null}
                         <Text size="xs" c="dimmed">
-                          Рабочие смены — во вкладке «Расписание» в карточке врача.
+                          {t("drawer.shiftsHint")}
                         </Text>
                       </Stack>
                     </HoverCard.Dropdown>
                   </HoverCard>
                 </EntityDrawerFieldBlock>
-                <EntityDrawerFieldBlock label="Дата и время">
+                <EntityDrawerFieldBlock label={t("drawer.dateTime")}>
                   <Text size="sm" fw={500} c="gray.9">
                     {booking.appointment_date} {timeStr}
                   </Text>
                 </EntityDrawerFieldBlock>
-                <EntityDrawerFieldBlock label="Услуга">
+                <EntityDrawerFieldBlock label={t("drawer.service")}>
                   <Text size="sm" fw={500} c="gray.9">
                     {serviceName && !looksLikeUuid(serviceName)
                       ? serviceName
@@ -305,10 +330,10 @@ export function BookingEntityDrawer({
                         : booking.service_id}
                   </Text>
                 </EntityDrawerFieldBlock>
-                <EntityDrawerFieldBlock label="Статус">
+                <EntityDrawerFieldBlock label={t("drawer.status")}>
                   <Select
                     size="sm"
-                    aria-label="Статус посещения"
+                    aria-label={t("drawer.visitStatus")}
                     data={bookingStatusSelectOptions(booking.status)}
                     value={booking.status}
                     disabled={
@@ -338,7 +363,7 @@ export function BookingEntityDrawer({
                     fullWidth
                     onClick={() => clipboard.copy(scheduleShareUrl)}
                   >
-                    {clipboard.copied ? "Ссылка скопирована" : "Скопировать ссылку посещения"}
+                    {clipboard.copied ? t("drawer.linkCopied") : t("drawer.copyVisitLink")}
                   </Button>
                 ) : null}
                 <Paper
@@ -352,13 +377,13 @@ export function BookingEntityDrawer({
                   }}
                 >
                   <Textarea
-                    label="Комментарий администратора"
-                    placeholder="Краткая заметка для смены; в сетке виден значок"
+                    label={t("drawer.adminComment")}
+                    placeholder={t("drawer.adminCommentPlaceholder")}
                     minRows={2}
                     value={notesDraft}
                     onChange={(e) => setNotesDraft(e.currentTarget.value)}
                     disabled={Boolean(editing)}
-                    aria-label="Комментарий администратора к записи"
+                    aria-label={t("drawer.adminComment")}
                   />
                   <Group justify="flex-end" mt="xs">
                     <Button
@@ -384,7 +409,7 @@ export function BookingEntityDrawer({
                         )
                       }
                     >
-                      Сохранить комментарий
+                      {t("drawer.saveComment")}
                     </Button>
                   </Group>
                 </Paper>
@@ -397,7 +422,7 @@ export function BookingEntityDrawer({
                         leftSection={<IconCalendarEvent size={18} stroke={1.5} />}
                         onClick={onStartEdit}
                       >
-                        Изменить дату / время / врача
+                        {t("drawer.changeSlot")}
                       </Button>
                     )}
                     {canCancel && onCancel && (
@@ -407,7 +432,7 @@ export function BookingEntityDrawer({
                         onClick={() => onCancel(booking.id)}
                         loading={isCancelPending}
                       >
-                        Отменить запись
+                        {t("drawer.cancelBooking")}
                       </Button>
                     )}
                   </EntityDrawerFooterBar>
@@ -415,32 +440,32 @@ export function BookingEntityDrawer({
               </>
             ) : (
               <>
-                <EntityDrawerFieldBlock label="Пациент">
+                <EntityDrawerFieldBlock label={t("drawer.patient")}>
                   <Text size="sm" fw={500} c="gray.9">
                     {displayPersonName(patientName, booking.patient_id)}
                   </Text>
                 </EntityDrawerFieldBlock>
-                <EntityDrawerFieldBlock label="Дата, время и врач">
+                <EntityDrawerFieldBlock label={t("drawer.dateTimeDoctor")}>
                   <Stack gap="sm">
                     <TextInput
-                      label="Дата"
+                      label={t("date")}
                       type="date"
                       value={editDate ?? booking.appointment_date}
                       onChange={(e) => onEditDateChange?.(e.target.value || booking.appointment_date)}
                     />
                     <TextInput
-                      label="Время"
+                      label={t("drawer.time")}
                       type="time"
                       value={editTime ?? timeStr}
                       onChange={(e) => onEditTimeChange?.(e.target.value || timeStr)}
                     />
                     <Select
-                      label="Врач"
+                      label={t("drawer.doctor")}
                       data={doctorOptions}
                       value={editDoctorId ?? booking.doctor_id}
                       onChange={(v) => v && onEditDoctorIdChange?.(v)}
                       searchable
-                      aria-label="Врач для записи"
+                      aria-label={t("drawer.doctorForBooking")}
                     />
                   </Stack>
                 </EntityDrawerFieldBlock>
@@ -450,7 +475,7 @@ export function BookingEntityDrawer({
                     color="gray"
                     onClick={onCancelEdit}
                   >
-                    Отмена
+                    {t("drawer.cancel")}
                   </Button>
                   <Button
                     variant="filled"
@@ -465,7 +490,7 @@ export function BookingEntityDrawer({
                     }
                     loading={isReschedulePending}
                   >
-                    Сохранить
+                    {t("drawer.save")}
                   </Button>
                 </EntityDrawerFooterBar>
               </>
@@ -481,20 +506,26 @@ export function BookingEntityDrawer({
               <Table striped {...ADMIN_TABLE_PROPS}>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Услуга</Table.Th>
-                    <Table.Th>Сумма</Table.Th>
+                    <Table.Th>{t("drawer.service")}</Table.Th>
+                    <Table.Th>{t("drawer.amount")}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   <Table.Tr>
-                    <Table.Td>{serviceName ?? booking.service_id}</Table.Td>
+                    <Table.Td>
+                      {serviceName && !looksLikeUuid(serviceName)
+                        ? serviceName
+                        : looksLikeUuid(booking.service_id)
+                          ? "—"
+                          : booking.service_id}
+                    </Table.Td>
                     <Table.Td>{booking.prepayment_amount ? `${booking.prepayment_amount} ₽` : "—"}</Table.Td>
                   </Table.Tr>
                 </Table.Tbody>
               </Table>
             </AdminDataTableSurface>
             <Text size="sm" c="dimmed" style={{ lineHeight: 1.45 }}>
-              Добавление нескольких услуг и чек — при расширении API.
+              {t("drawer.multiServiceHint")}
             </Text>
           </Stack>
           </ScrollArea>
@@ -503,25 +534,29 @@ export function BookingEntityDrawer({
         <Tabs.Panel value="consumables">
           <ScrollArea h={BOOKING_MODAL_TABS_SCROLL_H} offsetScrollbars type="scroll">
           <Stack gap="sm">
-          {!consumables ? (
+          {consumablesError ? (
+            <QueryErrorAlert error={consumablesErr} />
+          ) : consumablesLoading ? (
             <Skeleton height={80} />
-          ) : consumables.length === 0 ? (
+          ) : !consumables?.length ? (
             <Text size="sm" c="dimmed" style={{ lineHeight: 1.45 }}>
-              Расходники по техкарте не заданы или загружаются.
+              {t("drawer.noConsumables")}
             </Text>
           ) : (
             <AdminDataTableSurface>
               <Table striped {...ADMIN_TABLE_PROPS}>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Материал</Table.Th>
-                    <Table.Th>Кол-во на услугу</Table.Th>
+                    <Table.Th>{t("drawer.material")}</Table.Th>
+                    <Table.Th>{t("drawer.qtyPerService")}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
                   {consumables.map((c) => (
                     <Table.Tr key={c.id}>
-                      <Table.Td>{c.product_id}</Table.Td>
+                      <Table.Td>
+                        {looksLikeUuid(c.product_id) ? "—" : c.product_id}
+                      </Table.Td>
                       <Table.Td>
                         {c.quantity_per_service} {c.unit}
                       </Table.Td>
@@ -549,7 +584,7 @@ export function BookingEntityDrawer({
               }}
             >
               <Text size="sm" c="dimmed" style={{ lineHeight: 1.45 }}>
-                Задачи, привязанные к визиту — при наличии API.
+                {t("drawer.tasksHint")}
               </Text>
             </Paper>
           </Stack>

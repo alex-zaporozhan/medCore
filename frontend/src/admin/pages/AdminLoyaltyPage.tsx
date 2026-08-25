@@ -198,8 +198,7 @@ export default function AdminLoyaltyPage() {
                       <Table.Tr key={s.id}>
                         <Table.Td>{s.id.slice(0, 8)}…</Table.Td>
                         <Table.Td>
-                          {packageNameById[s.subscription_package_id] ??
-                            `${s.subscription_package_id.slice(0, 8)}…`}
+                          {packageNameById[s.subscription_package_id] ?? "—"}
                         </Table.Td>
                         <Table.Td>{s.status}</Table.Td>
                         <Table.Td>{s.remaining_visits ?? "—"}</Table.Td>
