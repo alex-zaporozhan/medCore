@@ -26,7 +26,7 @@ import dayjs from "dayjs";
 import { SEMANTIC } from "@/shared/semanticUi";
 import { useEffect, useMemo, useState } from "react";
 import type { ApiErrorWithCode } from "@/api/client";
-import { getBookingErrorMessage } from "@/shared/errors";
+import { bookingErrorI18nKey } from "@/shared/errors";
 import { ROUTE_PATHS } from "@/routePaths";
 import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -34,7 +34,7 @@ import { useTranslation } from "react-i18next";
 const CLINIC_STORAGE_KEY = "app.selectedClinicId";
 
 export default function BookingWizardPage() {
-  const { t } = useTranslation("patient");
+  const { t } = useTranslation(["patient", "bookings"]);
   const { accessToken, patientId } = usePatientAuth();
   const location = useLocation();
   const [step, setStep] = useState(0);
@@ -114,21 +114,17 @@ export default function BookingWizardPage() {
   const bookingError = (createBooking.error ?? null) as ApiErrorWithCode | null;
   const paymentError = (createPayment.error ?? null) as ApiErrorWithCode | null;
 
-  const bookingErrorMessage = useMemo(
-    () =>
-      bookingError
-        ? getBookingErrorMessage(bookingError.code, bookingError.message, "booking")
-        : null,
-    [bookingError]
-  );
+  const bookingErrorText = useMemo(() => {
+    if (!bookingError) return null;
+    const key = bookingErrorI18nKey(bookingError.code, "booking");
+    return key ? t(key as never, { ns: "bookings" }) : bookingError.message;
+  }, [bookingError, t]);
 
-  const paymentErrorMessage = useMemo(
-    () =>
-      paymentError
-        ? getBookingErrorMessage(paymentError.code, paymentError.message, "payment")
-        : null,
-    [paymentError]
-  );
+  const paymentErrorText = useMemo(() => {
+    if (!paymentError) return null;
+    const key = bookingErrorI18nKey(paymentError.code, "payment");
+    return key ? t(key as never, { ns: "bookings" }) : paymentError.message;
+  }, [paymentError, t]);
 
   const selectedService = publicServices?.find((s) => s.id === serviceId);
   const serviceOptions =
@@ -431,7 +427,7 @@ export default function BookingWizardPage() {
           </Stepper.Step>
         )}
       </Stepper>
-      {(bookingErrorMessage || paymentErrorMessage) && (
+      {(bookingErrorText || paymentErrorText) && (
         <Alert
           color="red"
           radius="md"
@@ -441,8 +437,8 @@ export default function BookingWizardPage() {
           aria-atomic="true"
         >
           <Stack gap={4}>
-            {bookingErrorMessage && <Text size="sm">{bookingErrorMessage}</Text>}
-            {paymentErrorMessage && <Text size="sm">{paymentErrorMessage}</Text>}
+            {bookingErrorText && <Text size="sm">{bookingErrorText}</Text>}
+            {paymentErrorText && <Text size="sm">{paymentErrorText}</Text>}
             {(bookingError?.traceId || paymentError?.traceId) && (
               <Text size="xs" c="dimmed">
                 {t("booking.supportCode", { id: bookingError?.traceId || paymentError?.traceId })}

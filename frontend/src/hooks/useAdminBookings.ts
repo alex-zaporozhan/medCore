@@ -54,7 +54,10 @@ export interface CreateAdminBookingPayload {
   notes?: string;
 }
 
-export function useAdminBookings(filters: AdminBookingsFilters = {}) {
+export function useAdminBookings(
+  filters: AdminBookingsFilters = {},
+  options?: { enabled?: boolean },
+) {
   const params = new URLSearchParams();
   if (filters.doctor_id) params.set("doctor_id", filters.doctor_id);
   if (filters.date) params.set("date", filters.date);
@@ -68,6 +71,7 @@ export function useAdminBookings(filters: AdminBookingsFilters = {}) {
     queryKey: ["admin-bookings", filters],
     queryFn: () =>
       api.get<Booking[]>(`/v1/admin/bookings${query ? `?${query}` : ""}`),
+    enabled: options?.enabled ?? true,
   });
 }
 
