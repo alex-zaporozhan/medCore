@@ -2,7 +2,7 @@
 name = "dental-booking"
 version = "0.1.0"
 description = "MedCore — multi-tenant clinic operating system (modular monolith)"
-authors = ["Alexandr Zaporozhan <alexandr.zaporojan@gmail.com>"]
+authors = ["Alexandr Zaporojan <alexandr.zaporojan@gmail.com>"]
 license = "LicenseRef-PolyForm-Shield-1.0.0"
 readme = "README.md"
 package-mode = false

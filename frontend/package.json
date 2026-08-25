@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.2",
   "description": "MedCore clinic OS frontend (admin, patient PWA, marketing, platform)",
-  "author": "Alexandr Zaporozhan <alexandr.zaporojan@gmail.com>",
+  "author": "Alexandr Zaporojan <alexandr.zaporojan@gmail.com>",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
@@ -12,8 +12,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "security:audit": "npm audit --production --audit-level=high",
+    "security:audit": "npm audit --omit=dev --audit-level=high",
+    "security:audit:all": "npm audit --audit-level=high",
     "test": "vitest",
+    "test:wave-a": "vitest run src/admin/pages/__tests__/AdminTasksPage.test.tsx src/admin/pages/__tests__/AdminStaffCalendarPage.test.tsx src/admin/pages/__tests__/AdminSalesPipelinePage.test.tsx src/admin/components/entity/__tests__/PatientEntityDrawer.geometry.test.tsx src/shared/__tests__/doctorRoleI18n.test.ts src/shared/__tests__/taskDescriptionSanitize.test.ts src/shared/__tests__/taskStatusSemantic.test.ts src/shared/__tests__/omniUploadErrors.test.ts src/shared/__tests__/adminChatChrome.test.ts src/shared/__tests__/chatI18n.test.ts src/admin/__tests__/waveACyrillicGate.test.ts src/api/__tests__/client-api-errors.test.ts src/i18n",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install chromium",
     "lint": "eslint . --max-warnings 0"
@@ -38,11 +40,11 @@
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-i18next": "^17.0.11",
-    "react-router-dom": "^6.28.0"
+    "react-router-dom": "^7.18.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.49.1",
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
     "@testing-library/user-event": "^14.6.1",
@@ -58,8 +60,11 @@
     "postcss-simple-vars": "^7.0.1",
     "typescript": "~5.6.2",
     "typescript-eslint": "^8.57.1",
-    "vite": "^6.0.1",
+    "vite": "^6.4.3",
     "vite-plugin-pwa": "^0.21.1",
-    "vitest": "^2.1.4"
+    "vitest": "^3.2.6"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
